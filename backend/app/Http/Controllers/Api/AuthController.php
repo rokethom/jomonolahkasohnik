@@ -102,6 +102,15 @@ class AuthController extends Controller
             return $this->redirectGoogleLoginError($frontendUrl, 'Google membatalkan atau menolak proses login.');
         }
 
+        if (! request()->filled('code')) {
+            Log::warning('Google OAuth callback missing code', [
+                'query' => request()->query(),
+                'ip' => request()->ip(),
+            ]);
+
+            return $this->redirectGoogleLoginError($frontendUrl, 'Sesi Login Google tidak lengkap. Silakan ulangi dari tombol Login Google.');
+        }
+
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
         } catch (Throwable $exception) {
