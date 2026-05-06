@@ -12,7 +12,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22"
-  PHP_VERSION: "8.2"
+  PHP_VERSION: "8.3"
   PNPM_VERSION: "10.33.2"
   API_URL: "https://aplikasijoker.my.id/api"
   BACKEND_PATH: "/home/aplikasijoker.my.id/laravel"
