@@ -1789,6 +1789,31 @@
   margin: 0 0 16px;
 }
 
+.login-page {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding-top: 28px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(0, 183, 255, 0.14), transparent 30%),
+    linear-gradient(180deg, #f8fbff 0%, #f8faf9 44%, #ffffff 100%);
+}
+
+.login-heading {
+  text-align: center;
+}
+
+.login-heading h1 {
+  margin: 0;
+  color: #101820;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.login-page .pwa-install-button {
+  justify-self: center;
+}
+
 .history-head {
   display: flex;
   align-items: flex-start;
@@ -2134,6 +2159,14 @@
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
+.login-page .profile-edit-form {
+  margin-top: 0;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(217, 226, 234, 0.78);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.09);
+}
+
 .profile-edit-form h2 {
   margin: 0;
   font-size: 18px;
@@ -2156,6 +2189,12 @@
   font: inherit;
 }
 
+.login-page .profile-edit-form input {
+  height: 48px;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
 .profile-edit-form textarea {
   min-height: 88px;
   height: auto;
@@ -2172,26 +2211,34 @@
   font-weight: 900;
 }
 
+.login-page .profile-edit-form button {
+  min-height: 50px;
+}
+
 .login-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 18px 0 0;
+  margin: 0;
+  padding: 5px;
+  border-radius: 999px;
+  background: #edf7ff;
 }
 
 .login-tabs button {
-  min-height: 42px;
-  border: 1px solid #dce8e4;
+  min-height: 40px;
+  border: 0;
   border-radius: 999px;
-  background: #fff;
+  background: transparent;
   color: #0077ff;
   font-weight: 900;
 }
 
 .login-tabs button.active {
-  background: #00b7ff;
+  background: #fff;
   color: #fff;
-  border-color: #00b7ff;
+  color: #0077ff;
+  box-shadow: 0 10px 22px rgba(0, 119, 255, 0.12);
 }
 
 .gps-register-note {

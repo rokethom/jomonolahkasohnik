@@ -2633,12 +2633,10 @@ function CustomerLoginScreen({ onDone }: { onDone: () => void }) {
   }, [mode])
 
   return (
-    <div className="simple-page">
-      <div className="login-logo">
-        <img src="/logo.png" alt="JojoApp" />
+    <div className="simple-page login-page">
+      <div className="login-heading">
+        <h1>Login</h1>
       </div>
-      <h1>Login Customer</h1>
-      <p>Masuk dulu agar chat order memakai endpoint real dan tidak muncul status Unauthenticated.</p>
       <PwaInstallButton />
       <div className="login-tabs">
         <button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')} type="button">Login</button>
