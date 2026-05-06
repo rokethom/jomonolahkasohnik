@@ -61,6 +61,16 @@ jobs:
           extensions: bcmath, ctype, curl, dom, fileinfo, filter, mbstring, openssl, pdo, tokenizer, xml
           coverage: none
 
+      - name: Prepare Laravel runtime directories
+        shell: bash
+        run: |
+          mkdir -p backend/bootstrap/cache
+          mkdir -p backend/storage/framework/cache/data
+          mkdir -p backend/storage/framework/sessions
+          mkdir -p backend/storage/framework/testing
+          mkdir -p backend/storage/framework/views
+          mkdir -p backend/storage/logs
+
       - name: Validate backend composer dependencies
         working-directory: backend
         run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
@@ -143,6 +153,7 @@ jobs:
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
             cd '${BACKEND_PATH}'; \
+            mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs; \
             composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
             php artisan storage:link || true; \
             php artisan migrate --force; \
