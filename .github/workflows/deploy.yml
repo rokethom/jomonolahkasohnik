@@ -154,10 +154,13 @@ jobs:
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
             cd '${BACKEND_PATH}'; \
             mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs; \
+            rm -f bootstrap/cache/*.php; \
             composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
+            php artisan package:discover --ansi; \
+            php artisan optimize:clear; \
             php artisan storage:link || true; \
             php artisan migrate --force; \
-            php artisan optimize:clear; \
+            php artisan db:seed --class=RolePermissionSeeder --force; \
             php artisan config:cache; \
             php artisan route:cache; \
             php artisan view:cache"
