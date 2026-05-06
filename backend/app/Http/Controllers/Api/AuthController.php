@@ -56,6 +56,16 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
+        $role = $user->role instanceof UserRole ? $user->role : UserRole::tryFrom((string) $user->role);
+        if ($role === UserRole::Driver) {
+            Auth::logout();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Driver wajib login menggunakan Google',
+            ], 403);
+        }
+
         $user->tokens()->delete();
         $token = $user->createToken($this->tokenName($request))->plainTextToken;
 

@@ -16,6 +16,7 @@ use App\Models\Order;
 use App\Models\PriceSetting;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\AdminDashboardMetricsService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
 use App\Services\MultiOrderService;
@@ -57,6 +58,18 @@ class AdminController extends Controller
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
             'chats' => $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)),
             'audit_logs' => $this->auditLogsQuery($user)->limit(12)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)),
+        ]);
+    }
+
+    public function monitoring(AdminDashboardMetricsService $metrics): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'stats' => $metrics->productionStats(),
+            'server_metrics' => $metrics->serverMetrics(),
+            'endpoints' => $metrics->endpointHealth(),
+            'timeline' => $metrics->timeline(),
+            'charts' => $metrics->chartSeries(),
         ]);
     }
 
@@ -305,6 +318,74 @@ class AdminController extends Controller
         $this->recordAudit($request->user(), 'reset_driver_token', $driver->user, ['driver_id' => $driver->id]);
 
         return response()->json(['message' => 'Token driver berhasil direset. Driver perlu login ulang.']);
+    }
+
+    public function updateDriverGoogleAuth(Request $request, Driver $driver): JsonResponse
+    {
+        $this->authorizeDriverAuthCms($request);
+        abort_unless($driver->user !== null, 404);
+
+        $payload = $request->validate([
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($driver->user_id)],
+        ]);
+
+        $oldEmail = $driver->email ?: $driver->user->email;
+        $driver->user->forceFill(['email' => strtolower($payload['email'])])->save();
+        $driver->forceFill(['email' => strtolower($payload['email'])])->save();
+
+        $this->recordAudit($request->user(), 'updated_driver_google_email', $driver->user, [
+            'driver_id' => $driver->id,
+            'old_email' => $oldEmail,
+            'new_email' => $driver->email,
+        ]);
+
+        return response()->json(['message' => 'Email Google driver berhasil diperbarui.']);
+    }
+
+    public function resetDriverGoogleBind(Request $request, Driver $driver): JsonResponse
+    {
+        $this->authorizeDriverAuthCms($request);
+        abort_unless($driver->user !== null, 404);
+
+        $driver->forceFill([
+            'google_id' => null,
+            'auth_failed_attempts' => 0,
+            'auth_locked_until' => null,
+        ])->save();
+        $driver->user->tokens()->delete();
+
+        $this->recordAudit($request->user(), 'reset_driver_google_bind', $driver->user, ['driver_id' => $driver->id]);
+
+        return response()->json(['message' => 'Google bind driver berhasil direset. Driver dapat login ulang dengan akun Google baru.']);
+    }
+
+    public function suspendDriverGoogleAuth(Request $request, Driver $driver): JsonResponse
+    {
+        $this->authorizeDriverAuthCms($request);
+        abort_unless($driver->user !== null, 404);
+
+        $driver->forceFill(['auth_suspended_at' => now()])->save();
+        $driver->user->tokens()->delete();
+
+        $this->recordAudit($request->user(), 'suspended_driver_google_auth', $driver->user, ['driver_id' => $driver->id]);
+
+        return response()->json(['message' => 'Auth Google driver disuspend dan token aktif dicabut.']);
+    }
+
+    public function unlockDriverGoogleAuth(Request $request, Driver $driver): JsonResponse
+    {
+        $this->authorizeDriverAuthCms($request);
+        abort_unless($driver->user !== null, 404);
+
+        $driver->forceFill([
+            'auth_suspended_at' => null,
+            'auth_locked_until' => null,
+            'auth_failed_attempts' => 0,
+        ])->save();
+
+        $this->recordAudit($request->user(), 'unlocked_driver_google_auth', $driver->user, ['driver_id' => $driver->id]);
+
+        return response()->json(['message' => 'Auth Google driver berhasil di-unlock.']);
     }
 
     public function updateDriverConfig(Request $request, Driver $driver): JsonResponse
@@ -658,7 +739,7 @@ class AdminController extends Controller
 
         return match ($actor->role) {
             UserRole::Admin, UserRole::GM => $query,
-            UserRole::HRD => $query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value]),
+            UserRole::HRD => $query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Driver->value]),
             UserRole::Manager, UserRole::SPV, UserRole::Operator => $query->where('branch_id', $actor->branch_id)->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value]),
             default => $query->whereKey($actor->id),
         };
@@ -724,6 +805,8 @@ class AdminController extends Controller
             'can_manage_users' => $user->hasPermission('create_user'),
             'can_suspend_drivers' => $user->hasPermission('suspend_driver'),
             'can_unsuspend_drivers' => $user->hasPermission('unsuspend_driver'),
+            'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
+                && $user->hasPermission('suspend_driver'),
             'can_manage_system_settings' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
             'can_create_manual_order' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true),
@@ -748,6 +831,16 @@ class AdminController extends Controller
         }
 
         return $actor->role->canManageRole($target->role);
+    }
+
+    private function authorizeDriverAuthCms(Request $request): void
+    {
+        abort_unless(in_array($request->user()->role, [
+            UserRole::Admin,
+            UserRole::GM,
+            UserRole::HRD,
+            UserRole::Manager,
+        ], true), 403);
     }
 
     private function userPayload(User $user): array
@@ -824,6 +917,14 @@ class AdminController extends Controller
                 ...$this->userPayload($user),
                 'driver_id' => $user->driver?->id,
                 'driver_status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
+                'google_bound' => filled($user->driver?->google_id),
+                'google_email' => $user->driver?->email ?? $user->email,
+                'last_login_at' => $user->driver?->last_login_at?->toDateTimeString(),
+                'last_login_ip' => $user->driver?->last_login_ip,
+                'last_login_device' => $user->driver?->last_login_device,
+                'auth_failed_attempts' => $user->driver?->auth_failed_attempts ?? 0,
+                'auth_locked_until' => $user->driver?->auth_locked_until?->toDateTimeString(),
+                'auth_suspended_at' => $user->driver?->auth_suspended_at?->toDateTimeString(),
                 'suspended_until' => $user->driver?->suspended_until?->toDateTimeString() ?? $user->suspended_until?->toDateTimeString(),
                 'suspension_reason' => $user->suspension_reason,
                 'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,

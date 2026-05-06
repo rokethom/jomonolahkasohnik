@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DriverStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,9 @@ class Driver extends Model
 
     protected $fillable = [
         'user_id',
+        'name',
+        'email',
+        'google_id',
         'vehicle_type',
         'allowed_service_types',
         'vehicle_number',
@@ -21,8 +25,15 @@ class Driver extends Model
         'current_lng',
         'is_available',
         'status',
+        'is_suspend',
         'oper_handle_count',
         'suspended_until',
+        'last_login_at',
+        'last_login_ip',
+        'last_login_device',
+        'auth_failed_attempts',
+        'auth_locked_until',
+        'auth_suspended_at',
         'bpjs_jht_enabled',
         'bansos_amount',
         'permanent_delete_eligible_at',
@@ -33,8 +44,13 @@ class Driver extends Model
         'current_lng' => 'decimal:8',
         'allowed_service_types' => 'array',
         'is_available' => 'boolean',
+        'is_suspend' => 'boolean',
         'oper_handle_count' => 'integer',
         'suspended_until' => 'datetime',
+        'last_login_at' => 'datetime',
+        'auth_failed_attempts' => 'integer',
+        'auth_locked_until' => 'datetime',
+        'auth_suspended_at' => 'datetime',
         'bpjs_jht_enabled' => 'boolean',
         'bansos_amount' => 'integer',
         'permanent_delete_eligible_at' => 'datetime',
@@ -84,5 +100,19 @@ class Driver extends Model
     {
         return $this->status !== 'active'
             && ($this->suspended_until === null || $this->suspended_until->isFuture());
+    }
+
+    public function isLoginSuspended(): bool
+    {
+        return (bool) ($this->is_suspend ?? false)
+            || $this->auth_suspended_at !== null
+            || $this->status === DriverStatus::Inactive->value
+            || $this->status === DriverStatus::Suspended->value
+            || ($this->suspended_until !== null && $this->suspended_until->isFuture());
+    }
+
+    public function isAuthLocked(): bool
+    {
+        return $this->auth_locked_until !== null && $this->auth_locked_until->isFuture();
     }
 }

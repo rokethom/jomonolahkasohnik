@@ -152,6 +152,7 @@ class SettingService
                 'google_enabled' => $this->bool('google_oauth_enabled')
                     && filled($this->get('google_oauth_client_id'))
                     && filled($this->get('google_oauth_secret')),
+                'google_client_id' => env('GOOGLE_DRIVER_CLIENT_ID') ?: $this->get('google_oauth_client_id'),
             ],
             'push' => [
                 'enabled' => filled($this->get('firebase_vapid_key')) && filled($this->firebaseWebConfig()),

@@ -1004,6 +1004,54 @@ td span {
   gap: 3px;
 }
 
+.driver-auth-modal {
+  max-width: 720px;
+}
+
+.driver-auth-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.auth-status-card,
+.driver-auth-meta {
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 14px;
+}
+
+.auth-status-card {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+}
+
+.auth-status-card span,
+.driver-auth-meta span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.auth-status-card strong {
+  width: fit-content;
+}
+
+.driver-auth-meta {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.driver-auth-actions {
+  border-top: 1px solid #eef2f7;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

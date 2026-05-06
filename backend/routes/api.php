@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Admin\OperHandleApprovalController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CancelRequestController;
 use App\Http\Controllers\Api\ChatController;
+use App\Http\Controllers\Api\DriverAuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\GeofenceController;
 use App\Http\Controllers\Api\GeocodingController;
@@ -49,6 +50,7 @@ Route::get('/auth/login', fn () => response()->json([
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::get('/auth/google/redirect', [AuthController::class, 'redirectToGoogle']);
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
+Route::post('/driver/auth/google', [DriverAuthController::class, 'google'])->middleware('throttle:driver-google-login');
 Route::get('/home', HomeController::class);
 Route::get('/map/provider', MapProviderController::class);
 Route::get('/settings/public', [SettingsController::class, 'publicSettings']);
@@ -65,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('admin')->middleware('role:admin,gm,hrd,manager,spv,operator')->group(function () {
         Route::get('/bootstrap', [AdminController::class, 'bootstrap']);
+        Route::get('/monitoring', [AdminController::class, 'monitoring'])->middleware('permission:view_report');
         Route::patch('/system-settings', [AdminController::class, 'updateSystemSettings']);
         Route::get('/users', [AdminController::class, 'users'])->middleware('permission:create_user');
         Route::post('/users', [AdminController::class, 'storeUser'])->middleware('permission:create_user');
@@ -78,6 +81,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/drivers/{driver}/suspend', [AdminController::class, 'suspendDriver'])->middleware('permission:suspend_driver');
         Route::post('/drivers/{driver}/release-suspend', [AdminController::class, 'releaseDriverSuspend'])->middleware('permission:unsuspend_driver');
         Route::post('/drivers/{driver}/reset-token', [AdminController::class, 'resetDriverToken'])->middleware('permission:suspend_driver');
+        Route::patch('/drivers/{driver}/google-auth', [AdminController::class, 'updateDriverGoogleAuth'])->middleware('permission:suspend_driver');
+        Route::post('/drivers/{driver}/google-auth/reset-bind', [AdminController::class, 'resetDriverGoogleBind'])->middleware('permission:suspend_driver');
+        Route::post('/drivers/{driver}/google-auth/suspend', [AdminController::class, 'suspendDriverGoogleAuth'])->middleware('permission:suspend_driver');
+        Route::post('/drivers/{driver}/google-auth/unlock', [AdminController::class, 'unlockDriverGoogleAuth'])->middleware('permission:suspend_driver');
         Route::put('/drivers/{driver}/config', [AdminController::class, 'updateDriverConfig'])->middleware('permission:suspend_driver');
         Route::get('/price-settings', [AdminController::class, 'priceSettings'])->middleware('permission:edit_tarif');
         Route::post('/price-settings', [AdminController::class, 'storePriceSetting'])->middleware('permission:edit_tarif');

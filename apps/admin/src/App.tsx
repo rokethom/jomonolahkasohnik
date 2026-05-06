@@ -35,7 +35,15 @@ type User = {
 }
 type DriverRow = User & {
   driver_id: number | null
-  driver_status: 'active' | 'suspended' | 'suspended_unpaid'
+  driver_status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
+  google_bound?: boolean
+  google_email?: string | null
+  last_login_at?: string | null
+  last_login_ip?: string | null
+  last_login_device?: string | null
+  auth_failed_attempts?: number
+  auth_locked_until?: string | null
+  auth_suspended_at?: string | null
   suspended_until: string | null
   suspension_reason: string | null
   oper_handle_count: number
@@ -113,6 +121,7 @@ type Permissions = {
   can_manage_users: boolean
   can_suspend_drivers: boolean
   can_unsuspend_drivers?: boolean
+  can_manage_driver_auth?: boolean
   can_manage_system_settings: boolean
   can_edit_order_price: boolean
   can_create_manual_order: boolean
@@ -589,6 +598,7 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
 
 function DriverManagementPanel({ drivers, services, permissions, api, onChanged }: { drivers: DriverRow[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [configDriver, setConfigDriver] = useState<DriverRow | null>(null)
+  const [authDriver, setAuthDriver] = useState<DriverRow | null>(null)
   const suspend = async (driver: DriverRow, duration: number, status: 'suspended' | 'suspended_unpaid') => {
     if (!driver.driver_id) return
     const reason = prompt('Alasan suspend', status === 'suspended_unpaid' ? 'Belum bayar setoran' : 'Suspend manual admin')
@@ -621,7 +631,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
           <tbody>
             {drivers.map((driver) => (
               <tr key={driver.id}>
-                <td><strong>{driver.name}</strong><span>{driver.username}</span></td>
+                <td><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></td>
                 <td><span className="driver-phone">{driver.phone || '-'}</span></td>
                 <td><span className="status info">{driver.vehicle_type ?? 'motor'}</span></td>
                 <td><span className="driver-phone">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
@@ -636,6 +646,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 168, 'suspended_unpaid')}>Unpaid</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setConfigDriver(driver)}>Config</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => void resetToken(driver)}>Reset Token</button>}
+                    {permissions.can_manage_driver_auth && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setAuthDriver(driver)}>Google Auth</button>}
                     {permissions.can_unsuspend_drivers && driver.driver_status !== 'active' && <button className="mini-button" type="button" onClick={() => void release(driver)}>Release</button>}
                   </div>
                 </td>
@@ -652,8 +663,79 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
         </table>
       </div>
       {configDriver && <DriverConfigModal driver={configDriver} services={services} api={api} onClose={() => setConfigDriver(null)} onSaved={async () => { await onChanged(); setConfigDriver(null) }} />}
+      {authDriver && <DriverGoogleAuthModal driver={authDriver} api={api} onClose={() => setAuthDriver(null)} onSaved={async () => { await onChanged(); setAuthDriver(null) }} />}
     </section>
   )
+}
+
+function DriverGoogleAuthModal({ driver, api, onClose, onSaved }: { driver: DriverRow; api: ApiClient; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [email, setEmail] = useState(driver.google_email ?? driver.email)
+  const [saving, setSaving] = useState(false)
+  const action = async (message: string, work: () => Promise<unknown>) => {
+    if (!driver.driver_id || !confirm(message)) return
+    setSaving(true)
+    try {
+      await work()
+      await onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveEmail = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!driver.driver_id) return
+    setSaving(true)
+    try {
+      await api(`/admin/drivers/${driver.driver_id}/google-auth`, {
+        method: 'PATCH',
+        body: JSON.stringify({ email }),
+      })
+      await onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal driver-auth-modal" role="dialog" aria-modal="true">
+        <div className="modal-header">
+          <div><h2>Google Login Driver</h2><p>{driver.name} - {driver.username}</p></div>
+          <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <div className="driver-auth-grid">
+          <StatusInfo label="Bind" value={driver.google_bound ? 'Terhubung' : 'Belum bind'} tone={driver.google_bound ? 'success' : 'warning'} />
+          <StatusInfo label="Auth" value={driver.auth_suspended_at ? 'Suspended' : driver.auth_locked_until ? 'Locked' : 'Normal'} tone={driver.auth_suspended_at || driver.auth_locked_until ? 'danger' : 'success'} />
+          <StatusInfo label="Failed" value={String(driver.auth_failed_attempts ?? 0)} tone={(driver.auth_failed_attempts ?? 0) > 0 ? 'warning' : 'muted'} />
+          <StatusInfo label="Last login" value={driver.last_login_at ?? '-'} tone="muted" />
+        </div>
+        <div className="driver-auth-meta">
+          <span>Email login: {driver.google_email ?? driver.email}</span>
+          <span>Device: {driver.last_login_device ?? '-'}</span>
+          <span>IP: {driver.last_login_ip ?? '-'}</span>
+          <span>Locked until: {driver.auth_locked_until ?? '-'}</span>
+        </div>
+        <form className="user-form" onSubmit={saveEmail}>
+          <fieldset>
+            <legend>Email Google Driver</legend>
+            <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+          </fieldset>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving} type="submit">{saving ? 'Saving...' : 'Save Email'}</button></div>
+        </form>
+        <div className="row-actions driver-auth-actions">
+          <button className="mini-button" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Reset Google bind ${driver.name}? Driver dapat login ulang dengan akun Google baru.`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/reset-bind`, { method: 'POST' }))}>Reset Bind</button>
+          <button className="mini-button" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Revoke semua token aktif ${driver.name}?`, () => api(`/admin/drivers/${driver.driver_id}/reset-token`, { method: 'POST' }))}>Revoke Token</button>
+          <button className="mini-button reject" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Suspend auth Google ${driver.name}?`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/suspend`, { method: 'POST' }))}>Suspend Auth</button>
+          <button className="mini-button approve" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Unlock auth Google ${driver.name}?`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/unlock`, { method: 'POST' }))}>Unlock Auth</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatusInfo({ label, value, tone }: { label: string; value: string; tone: 'success' | 'warning' | 'danger' | 'muted' }) {
+  return <div className="auth-status-card"><span>{label}</span><strong className={`status ${tone}`}>{value}</strong></div>
 }
 
 function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver: DriverRow; services: ServiceRow[]; api: ApiClient; onClose: () => void; onSaved: () => Promise<void> }) {

@@ -10,6 +10,14 @@ import { setupDriverPush } from './push'
 declare global {
   interface Window {
     Pusher?: typeof Pusher
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: { client_id: string; callback: (response: { credential?: string }) => void }) => void
+          renderButton: (element: HTMLElement, options: Record<string, string | number | boolean>) => void
+        }
+      }
+    }
   }
 }
 
@@ -27,7 +35,7 @@ type Driver = {
   phone: string | null
   email?: string | null
   role: string
-  status: 'active' | 'suspended' | 'suspended_unpaid'
+  status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
   suspended_until?: string | null
   suspension_reason?: string | null
   oper_handle_count: number
@@ -81,6 +89,10 @@ type ReplyTarget = {
   text: string
 }
 type PublicSettings = {
+  oauth?: {
+    google_enabled: boolean
+    google_client_id?: string | null
+  }
   push?: {
     enabled: boolean
     vapid_key?: string | null
@@ -418,7 +430,7 @@ function App() {
     }
   }
 
-  if (view === 'login') return <><LoginScreen onLoggedIn={() => void load()} /><ToastStack toasts={toasts} /></>
+  if (view === 'login') return <><LoginScreen publicSettings={publicSettings} onLoggedIn={() => void load()} /><ToastStack toasts={toasts} /></>
   if (apiState.loading && !driver) return <Shell><SkeletonPage /></Shell>
   if (apiState.error && !driver) return <Shell><ErrorState message={apiState.error} onRetry={load} /></Shell>
   if (!driver) return null
@@ -443,26 +455,67 @@ function Shell({ children }: { children: ReactNode }) {
   return <main className="app-shell">{children}</main>
 }
 
-function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
+function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSettings | null; onLoggedIn: () => void }) {
   const setToken = useDriverStore((state) => state.setToken)
   const toast = useDriverStore((state) => state.toast)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const googleButtonRef = useRef<HTMLDivElement | null>(null)
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? publicSettings?.oauth?.google_client_id ?? ''
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setLoading(true)
-    try {
-      const { data } = await axios.post(`${API_BASE}/auth/login`, { email, password })
-      setToken(data.token)
-      onLoggedIn()
-    } catch (error) {
-      toast(getLoginErrorMessage(error), 'danger')
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    if (!googleClientId || !googleButtonRef.current) return
+
+    const setupGoogleButton = () => {
+      if (!window.google || !googleButtonRef.current) return
+
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async ({ credential }) => {
+          if (!credential) {
+            toast('Google tidak mengembalikan token login.', 'danger')
+            return
+          }
+
+          setLoading(true)
+          try {
+            const { data } = await axios.post(`${API_BASE}/driver/auth/google`, {
+              token: credential,
+              device_name: navigator.userAgent.slice(0, 100),
+            })
+            setToken(data.token)
+            onLoggedIn()
+          } catch (error) {
+            toast(getLoginErrorMessage(error), 'danger')
+          } finally {
+            setLoading(false)
+          }
+        },
+      })
+
+      googleButtonRef.current.innerHTML = ''
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: 320,
+        text: 'signin_with',
+        shape: 'rectangular',
+      })
     }
-  }
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]')
+    if (existingScript) {
+      if (window.google) setupGoogleButton()
+      else existingScript.addEventListener('load', setupGoogleButton, { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = 'https://accounts.google.com/gsi/client'
+    script.async = true
+    script.defer = true
+    script.addEventListener('load', setupGoogleButton, { once: true })
+    document.head.appendChild(script)
+  }, [googleClientId, onLoggedIn, setToken, toast])
 
   return (
     <main className="login-screen">
@@ -472,11 +525,16 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
         <p>Kelola order aktif, chat, dan perjalanan dari satu dashboard.</p>
         <PwaInstallButton />
       </section>
-      <form className="panel login-card" onSubmit={submit}>
-        <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-        <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-        <button className="primary-button" disabled={loading} type="submit">{loading ? 'Masuk...' : 'Masuk'}</button>
-      </form>
+      <section className="panel login-card">
+        {googleClientId ? (
+          <>
+            <div className="google-login-slot" ref={googleButtonRef} />
+            {loading && <p className="login-hint">Memverifikasi akun Google...</p>}
+          </>
+        ) : (
+          <p className="login-hint">Login Google driver belum dikonfigurasi.</p>
+        )}
+      </section>
     </main>
   )
 }
@@ -1552,10 +1610,16 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function getLoginErrorMessage(error: unknown) {
-  if (axios.isAxiosError(error) && error.response?.status === 401) return 'Email atau password salah.'
+  if (axios.isAxiosError(error)) {
+    const message = getErrorMessage(error, 'Login driver gagal')
+    if (message === 'Email tidak terdaftar sebagai driver') return 'Akun Google ini belum terdaftar sebagai driver'
+    if (message === 'Akun Google tidak sesuai dengan driver ini') return 'Akun Google berbeda. Hubungi admin.'
+    if (error.response?.status === 423) return 'Login terkunci sementara. Coba lagi 15 menit atau hubungi admin.'
+    return message
+  }
 
   const message = getErrorMessage(error, 'Login driver gagal')
-  return /401|unauthorized/i.test(message) ? 'Email atau password salah.' : message
+  return /401|unauthorized/i.test(message) ? 'Login Google gagal. Silakan coba lagi.' : message
 }
 function assetUrl(path: string) { return path.startsWith('http') ? path : `${API_BASE.replace(/\/api$/, '')}${path}` }
 function formatChatTime(value?: string) { return value ? new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '' }

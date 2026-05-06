@@ -3,7 +3,11 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Widgets\ModernStatsOverview;
+use App\Filament\Widgets\OperationsChartWidget;
+use App\Filament\Widgets\ProductionTimelineWidget;
 use App\Filament\Widgets\RecentActivityWidget;
+use App\Filament\Widgets\ServerMonitoringWidget;
+use App\Filament\Widgets\ServerUsageChartWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -31,6 +35,8 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->darkMode()
+            ->breadcrumbs()
+            ->sidebarCollapsibleOnDesktop()
             ->colors([
                 'primary' => Color::Amber,
                 'orange' => Color::Orange,
@@ -94,7 +100,78 @@ class AdminPanelProvider extends PanelProvider
                     .fi-ta-row:hover {
                         background-color: rgba(30, 41, 59, 0.72) !important;
                     }
+
+                    .fi-breadcrumbs,
+                    .fi-breadcrumbs a,
+                    .fi-breadcrumbs span {
+                        color: #cbd5e1 !important;
+                    }
+
+                    .fi-sidebar-item-active > .fi-sidebar-item-button,
+                    .fi-sidebar-item-button[aria-current='page'] {
+                        background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(14, 165, 233, 0.14)) !important;
+                        border: 1px solid rgba(251, 191, 36, 0.28) !important;
+                    }
+
+                    .fi-sidebar-item-active .fi-sidebar-item-label,
+                    .fi-sidebar-item-active svg {
+                        color: #fbbf24 !important;
+                    }
+
+                    .jojo-recent-pages {
+                        align-items: center;
+                        display: flex;
+                        gap: .45rem;
+                        margin-bottom: .75rem;
+                        overflow-x: auto;
+                        padding-bottom: .25rem;
+                    }
+
+                    .jojo-recent-pages a {
+                        background: rgba(15, 23, 42, .8);
+                        border: 1px solid rgba(148, 163, 184, .18);
+                        border-radius: 999px;
+                        color: #cbd5e1;
+                        font-size: .76rem;
+                        font-weight: 700;
+                        padding: .38rem .68rem;
+                        white-space: nowrap;
+                    }
                 </style>
+                <script>
+                    document.addEventListener('DOMContentLoaded', () => {
+                        const sidebar = document.querySelector('.fi-sidebar-nav');
+                        const key = 'jojo:filament-sidebar-scroll';
+
+                        if (sidebar) {
+                            const savedTop = sessionStorage.getItem(key);
+                            if (savedTop) sidebar.scrollTop = Number(savedTop);
+                            sidebar.addEventListener('scroll', () => sessionStorage.setItem(key, String(sidebar.scrollTop)), { passive: true });
+                            const active = sidebar.querySelector('.fi-sidebar-item-active, [aria-current="page"]');
+                            if (active && !savedTop) active.scrollIntoView({ block: 'center' });
+                        }
+
+                        const title = document.querySelector('h1')?.textContent?.trim() || document.title.replace(' - Jojoapp', '').trim();
+                        const url = window.location.href;
+                        const historyKey = 'jojo:recent-pages';
+                        const pages = JSON.parse(localStorage.getItem(historyKey) || '[]').filter((item) => item.url !== url);
+                        pages.unshift({ title, url });
+                        localStorage.setItem(historyKey, JSON.stringify(pages.slice(0, 6)));
+
+                        const main = document.querySelector('.fi-main');
+                        if (main && !document.querySelector('.jojo-recent-pages')) {
+                            const wrap = document.createElement('div');
+                            wrap.className = 'jojo-recent-pages';
+                            JSON.parse(localStorage.getItem(historyKey) || '[]').slice(0, 5).forEach((item) => {
+                                const link = document.createElement('a');
+                                link.href = item.url;
+                                link.textContent = item.title || 'Recent Page';
+                                wrap.appendChild(link);
+                            });
+                            main.prepend(wrap);
+                        }
+                    });
+                </script>
             HTML))
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
@@ -103,6 +180,10 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->widgets([
                 ModernStatsOverview::class,
+                ServerMonitoringWidget::class,
+                OperationsChartWidget::class,
+                ServerUsageChartWidget::class,
+                ProductionTimelineWidget::class,
                 RecentActivityWidget::class,
                 Widgets\AccountWidget::class,
             ])

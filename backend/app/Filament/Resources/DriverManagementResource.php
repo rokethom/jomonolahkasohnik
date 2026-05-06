@@ -4,16 +4,21 @@ namespace App\Filament\Resources;
 
 use App\Enums\UserRole;
 use App\Filament\Resources\DriverManagementResource\Pages;
+use App\Models\AuditLog;
+use App\Models\Branch;
 use App\Models\User;
 use App\Models\Service;
+use App\Services\DriverManagementCsvService;
 use App\Services\DriverSuspendService;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 class DriverManagementResource extends Resource
 {
@@ -57,23 +62,40 @@ class DriverManagementResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
+                    ->label('Driver')
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
-                    ->extraAttributes(['class' => 'sticky left-0 bg-white dark:bg-gray-900 z-10'], merge: true)
-                    ->extraHeaderAttributes(['class' => 'sticky left-0 bg-white dark:bg-gray-900 z-20'], merge: true)
-                    ->extraCellAttributes(['class' => 'sticky left-0 bg-white dark:bg-gray-900 z-10'], merge: true),
-                Tables\Columns\TextColumn::make('username')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('phone')->placeholder('-'),
-                Tables\Columns\TextColumn::make('branch.name')->label('Branch')->placeholder('Global'),
+                    ->description(fn (User $record): string => trim(implode(' | ', array_filter([
+                        $record->username,
+                        $record->phone,
+                    ]))) ?: '-')
+                    ->wrap(),
+                Tables\Columns\TextColumn::make('username')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('phone')
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('branch_id')
+                    ->label('Branch')
+                    ->getStateUsing(fn (User $record): string => $record->branch?->display_name ?? 'Global')
+                    ->description(fn (User $record): ?string => $record->branch?->area ? 'Area: '.$record->branch->area : null)
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereHas('branch', fn (Builder $query): Builder => $query
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('area', 'like', "%{$search}%")))
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('driver.vehicle_type')
                     ->label('Kendaraan')
                     ->badge()
-                    ->default('motor'),
+                    ->default('motor')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('driver.allowed_service_types')
                     ->label('Layanan')
                     ->formatStateUsing(fn (?array $state): string => $state ? implode(', ', $state) : 'Semua layanan')
-                    ->badge(),
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('driver.status')
                     ->label('Driver Status')
                     ->badge()
@@ -86,14 +108,58 @@ class DriverManagementResource extends Resource
                 Tables\Columns\TextColumn::make('driver.suspended_until')
                     ->label('Until')
                     ->dateTime()
-                    ->placeholder('-'),
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('google_auth_summary')
+                    ->label('Google Auth')
+                    ->badge()
+                    ->getStateUsing(fn (User $record): string => self::googleAuthState($record))
+                    ->color(fn (string $state): string => match ($state) {
+                        'Suspended' => 'danger',
+                        'Locked' => 'warning',
+                        'Bound' => 'success',
+                        default => 'gray',
+                    })
+                    ->description(fn (User $record): string => $record->driver?->email ?: $record->email ?: '-'),
+                Tables\Columns\TextColumn::make('driver.email')
+                    ->label('Email Google')
+                    ->getStateUsing(fn (User $record): string => $record->driver?->email ?: $record->email)
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('driver.last_login_at')
+                    ->label('Login Terakhir')
+                    ->dateTime()
+                    ->placeholder('-')
+                    ->description(fn (User $record): string => $record->driver?->last_login_device ? 'Device: '.$record->driver->last_login_device : '')
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('driver.last_login_device')
+                    ->label('Device')
+                    ->limit(40)
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('driver.auth_failed_attempts')
+                    ->label('Fail')
+                    ->numeric()
+                    ->badge()
+                    ->color(fn (?int $state): string => ($state ?? 0) >= 5 ? 'danger' : (($state ?? 0) > 0 ? 'warning' : 'gray'))
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('driver.auth_locked_until')
+                    ->label('Auth Lock')
+                    ->dateTime()
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\IconColumn::make('driver.auth_suspended_at')
+                    ->label('Auth Suspend')
+                    ->boolean()
+                    ->getStateUsing(fn (User $record): bool => $record->driver?->auth_suspended_at !== null)
+                    ->trueColor('danger')
+                    ->falseColor('success')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('driver.oper_handle_count')
                     ->label('Oper')
                     ->numeric()
                     ->sortable()
-                    ->extraAttributes(['class' => 'sticky right-0 bg-white dark:bg-gray-900 z-10'], merge: true)
-                    ->extraHeaderAttributes(['class' => 'sticky right-0 bg-white dark:bg-gray-900 z-20'], merge: true)
-                    ->extraCellAttributes(['class' => 'sticky right-0 bg-white dark:bg-gray-900 z-10'], merge: true),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('driver_status')
@@ -106,9 +172,103 @@ class DriverManagementResource extends Resource
                     ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
                         ? $query->whereHas('driver', fn (Builder $query): Builder => $query->where('status', $data['value']))
                         : $query),
+                Tables\Filters\SelectFilter::make('branch_id')
+                    ->label('Cabang / Area')
+                    ->options(fn (): array => Branch::query()
+                        ->orderBy('name')
+                        ->get()
+                        ->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])
+                        ->all())
+                    ->searchable()
+                    ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        ? $query->where('branch_id', $data['value'])
+                        : $query),
+                Tables\Filters\SelectFilter::make('google_auth')
+                    ->label('Google Auth')
+                    ->options([
+                        'bound' => 'Sudah bind',
+                        'unbound' => 'Belum bind',
+                        'locked' => 'Terkunci sementara',
+                        'suspended' => 'Auth disuspend',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return match ($data['value'] ?? null) {
+                            'bound' => $query->whereHas('driver', fn (Builder $query): Builder => $query->whereNotNull('google_id')),
+                            'unbound' => $query->whereHas('driver', fn (Builder $query): Builder => $query->whereNull('google_id')),
+                            'locked' => $query->whereHas('driver', fn (Builder $query): Builder => $query->where('auth_locked_until', '>', now())),
+                            'suspended' => $query->whereHas('driver', fn (Builder $query): Builder => $query->whereNotNull('auth_suspended_at')),
+                            default => $query,
+                        };
+                    }),
+            ])
+            ->filtersLayout(FiltersLayout::AboveContent)
+            ->filtersFormColumns(2)
+            ->headerActions([
+                Tables\Actions\Action::make('exportDrivers')
+                    ->label('Export CSV')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->visible(fn (): bool => self::canManageDriverAuth())
+                    ->action(fn () => app(DriverManagementCsvService::class)->downloadCsv()),
+                Tables\Actions\Action::make('importDrivers')
+                    ->label('Import CSV')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('warning')
+                    ->visible(fn (): bool => self::canManageDriverAuth())
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('File CSV dari Export Driver')
+                            ->disk('local')
+                            ->directory('imports/driver-management')
+                            ->visibility('private')
+                            ->acceptedFileTypes([
+                                'text/csv',
+                                'text/plain',
+                                'application/csv',
+                                'application/vnd.ms-excel',
+                                'application/octet-stream',
+                                'text/comma-separated-values',
+                            ])
+                            ->maxSize(5120)
+                            ->required()
+                            ->helperText('Gunakan file CSV hasil export. Edit di Excel, lalu simpan lagi sebagai CSV. Pisahkan layanan dengan tanda |.'),
+                    ])
+                    ->modalHeading('Import Driver dari CSV')
+                    ->modalDescription('Data akan update driver yang sudah ada berdasarkan user_id/driver_id. Sistem tidak membuat driver baru.')
+                    ->action(function (array $data): void {
+                        $path = (string) ($data['file'] ?? '');
+
+                        if (blank($path) || ! Storage::disk('local')->exists($path)) {
+                            Notification::make()
+                                ->title('File import tidak ditemukan')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        $result = app(DriverManagementCsvService::class)->importCsv(Storage::disk('local')->path($path));
+                        Storage::disk('local')->delete($path);
+
+                        $body = "Berhasil update {$result['updated']} driver.";
+                        if ($result['skipped'] > 0) {
+                            $body .= " Gagal/skip {$result['skipped']} baris.";
+                        }
+                        if ($result['errors'] !== []) {
+                            $body .= "\n".implode("\n", $result['errors']);
+                        }
+
+                        Notification::make()
+                            ->title('Import driver selesai')
+                            ->body($body)
+                            ->success()
+                            ->persistent()
+                            ->send();
+                    }),
             ])
             ->actions([
-                Tables\Actions\Action::make('suspend')
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('suspend')
                     ->icon('heroicon-o-no-symbol')
                     ->color('danger')
                     ->visible(fn (User $record): bool => self::canControlSuspend() && $record->driver !== null)
@@ -150,7 +310,7 @@ class DriverManagementResource extends Resource
 
                         Notification::make()->title('Driver disuspend')->success()->send();
                     }),
-                Tables\Actions\Action::make('release')
+                    Tables\Actions\Action::make('release')
                     ->label('Release Suspend')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
@@ -161,7 +321,7 @@ class DriverManagementResource extends Resource
 
                         Notification::make()->title('Suspend driver dirilis')->success()->send();
                     }),
-                Tables\Actions\Action::make('resetToken')
+                    Tables\Actions\Action::make('resetToken')
                     ->label('Reset Token')
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
@@ -173,7 +333,95 @@ class DriverManagementResource extends Resource
 
                         Notification::make()->title('Token driver direset')->body('Minta driver login ulang.')->success()->send();
                     }),
-                Tables\Actions\Action::make('config')
+                    Tables\Actions\Action::make('googleAuthEmail')
+                    ->label('Edit Google Email')
+                    ->icon('heroicon-o-envelope')
+                    ->color('info')
+                    ->visible(fn (User $record): bool => self::canManageDriverAuth() && $record->driver !== null)
+                    ->form([
+                        Forms\Components\TextInput::make('email')
+                            ->label('Email Google Driver')
+                            ->email()
+                            ->required()
+                            ->default(fn (User $record): string => $record->driver?->email ?: $record->email)
+                            ->helperText('Email ini dipakai untuk mencocokkan akun Google driver.'),
+                    ])
+                    ->action(function (User $record, array $data): void {
+                        $driver = $record->driver;
+                        if (! $driver) {
+                            return;
+                        }
+
+                        $oldEmail = $driver->email ?: $record->email;
+                        $email = strtolower((string) $data['email']);
+
+                        $record->forceFill(['email' => $email])->save();
+                        $driver->forceFill(['email' => $email])->save();
+
+                        self::recordDriverAuthAudit('filament_updated_driver_google_email', $record, [
+                            'driver_id' => $driver->id,
+                            'old_email' => $oldEmail,
+                            'new_email' => $email,
+                        ]);
+
+                        Notification::make()->title('Email Google driver tersimpan')->success()->send();
+                    }),
+                    Tables\Actions\Action::make('resetGoogleBind')
+                    ->label('Reset Google Bind')
+                    ->icon('heroicon-o-link-slash')
+                    ->color('warning')
+                    ->visible(fn (User $record): bool => self::canManageDriverAuth() && $record->driver !== null)
+                    ->requiresConfirmation()
+                    ->modalDescription('google_id akan dikosongkan, token aktif dicabut, dan driver dapat login ulang memakai akun Google baru.')
+                    ->action(function (User $record): void {
+                        $record->driver?->forceFill([
+                            'google_id' => null,
+                            'auth_failed_attempts' => 0,
+                            'auth_locked_until' => null,
+                        ])->save();
+                        $record->tokens()->delete();
+
+                        self::recordDriverAuthAudit('filament_reset_driver_google_bind', $record, ['driver_id' => $record->driver?->id]);
+
+                        Notification::make()->title('Google bind driver direset')->body('Driver dapat login ulang dengan akun Google baru.')->success()->send();
+                    }),
+                    Tables\Actions\Action::make('suspendGoogleAuth')
+                    ->label('Suspend Auth')
+                    ->icon('heroicon-o-shield-exclamation')
+                    ->color('danger')
+                    ->visible(fn (User $record): bool => self::canManageDriverAuth() && $record->driver !== null && $record->driver->auth_suspended_at === null)
+                    ->requiresConfirmation()
+                    ->modalDescription('Auth Google driver akan disuspend dan semua token aktif dicabut.')
+                    ->action(function (User $record): void {
+                        $record->driver?->forceFill(['auth_suspended_at' => now()])->save();
+                        $record->tokens()->delete();
+
+                        self::recordDriverAuthAudit('filament_suspended_driver_google_auth', $record, ['driver_id' => $record->driver?->id]);
+
+                        Notification::make()->title('Auth Google driver disuspend')->success()->send();
+                    }),
+                    Tables\Actions\Action::make('unlockGoogleAuth')
+                    ->label('Unlock Auth')
+                    ->icon('heroicon-o-lock-open')
+                    ->color('success')
+                    ->visible(fn (User $record): bool => self::canManageDriverAuth() && $record->driver !== null && (
+                        $record->driver->auth_suspended_at !== null
+                        || $record->driver->auth_locked_until !== null
+                        || (int) $record->driver->auth_failed_attempts > 0
+                    ))
+                    ->requiresConfirmation()
+                    ->action(function (User $record): void {
+                        $record->driver?->forceFill([
+                            'auth_suspended_at' => null,
+                            'auth_locked_until' => null,
+                            'auth_failed_attempts' => 0,
+                        ])->save();
+
+                        self::recordDriverAuthAudit('filament_unlocked_driver_google_auth', $record, ['driver_id' => $record->driver?->id]);
+
+                        Notification::make()->title('Auth Google driver di-unlock')->success()->send();
+                    }),
+                    Tables\Actions\Action::make('config')
                     ->label('Config Layanan')
                     ->icon('heroicon-o-adjustments-horizontal')
                     ->color('info')
@@ -208,7 +456,7 @@ class DriverManagementResource extends Resource
 
                         Notification::make()->title('Config layanan driver tersimpan')->success()->send();
                     }),
-                Tables\Actions\Action::make('history')
+                    Tables\Actions\Action::make('history')
                     ->label('Histori')
                     ->icon('heroicon-o-clock')
                     ->modalHeading(fn (User $record): string => 'Histori Suspend '.$record->name)
@@ -217,14 +465,61 @@ class DriverManagementResource extends Resource
                     ]))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup'),
-            ]);
+                ])
+                    ->label('Kelola')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->button(),
+            ])
+            ->defaultSort('name')
+            ->striped();
     }
 
     public static function canControlSuspend(): bool
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
+        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+    }
+
+    public static function canManageDriverAuth(): bool
+    {
+        return static::canControlSuspend()
+            && Auth::user()?->hasPermission('suspend_driver') === true;
+    }
+
+    private static function googleAuthState(User $record): string
+    {
+        $driver = $record->driver;
+
+        if (! $driver) {
+            return 'No Driver';
+        }
+
+        if ($driver->auth_suspended_at !== null) {
+            return 'Suspended';
+        }
+
+        if ($driver->auth_locked_until !== null && $driver->auth_locked_until->isFuture()) {
+            return 'Locked';
+        }
+
+        return filled($driver->google_id) ? 'Bound' : 'Unbound';
+    }
+
+    private static function recordDriverAuthAudit(string $action, User $driverUser, array $metadata = []): void
+    {
+        AuditLog::query()->create([
+            'user_id' => Auth::id(),
+            'action' => $action,
+            'subject_type' => User::class,
+            'subject_id' => $driverUser->id,
+            'subject_label' => $driverUser->email,
+            'metadata' => [
+                ...$metadata,
+                'driver_user_id' => $driverUser->id,
+                'driver_email' => $driverUser->email,
+            ],
+        ]);
     }
 
     private static function serviceTypeFromService(Service $service): string
