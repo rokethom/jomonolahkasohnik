@@ -47,6 +47,7 @@ import {
   sendChatMessage,
   sendOrderMessage,
   startOperatorChat,
+  submitOperatorRating,
   submitOrderRating,
   updateProfile,
   updateUserLocation,
@@ -58,7 +59,7 @@ import {
 import { setupPushNotifications } from './services/push'
 import { getEcho, resetEcho } from './services/realtime'
 import { useCustomerStore } from './store/useCustomerStore'
-import type { ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
+import type { ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
 
 type Screen = 'home' | 'order-chat' | 'driver-chat' | 'cs-chat' | 'history' | 'profile' | 'profile-setup' | 'login'
 type JojoHistoryState = {
@@ -141,6 +142,14 @@ function todayLabel() {
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date())
 }
 
+function greetingByTime() {
+  const hour = new Date().getHours()
+  if (hour >= 4 && hour < 11) return 'Pagi'
+  if (hour >= 11 && hour < 15) return 'Siang'
+  if (hour >= 15 && hour < 18) return 'Sore'
+  return 'Malam'
+}
+
 function nowTime() {
   return new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(new Date())
 }
@@ -151,6 +160,12 @@ function formatRupiah(value?: number) {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value ?? 0)
+}
+
+function paymentMethodLabel(method?: string | null) {
+  if (method === 'transfer') return 'Pembayaran Transfer'
+  if (method === 'qris') return 'Pembayaran QRIS'
+  return 'Pembayaran Cash'
 }
 
 function driverNameFromOrder(order?: Order | null) {
@@ -739,7 +754,7 @@ function App() {
     <ChatLayout
       screen={screen}
       title="JOJO"
-      subtitle={screen === 'driver-chat' ? 'Chat dengan driver' : screen === 'cs-chat' ? 'Chat ke CS Jojo' : screen === 'profile-setup' ? 'Lengkapi profile' : 'SI APLIKASI JOKER'}
+      subtitle={screen === 'driver-chat' ? 'Chat dengan driver' : screen === 'cs-chat' ? 'Hubungi Operator' : screen === 'profile-setup' ? 'Lengkapi profile' : 'SI APLIKASI JOKER'}
       showCall={screen === 'driver-chat'}
       showBack={Boolean(token) && screen !== 'home'}
       onBack={() => setScreen(token ? isProfileComplete(store.user) ? 'home' : 'profile-setup' : 'login')}
@@ -748,7 +763,7 @@ function App() {
       showDriverChat={Boolean(acceptedOrder)}
       authenticated={Boolean(token)}
     >
-      {screen === 'home' && <HomeScreen homeData={homeData} onOrder={openOrder} onOpen={(target) => setScreen(target)} />}
+      {screen === 'home' && <HomeScreen homeData={homeData} publicSettings={publicSettings} onOrder={openOrder} onOpen={(target) => setScreen(target)} />}
       {orderClosedMessage && <OrderClosedModal message={orderClosedMessage} onClose={() => setOrderClosedMessage('')} />}
       {screen === 'order-chat' && (
         <ChatOrderScreen
@@ -782,6 +797,7 @@ function App() {
           }}
           pendingOrder={pendingOrder}
           onPendingOrderChange={setPendingOrder}
+          publicSettings={publicSettings}
           submitBlocked={orderSubmitBlocked}
         />
       )}
@@ -867,7 +883,7 @@ function ChatLayout({
               {showDriverChat && <button onClick={() => { setOpen(false); onMenu('driver-chat') }}>Chat Driver</button>}
               <button onClick={() => { setOpen(false); onMenu('profile') }}>Profile</button>
               <button onClick={() => { setOpen(false); onMenu('history') }}>History Order</button>
-              <button onClick={() => { setOpen(false); onMenu('cs-chat') }}>Chat ke CS</button>
+              <button onClick={() => { setOpen(false); onMenu('cs-chat') }}>Hubungi Operator</button>
               <button onClick={() => { setOpen(false); onMenu('logout') }}>Logout</button>
             </div>
           )}
@@ -880,10 +896,12 @@ function ChatLayout({
 
 function HomeScreen({
   homeData,
+  publicSettings,
   onOrder,
   onOpen,
 }: {
   homeData: HomeData | null
+  publicSettings: PublicSettings | null
   onOrder: () => void
   onOpen: (screen: Screen) => void
 }) {
@@ -891,12 +909,14 @@ function HomeScreen({
   const promoSection = homeData?.sections.find((section) => section.type === 'promo' || /promo/i.test(section.name))
   const announcement = homeData?.announcements[0]
   const customerName = useCustomerStore((state) => state.user?.name?.trim() || 'Customer')
+  const greeting = greetingByTime()
+  const complaintUrl = publicSettings?.support?.complaint_whatsapp_url ?? 'https://wa.me/6281299232918'
 
   return (
     <div className="home-screen">
       <section className="home-hero">
         <div className="hero-copy">
-          <h1>Hai {customerName},<br />Selamat Datang!</h1>
+          <h1>Hai {customerName},<br />Selamat {greeting}</h1>
           <p>Pesan berbagai layanan cepat, aman dan terpercaya lewat <strong>JOJO si Aplikasi Joker</strong>.</p>
           <button className="order-cta" onClick={onOrder}>
             <MessageCircle size={19} />
@@ -938,13 +958,14 @@ function HomeScreen({
       <section className="reason-grid">
         <Reason icon={<ShieldCheck />} title="Aman & Terpercaya" />
         <Reason icon={<Clock />} title="Cepat & Tepat Waktu" />
-        <Reason icon={<Headphones />} title="CS 24 Jam Siap Bantu" />
+        <Reason icon={<Headphones />} title="Operator Siap Bantu" />
         <Reason icon={<ThumbsUp />} title="Banyak Promo Menarik" />
       </section>
       <nav className="home-nav">
         <button onClick={() => onOpen('history')}>History Order</button>
         <button onClick={() => onOpen('profile')}>Profile</button>
-        <button onClick={() => onOpen('cs-chat')}>Chat ke CS</button>
+        <button onClick={() => onOpen('cs-chat')}>Hubungi Operator</button>
+        <button onClick={() => window.open(complaintUrl, '_blank', 'noopener,noreferrer')}>Laporkan Keluhan</button>
       </nav>
       <button className="bottom-order" onClick={onOrder}>
         <SendHorizontal size={24} />
@@ -1034,6 +1055,7 @@ function ChatOrderScreen({
   onGiftPreview,
   pendingOrder,
   onPendingOrderChange,
+  publicSettings,
   submitBlocked,
 }: {
   messages: LocalMessage[]
@@ -1054,6 +1076,7 @@ function ChatOrderScreen({
   onGiftPreview: (text: string) => void
   pendingOrder: OrderPayload | null
   onPendingOrderChange: (payload: OrderPayload | null) => void
+  publicSettings: PublicSettings | null
   submitBlocked: boolean
 }) {
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -1100,6 +1123,7 @@ function ChatOrderScreen({
             preview={messages.at(-1)?.preview}
             pendingOrder={pendingOrder}
             onPendingOrderChange={onPendingOrderChange}
+            publicSettings={publicSettings}
             onConfirm={() => onSend('ya')}
             submitBlocked={submitBlocked}
           />
@@ -1496,17 +1520,33 @@ function ChatOrderActions({
   preview,
   pendingOrder,
   onPendingOrderChange,
+  publicSettings,
   onConfirm,
   submitBlocked,
 }: {
   preview?: JojoBotPreview
   pendingOrder: OrderPayload | null
   onPendingOrderChange: (payload: OrderPayload | null) => void
+  publicSettings: PublicSettings | null
   onConfirm: () => void
   submitBlocked: boolean
 }) {
   const [points, setPoints] = useState<string[]>([])
   const [showSummary, setShowSummary] = useState(preview?.intent === 'order_preview')
+  const configuredPaymentMethods = publicSettings?.payment?.methods?.length
+    ? publicSettings.payment.methods
+    : [{ key: 'cash', label: 'Pembayaran Cash', description: 'Bayar manual ke driver.' }]
+  const qrisImageUrl = publicSettings?.payment?.qris_image_url ?? null
+  const paymentMethods = qrisImageUrl && !configuredPaymentMethods.some((method) => method.key === 'qris')
+    ? [...configuredPaymentMethods, { key: 'qris', label: 'Pembayaran QRIS', description: 'Scan QRIS aplikasi.' }]
+    : configuredPaymentMethods
+  const selectedPayment = pendingOrder?.payment_method ?? paymentMethods[0]?.key ?? 'cash'
+  const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
+    ? publicSettings.payment.transfer_accounts
+    : publicSettings?.payment?.transfer_account
+      ? [publicSettings.payment.transfer_account]
+      : []
+  const selectedPaymentMethod = paymentMethods.find((method) => method.key === selectedPayment)
 
   const updatePoint = (index: number, value: string) => {
     const nextPoints = points.map((point, pointIndex) => pointIndex === index ? value : point)
@@ -1543,6 +1583,56 @@ function ChatOrderActions({
         <div className="final-preview-card">
           <strong>Summary final</strong>
           <p>{preview.reply}</p>
+          <div className="payment-choice">
+            <label>
+              <span>Metode pembayaran</span>
+              <select value={selectedPayment} onChange={(event) => pendingOrder && onPendingOrderChange({ ...pendingOrder, payment_method: event.target.value })}>
+                {paymentMethods.map((method) => <option key={method.key} value={method.key}>{method.label}</option>)}
+              </select>
+            </label>
+            {selectedPaymentMethod?.description && <small>{selectedPaymentMethod.description}</small>}
+          </div>
+          {selectedPayment === 'transfer' && (
+            <div className="payment-transfer-panel">
+              {transferAccounts.length > 0 && (
+                <div className="payment-bank-list">
+                  {transferAccounts.map((account, index) => (
+                    <button
+                      key={`${account.bank}-${account.account_number}-${index}`}
+                      type="button"
+                      onClick={() => account.account_number && navigator.clipboard?.writeText(account.account_number).catch(() => undefined)}
+                    >
+                      <span>{account.bank || 'Bank'}</span>
+                      <strong>{account.account_number || '-'}</strong>
+                      <small>a.n. {account.account_name || 'JojoApp'}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {qrisImageUrl && (
+                <div className="payment-qris">
+                  <span>QRIS Aplikasi</span>
+                  <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
+                </div>
+              )}
+              {transferAccounts.length === 0 && !qrisImageUrl && <p className="payment-account">Rekening transfer belum disetting admin.</p>}
+            </div>
+          )}
+          {selectedPayment === 'qris' && (
+            <div className="payment-transfer-panel">
+              {qrisImageUrl ? (
+                <div className="payment-qris">
+                  <span>QRIS Aplikasi</span>
+                  <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
+                  <a href={qrisImageUrl} download target="_blank" rel="noreferrer">Download QRIS</a>
+                </div>
+              ) : <p className="payment-account">QRIS belum disetting admin.</p>}
+            </div>
+          )}
+          <div className="payment-order-note">
+            <span>Pembayaran order</span>
+            <strong>{selectedPaymentMethod?.label ?? selectedPayment}</strong>
+          </div>
           {submitBlocked && <p>Anda melebihi batas order aktif. Silakan selesaikan salah satu pesanan terlebih dahulu.</p>}
           {points.filter(Boolean).length > 0 && <p>{points.filter(Boolean).map((point, index) => `Titik ${index + 1}: ${point}`).join('\n')}</p>}
           <div>
@@ -1565,7 +1655,7 @@ function MessageBubble({ message, onCs, onOrderDetail, onImageClick, onReply }: 
     <article className={`message-bubble ${side}`}>
       {message.imageUrl && <button className="chat-image-button" type="button" onClick={() => onImageClick?.(message.imageUrl!)}><img src={message.imageUrl} alt="Lampiran customer" /></button>}
       {sharedLocation ? <SharedLocationBubble location={sharedLocation} from={message.from} /> : message.text && <p>{message.text}</p>}
-      {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi CS</button>}
+      {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi Operator</button>}
       {message.order && <button className="bubble-link order-detail-link" onClick={() => onOrderDetail?.(message.order!)}>Detail {message.order.order_code ?? `#${message.order.id}`}</button>}
       {total && <strong className="bubble-total">Total {formatRupiah(total)}</strong>}
       {onReply && <button className="bubble-reply" type="button" onClick={() => onReply({ id: message.id, text: replyText })}>Balas</button>}
@@ -2035,6 +2125,7 @@ function DriverChatScreen({ order }: { order: Order | null }) {
 function CsChatScreen() {
   const store = useCustomerStore()
   const [conversationId, setConversationId] = useState<number | null>(null)
+  const [conversation, setConversation] = useState<ChatConversation | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -2054,10 +2145,11 @@ function CsChatScreen() {
         ? { id: conversationId }
         : await startOperatorChat()
       if (!conversationId) setConversationId(conversation.id)
-      const latestMessages = await fetchChatMessages(conversation.id)
-      setMessages((current) => mergeRemoteChatMessages(current, latestMessages))
+      const latest = await fetchChatMessages(conversation.id)
+      if (latest.conversation) setConversation(latest.conversation)
+      setMessages((current) => mergeRemoteChatMessages(current, latest.messages))
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Chat CS belum bisa dibuka.'))
+      setError(getApiErrorMessage(err, 'Hubungi Operator belum bisa dibuka.'))
     } finally {
       if (!silent) setLoading(false)
     }
@@ -2120,6 +2212,16 @@ function CsChatScreen() {
     <div className="cs-chat">
       <div className="chat-date">{todayLabel()}</div>
       <div className="message-list" ref={listRef}>
+        {conversation?.rating_requested && !conversation.operator_rating && (
+          <OperatorRatingCard
+            onRate={async (rating) => {
+              if (!conversationId) return
+              const updated = await submitOperatorRating(conversationId, { rating })
+              setConversation(updated)
+              store.showToast('success', 'Rating operator tersimpan. Terima kasih.')
+            }}
+          />
+        )}
         {cancellableOrders.length > 0 && (
           <div className="cs-order-picker">
             <strong>Pilih kode order</strong>
@@ -2177,6 +2279,36 @@ function CsChatScreen() {
   )
 }
 
+function OperatorRatingCard({ onRate }: { onRate: (rating: number) => Promise<void> }) {
+  const [saving, setSaving] = useState(false)
+  const [selected, setSelected] = useState(0)
+
+  const rate = async (rating: number) => {
+    if (saving) return
+    setSelected(rating)
+    setSaving(true)
+    try {
+      await onRate(rating)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="operator-rating-card">
+      <strong>Beri rating operator</strong>
+      <span>Nilai bantuan operator pada sesi chat ini.</span>
+      <div>
+        {[1, 2, 3, 4, 5].map((rating) => (
+          <button key={rating} type="button" disabled={saving} className={rating <= selected ? 'active' : ''} onClick={() => void rate(rating)}>
+            ★
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ImagePreviewModal({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) {
   return (
     <div className="image-editor-backdrop" onClick={onClose}>
@@ -2211,6 +2343,7 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
           <p><span>{pickupLabel}</span><strong>{order.pickup_address ?? '-'}</strong></p>
           <p><span>{destinationLabel}</span><strong>{order.destination_address ?? '-'}</strong></p>
           <p><span>Driver</span><strong>Nama: {driverName}</strong></p>
+          <p><span>Pembayaran</span><strong>{order.payment_label ?? paymentMethodLabel(order.payment_method)}</strong></p>
           <p><span>Total</span><strong>{formatRupiah(order.total_price ?? order.total)}</strong></p>
         </div>
       </section>
@@ -2258,7 +2391,7 @@ function HistoryScreen({
   }), [orders])
   const monthOptions = useMemo(() => {
     const keys = new Set(sortedOrders.map((order) => monthKey(order.created_at)).filter(Boolean))
-    keys.add(monthKey(new Date().toISOString()))
+    recentMonthKeys(12).forEach((key) => keys.add(key))
 
     return [...keys].sort().reverse()
   }, [sortedOrders])
@@ -2269,6 +2402,12 @@ function HistoryScreen({
       setSelectedMonth(monthOptions[0])
     }
   }, [monthOptions, selectedMonth])
+
+  useEffect(() => {
+    void fetchOrders(100, selectedMonth)
+      .then((nextOrders) => onOrdersChanged(nextOrders))
+      .catch(() => undefined)
+  }, [selectedMonth])
 
   return (
     <div className="simple-page">
@@ -2382,6 +2521,8 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   const [name, setName] = useState(user?.name ?? '')
   const [phone, setPhone] = useState(user?.phone ?? '')
   const [address, setAddress] = useState(user?.address ?? '')
+  const [profilePhoto, setProfilePhoto] = useState<File | null>(null)
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -2393,7 +2534,7 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   return (
     <div className="simple-page">
       <div className="profile-avatar">
-        <UserRound size={34} />
+        {profilePhotoPreview || user?.profile_photo_url ? <img src={profilePhotoPreview ?? user?.profile_photo_url ?? ''} alt="Foto profile" /> : <UserRound size={34} />}
       </div>
       <h1>{user?.name ?? 'Customer Jojo'}</h1>
       <p>{user?.email ?? 'Belum login'}</p>
@@ -2405,8 +2546,11 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
           event.preventDefault()
           setSaving(true)
           try {
-            const updated = await updateProfile({ name, phone, address })
+            const updated = await updateProfile({ name, phone, address, profile_photo: profilePhoto })
             store.setUserSession(updated, store.token)
+            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
+            setProfilePhoto(null)
+            setProfilePhotoPreview(null)
             store.showToast('success', 'Profile tersimpan')
             window.history.replaceState({}, document.title, '/')
             onDone?.()
@@ -2418,6 +2562,15 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         }}
       >
         <h2>Edit Profile</h2>
+        <label>
+          Foto Profile
+          <input type="file" accept="image/*" onChange={(event) => {
+            const file = event.target.files?.[0] ?? null
+            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
+            setProfilePhoto(file)
+            setProfilePhotoPreview(file ? URL.createObjectURL(file) : null)
+          }} />
+        </label>
         <label>
           Nama
           <input value={name} onChange={(event) => setName(event.target.value)} />
@@ -2725,6 +2878,16 @@ function monthKey(value?: string | null) {
   if (Number.isNaN(date.getTime())) return ''
 
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function recentMonthKeys(count: number) {
+  const now = new Date()
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1)
+
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  })
 }
 
 function formatMonthLabel(key: string) {

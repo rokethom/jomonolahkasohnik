@@ -45,14 +45,14 @@ class CancelRequestController extends Controller
     private function authorizeOperator(Request $request): void
     {
         $role = $request->user()->role->value ?? $request->user()->role;
-        abort_unless(in_array($role, ['admin', 'operator', 'gm', 'spv'], true), 403);
+        abort_unless(in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'spv'], true), 403);
     }
 
     private function authorizeCustomerDriverOrAdmin(Order $order, Request $request): void
     {
         $role = $request->user()->role->value ?? $request->user()->role;
 
-        if (in_array($role, ['admin', 'operator', 'gm', 'spv'], true) || (int) $order->user_id === (int) $request->user()->id) {
+        if (in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'spv'], true) || (int) $order->user_id === (int) $request->user()->id) {
             return;
         }
 
@@ -66,7 +66,7 @@ class CancelRequestController extends Controller
         $role = $request->user()->role->value ?? $request->user()->role;
 
         abort_unless(
-            in_array($role, ['admin', 'operator', 'gm', 'spv'], true)
+            in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'spv'], true)
             || in_array((int) $request->user()->id, array_filter([
                 $conversation->customer_id,
                 $conversation->driver_id,

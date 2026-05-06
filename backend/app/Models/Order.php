@@ -45,6 +45,9 @@ class Order extends Model
         'locked_location_hash',
         'device_location_log_id',
         'notes',
+        'payment_method',
+        'payment_label',
+        'payment_meta',
     ];
 
     protected $casts = [
@@ -67,6 +70,7 @@ class Order extends Model
         'cancelled_at' => 'datetime',
         'expired_at' => 'datetime',
         'device_location_log_id' => 'integer',
+        'payment_meta' => 'array',
     ];
 
     protected static function booted(): void

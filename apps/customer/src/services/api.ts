@@ -61,6 +61,7 @@ export type OrderPayload = {
   service_payload?: Record<string, unknown>
   items?: Array<{ name: string; quantity?: number; qty?: number; price?: number; notes?: string }>
   points?: Array<{ label?: string; address: string }>
+  payment_method?: 'cash' | 'transfer' | string
 }
 
 export type GeocodePayload = {
@@ -118,7 +119,18 @@ export async function updateUserLocation(payload: { lat: number; lng: number; ac
   return data.data
 }
 
-export async function updateProfile(payload: { name: string; phone: string; address: string; branch_id?: number | null }) {
+export async function updateProfile(payload: { name: string; phone: string; address: string; branch_id?: number | null; profile_photo?: File | null }) {
+  if (payload.profile_photo) {
+    const form = new FormData()
+    form.append('name', payload.name)
+    form.append('phone', payload.phone)
+    form.append('address', payload.address)
+    if (payload.branch_id) form.append('branch_id', String(payload.branch_id))
+    form.append('profile_photo', payload.profile_photo)
+    const { data } = await api.post<User>('/user/profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  }
+
   const { data } = await api.put<User>('/user/profile', payload)
   return data
 }
@@ -231,13 +243,13 @@ export async function findDriver(orderId: number) {
   return data
 }
 
-export async function fetchOrders(perPage = 100) {
+export async function fetchOrders(perPage = 100, month?: string) {
   const orders: Order[] = []
   let page = 1
   let lastPage = 1
 
   do {
-    const { data } = await api.get<{ data: { data?: Order[]; current_page?: number; last_page?: number } | Order[] }>('/orders', { params: { per_page: perPage, page } })
+    const { data } = await api.get<{ data: { data?: Order[]; current_page?: number; last_page?: number } | Order[] }>('/orders', { params: { per_page: perPage, page, month } })
     if (Array.isArray(data.data)) return data.data
 
     orders.push(...(data.data.data ?? []))
@@ -264,8 +276,13 @@ export async function startOrderChat(orderId: number) {
 }
 
 export async function fetchChatMessages(conversationId: number, page = 1) {
-  const { data } = await api.get<{ data: { data: ChatMessage[] } }>(`/chats/${conversationId}/messages`, { params: { page } })
-  return data.data.data.reverse()
+  const { data } = await api.get<{ data: { data: ChatMessage[] }; conversation?: ChatConversation }>(`/chats/${conversationId}/messages`, { params: { page } })
+  return { messages: data.data.data.reverse(), conversation: data.conversation }
+}
+
+export async function submitOperatorRating(conversationId: number, payload: { rating: number; comment?: string }) {
+  const { data } = await api.post<{ data: ChatConversation }>(`/chats/${conversationId}/operator-rating`, payload)
+  return data.data
 }
 
 export async function fetchOrderMessages(orderId: number) {

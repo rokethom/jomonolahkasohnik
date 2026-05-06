@@ -18,6 +18,7 @@ class RolePermissionSeeder extends Seeder
         'edit_tarif',
         'monitor_live_order',
         'monitor_live_chat',
+        'assign_driver',
         'approve_cancel_order',
         'reject_cancel_order',
         'manage_cms',
@@ -62,7 +63,15 @@ class RolePermissionSeeder extends Seeder
             'approve_cancel_order',
             'reject_cancel_order',
             'monitor_live_chat',
+            'assign_driver',
             'edit_tarif',
+        ],
+        'eksekutor' => [
+            'monitor_live_order',
+            'assign_driver',
+            'approve_cancel_order',
+            'reject_cancel_order',
+            'monitor_live_chat',
         ],
     ];
 

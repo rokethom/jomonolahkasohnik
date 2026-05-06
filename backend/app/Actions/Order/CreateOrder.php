@@ -13,6 +13,7 @@ use App\Services\GeocodingService;
 use App\Services\LocationValidationService;
 use App\Services\OrderService;
 use App\Services\PricingService;
+use App\Services\SettingService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,7 @@ class CreateOrder
         private readonly GeocodingService $geocoding,
         private readonly OrderService $orders,
         private readonly LocationValidationService $locations,
+        private readonly SettingService $settings,
     ) {
     }
 
@@ -39,6 +41,7 @@ class CreateOrder
             $branch = $user->branch;
             $payload['pickup_address'] = str($payload['pickup_address'])->limit(250, '')->toString();
             $payload['destination_address'] = str($payload['destination_address'])->limit(250, '')->toString();
+            $payment = $this->paymentPayload((string) ($payload['payment_method'] ?? 'cash'));
 
             $order = Order::create([
                 ...Arr::only($payload, [
@@ -51,6 +54,7 @@ class CreateOrder
                     'destination_lng',
                     'notes',
                 ]),
+                ...$payment,
                 'user_id' => $user->id,
                 'service_id' => $service?->id,
                 'branch_id' => $user->branch_id,
@@ -108,6 +112,56 @@ class CreateOrder
 
             return $order->fresh(['user', 'items']);
         });
+    }
+
+    private function paymentPayload(string $method): array
+    {
+        $method = in_array($method, ['cash', 'transfer', 'qris'], true) ? $method : 'cash';
+        $methods = $this->decodeSetting('payment_methods', [
+            ['key' => 'cash', 'label' => 'Pembayaran Cash', 'description' => 'Customer membayar manual kepada driver.'],
+            ['key' => 'transfer', 'label' => 'Pembayaran Transfer', 'description' => 'Customer transfer ke rekening aplikasi.'],
+            ['key' => 'qris', 'label' => 'Pembayaran QRIS', 'description' => 'Customer scan QRIS aplikasi.'],
+        ]);
+        $selected = collect($methods)->firstWhere('key', $method) ?: [
+            'key' => $method,
+            'label' => $method === 'qris' ? 'Pembayaran QRIS' : $method,
+        ];
+
+        return [
+            'payment_method' => $method,
+            'payment_label' => $selected['label'] ?? $method,
+            'payment_meta' => in_array($method, ['transfer', 'qris'], true)
+                ? [
+                    'transfer_accounts' => $method === 'transfer' ? $this->transferAccounts() : [],
+                    'qris_image' => $method === 'qris' ? $this->settings->get('payment_qris_image') : null,
+                ]
+                : null,
+        ];
+    }
+
+    private function transferAccounts(): array
+    {
+        $raw = $this->decodeSetting('payment_transfer_account', []);
+        $accounts = array_is_list($raw) ? $raw : [$raw];
+
+        return collect($accounts)
+            ->filter(fn (mixed $account): bool => is_array($account))
+            ->map(fn (array $account): array => [
+                'bank' => trim((string) ($account['bank'] ?? '')),
+                'account_name' => trim((string) ($account['account_name'] ?? '')),
+                'account_number' => trim((string) ($account['account_number'] ?? '')),
+            ])
+            ->filter(fn (array $account): bool => $account['bank'] !== '' || $account['account_name'] !== '' || $account['account_number'] !== '')
+            ->values()
+            ->all();
+    }
+
+    private function decodeSetting(string $key, array $default): array
+    {
+        $value = $this->settings->get($key);
+        $decoded = is_string($value) && $value !== '' ? json_decode($value, true) : $value;
+
+        return is_array($decoded) ? $decoded : $default;
     }
 
     private function resolveService(string $serviceType): ?Service

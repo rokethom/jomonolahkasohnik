@@ -164,6 +164,9 @@ class AiOrderParserService
         $pickupAddress = $this->clean($data['pickup_address'] ?? null);
         $destinationAddress = $this->clean($data['destination_address'] ?? null);
         $notes = $this->clean($data['notes'] ?? null);
+        $customerName = $this->clean($data['customer_name'] ?? $data['name'] ?? null);
+        $customerPhone = $this->clean($data['customer_phone'] ?? $data['phone'] ?? null);
+        $customerAddress = $this->clean($data['customer_address'] ?? $data['address'] ?? null);
         $passengers = max(1, (int) ($data['passengers'] ?? 1));
 
         if (in_array($serviceType, ['DO', 'belanja', 'gift_order'], true)) {
@@ -195,16 +198,17 @@ class AiOrderParserService
         return [
             'service_type' => $serviceType,
             'customer_id' => $user->id,
-            'name' => $user->name,
-            'phone' => $user->phone,
-            'address' => $profileAddress,
+            'name' => $customerName,
+            'phone' => $customerPhone,
+            'address' => $customerAddress,
             'items' => $items,
             'store_location' => $storeLocation ?: $pickupAddress,
             'destination' => $destinationAddress,
             'passengers' => $passengers,
             'customer' => [
-                'name' => $user->name,
-                'phone' => $user->phone,
+                'name' => $customerName,
+                'phone' => $customerPhone,
+                'address' => $customerAddress,
             ],
             'stops' => [],
             'branch' => $branch,
@@ -244,6 +248,9 @@ Return JSON object saja dengan schema:
   "destination_address": string|null,
   "store_location": string|null,
   "purchase_address": string|null,
+  "customer_name": string|null,
+  "customer_phone": string|null,
+  "customer_address": string|null,
   "items": [{"name": string, "quantity": number}],
   "passengers": number|null,
   "notes": string|null,
@@ -253,6 +260,7 @@ Definisi field:
 - pickup_address = alamat jemput customer / titik awal driver untuk ojek/kurir/travel saja.
 - store_location atau purchase_address = alamat pembelian, toko, resto, warung, pasar, area pembelian.
 - destination_address = alamat antar/tujuan akhir. Untuk DO/belanja jika user bilang alamat saya/rumah/profile, isi dari profile.address.
+- customer_name/customer_phone/customer_address = data pemesan jika ada pada teks. Jika tidak ada, null.
 - Untuk DO/belanja/gift_order, JANGAN masukkan alamat pembelian ke pickup_address. Masukkan ke store_location/purchase_address.
 Aturan layanan:
 - beli/belikan/pesan makanan/barang => DO atau belanja

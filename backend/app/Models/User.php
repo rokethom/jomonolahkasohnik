@@ -36,6 +36,7 @@ class User extends Authenticatable implements FilamentUser
         'lat',
         'lng',
         'address',
+        'profile_photo_path',
         'is_staff',
         'is_active',
         'is_suspended',
@@ -109,7 +110,7 @@ class User extends Authenticatable implements FilamentUser
 
         return $this->is_active
             && ! $this->is_suspended
-            && in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::WebAdmin, UserRole::CmsEditor], true);
+            && in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor, UserRole::WebAdmin, UserRole::CmsEditor], true);
     }
 
     public function branch(): BelongsTo
@@ -154,7 +155,8 @@ class User extends Authenticatable implements FilamentUser
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat'],
             'manager' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'export_report', 'edit_tarif'],
             'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'edit_tarif'],
-            'operator' => ['monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'edit_tarif'],
+            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'edit_tarif'],
+            'eksekutor' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat'],
             'web_admin', 'cms_editor' => ['manage_cms'],
             default => [],
         };

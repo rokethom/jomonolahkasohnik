@@ -73,6 +73,11 @@ class SystemSettingsPage extends Page implements HasForms
             'order_close_message' => $settings->get('order_close_message', 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.') ?: 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.',
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => $this->nightTariffRules($settings),
+            'payment_cash_enabled' => true,
+            'payment_transfer_enabled' => true,
+            'payment_bank_accounts' => $this->transferAccounts($settings),
+            'qris_image' => $settings->get('payment_qris_image'),
+            'complaint_whatsapp_number' => $settings->get('complaint_whatsapp_number', '6281299232918'),
             'ai_assistant_enabled' => $settings->bool('ai_assistant_enabled', false),
             'ai_provider' => $settings->get('ai_provider', 'openai'),
             'ai_model' => $settings->get('ai_model'),
@@ -384,6 +389,61 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->columnSpanFull(),
                                     ]),
                             ]),
+                        Tabs\Tab::make('Payment & Support')
+                            ->icon('heroicon-o-banknotes')
+                            ->schema([
+                                Forms\Components\Section::make('Metode Pembayaran Customer')
+                                    ->description('Pilihan ini dikirim ke aplikasi customer saat membuat order.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('payment_cash_enabled')
+                                            ->label('Pembayaran Cash')
+                                            ->default(true),
+                                        Forms\Components\Toggle::make('payment_transfer_enabled')
+                                            ->label('Pembayaran Transfer')
+                                            ->default(true),
+                                        Forms\Components\Repeater::make('payment_bank_accounts')
+                                            ->label('Rekening Transfer')
+                                            ->schema([
+                                                Forms\Components\TextInput::make('bank')
+                                                    ->label('Bank')
+                                                    ->placeholder('BCA / BRI / Mandiri')
+                                                    ->maxLength(80)
+                                                    ->required(),
+                                                Forms\Components\TextInput::make('account_name')
+                                                    ->label('Nama Rekening')
+                                                    ->maxLength(120)
+                                                    ->required(),
+                                                Forms\Components\TextInput::make('account_number')
+                                                    ->label('Nomor Rekening')
+                                                    ->maxLength(80)
+                                                    ->required(),
+                                            ])
+                                            ->columns(3)
+                                            ->defaultItems(1)
+                                            ->addActionLabel('Tambah rekening')
+                                            ->reorderable()
+                                            ->columnSpanFull(),
+                                        Forms\Components\FileUpload::make('qris_image')
+                                            ->label('Gambar QRIS statis')
+                                            ->disk('public')
+                                            ->directory('settings/payment')
+                                            ->image()
+                                            ->imagePreviewHeight('220')
+                                            ->maxSize(2048)
+                                            ->helperText('Opsional. Pakai gambar QRIS aplikasi selama payment gateway belum dipakai.')
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Keluhan Customer')
+                                    ->description('Nomor WhatsApp untuk menu Laporkan Keluhan di aplikasi customer.')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('complaint_whatsapp_number')
+                                            ->label('Nomor WhatsApp')
+                                            ->placeholder('6281299232918')
+                                            ->maxLength(30)
+                                            ->required(),
+                                    ]),
+                            ]),
                         Tabs\Tab::make('OAuth')
                             ->icon('heroicon-o-lock-closed')
                             ->visible(fn (): bool => auth()->user()?->role === UserRole::Admin)
@@ -428,6 +488,10 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('order_close_message', $data['order_close_message'] ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.');
         $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
         $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
+        $settings->set('payment_methods', json_encode($this->paymentMethods($data)));
+        $settings->set('payment_transfer_account', json_encode($this->normalizeTransferAccounts($data['payment_bank_accounts'] ?? [])));
+        $settings->set('payment_qris_image', $this->normalizeUploadState($data['qris_image'] ?? null));
+        $settings->set('complaint_whatsapp_number', $this->normalizeWhatsappNumber((string) ($data['complaint_whatsapp_number'] ?? '6281299232918')));
 
         if (auth()->user()?->role === UserRole::Admin) {
             if (filled($data['fcm_service_account_json'] ?? null) && ! $this->isValidServiceAccountJson((string) $data['fcm_service_account_json'])) {
@@ -560,6 +624,84 @@ class SystemSettingsPage extends Page implements HasForms
         }
 
         return $this->defaultNightTariffRules();
+    }
+
+    private function transferAccounts(SettingService $settings): array
+    {
+        $raw = $settings->get('payment_transfer_account');
+        $decoded = is_string($raw) && $raw !== '' ? json_decode($raw, true) : $raw;
+
+        if (! is_array($decoded)) {
+            return [['bank' => '', 'account_name' => '', 'account_number' => '']];
+        }
+
+        if (array_is_list($decoded)) {
+            return $this->normalizeTransferAccounts($decoded);
+        }
+
+        return $this->normalizeTransferAccounts([$decoded]);
+    }
+
+    private function normalizeTransferAccounts(array $accounts): array
+    {
+        $normalized = [];
+
+        foreach ($accounts as $account) {
+            if (! is_array($account)) {
+                continue;
+            }
+
+            $bank = trim((string) ($account['bank'] ?? ''));
+            $name = trim((string) ($account['account_name'] ?? ''));
+            $number = trim((string) ($account['account_number'] ?? ''));
+
+            if ($bank === '' && $name === '' && $number === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'bank' => $bank,
+                'account_name' => $name,
+                'account_number' => $number,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeUploadState(mixed $value): ?string
+    {
+        if (is_array($value)) {
+            return collect($value)->filter()->first();
+        }
+
+        return filled($value) ? (string) $value : null;
+    }
+
+    private function paymentMethods(array $data): array
+    {
+        $methods = [];
+
+        if ((bool) ($data['payment_cash_enabled'] ?? true)) {
+            $methods[] = ['key' => 'cash', 'label' => 'Pembayaran Cash', 'description' => 'Customer membayar manual kepada driver.'];
+        }
+
+        if ((bool) ($data['payment_transfer_enabled'] ?? true)) {
+            $methods[] = ['key' => 'transfer', 'label' => 'Pembayaran Transfer', 'description' => 'Customer transfer ke rekening aplikasi.'];
+        }
+
+        return $methods === [] ? [['key' => 'cash', 'label' => 'Pembayaran Cash', 'description' => 'Customer membayar manual kepada driver.']] : $methods;
+    }
+
+    private function normalizeWhatsappNumber(string $number): string
+    {
+        $number = preg_replace('/\D+/', '', $number) ?: '6281299232918';
+
+        if (str_starts_with($number, '0')) {
+            return '62'.substr($number, 1);
+        }
+
+        return $number;
     }
 
     private function defaultNightTariffRules(): array

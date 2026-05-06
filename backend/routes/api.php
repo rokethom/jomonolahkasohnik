@@ -61,11 +61,12 @@ Route::get('/keyword-parsers', [KeywordParserController::class, 'index']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::put('/user/profile', [ProfileController::class, 'update']);
+    Route::post('/user/profile', [ProfileController::class, 'update']);
     Route::post('/user/location', [UserLocationController::class, 'store']);
     Route::post('/push/device-token', [PushDeviceTokenController::class, 'store']);
     Route::delete('/push/device-token', [PushDeviceTokenController::class, 'destroy']);
 
-    Route::prefix('admin')->middleware('role:admin,gm,hrd,manager,spv,operator')->group(function () {
+    Route::prefix('admin')->middleware('role:admin,gm,hrd,manager,spv,operator,eksekutor')->group(function () {
         Route::get('/bootstrap', [AdminController::class, 'bootstrap']);
         Route::get('/monitoring', [AdminController::class, 'monitoring'])->middleware('permission:view_report');
         Route::patch('/system-settings', [AdminController::class, 'updateSystemSettings']);
@@ -76,6 +77,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/users/{user}/reset-password', [AdminController::class, 'resetPassword'])->middleware('permission:create_user');
         Route::post('/users/{user}/reset-token', [AdminController::class, 'resetUserToken'])->middleware('permission:create_user');
         Route::get('/orders', [AdminController::class, 'orders'])->middleware('permission:monitor_live_order');
+        Route::post('/orders/{order}/assign-driver', [AdminController::class, 'assignDriver'])->middleware('permission:assign_driver');
+        Route::post('/orders/{order}/broadcast-drivers', [AdminController::class, 'broadcastDrivers'])->middleware('permission:assign_driver');
+        Route::post('/orders/manual/preview', [AdminController::class, 'previewManualOrder']);
         Route::post('/orders/manual', [AdminController::class, 'manualOrder']);
         Route::patch('/orders/{order}/price', [AdminController::class, 'updateOrderPrice'])->middleware('permission:edit_tarif');
         Route::post('/drivers/{driver}/suspend', [AdminController::class, 'suspendDriver'])->middleware('permission:suspend_driver');
@@ -124,6 +128,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/driver/finance', [DriverController::class, 'finance']);
     Route::get('/driver/performance', [DriverController::class, 'performance']);
     Route::put('/driver/profile', [DriverController::class, 'updateProfile']);
+    Route::post('/driver/profile', [DriverController::class, 'updateProfile']);
     Route::post('/driver/request-order/preview', [DriverController::class, 'previewRequest']);
     Route::post('/driver/request-order', [DriverController::class, 'requestOrder']);
     Route::post('/orders/{order}/oper-handle', [DriverController::class, 'operHandle']);
@@ -141,6 +146,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/chats/{conversation}/messages', [ChatController::class, 'send']);
     Route::post('/chats/{conversation}/typing', [ChatController::class, 'typing']);
     Route::post('/chats/{conversation}/read', [ChatController::class, 'read']);
+    Route::post('/chats/{conversation}/operator-rating', [ChatController::class, 'rateOperator']);
 
     Route::post('/orders/{order}/cancel-request', [CancelRequestController::class, 'store']);
     Route::post('/cancel-requests/{cancelRequest}/approve', [CancelRequestController::class, 'approve'])->middleware('permission:approve_cancel_order');

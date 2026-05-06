@@ -159,7 +159,31 @@ class SettingService
                 'vapid_key' => $this->get('firebase_vapid_key'),
                 'firebase_config' => $this->firebaseWebConfig(),
             ],
+            'payment' => [
+                'methods' => $this->paymentMethods(),
+                'transfer_accounts' => $this->transferAccounts(),
+                'transfer_account' => $this->transferAccounts()[0] ?? ['bank' => '', 'account_name' => '', 'account_number' => ''],
+                'qris_image_url' => $this->publicStorageUrl($this->get('payment_qris_image')),
+            ],
+            'support' => [
+                'complaint_whatsapp_number' => $this->get('complaint_whatsapp_number', '6281299232918'),
+                'complaint_whatsapp_url' => 'https://wa.me/'.$this->normalizeWhatsappNumber((string) $this->get('complaint_whatsapp_number', '6281299232918')),
+            ],
         ];
+    }
+
+    private function paymentMethods(): array
+    {
+        $methods = $this->jsonSetting('payment_methods', [
+            ['key' => 'cash', 'label' => 'Pembayaran Cash', 'description' => 'Customer membayar manual kepada driver.'],
+            ['key' => 'transfer', 'label' => 'Pembayaran Transfer', 'description' => 'Customer transfer ke rekening aplikasi.'],
+        ]);
+
+        if ($this->publicStorageUrl($this->get('payment_qris_image')) && ! collect($methods)->firstWhere('key', 'qris')) {
+            $methods[] = ['key' => 'qris', 'label' => 'Pembayaran QRIS', 'description' => 'Customer scan QRIS aplikasi.'];
+        }
+
+        return $methods;
     }
 
     public function applyToConfig(): void
@@ -236,6 +260,64 @@ class SettingService
             'configured_provider' => $configuredProvider,
             'fallback' => $provider !== $configuredProvider,
         ];
+    }
+
+    private function jsonSetting(string $key, array $default): array
+    {
+        $value = $this->get($key);
+
+        if (is_array($value)) {
+            return $value;
+        }
+
+        $decoded = is_string($value) && $value !== '' ? json_decode($value, true) : null;
+
+        return is_array($decoded) ? $decoded : $default;
+    }
+
+    private function transferAccounts(): array
+    {
+        $raw = $this->get('payment_transfer_account');
+        $decoded = is_string($raw) && $raw !== '' ? json_decode($raw, true) : $raw;
+
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $accounts = array_is_list($decoded) ? $decoded : [$decoded];
+
+        return collect($accounts)
+            ->filter(fn (mixed $account): bool => is_array($account))
+            ->map(fn (array $account): array => [
+                'bank' => trim((string) ($account['bank'] ?? '')),
+                'account_name' => trim((string) ($account['account_name'] ?? '')),
+                'account_number' => trim((string) ($account['account_number'] ?? '')),
+            ])
+            ->filter(fn (array $account): bool => $account['bank'] !== '' || $account['account_name'] !== '' || $account['account_number'] !== '')
+            ->values()
+            ->all();
+    }
+
+    private function publicStorageUrl(mixed $path): ?string
+    {
+        if (! filled($path)) {
+            return null;
+        }
+
+        $path = (string) $path;
+
+        return str_starts_with($path, 'http') ? $path : asset('storage/'.$path);
+    }
+
+    private function normalizeWhatsappNumber(string $number): string
+    {
+        $number = preg_replace('/\D+/', '', $number) ?: '6281299232918';
+
+        if (str_starts_with($number, '0')) {
+            return '62'.substr($number, 1);
+        }
+
+        return $number;
     }
 
     private function fallback(string $key, mixed $default): mixed

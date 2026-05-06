@@ -63,8 +63,16 @@ class AdminChatController extends Controller
         $this->authorizeChat($conversation, $request->user());
         $chatService->assertWritable($conversation);
 
-        if (($request->user()->role === UserRole::Operator) && ! $conversation->operator_id) {
+        if (in_array($request->user()->role, [UserRole::Operator, UserRole::Eksekutor], true) && ! $conversation->operator_id) {
             $conversation->forceFill(['operator_id' => $request->user()->id, 'status' => 'active'])->save();
+            $conversation->messages()->create([
+                'sender_id' => $request->user()->id,
+                'sender_type' => $request->user()->role->value,
+                'message' => sprintf(
+                    'Halo saya %s Operator Jojo SI Aplikasi Joker, ada yang bisa di bantu?',
+                    $request->user()->name,
+                ),
+            ]);
         }
 
         $transcription = trim((string) ($payload['transcription'] ?? ''));
@@ -115,6 +123,15 @@ class AdminChatController extends Controller
             });
         }
 
+        if ($actor->role === UserRole::Eksekutor) {
+            $query->where('branch_id', $actor->branch_id)
+                ->where(function (Builder $query) use ($actor): void {
+                    $query->where('operator_id', $actor->id)
+                        ->orWhereNull('operator_id')
+                        ->orWhere('status', 'waiting');
+                });
+        }
+
         return $query;
     }
 
@@ -125,6 +142,14 @@ class AdminChatController extends Controller
         if ($actor->role === UserRole::Operator && $conversation->operator_id && (int) $conversation->operator_id !== (int) $actor->id) {
             abort(403);
         }
+
+        if ($actor->role === UserRole::Eksekutor) {
+            abort_unless((int) $conversation->branch_id === (int) $actor->branch_id, 403);
+
+            if ($conversation->operator_id && (int) $conversation->operator_id !== (int) $actor->id) {
+                abort(403);
+            }
+        }
     }
 
     private function authorizeOperator(User $actor): void
@@ -134,7 +159,7 @@ class AdminChatController extends Controller
 
     private function authorizeCancelApprover(User $actor): void
     {
-        abort_unless(in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::SPV], true), 403);
+        abort_unless(in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::Eksekutor, UserRole::SPV], true), 403);
     }
 
     private function payload(ChatConversation $chat, User $viewer): array
@@ -147,6 +172,7 @@ class AdminChatController extends Controller
             'customer' => $chat->customer?->name,
             'driver' => $chat->driver?->name,
             'operator' => $chat->operator?->name,
+            'operator_rating' => $chat->operator_rating,
             'status' => $chat->status,
             'sla_status' => $chat->sla_status,
             'last_message' => $chat->latestMessage?->message,

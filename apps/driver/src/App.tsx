@@ -34,6 +34,7 @@ type Driver = {
   username: string
   phone: string | null
   email?: string | null
+  profile_photo_url?: string | null
   role: string
   status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
   suspended_until?: string | null
@@ -72,6 +73,8 @@ type Order = {
   total: number
   notes: string | null
   detail: string | null
+  paymentMethod?: string | null
+  paymentLabel?: string | null
   acceptedAt?: string | null
   updatedAt?: string | null
   eligibility?: Eligibility
@@ -177,6 +180,9 @@ type ApiOrder = {
   total_price?: number
   notes: string | null
   detail: string | null
+  payment_method?: string | null
+  payment_label?: string | null
+  payment_meta?: Record<string, unknown> | null
   accepted_at?: string | null
   updated_at?: string | null
   eligibility?: Eligibility
@@ -406,6 +412,9 @@ function App() {
       void load()
       toast(`Order baru ${event.order.code ?? event.order.order_code ?? ''} masuk`, 'success')
     })
+    channel.listen('.driver.accepted', () => {
+      void load(true)
+    })
     channel.listen('.order.status.updated', (event: { order?: Partial<ApiOrder> & { id: number; code?: string }; new_status?: string }) => {
       if (!event.order?.id) return
       const knownOrder = useDriverStore.getState().orders.some((order) => order.id === event.order?.id)
@@ -587,7 +596,7 @@ function Dashboard({ driver, orders, loading, api, onAction }: { driver: Driver;
       {activeOrders.length > 0 && <ActiveOrderRoute orders={activeOrders} max={maxMultiOrder} />}
 
       <section>
-        <SectionTitle title="Order Terdekat" action={loading ? 'Sync' : `${pendingOrders.length} order`} />
+        <SectionTitle title="List Order" action={loading ? 'Sync' : `${pendingOrders.length} order`} />
         {loading && <SkeletonCards />}
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
@@ -690,6 +699,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <InfoTile label="Jarak" value={`${order.distanceKm} km`} />
         <InfoTile label="Status" value={statusLabel(order.status)} />
         <InfoTile label="Multi Order" value={order.isMultiOrder ? 'Aktif' : 'Tidak'} />
+        <InfoTile label="Pembayaran" value={order.paymentLabel ?? driverPaymentLabel(order.paymentMethod)} />
       </section>
 
       <section className={directionMatch ? 'direction-panel match' : 'direction-panel mismatch'}>
@@ -1155,11 +1165,25 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
   const toast = useDriverStore((state) => state.toast)
   const setView = useDriverStore((state) => state.setView)
   const logout = useDriverStore((state) => state.logout)
-  const [form, setForm] = useState({ name: driver.name, username: driver.username, phone: driver.phone ?? '', password: '' })
+  const [form, setForm] = useState({ name: driver.name, username: driver.username, password: '' })
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     try {
-      await api('/driver/profile', { method: 'PUT', body: JSON.stringify(form) })
+      if (photo) {
+        const payload = new FormData()
+        payload.append('name', form.name)
+        payload.append('username', form.username)
+        if (form.password) payload.append('password', form.password)
+        payload.append('profile_photo', photo)
+        await api('/driver/profile', { method: 'POST', body: payload })
+      } else {
+        await api('/driver/profile', { method: 'PUT', body: JSON.stringify(form) })
+      }
+      if (photoPreview) URL.revokeObjectURL(photoPreview)
+      setPhoto(null)
+      setPhotoPreview(null)
       toast('Profile berhasil diperbarui', 'success')
       await onSaved()
     } catch (error) {
@@ -1185,9 +1209,22 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
         <div><strong>Performa</strong><span>Rating, setoran, suspend history, dan oper handle</span></div>
       </button>
       <form className="panel profile-form" onSubmit={submit}>
+        <div className="driver-profile-photo">
+          {photoPreview || driver.profile_photo_url ? <img src={photoPreview ?? driver.profile_photo_url ?? ''} alt="Foto driver" /> : <UserRound size={36} />}
+          <label>
+            <Camera size={18} />
+            Ganti Foto
+            <input type="file" accept="image/*" hidden onChange={(event) => {
+              const file = event.target.files?.[0] ?? null
+              if (photoPreview) URL.revokeObjectURL(photoPreview)
+              setPhoto(file)
+              setPhotoPreview(file ? URL.createObjectURL(file) : null)
+            }} />
+          </label>
+        </div>
         <label>Nama<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
         <label>Username<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required /></label>
-        <label>Telephone<input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label>Telephone<input value={driver.phone ?? ''} readOnly /><small>Perubahan nomor melalui Manager/SPV.</small></label>
         <label>Password Baru<input type="password" value={form.password} minLength={8} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
         <button className="primary-button" type="submit">Update Profile</button>
       </form>
@@ -1222,15 +1259,40 @@ function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
 
 function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
   const selectOrder = useDriverStore((state) => state.selectOrder)
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date().toISOString()))
   const doneOrders = orders.filter((order) => order.status === 'done' || order.status === 'cancelled')
+  const monthOptions = useMemo(() => {
+    const keys = new Set(doneOrders.map((order) => monthKey(order.updatedAt ?? order.acceptedAt)).filter(Boolean))
+    recentMonthKeys(12).forEach((key) => keys.add(key))
+
+    return [...keys].sort().reverse()
+  }, [doneOrders])
+  const visibleOrders = doneOrders.filter((order) => monthKey(order.updatedAt ?? order.acceptedAt) === selectedMonth)
+  const driverIncome = visibleOrders
+    .filter((order) => order.status === 'done')
+    .reduce((sum, order) => sum + Math.max((order.total ?? 0) - (order.serviceFee ?? 0), 0), 0)
 
   return (
     <section className="page history-page">
-      <PageTitle title="Riwayat" subtitle="Order selesai dan batal." />
+      <PageTitle title="Riwayat" subtitle={`Order ${formatMonthLabel(selectedMonth)}.`} />
+      <section className="panel history-filter-panel">
+        <label>
+          Bulan
+          <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
+            {monthOptions.map((key) => <option key={key} value={key}>{formatMonthLabel(key)}</option>)}
+          </select>
+        </label>
+        <div>
+          <span>Total pendapatan kamu</span>
+          <strong>Rp {formatMoney(driverIncome)}</strong>
+          <small>{formatMonthLabel(selectedMonth)} sampai hari ini</small>
+        </div>
+      </section>
       {loading && <SkeletonCards />}
       {!loading && doneOrders.length === 0 && <EmptyState title="Belum ada riwayat" copy="Order selesai akan tampil di sini." />}
+      {!loading && doneOrders.length > 0 && visibleOrders.length === 0 && <EmptyState title="Tidak ada order" copy="Tidak ada riwayat pada bulan ini." />}
       <div className="history-list">
-        {doneOrders.map((order) => {
+        {visibleOrders.map((order) => {
           const route = routeInfoFor(order)
 
           return (
@@ -1450,6 +1512,8 @@ function mapOrder(order: ApiOrder): Order {
     total: order.total,
     notes: order.notes,
     detail: order.detail,
+    paymentMethod: order.payment_method ?? null,
+    paymentLabel: order.payment_label ?? null,
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     updatedAt: order.updated_at ?? null,
     eligibility: order.eligibility,
@@ -1533,6 +1597,11 @@ function sortNewestOrderFirst(a: Order, b: Order) {
   return b.id - a.id
 }
 function formatMoney(value: number) { return value.toLocaleString('id-ID') }
+function driverPaymentLabel(method?: string | null) {
+  if (method === 'transfer') return 'Transfer'
+  if (method === 'qris') return 'QRIS'
+  return 'Cash'
+}
 function formatRemaining(ms: number) {
   const totalSeconds = Math.ceil(ms / 1000)
   const minutes = Math.floor(totalSeconds / 60)
@@ -1598,6 +1667,28 @@ function formatCoordinate(lat: number, lng: number) {
 }
 function formatHistoryTime(value?: string | null) {
   return value ? new Date(value).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Waktu belum tersedia'
+}
+function monthKey(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+function recentMonthKeys(count: number) {
+  const now = new Date()
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1)
+
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+  })
+}
+function formatMonthLabel(key: string) {
+  const [year, month] = key.split('-').map(Number)
+  if (!year || !month) return 'Periode tidak diketahui'
+
+  return new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
 }
 function getErrorMessage(error: unknown, fallback: string) {
   if (axios.isAxiosError(error)) {

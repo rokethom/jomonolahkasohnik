@@ -10,6 +10,10 @@ use Illuminate\Validation\ValidationException;
 
 class RatingService
 {
+    public function __construct(private readonly NotificationService $notifications)
+    {
+    }
+
     public function rate(Order $order, User $customer, int $rating, ?string $comment = null): Rating
     {
         if ((int) $order->user_id !== (int) $customer->id) {
@@ -20,7 +24,7 @@ class RatingService
             throw ValidationException::withMessages(['order' => 'Rating hanya bisa diberikan untuk order selesai.']);
         }
 
-        return Rating::query()->updateOrCreate(
+        $ratingRow = Rating::query()->updateOrCreate(
             ['order_id' => $order->id],
             [
                 'customer_id' => $customer->id,
@@ -29,6 +33,21 @@ class RatingService
                 'comment' => $comment,
             ],
         );
+
+        $order->loadMissing('driver.user');
+        $this->notifications->sendToUser(
+            $order->driver?->user,
+            'Rating customer masuk',
+            "Customer memberi rating {$ratingRow->rating} bintang untuk order {$order->order_code}.",
+            [
+                'type' => 'driver_rating_received',
+                'order_id' => $order->id,
+                'order_code' => $order->order_code,
+                'rating' => $ratingRow->rating,
+            ],
+        );
+
+        return $ratingRow;
     }
 
     public function driverSummary(int $driverId): array

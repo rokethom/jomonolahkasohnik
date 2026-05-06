@@ -20,6 +20,7 @@ use App\Services\SuspendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -75,9 +76,17 @@ class DriverController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'username' => ['required', 'string', 'max:255', 'unique:users,username,'.$request->user()->id],
-            'phone' => ['nullable', 'string', 'max:30'],
             'password' => ['nullable', 'string', 'min:8'],
+            'profile_photo' => ['nullable', 'image', 'max:4096'],
         ]);
+
+        if ($request->hasFile('profile_photo')) {
+            if ($request->user()->profile_photo_path) {
+                Storage::disk('public')->delete($request->user()->profile_photo_path);
+            }
+
+            $payload['profile_photo_path'] = $request->file('profile_photo')?->store('profiles/drivers', 'public');
+        }
 
         if (! filled($payload['password'] ?? null)) {
             unset($payload['password']);
@@ -85,6 +94,7 @@ class DriverController extends Controller
             $payload['password'] = Hash::make($payload['password']);
         }
 
+        unset($payload['profile_photo']);
         $request->user()->update($payload);
 
         return $this->profile($request);
@@ -258,6 +268,7 @@ class DriverController extends Controller
             'username' => $user->username,
             'phone' => $user->phone,
             'email' => $user->email,
+            'profile_photo_url' => $user->profile_photo_path ? asset('storage/'.$user->profile_photo_path) : null,
             'role' => 'Driver',
             'status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
             'suspended_until' => $user->driver?->suspended_until?->toIso8601String() ?? $user->suspended_until?->toIso8601String(),
@@ -289,6 +300,9 @@ class DriverController extends Controller
             'extra_charge' => $order->extra_charge,
             'total' => $order->total_price,
             'notes' => $order->notes,
+            'payment_method' => $order->payment_method,
+            'payment_label' => $order->payment_label,
+            'payment_meta' => $order->payment_meta,
             'detail' => $order->raw_text,
             'accepted_at' => in_array($order->status->value, ['DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING'], true)
                 ? $order->updated_at?->toIso8601String()

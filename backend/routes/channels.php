@@ -52,7 +52,7 @@ Broadcast::channel('chat.{id}', function ($user, $id) {
 
     $role = $user->role->value ?? $user->role;
 
-    return in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)
+    return in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)
         || in_array((int) $user->id, array_filter([
             $chat->customer_id,
             $chat->driver_id,
@@ -69,7 +69,7 @@ Broadcast::channel('chat.order.{orderId}', function ($user, $orderId) {
 
     $role = $user->role->value ?? $user->role;
 
-    return in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)
+    return in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)
         || (int) $order->user_id === (int) $user->id
         || (int) optional($order->driver)->user_id === (int) $user->id;
 });
@@ -78,5 +78,5 @@ Broadcast::channel('chat.operator.{userId}', function ($user, $userId) {
     $role = $user->role->value ?? $user->role;
 
     return (int) $user->id === (int) $userId
-        || in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true);
+        || in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true);
 });

@@ -67,12 +67,14 @@ class ChatController extends Controller
     public function messages(ChatConversation $conversation, Request $request): JsonResponse
     {
         $this->authorizeParticipant($conversation, $request);
+        $conversation->refresh();
 
         return response()->json([
             'data' => $conversation->messages()
                 ->with('sender')
                 ->latest()
                 ->paginate($request->integer('per_page', 30)),
+            'conversation' => $this->conversationPayload($conversation),
         ]);
     }
 
@@ -151,13 +153,33 @@ class ChatController extends Controller
         return response()->json(['data' => ['updated' => $messageService->markRead($conversation, $request->user())]]);
     }
 
+    public function rateOperator(ChatConversation $conversation, Request $request): JsonResponse
+    {
+        abort_unless((int) $conversation->customer_id === (int) $request->user()->id, 403);
+        abort_unless($conversation->type === 'customer_operator', 422, 'Rating hanya untuk chat operator.');
+
+        $payload = $request->validate([
+            'rating' => ['required', 'integer', 'min:1', 'max:5'],
+            'comment' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $conversation->forceFill([
+            'operator_rating' => $payload['rating'],
+            'operator_rating_comment' => $payload['comment'] ?? null,
+            'operator_rated_at' => now(),
+            'rating_requested_at' => $conversation->rating_requested_at ?? now(),
+        ])->save();
+
+        return response()->json(['data' => $this->conversationPayload($conversation->fresh())]);
+    }
+
     private function authorizeParticipant(ChatConversation $conversation, Request $request): void
     {
         $user = $request->user();
         $role = $user->role->value ?? $user->role;
 
         abort_unless(
-            in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)
+            in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)
             || in_array((int) $user->id, array_filter([
                 $conversation->customer_id,
                 $conversation->driver_id,
@@ -174,7 +196,7 @@ class ChatController extends Controller
         $role = $user->role->value ?? $user->role;
 
         abort_unless(
-            in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)
+            in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)
             || (int) $order->user_id === (int) $user->id
             || (int) optional($order->driver)->user_id === (int) $user->id,
             403,
@@ -191,5 +213,32 @@ class ChatController extends Controller
                 'error' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function conversationPayload(ChatConversation $conversation): array
+    {
+        $ratingDue = $conversation->type === 'customer_operator'
+            && ! $conversation->operator_rating
+            && (
+                $conversation->status === 'closed'
+                || ($conversation->last_customer_message_at && ! $conversation->first_operator_response_at && $conversation->last_customer_message_at->lte(now()->subMinutes(5)))
+            );
+
+        if ($ratingDue && ! $conversation->rating_requested_at) {
+            $conversation->forceFill(['rating_requested_at' => now()])->save();
+        }
+
+        return [
+            'id' => $conversation->id,
+            'order_id' => $conversation->order_id,
+            'type' => $conversation->type,
+            'status' => $conversation->status,
+            'operator_id' => $conversation->operator_id,
+            'operator_rating' => $conversation->operator_rating,
+            'rating_requested' => $ratingDue,
+            'rating_requested_at' => $conversation->rating_requested_at?->toIso8601String(),
+            'closed_at' => $conversation->closed_at?->toIso8601String(),
+            'sla_status' => $conversation->sla_status,
+        ];
     }
 }

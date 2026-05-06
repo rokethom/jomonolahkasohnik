@@ -10,7 +10,7 @@ class SLAService
 {
     public function thresholdSeconds(): int
     {
-        return (int) config('chat.sla_seconds', 60);
+        return (int) config('chat.sla_seconds', 300);
     }
 
     public function start(ChatConversation $conversation, ChatMessage $message): void

@@ -9,33 +9,33 @@
     $sliderSection = $sections->first(fn ($section) => data_get($section, 'type') === 'slider' || Str::contains(Str::lower(data_get($section, 'name', '')), 'slider'));
     $promoSection = $sections->first(fn ($section) => data_get($section, 'type') === 'promo' || Str::contains(Str::lower(data_get($section, 'name', '')), 'promo'));
 
-    $usingMock = $sections->every(fn ($section) => collect(data_get($section, 'items', []))->isEmpty())
+    $usingFallback = $sections->every(fn ($section) => collect(data_get($section, 'items', []))->isEmpty())
         && $announcements->isEmpty();
 
-    $mockSliderItems = collect([
+    $fallbackSliderItems = collect([
         ['title' => 'Belanja', 'subtitle' => 'Titip beli makanan, obat, atau kebutuhan harian'],
         ['title' => 'Delivery', 'subtitle' => 'Antar barang cepat dalam area layanan'],
         ['title' => 'Ojek', 'subtitle' => 'Jemput dan antar penumpang'],
         ['title' => 'Kurir', 'subtitle' => 'Kirim paket kecil dan dokumen'],
     ]);
-    $mockPopularItems = collect([
+    $fallbackPopularItems = collect([
         ['title' => 'Joker Mobil', 'subtitle' => 'Layanan mobil untuk perjalanan nyaman'],
         ['title' => 'Gift Order', 'subtitle' => 'Kirim hadiah untuk keluarga atau teman'],
         ['title' => 'Mie Gacoan', 'subtitle' => 'Contoh shortcut promo tenant'],
         ['title' => 'Bantuan CS', 'subtitle' => 'Hubungi admin saat butuh bantuan'],
     ]);
-    $mockAnnouncements = collect([
-        ['title' => 'Mock: Promo spesial area Situbondo', 'content' => 'Contoh announcement aktif. Ganti dengan pengumuman asli dari CMS.'],
-        ['title' => 'Mock: Order malam mengikuti tarif area', 'content' => 'Contoh info operasional untuk customer.'],
+    $fallbackAnnouncements = collect([
+        ['title' => 'Promo spesial area Situbondo', 'content' => 'Contoh announcement aktif. Ganti dengan pengumuman asli dari CMS.'],
+        ['title' => 'Order malam mengikuti tarif area', 'content' => 'Contoh info operasional untuk customer.'],
     ]);
 
     $sliderItems = $sliderSection && collect(data_get($sliderSection, 'items', []))->isNotEmpty()
         ? collect(data_get($sliderSection, 'items', []))
-        : $mockSliderItems;
+        : $fallbackSliderItems;
     $promoItems = $promoSection && collect(data_get($promoSection, 'items', []))->isNotEmpty()
         ? collect(data_get($promoSection, 'items', []))
-        : $mockPopularItems;
-    $previewAnnouncements = $announcements->isNotEmpty() ? $announcements : $mockAnnouncements;
+        : $fallbackPopularItems;
+    $previewAnnouncements = $announcements->isNotEmpty() ? $announcements : $fallbackAnnouncements;
     $specialAnnouncement = $previewAnnouncements->first();
 @endphp
 
@@ -65,7 +65,7 @@
         font-size: 12px;
     }
 
-    .jojo-preview-mock-badge {
+    .jojo-preview-sample-badge {
         display: inline-flex;
         margin-top: 8px;
         padding: 4px 10px;
@@ -236,8 +236,8 @@
     <div class="jojo-home-preview-head">
         <strong>Customer Home Preview</strong>
         <span>Susunan aktif yang akan terbaca di FE customer.</span>
-        @if($usingMock)
-            <div class="jojo-preview-mock-badge">Mock reference, belum dari data aktif</div>
+        @if($usingFallback)
+            <div class="jojo-preview-sample-badge">Contoh tampilan, belum dari data aktif</div>
         @endif
     </div>
 

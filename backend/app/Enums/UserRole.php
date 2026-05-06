@@ -10,6 +10,7 @@ enum UserRole: string
     case Manager = 'manager';
     case SPV = 'spv';
     case Operator = 'operator';
+    case Eksekutor = 'eksekutor';
     case WebAdmin = 'web_admin';
     case CmsEditor = 'cms_editor';
     case Driver = 'driver';
@@ -24,6 +25,7 @@ enum UserRole: string
             self::Manager => 'Manager',
             self::SPV => 'SPV',
             self::Operator => 'Operator',
+            self::Eksekutor => 'Eksekutor',
             self::WebAdmin => 'Web Admin',
             self::CmsEditor => 'CMS Editor',
             self::Driver => 'Driver',
@@ -40,6 +42,7 @@ enum UserRole: string
             self::HRD => 'purple',
             self::SPV => 'info',
             self::Operator => 'cyan',
+            self::Eksekutor => 'sky',
             self::WebAdmin => 'info',
             self::CmsEditor => 'info',
             self::Driver => 'success',
@@ -56,6 +59,7 @@ enum UserRole: string
             self::Manager,
             self::SPV,
             self::Operator,
+            self::Eksekutor,
             self::WebAdmin,
             self::CmsEditor,
         ], true);
@@ -71,8 +75,8 @@ enum UserRole: string
         return match ($this) {
             self::Admin => self::cases(),
             self::GM => self::cases(),
-            self::HRD => [self::Manager, self::SPV, self::Operator, self::Driver],
-            self::Manager => [self::SPV, self::Operator, self::Driver, self::WebAdmin, self::CmsEditor],
+            self::HRD => [self::Manager, self::SPV, self::Operator, self::Eksekutor, self::Driver],
+            self::Manager => [self::SPV, self::Operator, self::Eksekutor, self::Driver, self::WebAdmin, self::CmsEditor],
             default => [],
         };
     }

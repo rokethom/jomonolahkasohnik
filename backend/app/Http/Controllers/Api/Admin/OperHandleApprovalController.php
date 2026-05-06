@@ -21,7 +21,7 @@ class OperHandleApprovalController extends Controller
             ? $request->user()->role
             : UserRole::tryFrom((string) $request->user()->role);
 
-        abort_unless(in_array($role, [UserRole::Operator, UserRole::SPV, UserRole::Admin, UserRole::GM], true), 403);
+        abort_unless(in_array($role, [UserRole::Operator, UserRole::Eksekutor, UserRole::SPV, UserRole::Admin, UserRole::GM], true), 403);
 
         $operHandle = DB::transaction(function () use ($request, $operHandle, $suspensions, $role): OperHandleRequest {
             $operHandle = OperHandleRequest::query()
@@ -31,7 +31,7 @@ class OperHandleApprovalController extends Controller
 
             abort_if($operHandle->status === 'approved', 422, 'Oper handle sudah approved.');
 
-            if (in_array($role, [UserRole::Operator, UserRole::Admin, UserRole::GM], true)) {
+            if (in_array($role, [UserRole::Operator, UserRole::Eksekutor, UserRole::Admin, UserRole::GM], true)) {
                 $operHandle->forceFill([
                     'operator_approved_by' => $request->user()->id,
                     'operator_approved_at' => now(),

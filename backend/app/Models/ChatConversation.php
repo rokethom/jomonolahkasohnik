@@ -24,12 +24,18 @@ class ChatConversation extends Model
         'last_customer_message_at',
         'first_operator_response_at',
         'sla_status',
+        'operator_rating',
+        'operator_rating_comment',
+        'operator_rated_at',
+        'rating_requested_at',
     ];
 
     protected $casts = [
         'closed_at' => 'datetime',
         'last_customer_message_at' => 'datetime',
         'first_operator_response_at' => 'datetime',
+        'operator_rated_at' => 'datetime',
+        'rating_requested_at' => 'datetime',
     ];
 
     public function order(): BelongsTo

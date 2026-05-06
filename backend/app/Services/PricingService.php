@@ -231,8 +231,10 @@ class PricingService
             ]);
         }
 
-        $night = $this->operations->nightTariff((int) ($quote['tarif'] ?? $quote['price'] ?? 0), isset($payload['branch_id']) ? (int) $payload['branch_id'] : null);
+        $baseTarifBeforeNight = (int) ($quote['tarif'] ?? $quote['price'] ?? 0);
+        $night = $this->operations->nightTariff($baseTarifBeforeNight, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null);
         if ($night['amount'] > 0) {
+            $quote['base_tarif_before_night'] = $baseTarifBeforeNight;
             $quote['night_tariff_charge'] = (int) $night['amount'];
             $quote['night_tariff_percent'] = (int) $night['percent'];
             $quote['tarif'] += (int) $night['amount'];

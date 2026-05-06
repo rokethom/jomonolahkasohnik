@@ -26,6 +26,7 @@ class StoreOrderRequest extends FormRequest
             'stop_count' => ['sometimes', 'integer', 'min:1'],
             'minimum_price' => ['sometimes', 'integer', 'min:0'],
             'notes' => ['nullable', 'string'],
+            'payment_method' => ['nullable', 'string', 'in:cash,transfer,qris'],
             'destination_text' => ['nullable', 'string', 'max:255'],
             'service_payload' => ['sometimes', 'array'],
             'items' => ['sometimes', 'array'],

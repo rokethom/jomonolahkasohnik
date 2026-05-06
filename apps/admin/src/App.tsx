@@ -10,8 +10,11 @@ declare global {
   }
 }
 
-type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'driver' | 'customer'
+type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
 type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'manual-order'
+type AdminHistoryState = {
+  jojoAdminView?: View
+}
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
@@ -49,6 +52,17 @@ type DriverRow = User & {
   oper_handle_count: number
   vehicle_type?: 'motor' | 'mobil' | string | null
   allowed_service_types?: string[]
+  performance?: {
+    rating_average: number
+    ratings_count: number
+    completed_orders_count: number
+    cancelled_orders_count: number
+    suspensions_count: number
+    oper_handle_requests_count: number
+    unpaid_deposits_count: number
+    completed_revenue: number
+    online_score: number
+  }
   suspensions: { id: number; reason: string; duration: number; start_at: string | null; end_at: string | null; status: string }[]
 }
 
@@ -62,11 +76,55 @@ type Order = {
   status: string
   cancel_reason?: string | null
   branch: string | null
+  branch_area?: string | null
   price: number
   service_charge: number
   extra_charge: number
   total: number
+  waiting_seconds?: number
+  sla_status?: 'normal' | 'warning' | 'critical' | 'assigned' | string
+  suggested_drivers?: DriverCandidate[]
+  customer_preferences?: CustomerPreference
   created_at: string | null
+}
+type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
+type CustomerPreference = { favorite_driver?: { id: number; name: string } | null; blocked_drivers?: string[]; notes?: string | null }
+type ManualOrderPayload = {
+  service_type: string
+  pickup_address: string
+  pickup_lat?: number
+  pickup_lng?: number
+  destination_address: string
+  destination_lat?: number
+  destination_lng?: number
+  stops?: number
+  notes?: string
+  points?: Array<{ label?: string; address: string }>
+  items?: Array<{ name: string; quantity?: number; price?: number; notes?: string }>
+  payment_method?: 'cash' | 'transfer' | 'qris'
+}
+type ManualOrderPreview = {
+  intent: 'order_preview' | 'service_selected' | 'fallback_form' | 'service_menu' | string
+  selected_service?: string | null
+  service_type?: string | null
+  reply?: string | null
+  message?: string | null
+  quote?: {
+    distance?: number
+    distance_km?: number
+    tarif?: number
+    price?: number
+    base_tarif_before_night?: number
+    night_tariff_charge?: number
+    night_tariff_percent?: number
+    service_fee?: number
+    service_charge?: number
+    extra_charge?: number
+    final_price?: number
+    total_price?: number
+  } | null
+  order_payload?: ManualOrderPayload | null
+  parsed?: Record<string, unknown> | null
 }
 
 type Branch = { id: number; name: string; area: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number }
@@ -78,6 +136,7 @@ type Chat = { id: number; order_id?: number | null; order_code: string | null; t
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
 type AuditLog = { id: number; user: string; role: Role | null; action: string; subject_type: string; subject_id: number | null; subject_label: string | null; created_at: string | null }
+type OperatorPerformance = { id: number; name: string; role: Role; branch: string | null; branch_area?: string | null; handled_chats_count: number; active_chats_count: number; rating_average: number; ratings_count: number; late_response_count: number }
 type Stats = { total_users: number; total_drivers: number; active_orders: number; suspended_drivers: number }
 type SystemSettings = {
   multi_order_enabled: boolean
@@ -131,6 +190,7 @@ type Permissions = {
   can_monitor_live_chat?: boolean
   can_approve_cancel_order?: boolean
   can_reject_cancel_order?: boolean
+  can_assign_driver?: boolean
 }
 type Bootstrap = {
   me: User
@@ -139,6 +199,7 @@ type Bootstrap = {
   stats: Stats
   users: User[]
   drivers: DriverRow[]
+  operator_performance?: OperatorPerformance[]
   orders: Order[]
   branches: Branch[]
   services: ServiceRow[]
@@ -167,6 +228,7 @@ const roleLabels: Record<Role, string> = {
   manager: 'Manager',
   spv: 'SPV',
   operator: 'Operator',
+  eksekutor: 'Eksekutor',
   driver: 'Driver',
   customer: 'Customer',
 }
@@ -178,6 +240,7 @@ const roleColors: Record<Role, string> = {
   manager: 'role-orange',
   spv: 'role-blue',
   operator: 'role-cyan',
+  eksekutor: 'role-blue',
   driver: 'role-green',
   customer: 'role-muted',
 }
@@ -230,6 +293,13 @@ const menuGroups: MenuGroup[] = [
 ]
 
 const allMenus = menuGroups.flatMap((group) => group.items)
+const adminViews = allMenus.map((item) => item.id)
+
+function adminViewFromHistoryState(state: unknown) {
+  const maybeState = state as AdminHistoryState | null
+  const value = maybeState?.jojoAdminView
+  return value && adminViews.includes(value) ? value : null
+}
 
 function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (role === 'admin' || role === 'gm') return allMenus.map((item) => item.id)
@@ -239,6 +309,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
     views.add('orders')
     views.add('request-orders')
   }
+  if (permissions.can_assign_driver) views.add('drivers')
   if (permissions.can_manage_users) views.add('users')
   if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers) views.add('drivers')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
@@ -269,6 +340,7 @@ function App() {
   })
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
   const isRefreshingRef = useRef(false)
+  const isBrowserBackRef = useRef(false)
 
   const api = useMemo(() => makeApi(token), [token])
 
@@ -317,6 +389,59 @@ function App() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [load, token])
+
+  useEffect(() => {
+    if (!token) return
+
+    const echo = makeEcho(token)
+    const ordersChannel = echo.private('orders')
+    ordersChannel.listen('.order.created', () => void load(true))
+    ordersChannel.listen('.order.status.updated', () => void load(true))
+    ordersChannel.listen('.driver.accepted', () => void load(true))
+
+    return () => {
+      echo.leave('orders')
+    }
+  }, [load, token])
+
+  useEffect(() => {
+    if (!token) return
+
+    const initialView = adminViewFromHistoryState(window.history.state) ?? view
+    const baseState = { ...(window.history.state as AdminHistoryState | null), jojoAdminView: initialView }
+    window.history.replaceState(baseState, document.title, '/')
+    window.history.pushState(baseState, document.title, '/')
+    if (initialView !== view) setView(initialView)
+
+    const handlePopState = (event: PopStateEvent) => {
+      const nextView = adminViewFromHistoryState(event.state) ?? 'dashboard'
+      isBrowserBackRef.current = true
+      setView(nextView)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) return
+
+    if (isBrowserBackRef.current) {
+      isBrowserBackRef.current = false
+      return
+    }
+
+    if (adminViewFromHistoryState(window.history.state) === view) return
+
+    window.history.pushState(
+      { ...(window.history.state as AdminHistoryState | null), jojoAdminView: view },
+      document.title,
+      '/',
+    )
+  }, [token, view])
 
   if (!token) {
     return <LoginScreen onLogin={(nextToken) => {
@@ -401,6 +526,11 @@ function App() {
           <span>Authenticated as</span>
           <strong>{data.me.name}</strong>
           <RoleBadge role={data.me.role} />
+          <div className="sidebar-actions">
+            {data.permissions.can_manage_users && <button className="sidebar-action-button" type="button" onClick={() => { setUserFormOpen(true); setMobileNavOpen(false) }}><Icon name="plus" />New User</button>}
+            <PwaInstallButton />
+            <button className="sidebar-action-button danger" type="button" onClick={logout}><Icon name="logout" />Logout</button>
+          </div>
         </div>
       </aside>
 
@@ -410,19 +540,30 @@ function App() {
             <div className="topbar-title"><h1>{titleFor(safeView)}</h1><p>{subtitleFor(data)}</p>{error && <p className="error-text">{error}</p>}</div>
             <div className="topbar-actions">
               <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search real data" /></div>
-              <PwaInstallButton />
-              {data.permissions.can_manage_users && <button className="primary-button" type="button" onClick={() => setUserFormOpen(true)}><Icon name="plus" />New User</button>}
               <div className="auto-refresh-pill" title="Data admin tersinkron otomatis tiap 5 detik">
                 <span />
                 Auto refresh
                 <small>{lastSyncedAt ? formatShortTime(lastSyncedAt.toISOString()) : 'sync'}</small>
               </div>
-              <button className="theme-button" type="button" onClick={toggleDarkMode}><Icon name={darkMode ? 'sun' : 'moon'} />{darkMode ? 'Light' : 'Dark'}</button>
-              <button className="logout-button" type="button" onClick={logout}><Icon name="logout" />Logout</button>
+              <button className="theme-switch" type="button" onClick={toggleDarkMode} aria-label={darkMode ? 'Switch to light theme' : 'Switch to dark theme'} title={darkMode ? 'Light theme' : 'Dark theme'}>
+                <span><Icon name={darkMode ? 'sun' : 'moon'} /></span>
+              </button>
+              <button
+                className="profile-settings-button"
+                type="button"
+                aria-label="Profile settings"
+                title="Profile settings"
+                onClick={() => {
+                  setQuery(data.me.username)
+                  setView(allowedViews.includes('users') ? 'users' : 'dashboard')
+                }}
+              >
+                <Icon name="settings" />
+              </button>
             </div>
           </header>
 
-        {safeView === 'dashboard' && <Dashboard data={data} />}
+        {safeView === 'dashboard' && <Dashboard data={data} api={api} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'orders' && <OrdersTable orders={data.orders} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -431,7 +572,7 @@ function App() {
         {safeView === 'pricing' && <PricingPanel settings={data.price_settings} branches={data.branches} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
-        {safeView === 'manual-order' && <ManualOrderPanel users={data.users} api={api} onChanged={refresh} />}
+        {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
         {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} />}
@@ -519,54 +660,442 @@ function PwaInstallButton() {
   )
 }
 
-function Dashboard({ data }: { data: Bootstrap }) {
+function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
+  if (data.me.role === 'eksekutor') {
+    return <EksekutorDashboard data={data} api={api} onChanged={onChanged} onNavigate={onNavigate} onOpenOrder={onOpenOrder} />
+  }
+
+  const activeOrders = data.orders.filter(isActiveOrderStatus).length || data.stats.active_orders
+  const onlineDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active').length
+  const unassignedOrders = data.orders.filter((order) => isWaitingDriverStatus(order.status) && !order.driver).length
+  const unansweredChats = data.chats.filter((chat) => Number(chat.unread_count ?? 0) > 0 || ['waiting', 'open'].includes(String(chat.status).toLowerCase())).length
+  const nightTariffActive = isNightTariffCurrentlyActive(data.system_settings)
+  const topDriver = topDriverToday(data.drivers, data.orders)
+
   return (
     <div className="dashboard-grid">
-      <section className="hero-panel">
-        <div><h2>{dashboardHeadline(data.me.role)}</h2><p>{subtitleFor(data)}</p></div>
-        <div className="hero-orbit"><span></span><strong>{data.stats.active_orders}</strong><small>active orders</small></div>
-      </section>
       <StatsRow stats={[
-        { label: 'Visible Users', value: data.stats.total_users, icon: 'users', tone: 'violet' },
-        { label: 'Visible Drivers', value: data.stats.total_drivers, icon: 'truck', tone: 'green' },
-        { label: 'Active Orders', value: data.stats.active_orders, icon: 'bag', tone: 'amber' },
-        { label: 'Suspended Driver', value: data.stats.suspended_drivers, icon: 'shield', tone: 'red' },
+        { label: 'Active Order Realtime', value: activeOrders, icon: 'bag', tone: 'amber', action: 'Orders', onClick: () => onNavigate('orders') },
+        { label: 'Online Driver', value: onlineDrivers, icon: 'truck', tone: 'green', action: 'Drivers', onClick: () => onNavigate('drivers') },
+        { label: 'Belum Diambil', value: unassignedOrders, icon: 'receipt', tone: 'violet', action: 'Cari driver', onClick: () => onNavigate('orders') },
+        { label: 'Chat Belum Dibalas', value: unansweredChats, icon: 'chat', tone: 'red', action: 'Buka chat', onClick: () => onNavigate('chats') },
       ]} />
-      <RoleAccessPanel role={data.me.role} />
-      <RecentActivity orders={data.orders} />
-      <AuditHistory logs={data.audit_logs ?? []} />
+      <section className="insight-grid">
+        <button className={nightTariffActive ? 'insight-card active' : 'insight-card'} type="button" onClick={() => onNavigate('settings')}>
+          <span>Tarif Malam</span>
+          <strong>{nightTariffActive ? 'Aktif' : data.system_settings.night_tariff_enabled ? 'Standby' : 'Nonaktif'}</strong>
+          <small>{nightTariffActive ? 'Rule sedang berjalan sekarang' : 'Cek jadwal di System Settings'}</small>
+        </button>
+        <article className="top-driver-card">
+          <div>
+            <span>Top Driver Hari Ini</span>
+            <strong>{topDriver.name}</strong>
+          </div>
+          <div className="top-driver-metrics">
+            <p><span>Order terbanyak</span><b>{topDriver.orders}</b></p>
+            <p><span>Rating terbaik</span><b>{topDriver.rating}</b></p>
+            <p><span>Cancel terendah</span><b>{topDriver.cancel}</b></p>
+          </div>
+        </article>
+      </section>
+      <section className="dashboard-live-grid">
+        <LiveOrders orders={data.orders} onOpenOrder={onOpenOrder} onViewAll={() => onNavigate('orders')} />
+        <LiveChatDashboard chats={data.chats} onNavigate={() => onNavigate('chats')} onOpenOrder={onOpenOrder} />
+      </section>
+      <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onNavigate('drivers')} />
+      <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
+      <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
     </div>
   )
 }
 
-function StatsRow({ stats }: { stats: { label: string; value: number; icon: string; tone: string }[] }) {
-  return <section className="stats-row">{stats.map((stat) => <article className={`stat-card ${stat.tone}`} key={stat.label}><div className="stat-icon"><Icon name={stat.icon} /></div><span>{stat.label}</span><strong>{stat.value}</strong><div className="sparkline"><i></i><i></i><i></i><i></i><i></i></div></article>)}</section>
+function StatsRow({ stats }: { stats: { label: string; value: number; icon: string; tone: string; action?: string; onClick?: () => void }[] }) {
+  return <section className="stats-row">{stats.map((stat) => <article className={`stat-card ${stat.tone}`} key={stat.label} role={stat.onClick ? 'button' : undefined} tabIndex={stat.onClick ? 0 : undefined} onClick={stat.onClick} onKeyDown={(event) => { if (stat.onClick && (event.key === 'Enter' || event.key === ' ')) stat.onClick() }}><div className="stat-icon"><Icon name={stat.icon} /></div><span>{stat.label}</span><strong>{stat.value}</strong>{stat.action && <small className="stat-action">{stat.action}</small>}<div className="sparkline"><i></i><i></i><i></i><i></i><i></i></div></article>)}</section>
 }
 
-function RoleAccessPanel({ role }: { role: Role }) {
-  return <section className="panel"><PanelHeader title={`${roleLabels[role]} access`} action="Role permissions" /><div className="access-grid">{roleModules(role).map((item) => <article className="access-card" key={item.title}><div className="activity-icon"><Icon name={item.icon} /></div><strong>{item.title}</strong><span>{item.description}</span></article>)}</div></section>
-}
+function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
+  const [assignOrder, setAssignOrder] = useState<Order | null>(null)
+  const [dispatchMessage, setDispatchMessage] = useState('')
+  const dispatchOrders = data.orders.filter(isDispatchPendingOrder)
+  const criticalOrders = dispatchOrders.filter((order) => order.sla_status === 'critical' || Number(order.waiting_seconds ?? 0) >= 600)
+  const idleDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active' && !data.orders.some((order) => order.driver === driver.name && isActiveOrderStatus(order)))
+  const acceptedDrivers = data.orders.filter((order) => order.driver && isActiveOrderStatus(order)).length
 
-function RecentActivity({ orders }: { orders: Order[] }) {
-  return <section className="panel activity-panel"><PanelHeader title="Recent order activity" action="Live orders" /><div className="activity-list">{orders.slice(0, 6).map((order) => <div className="activity-item order-activity-item" key={order.id}><div className="activity-icon"><Icon name="bag" /></div><div><strong>{order.code}</strong><span>{order.customer || '-'} booked {order.service}</span>{order.status === 'CANCELLED' && <em>{order.cancel_reason || 'Dibatalkan tanpa alasan tersimpan.'}</em>}</div><StatusBadge status={order.status} /></div>)}</div></section>
-}
-
-function AuditHistory({ logs }: { logs: AuditLog[] }) {
   return (
-    <section className="panel audit-panel">
-      <PanelHeader title="History perubahan data" action={`${logs.length} logs`} />
-      <div className="activity-list">
-        {logs.length === 0 && <EmptyPanel title="Belum ada log" copy="Aktivitas create/edit admin akan muncul di sini." />}
-        {logs.map((log) => (
-          <div className="activity-item audit-item" key={log.id}>
-            <div className="activity-icon"><Icon name="receipt" /></div>
-            <div><strong>{auditActionLabel(log.action)}</strong><span>{log.user} · {log.subject_type} {log.subject_label ?? `#${log.subject_id ?? '-'}`}</span></div>
-            <span className="status muted">{formatShortDateTime(log.created_at)}</span>
+    <div className="eksekutor-dashboard">
+      {criticalOrders.length > 0 && <div className="critical-dispatch-alert" role="alert">Critical pending: {criticalOrders.length} order menunggu terlalu lama.</div>}
+      <section className="dispatch-hero">
+        <div>
+          <span className="eyebrow">Tactical Dispatch Center</span>
+          <h2>{data.me.branch_area || data.me.branch || 'Area Eksekutor'}</h2>
+          <p>Realtime queue, idle driver recommendation, dan manual assign untuk area sendiri.</p>
+        </div>
+        <div className="dispatch-clock">
+          <strong>{formatShortTime(new Date().toISOString())}</strong>
+          <span>Realtime dispatch</span>
+        </div>
+      </section>
+
+      <StatsRow stats={[
+        { label: 'Pending Dispatch', value: dispatchOrders.filter((order) => order.status === 'CREATED').length, icon: 'receipt', tone: criticalOrders.length ? 'red' : 'amber', action: 'Assign now' },
+        { label: 'Driver Idle', value: idleDrivers.length, icon: 'truck', tone: 'green', action: 'Area sendiri', onClick: () => onNavigate('drivers') },
+        { label: 'Driver Accepted', value: acceptedDrivers, icon: 'bag', tone: 'violet', action: 'Live route', onClick: () => onNavigate('orders') },
+        { label: 'Pending Order', value: dispatchOrders.length, icon: 'chat', tone: 'red', action: 'Queue' },
+      ]} />
+
+      <section className="dispatch-layout">
+        <section className="panel live-dispatch-panel">
+          <div className="section-head compact-head">
+            <div>
+              <h2>Live Order Queue</h2>
+              <p>Order waiting driver, pending dispatch, dan pending order area.</p>
+            </div>
+            <span className="status warning">{dispatchOrders.length} queue</span>
           </div>
+          <div className="dispatch-queue">
+            {dispatchOrders.length === 0 && <EmptyPanel title="Queue kosong" copy="Order pending area akan muncul realtime di sini." />}
+            {dispatchOrders.map((order) => (
+              <article className={order.sla_status === 'critical' ? 'dispatch-order-row critical' : 'dispatch-order-row'} key={order.id}>
+                <button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button>
+                <div>
+                  <strong>{order.customer || 'Customer'}</strong>
+                  <span>{order.branch_area || order.branch || '-'} · {statusDispatchLabel(order.status)} · waiting {formatWaitingTime(order.waiting_seconds)}</span>
+                </div>
+                <div className="suggested-driver">
+                  <small>Suggested</small>
+                  <b>{order.suggested_drivers?.[0]?.name ?? 'Belum ada idle driver'}</b>
+                </div>
+                <div className="dispatch-row-actions">
+                  <button className="secondary-button compact" type="button" onClick={() => void broadcastOrderToDrivers(api, order, setDispatchMessage)}>Broadcast</button>
+                  <button className="primary-button compact" type="button" onClick={() => setAssignOrder(order)}>Assign Driver</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <aside className="panel customer-preference-panel">
+          <PanelHeader title="Customer Preference" action="Priority" />
+          {dispatchOrders.slice(0, 4).map((order) => (
+            <article className="customer-pref-card" key={order.id}>
+              <strong>{order.customer || order.code}</strong>
+              <span>Favorite: {order.customer_preferences?.favorite_driver?.name ?? '-'}</span>
+              <span>Blocked: {(order.customer_preferences?.blocked_drivers ?? []).join(', ') || '-'}</span>
+              <small>{order.customer_preferences?.notes || 'Belum ada catatan customer.'}</small>
+            </article>
+          ))}
+          {dispatchOrders.length === 0 && <EmptyPanel title="Tidak ada preference" copy="Preference muncul saat ada order pending." />}
+        </aside>
+      </section>
+
+      <div className="floating-dispatch-actions">
+        <button type="button" onClick={() => onNavigate('manual-order')}><Icon name="plus" />Order</button>
+        <button type="button" disabled={!dispatchOrders[0]} onClick={() => dispatchOrders[0] && setAssignOrder(dispatchOrders[0])}><Icon name="truck" />Assign Driver</button>
+        <button type="button" disabled={!dispatchOrders[0]} onClick={() => dispatchOrders[0] && void broadcastOrderToDrivers(api, dispatchOrders[0], setDispatchMessage)}><Icon name="shield" />Broadcast Driver</button>
+        <button type="button" onClick={() => onNavigate('chats')}><Icon name="chat" />Chat Customer</button>
+      </div>
+      {dispatchMessage && <div className="dispatch-toast">{dispatchMessage}</div>}
+
+      {assignOrder && <AssignDriverModal order={assignOrder} api={api} onClose={() => setAssignOrder(null)} onAssigned={async () => { await onChanged(); setAssignOrder(null) }} />}
+    </div>
+  )
+}
+
+async function broadcastOrderToDrivers(api: ApiClient, order: Order, setMessage: (value: string) => void) {
+  try {
+    const payload = await api<{ message?: string }>(`/admin/orders/${order.id}/broadcast-drivers`, { method: 'POST' })
+    setMessage(payload.message ?? 'Broadcast driver terkirim.')
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : 'Broadcast driver gagal.')
+  } finally {
+    window.setTimeout(() => setMessage(''), 2600)
+  }
+}
+
+function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; api: ApiClient; onClose: () => void; onAssigned: () => Promise<void> }) {
+  const [driverId, setDriverId] = useState(order.suggested_drivers?.[0]?.id ? String(order.suggested_drivers[0].id) : '')
+  const [reason, setReason] = useState('Manual assign eksekutor')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const candidates = order.suggested_drivers ?? []
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!driverId) return
+    setSaving(true)
+    setError('')
+    try {
+      await api(`/admin/orders/${order.id}/assign-driver`, {
+        method: 'POST',
+        body: JSON.stringify({ driver_id: Number(driverId), reason }),
+      })
+      await onAssigned()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Assign driver gagal')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal dispatch-assign-modal" role="dialog" aria-modal="true">
+        <div className="modal-header">
+          <div><h2>Assign Driver</h2><p>{order.code} · {order.customer || 'Customer'} · {order.branch_area || order.branch}</p></div>
+          <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <form className="user-form" onSubmit={submit}>
+          <label>Driver area online & idle
+            <select value={driverId} onChange={(event) => setDriverId(event.target.value)} required>
+              <option value="">Pilih driver</option>
+              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? '⭐ ' : ''}{driver.name} · {driver.vehicle_type ?? 'motor'} · rating {driver.rating_average ?? 0}</option>)}
+            </select>
+          </label>
+          <label>Alasan assign<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          {candidates.length === 0 && <div className="notice danger">Tidak ada driver online idle di area ini.</div>}
+          {error && <div className="error-text">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={onClose}>Batal</button>
+            <button className="primary-button" disabled={saving || !driverId}>{saving ? 'Assigning...' : 'Assign Driver'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function LiveOrders({ orders, onOpenOrder, onViewAll }: { orders: Order[]; onOpenOrder: (code: string) => void; onViewAll: () => void }) {
+  const liveOrders = orders.filter(isActiveOrderStatus).slice(0, 6)
+  return (
+    <section className="panel live-panel">
+      <PanelHeader title="Live Order" action={`${liveOrders.length} aktif`} />
+      <div className="live-order-list">
+        {liveOrders.length === 0 && <EmptyPanel title="Tidak ada live order" copy="Order aktif akan muncul otomatis di sini." />}
+        {liveOrders.map((order) => (
+          <button className="live-order-row" type="button" key={order.id} onClick={() => onOpenOrder(order.code)}>
+            <span className="live-dot" />
+            <div><strong>{order.code}</strong><small>{order.customer || '-'} - {order.service}</small></div>
+            <b>Rp {Number(order.total || 0).toLocaleString('id-ID')}</b>
+            <StatusBadge status={order.status} />
+          </button>
         ))}
+      </div>
+      <button className="secondary-button compact" type="button" onClick={onViewAll}>Lihat semua order</button>
+    </section>
+  )
+}
+
+function LiveChatDashboard({ chats, onNavigate, onOpenOrder }: { chats: Chat[]; onNavigate: () => void; onOpenOrder: (code: string) => void }) {
+  const liveChats = chats.slice(0, 6)
+  return (
+    <section className="panel live-panel">
+      <PanelHeader title="Live Chat" action={`${liveChats.length} room`} />
+      <div className="dashboard-chat-list">
+        {liveChats.length === 0 && <EmptyPanel title="Belum ada chat" copy="Chat customer/operator akan muncul di sini." />}
+        {liveChats.map((chat) => (
+          <button className="dashboard-chat-row" type="button" key={chat.id} onClick={onNavigate}>
+            <div className="activity-icon"><Icon name="chat" /></div>
+            <div>
+              <strong>{chat.customer || chat.driver || 'Chat room'}</strong>
+              <span>{chat.latest_message || chat.last_message || 'Belum ada pesan terbaru'}</span>
+              {chat.order_code && <em onClick={(event) => { event.stopPropagation(); onOpenOrder(chat.order_code!) }}>{chat.order_code}</em>}
+            </div>
+            {Number(chat.unread_count ?? 0) > 0 && <b>{chat.unread_count}</b>}
+          </button>
+        ))}
+      </div>
+      <button className="secondary-button compact" type="button" onClick={onNavigate}>Buka live chat</button>
+    </section>
+  )
+}
+
+function RecentActivity({ orders, onOpenOrder }: { orders: Order[]; onOpenOrder: (code: string) => void }) {
+  return <section className="panel activity-panel compact-activity"><PanelHeader title="Recent order activity" action="Ringkas" /><div className="activity-list">{orders.slice(0, 5).map((order) => <div className="activity-item order-activity-item compact" key={order.id}><div><button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button><span>{order.customer || '-'} - {order.service}</span>{order.status === 'CANCELLED' && <em>{order.cancel_reason || 'Dibatalkan tanpa alasan tersimpan.'}</em>}</div><StatusBadge status={order.status} /></div>)}</div></section>
+}
+
+function DriverPerformanceSnapshot({ drivers, onOpenDrivers }: { drivers: DriverRow[]; onOpenDrivers: () => void }) {
+  const rows = driverPerformanceRows(drivers)
+  const best = {
+    rating: bestDriverFor(rows, 'rating_average', 'desc'),
+    orders: bestDriverFor(rows, 'completed_orders_count', 'desc'),
+    revenue: bestDriverFor(rows, 'completed_revenue', 'desc'),
+    clean: bestDriverFor(rows, 'cancelled_orders_count', 'asc'),
+  }
+
+  return (
+    <section className="panel driver-performance-snapshot">
+      <div className="section-head compact-head">
+        <div>
+          <h2>Evaluasi Performa Driver</h2>
+          <p>Ranking cepat untuk melihat driver terbaik dari area yang terlihat.</p>
+        </div>
+        <button className="secondary-button compact" type="button" onClick={onOpenDrivers}>Lihat detail</button>
+      </div>
+      <div className="performance-mini-grid">
+        <PerformanceMiniCard label="Rating terbaik" driver={best.rating} value={best.rating ? `${best.rating.performance.rating_average.toFixed(1)} ★` : '-'} />
+        <PerformanceMiniCard label="Order terbanyak" driver={best.orders} value={String(best.orders?.performance.completed_orders_count ?? '-')} />
+        <PerformanceMiniCard label="Cancel terendah" driver={best.clean} value={String(best.clean?.performance.cancelled_orders_count ?? '-')} />
+        <PerformanceMiniCard label="Pendapatan terbaik" driver={best.revenue} value={best.revenue ? `Rp ${best.revenue.performance.completed_revenue.toLocaleString('id-ID')}` : '-'} />
       </div>
     </section>
   )
+}
+
+function PerformanceMiniCard({ label, driver, value }: { label: string; driver?: DriverPerformanceRow; value: string }) {
+  return <article className="performance-mini-card"><span>{label}</span><strong>{value}</strong><small>{driver?.name ?? 'Belum ada data'}</small></article>
+}
+
+function OperatorPerformanceSnapshot({ operators, onOpenChats }: { operators: OperatorPerformance[]; onOpenChats: () => void }) {
+  const bestRating = [...operators].sort((first, second) => second.rating_average - first.rating_average)[0]
+  const busiest = [...operators].sort((first, second) => second.handled_chats_count - first.handled_chats_count)[0]
+  const active = [...operators].sort((first, second) => second.active_chats_count - first.active_chats_count)[0]
+  const clean = [...operators].sort((first, second) => first.late_response_count - second.late_response_count)[0]
+
+  return (
+    <section className="panel driver-performance-snapshot">
+      <div className="section-head compact-head">
+        <div>
+          <h2>Performa Operator</h2>
+          <p>Rating dan beban layanan chat operator/eksekutor.</p>
+        </div>
+        <button className="secondary-button compact" type="button" onClick={onOpenChats}>Buka chat</button>
+      </div>
+      <div className="performance-mini-grid">
+        <OperatorMiniCard label="Rating operator" operator={bestRating} value={bestRating && bestRating.rating_average > 0 ? `${bestRating.rating_average.toFixed(1)} ★` : '-'} />
+        <OperatorMiniCard label="Chat dilayani" operator={busiest} value={String(busiest?.handled_chats_count ?? '-')} />
+        <OperatorMiniCard label="Chat aktif" operator={active} value={String(active?.active_chats_count ?? '-')} />
+        <OperatorMiniCard label="Respon paling rapi" operator={clean} value={clean ? `${clean.late_response_count} telat` : '-'} />
+      </div>
+    </section>
+  )
+}
+
+function OperatorMiniCard({ label, operator, value }: { label: string; operator?: OperatorPerformance; value: string }) {
+  return <article className="performance-mini-card"><span>{label}</span><strong>{value}</strong><small>{operator?.name ?? 'Belum ada data'}</small></article>
+}
+
+function isActiveOrderStatus(order: Order) {
+  return ['CREATED', 'SEARCHING_DRIVER', 'DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING', 'pending', 'accepted', 'on_delivery'].includes(String(order.status))
+}
+
+function isWaitingDriverStatus(status: string) {
+  return ['CREATED', 'SEARCHING_DRIVER', 'pending', 'created', 'searching_driver'].includes(String(status))
+}
+
+function isDispatchPendingOrder(order: Order) {
+  return isWaitingDriverStatus(order.status) && !order.driver
+}
+
+function statusDispatchLabel(status: string) {
+  const key = String(status).toLowerCase()
+  if (key.includes('searching')) return 'waiting_driver'
+  if (key.includes('created') || key === 'pending') return 'pending_dispatch'
+  return key.replaceAll('_', ' ')
+}
+
+function formatWaitingTime(seconds?: number) {
+  const total = Math.max(0, Number(seconds ?? 0))
+  const minutes = Math.floor(total / 60)
+  const rest = total % 60
+
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60)
+    return `${hours}j ${minutes % 60}m`
+  }
+
+  return `${minutes}m ${String(rest).padStart(2, '0')}d`
+}
+
+function isNightTariffCurrentlyActive(settings: SystemSettings) {
+  if (!settings.night_tariff_enabled) return false
+  const now = new Date()
+  const minute = now.getHours() * 60 + now.getMinutes()
+  return (settings.night_tariff_rules ?? []).some((rule) => timeInRange(minute, timeToMinute(rule.start), timeToMinute(rule.end)))
+}
+
+function timeToMinute(value?: string) {
+  const [hour, minute] = String(value ?? '00:00').split(':').map((item) => Number(item))
+  return Math.max(0, Math.min(23, hour || 0)) * 60 + Math.max(0, Math.min(59, minute || 0))
+}
+
+function timeInRange(value: number, start: number, end: number) {
+  return start <= end ? value >= start && value <= end : value >= start || value <= end
+}
+
+type DriverPerformanceRow = DriverRow & {
+  performance: NonNullable<DriverRow['performance']>
+}
+
+function normalizedDriverPerformance(driver: DriverRow): DriverPerformanceRow {
+  return {
+    ...driver,
+    performance: {
+      rating_average: Number(driver.performance?.rating_average ?? 0),
+      ratings_count: Number(driver.performance?.ratings_count ?? 0),
+      completed_orders_count: Number(driver.performance?.completed_orders_count ?? 0),
+      cancelled_orders_count: Number(driver.performance?.cancelled_orders_count ?? 0),
+      suspensions_count: Number(driver.performance?.suspensions_count ?? driver.suspensions.length),
+      oper_handle_requests_count: Number(driver.performance?.oper_handle_requests_count ?? driver.oper_handle_count ?? 0),
+      unpaid_deposits_count: Number(driver.performance?.unpaid_deposits_count ?? 0),
+      completed_revenue: Number(driver.performance?.completed_revenue ?? 0),
+      online_score: driver.driver_state === 'online' ? 1 : 0,
+    },
+  }
+}
+
+function driverPerformanceRows(drivers: DriverRow[], branchFilter = 'all') {
+  return drivers
+    .filter((driver) => branchFilter === 'all' || driverBranchKey(driver) === branchFilter)
+    .map(normalizedDriverPerformance)
+}
+
+function bestDriverFor(rows: DriverPerformanceRow[], metric: keyof DriverPerformanceRow['performance'], direction: 'asc' | 'desc') {
+  const sorted = [...rows]
+    .filter((driver) => Number.isFinite(Number(driver.performance[metric])))
+    .sort((first, second) => {
+      const diff = Number(first.performance[metric]) - Number(second.performance[metric])
+      return direction === 'asc' ? diff : -diff
+    })
+
+  return sorted[0]
+}
+
+function topDriverToday(drivers: DriverRow[], orders: Order[]) {
+  const bestByPerformance = bestDriverFor(driverPerformanceRows(drivers), 'completed_orders_count', 'desc')
+  if (bestByPerformance && bestByPerformance.performance.completed_orders_count > 0) {
+    return {
+      name: bestByPerformance.name,
+      orders: bestByPerformance.performance.completed_orders_count,
+      rating: bestByPerformance.performance.rating_average > 0 ? bestByPerformance.performance.rating_average.toFixed(1) : '-',
+      cancel: bestByPerformance.performance.cancelled_orders_count,
+    }
+  }
+
+  const today = new Date().toDateString()
+  const driverOrders = orders.filter((order) => order.driver && order.created_at && new Date(order.created_at).toDateString() === today)
+  const counts = new Map<string, { name: string; orders: number; cancel: number }>()
+  driverOrders.forEach((order) => {
+    const name = order.driver || '-'
+    const row = counts.get(name) ?? { name, orders: 0, cancel: 0 }
+    row.orders += 1
+    if (String(order.status).toUpperCase() === 'CANCELLED') row.cancel += 1
+    counts.set(name, row)
+  })
+  const best = [...counts.values()].sort((a, b) => b.orders - a.orders || a.cancel - b.cancel)[0]
+  return {
+    name: best?.name ?? 'Belum ada data',
+    orders: best?.orders ?? 0,
+    rating: '-',
+    cancel: best ? best.cancel : '-',
+  }
+}
+
+function driverBranchLabel(driver: DriverRow) {
+  return [driver.branch, driver.branch_area].filter(Boolean).join(' - ') || 'Tanpa cabang'
+}
+
+function driverBranchKey(driver: DriverRow) {
+  return driverBranchLabel(driver).toLowerCase()
 }
 
 function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permissions, api, onChanged }: { users: User[]; branches: Branch[]; me: User; roleFilter: Role | 'all'; onRoleFilterChange: (role: Role | 'all') => void; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
@@ -599,6 +1128,13 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
 function DriverManagementPanel({ drivers, services, permissions, api, onChanged }: { drivers: DriverRow[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [configDriver, setConfigDriver] = useState<DriverRow | null>(null)
   const [authDriver, setAuthDriver] = useState<DriverRow | null>(null)
+  const [branchFilter, setBranchFilter] = useState('all')
+  const branchOptions = useMemo(() => {
+    const unique = new Map<string, string>()
+    drivers.forEach((driver) => unique.set(driverBranchKey(driver), driverBranchLabel(driver)))
+    return [...unique.entries()].sort((first, second) => first[1].localeCompare(second[1]))
+  }, [drivers])
+  const filteredDrivers = useMemo(() => drivers.filter((driver) => branchFilter === 'all' || driverBranchKey(driver) === branchFilter), [branchFilter, drivers])
   const suspend = async (driver: DriverRow, duration: number, status: 'suspended' | 'suspended_unpaid') => {
     if (!driver.driver_id) return
     const reason = prompt('Alasan suspend', status === 'suspended_unpaid' ? 'Belum bayar setoran' : 'Suspend manual admin')
@@ -624,12 +1160,20 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
 
   return (
     <section className="panel driver-management-panel">
-      <PanelHeader title="Driver Management" action={`${drivers.length} driver${drivers.length === 1 ? '' : 's'}`} />
+      <PanelHeader title="Driver Management" action={`${filteredDrivers.length}/${drivers.length} driver`} />
+      <div className="table-toolbar">
+        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+          <option value="all">Semua cabang / area</option>
+          {branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+        <span className="toolbar-hint">Performa mengikuti data driver pada cabang yang dipilih.</span>
+      </div>
+      <DriverPerformanceBoard drivers={filteredDrivers} />
       <div className="driver-table-shell">
         <table className="driver-table">
           <thead><tr><th>Driver</th><th>Phone</th><th>Kendaraan</th><th>Layanan</th><th>Status</th><th>Until</th><th>Oper</th><th>History</th><th>Actions</th></tr></thead>
           <tbody>
-            {drivers.map((driver) => (
+            {filteredDrivers.map((driver) => (
               <tr key={driver.id}>
                 <td><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></td>
                 <td><span className="driver-phone">{driver.phone || '-'}</span></td>
@@ -652,10 +1196,10 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                 </td>
               </tr>
             ))}
-            {drivers.length === 0 && (
+            {filteredDrivers.length === 0 && (
               <tr>
                 <td colSpan={9}>
-                  <EmptyPanel title="Belum ada driver" copy="Driver yang terlihat sesuai role akan muncul di sini." />
+                  <EmptyPanel title="Belum ada driver" copy="Driver yang terlihat sesuai filter cabang akan muncul di sini." />
                 </td>
               </tr>
             )}
@@ -1406,33 +1950,268 @@ function EmptyPanel({ title, copy }: { title: string; copy: string }) {
   return <div className="empty-panel"><h2>{title}</h2><p>{copy}</p></div>
 }
 
-function ManualOrderPanel({ users, api, onChanged }: { users: User[]; api: ApiClient; onChanged: () => Promise<void> }) {
-  const customers = users.filter((user) => user.role === 'customer')
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    await api('/admin/orders/manual', {
-      method: 'POST',
-      body: JSON.stringify({
-        user_id: Number(form.get('user_id')),
-        service_type: form.get('service_type'),
-        pickup_address: form.get('pickup_address'),
-        pickup_lat: Number(form.get('pickup_lat')),
-        pickup_lng: Number(form.get('pickup_lng')),
-        destination_address: form.get('destination_address'),
-        destination_lat: Number(form.get('destination_lat')),
-        destination_lng: Number(form.get('destination_lng')),
-        price: Number(form.get('price')),
-        service_charge: Number(form.get('service_charge') || 0),
-        notes: form.get('notes'),
-      }),
-    })
-    event.currentTarget.reset()
-    await onChanged()
+function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches: Branch[]; api: ApiClient; onChanged: () => Promise<void> }) {
+  const ownBranch = branches.find((branch) => branch.id === me.branch_id) ?? null
+  const branchHint = ownBranch ? branchLabel(ownBranch) : me.branch || 'Area akun'
+  const [rawText, setRawText] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'qris'>('cash')
+  const [preview, setPreview] = useState<ManualOrderPreview | null>(null)
+  const [priceOverride, setPriceOverride] = useState('')
+  const [serviceFeeOverride, setServiceFeeOverride] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const canSubmitPreview = Boolean(preview?.order_payload)
+
+  const parsedCustomer = previewCustomer(preview)
+
+  const previewTextOrder = async () => {
+    if (!rawText.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      const response = await api<{ data: ManualOrderPreview }>('/admin/orders/manual/preview', {
+        method: 'POST',
+        body: JSON.stringify({ raw_text: rawText.trim() }),
+      })
+      setPreview(response.data)
+      const quote = response.data.quote
+      setPriceOverride(String(quote?.price ?? quote?.tarif ?? ''))
+      setServiceFeeOverride(String(quote?.service_fee ?? quote?.service_charge ?? ''))
+    } catch (error) {
+      setPreview(null)
+      setError(error instanceof Error ? error.message : 'Parser order gagal')
+    } finally {
+      setLoading(false)
+    }
   }
-  return <section className="panel manual-order-panel"><div className="section-head"><div><h2>Manual Order</h2><p>Buat order customer dari operator tanpa map. Koordinat tetap disimpan untuk matching driver.</p></div><span className="status info">{customers.length} customer</span></div><form className="manual-form" onSubmit={submit}><label>Customer<select name="user_id" required>{customers.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label><label>Service<input name="service_type" required defaultValue="ojek" /></label><label className="span-2">Pickup<input name="pickup_address" required placeholder="Alamat jemput" /></label><label className="span-2">Destination<input name="destination_address" required placeholder="Alamat tujuan" /></label><label>Pickup lat<input name="pickup_lat" required defaultValue="-6.2" /></label><label>Pickup lng<input name="pickup_lng" required defaultValue="106.8" /></label><label>Destination lat<input name="destination_lat" required defaultValue="-6.17" /></label><label>Destination lng<input name="destination_lng" required defaultValue="106.79" /></label><label>Price<input name="price" required defaultValue="20000" /></label><label>Service charge<input name="service_charge" defaultValue="0" /></label><label className="span-2">Catatan<textarea name="notes" placeholder="Catatan operator" /></label><button className="primary-button span-2" type="submit">Create manual order</button></form></section>
+
+  const submitParsedOrder = async () => {
+    if (!preview?.order_payload) return
+    setLoading(true)
+    setError('')
+    try {
+      await api('/admin/orders/manual', {
+        method: 'POST',
+        body: JSON.stringify({
+          parsed_customer: parsedCustomer,
+          order_payload: {
+            ...preview.order_payload,
+            payment_method: paymentMethod,
+            notes: [preview.order_payload.notes, rawText.trim()].filter(Boolean).join('\n'),
+          },
+          price_override: priceOverride !== '' ? Number(priceOverride) : undefined,
+          service_charge_override: serviceFeeOverride !== '' ? Number(serviceFeeOverride) : undefined,
+        }),
+      })
+      setRawText('')
+      setPreview(null)
+      setPriceOverride('')
+      setServiceFeeOverride('')
+      await onChanged()
+      window.alert('Order manual berhasil dibuat.')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Order gagal dibuat')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const addPoint = () => {
+    if (!preview?.order_payload) return
+    const label = `Titik ${(preview.order_payload.points?.length ?? 0) + 1}`
+    setPreview({
+      ...preview,
+      order_payload: {
+        ...preview.order_payload,
+        points: [...(preview.order_payload.points ?? []), { label, address: '' }],
+        stops: Math.max(1, 2 + (preview.order_payload.points?.length ?? 0)),
+      },
+    })
+  }
+
+  const updatePoint = (index: number, address: string) => {
+    if (!preview?.order_payload) return
+    const points = [...(preview.order_payload.points ?? [])]
+    points[index] = { ...points[index], address }
+    setPreview({ ...preview, order_payload: { ...preview.order_payload, points } })
+  }
+
+  return (
+    <section className="panel manual-order-panel">
+      <div className="section-head">
+        <div>
+          <h2>Manual Order</h2>
+          <p>Paste chat customer. AI parser membaca nama, nomor, alamat, layanan, dan detail order secara otomatis.</p>
+        </div>
+        <span className="status info">{branchHint}</span>
+      </div>
+
+      <div className="manual-parser-layout">
+        <div className="manual-ai-composer manual-workspace-card">
+          <div className="manual-card-title">
+            <strong>Paste order</strong>
+            <span>Branch otomatis</span>
+          </div>
+          <label className="manual-textarea-label">
+            Teks order dari customer
+            <textarea value={rawText} onChange={(event) => { setRawText(event.target.value); setPreview(null) }} placeholder={"Contoh:\nNama: Pak Budi\nNo HP: 08123456789\nOjek dari Perum ASB ke STB Kota, pembayaran cash.\nCatatan: minta driver A jika ada."} />
+          </label>
+          {error && <div className="manual-order-error">{error}</div>}
+          <div className="manual-ai-actions">
+            <button className="secondary-button" type="button" disabled={loading || !rawText.trim()} onClick={() => void previewTextOrder()}>
+              {loading ? 'Membaca order...' : 'Preview AI parser'}
+            </button>
+          </div>
+        </div>
+
+        <ManualOrderPreviewCard
+          preview={preview}
+          customer={parsedCustomer}
+          paymentMethod={paymentMethod}
+          priceOverride={priceOverride}
+          serviceFeeOverride={serviceFeeOverride}
+          loading={loading}
+          canSubmit={canSubmitPreview}
+          onPaymentChange={setPaymentMethod}
+          onPriceChange={setPriceOverride}
+          onServiceFeeChange={setServiceFeeOverride}
+          onAddPoint={addPoint}
+          onPointChange={updatePoint}
+          onDestinationChange={(address) => {
+            if (!preview?.order_payload) return
+            setPreview({ ...preview, order_payload: { ...preview.order_payload, destination_address: address } })
+          }}
+          onSubmit={() => void submitParsedOrder()}
+        />
+      </div>
+    </section>
+  )
 }
 
+function DriverPerformanceBoard({ drivers }: { drivers: DriverRow[] }) {
+  const rows = driverPerformanceRows(drivers)
+  const cards = [
+    { label: 'Rating terbaik', driver: bestDriverFor(rows, 'rating_average', 'desc'), value: (row?: DriverPerformanceRow) => row && row.performance.rating_average > 0 ? `${row.performance.rating_average.toFixed(1)} ★` : '-' },
+    { label: 'Terima order terbanyak', driver: bestDriverFor(rows, 'completed_orders_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.completed_orders_count ?? '-') },
+    { label: 'Tidak telat bayar', driver: bestDriverFor(rows, 'unpaid_deposits_count', 'asc'), value: (row?: DriverPerformanceRow) => row ? `${row.performance.unpaid_deposits_count} unpaid` : '-' },
+    { label: 'Suspend terbanyak', driver: bestDriverFor(rows, 'suspensions_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.suspensions_count ?? '-') },
+    { label: 'Cancel terbanyak', driver: bestDriverFor(rows, 'cancelled_orders_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.cancelled_orders_count ?? '-') },
+    { label: 'Oper handle terbanyak', driver: bestDriverFor(rows, 'oper_handle_requests_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.oper_handle_requests_count ?? '-') },
+    { label: 'Pendapatan terbaik', driver: bestDriverFor(rows, 'completed_revenue', 'desc'), value: (row?: DriverPerformanceRow) => row ? `Rp ${row.performance.completed_revenue.toLocaleString('id-ID')}` : '-' },
+    { label: 'Online terbaik', driver: bestDriverFor(rows, 'online_score', 'desc'), value: (row?: DriverPerformanceRow) => row?.driver_state === 'online' ? 'Online' : 'Offline' },
+  ]
+
+  return (
+    <section className="driver-performance-board">
+      {cards.map((card) => (
+        <article className="driver-performance-card" key={card.label}>
+          <span>{card.label}</span>
+          <strong>{card.value(card.driver)}</strong>
+          <small>{card.driver?.name ?? 'Belum ada data'}</small>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function ManualOrderPreviewCard({
+  preview,
+  customer,
+  paymentMethod,
+  priceOverride,
+  serviceFeeOverride,
+  loading,
+  canSubmit,
+  onPaymentChange,
+  onPriceChange,
+  onServiceFeeChange,
+  onAddPoint,
+  onPointChange,
+  onDestinationChange,
+  onSubmit,
+}: {
+  preview: ManualOrderPreview | null
+  customer: { name?: string; phone?: string; address?: string }
+  paymentMethod: 'cash' | 'transfer' | 'qris'
+  priceOverride: string
+  serviceFeeOverride: string
+  loading: boolean
+  canSubmit: boolean
+  onPaymentChange: (value: 'cash' | 'transfer' | 'qris') => void
+  onPriceChange: (value: string) => void
+  onServiceFeeChange: (value: string) => void
+  onAddPoint: () => void
+  onPointChange: (index: number, value: string) => void
+  onDestinationChange: (value: string) => void
+  onSubmit: () => void
+}) {
+  if (!preview) {
+    return (
+      <aside className="manual-preview-card empty">
+        <Icon name="plus" />
+        <strong>Preview order akan muncul di sini</strong>
+        <p>AI akan membaca nama customer, telepon, pickup, tujuan, catatan, tarif, dan total dari teks yang ditempel.</p>
+      </aside>
+    )
+  }
+
+  const payload = preview.order_payload
+  const quote = preview.quote
+  const basePrice = Number(quote?.base_tarif_before_night ?? quote?.price ?? quote?.tarif ?? 0)
+  const nightCharge = Number(quote?.night_tariff_charge ?? 0)
+  const price = priceOverride !== '' ? Number(priceOverride) : Number(quote?.price ?? quote?.tarif ?? 0)
+  const serviceFee = serviceFeeOverride !== '' ? Number(serviceFeeOverride) : Number(quote?.service_fee ?? quote?.service_charge ?? 0)
+  const extraCharge = Number(quote?.extra_charge ?? 0)
+  const total = price + serviceFee + extraCharge
+  const distance = quote?.distance_km ?? quote?.distance
+
+  return (
+    <aside className={payload ? 'manual-preview-card ready' : 'manual-preview-card warning'}>
+      <span className="status info">{preview.intent}</span>
+      <strong>{preview.selected_service ?? preview.service_type ?? payload?.service_type ?? 'Order belum terbaca'}</strong>
+      <p>{preview.reply ?? preview.message ?? 'Lengkapi teks order agar sistem bisa membuat preview.'}</p>
+      {payload && (
+        <div className="manual-preview-detail">
+          <div><span>Customer</span><b>{customer.name || 'Belum terbaca'}{customer.phone ? ` - ${customer.phone}` : ''}</b></div>
+          <div><span>Pickup</span><b>{payload.pickup_address}</b></div>
+          <label className="manual-inline-editor"><span>Tujuan</span><input value={payload.destination_address} onChange={(event) => onDestinationChange(event.target.value)} /></label>
+          {(payload.points ?? []).map((point, index) => (
+            <label className="manual-inline-editor" key={`${point.label}-${index}`}><span>{point.label ?? `Titik ${index + 1}`}</span><input value={point.address} onChange={(event) => onPointChange(index, event.target.value)} placeholder="Alamat titik tambahan" /></label>
+          ))}
+          <div><span>Jarak</span><b>{distance ? `${Number(distance).toFixed(2)} km` : '-'}</b></div>
+          <label className="manual-inline-editor"><span>Pembayaran</span><select value={paymentMethod} onChange={(event) => onPaymentChange(event.target.value as 'cash' | 'transfer' | 'qris')}><option value="cash">Pembayaran Cash</option><option value="transfer">Pembayaran Transfer</option><option value="qris">Pembayaran QRIS</option></select></label>
+          <div><span>Tarif dasar</span><b>Rp {basePrice.toLocaleString('id-ID')}</b></div>
+          {nightCharge > 0 && <div><span>Tarif malam {quote?.night_tariff_percent ? `${quote.night_tariff_percent}%` : ''}</span><b>Rp {nightCharge.toLocaleString('id-ID')}</b></div>}
+          <label className="manual-inline-editor price-editor"><span>Edit harga final</span><input type="number" min="0" value={priceOverride} onChange={(event) => onPriceChange(event.target.value)} /></label>
+          <label className="manual-inline-editor"><span>Service fee</span><input type="number" min="0" value={serviceFeeOverride} onChange={(event) => onServiceFeeChange(event.target.value)} /></label>
+        </div>
+      )}
+      {payload && (
+        <>
+          <div className="manual-preview-total"><span>Total estimasi</span><strong>Rp {Number(total).toLocaleString('id-ID')}</strong></div>
+          <div className="manual-preview-actions sticky-actions">
+            <button className="secondary-button compact" type="button" onClick={onAddPoint}>Tambah titik</button>
+            <button className="primary-button compact" type="button" disabled={loading || !canSubmit} onClick={onSubmit}>{loading ? 'Mengirim...' : 'Kirim Order'}</button>
+          </div>
+        </>
+      )}
+    </aside>
+  )
+}
+
+function previewCustomer(preview: ManualOrderPreview | null) {
+  const parsed = preview?.parsed ?? {}
+  const customer = (parsed.customer && typeof parsed.customer === 'object' ? parsed.customer : {}) as Record<string, unknown>
+  return {
+    name: stringValue(customer.name ?? parsed.name),
+    phone: stringValue(customer.phone ?? parsed.phone),
+    address: stringValue(customer.address ?? parsed.address),
+  }
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
 function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; me: User; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showForm, setShowForm] = useState(false)
   const canCreate = ['admin', 'gm'].includes(me.role)
@@ -1625,35 +2404,8 @@ function PanelHeader({ title, action }: { title: string; action: string }) {
   return <div className="panel-header"><h2>{title}</h2><span>{action}</span></div>
 }
 
-function dashboardHeadline(role: Role) {
-  return {
-    admin: 'Admin command center',
-    gm: 'GM executive command center',
-    hrd: 'HRD people, policy, and chat control',
-    manager: 'Manager branch reporting cockpit',
-    spv: 'SPV validation and monitoring desk',
-    operator: 'Operator live order and chat desk',
-    driver: 'Driver order workspace',
-    customer: 'Customer order workspace',
-  }[role]
-}
-
 function subtitleFor(data: Bootstrap) {
   return `${roleLabels[data.me.role]} dashboard`
-}
-
-function roleModules(role: Role) {
-  const modules: Record<Role, { title: string; description: string; icon: string }[]> = {
-    admin: [{ title: 'Full system access', description: 'All frontend modules and backend Filament.', icon: 'shield' }],
-    gm: [{ title: 'Full executive access', description: 'All dashboard modules and backend Filament.', icon: 'shield' }],
-    hrd: [{ title: 'Manage user', description: 'No Admin or GM CRUD.', icon: 'users' }, { title: 'Set policy', description: 'Tarif and operational rules.', icon: 'cash' }, { title: 'Monitor all chat', description: 'Driver and customer chat oversight.', icon: 'chat' }],
-    manager: [{ title: 'Branch reports', description: 'Order and driver reports scoped to branch.', icon: 'chart' }, { title: 'Export reports', description: 'Transactions, orders, and drivers.', icon: 'receipt' }],
-    spv: [{ title: 'Validate order', description: 'Order and transaction validation.', icon: 'receipt' }, { title: 'Realtime monitoring', description: 'Branch operations live.', icon: 'pin' }],
-    operator: [{ title: 'Input manual order', description: 'Create real manual orders.', icon: 'plus' }, { title: 'Edit prices', description: 'Adjust incoming order price.', icon: 'cash' }, { title: 'Handle chat', description: 'Receive customer and driver chat.', icon: 'chat' }],
-    driver: [{ title: 'Orders only', description: 'Driver order workspace.', icon: 'bag' }],
-    customer: [{ title: 'Create order', description: 'Customer order access.', icon: 'bag' }],
-  }
-  return modules[role]
 }
 
 function titleFor(view: View) {
@@ -1727,12 +2479,6 @@ function branchLabel(branch: Branch) {
 function userBranchLabel(user: User) {
   if (!user.branch) return '-'
   return [user.branch, user.branch_area].filter(Boolean).join(' - ')
-}
-
-function auditActionLabel(action: string) {
-  return action
-    .replaceAll('_', ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function assetUrl(path: string) {

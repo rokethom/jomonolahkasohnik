@@ -34,7 +34,7 @@ class MessageService
             $this->slaService->start($conversation, $message);
         }
 
-        if (in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)) {
+        if (in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)) {
             $this->slaService->resolve($conversation);
         }
 

@@ -42,6 +42,7 @@ export type User = {
   location_updated_at?: string | null
   role?: string
   profile_completed?: boolean
+  profile_photo_url?: string | null
 }
 
 export type Branch = {
@@ -106,6 +107,9 @@ export type Order = {
     rating: number
     comment?: string | null
   } | null
+  payment_method?: 'cash' | 'transfer' | string | null
+  payment_label?: string | null
+  payment_meta?: Record<string, unknown> | null
 }
 
 export type OrderFeedback = {
@@ -137,6 +141,9 @@ export type ChatConversation = {
   status: 'waiting' | 'active' | 'closed' | string
   sla_status?: 'waiting' | 'on_time' | 'late' | string | null
   closed_at?: string | null
+  operator_rating?: number | null
+  rating_requested?: boolean
+  rating_requested_at?: string | null
 }
 
 export type Toast = {
@@ -225,5 +232,15 @@ export type PublicSettings = {
     enabled: boolean
     vapid_key?: string | null
     firebase_config?: Record<string, string> | null
+  }
+  payment?: {
+    methods: Array<{ key: 'cash' | 'transfer' | string; label: string; description?: string }>
+    transfer_accounts?: Array<{ bank?: string; account_name?: string; account_number?: string }>
+    transfer_account?: { bank?: string; account_name?: string; account_number?: string }
+    qris_image_url?: string | null
+  }
+  support?: {
+    complaint_whatsapp_number?: string | null
+    complaint_whatsapp_url?: string | null
   }
 }

@@ -67,9 +67,10 @@ class OrderOperationService
             }
 
             $percent = max(0, (int) ($rule['percent'] ?? 0));
+            $rawAmount = (int) ceil($baseTarif * ($percent / 100));
 
             return [
-                'amount' => (int) ceil($baseTarif * ($percent / 100)),
+                'amount' => $this->roundUpThousand($rawAmount),
                 'percent' => $percent,
                 'rule' => $rule,
             ];
@@ -124,5 +125,10 @@ class OrderOperationService
         }
 
         return sprintf('%02d:%02d', min(23, max(0, (int) $match[1])), min(59, max(0, (int) $match[2])));
+    }
+
+    private function roundUpThousand(int $amount): int
+    {
+        return $amount <= 0 ? 0 : (int) ceil($amount / 1000) * 1000;
     }
 }

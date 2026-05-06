@@ -41,6 +41,11 @@ class OrderController extends Controller
             })->where('status', '!=', OrderStatus::Cancelled->value);
         }
 
+        if ($request->filled('month') && preg_match('/^\d{4}-\d{2}$/', (string) $request->query('month')) === 1) {
+            [$year, $month] = array_map('intval', explode('-', (string) $request->query('month')));
+            $query->whereYear('created_at', $year)->whereMonth('created_at', $month);
+        }
+
         return response()->json([
             'data' => $query->paginate($request->integer('per_page', 15)),
         ]);

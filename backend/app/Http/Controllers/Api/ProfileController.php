@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
@@ -20,8 +21,18 @@ class ProfileController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:30'],
             'address' => ['required', 'string', 'max:500'],
+            'profile_photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
+        if ($request->hasFile('profile_photo')) {
+            if ($request->user()->profile_photo_path) {
+                Storage::disk('public')->delete($request->user()->profile_photo_path);
+            }
+
+            $payload['profile_photo_path'] = $request->file('profile_photo')?->store('profiles/customers', 'public');
+        }
+
+        unset($payload['profile_photo']);
         $request->user()->update($payload);
 
         return response()->json($this->payload($request));
@@ -47,6 +58,7 @@ class ProfileController extends Controller
             'lat' => $user->lat,
             'lng' => $user->lng,
             'address' => $user->address,
+            'profile_photo_url' => $user->profile_photo_path ? asset('storage/'.$user->profile_photo_path) : null,
             'area_status' => $user->currentLocation?->status ?? ($user->branch_id ? 'inside_branch' : 'outside_branch'),
             'location_updated_at' => $user->currentLocation?->updated_at?->toIso8601String(),
             'role' => $role,

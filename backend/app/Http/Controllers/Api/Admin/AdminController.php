@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Enums\OrderStatus;
 use App\Enums\UserRole;
+use App\Actions\Order\AcceptOrder;
 use App\Events\OrderPriceUpdated;
+use App\Actions\Order\CreateOrder;
+use App\Exceptions\OrderLimitExceededException;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Branch;
@@ -19,7 +22,9 @@ use App\Models\User;
 use App\Services\AdminDashboardMetricsService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
+use App\Services\JojoBotService;
 use App\Services\MultiOrderService;
+use App\Services\NotificationService;
 use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
@@ -28,10 +33,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\Enum;
 use Illuminate\Validation\Rules\Password;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -51,7 +58,8 @@ class AdminController extends Controller
             'stats' => $this->stats($user),
             'users' => $this->usersQuery($user)->limit(100)->get()->map(fn (User $item) => $this->userPayload($item)),
             'drivers' => $this->driverRows($user),
-            'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order)),
+            'operator_performance' => $this->operatorPerformanceRows($user),
+            'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)),
             'branches' => Branch::query()->withCount('geofenceAreas')->orderBy('name')->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
@@ -236,13 +244,97 @@ class AdminController extends Controller
             'data' => $this->ordersQuery($request->user())
                 ->latest()
                 ->paginate($request->integer('per_page', 25))
-                ->through(fn (Order $order) => $this->orderPayload($order)),
+                ->through(fn (Order $order) => $this->orderPayload($order, $request->user())),
+        ]);
+    }
+
+    public function assignDriver(Request $request, Order $order, AcceptOrder $acceptOrder, NotificationService $notifications): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor->hasPermission('assign_driver'), 403);
+
+        $payload = $request->validate([
+            'driver_id' => ['required', 'integer', 'exists:drivers,id'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $order->loadMissing(['user.branch', 'driver.user.branch']);
+        $this->assertOrderAreaScope($actor, $order);
+
+        $driver = Driver::query()->with(['user.branch'])->findOrFail($payload['driver_id']);
+        abort_unless((int) $driver->user?->branch_id === (int) $actor->branch_id || in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::SPV], true), 403, 'Driver di luar area akun ini.');
+        abort_unless($driver->status === 'active' && ! $driver->is_suspend, 422, 'Driver tidak aktif.');
+        abort_unless($driver->is_available, 422, 'Driver sedang tidak idle/online.');
+        abort_unless(! $this->driverHasActiveOrder($driver), 422, 'Driver masih memiliki order aktif.');
+
+        try {
+            $assigned = $acceptOrder->handle($order, $driver);
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        $notifications->sendToUser(
+            $driver->user,
+            'Order ditugaskan dispatcher',
+            "Order {$assigned->order_code} ditugaskan oleh {$actor->name}.",
+            [
+                'type' => 'dispatcher_assigned_order',
+                'order_id' => $assigned->id,
+                'order_code' => $assigned->order_code,
+                'assigned_by' => $actor->id,
+            ],
+        );
+
+        $this->recordAudit($actor, 'assigned_driver_to_order', $assigned, [
+            'driver_id' => $driver->id,
+            'reason' => $payload['reason'] ?? null,
+        ]);
+
+        return response()->json([
+            'message' => 'Driver berhasil di-assign ke order.',
+            'data' => $this->orderPayload($assigned->fresh(['user.branch', 'driver.user.branch']), $actor),
+        ]);
+    }
+
+    public function broadcastDrivers(Request $request, Order $order, NotificationService $notifications): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($actor->hasPermission('assign_driver'), 403);
+
+        $order->loadMissing(['branch', 'user.branch', 'driver.user.branch']);
+        $this->assertOrderAreaScope($actor, $order);
+        abort_unless(in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true), 422, 'Broadcast hanya untuk order pending.');
+
+        $driverIds = collect($this->suggestedDriversForOrder($order, $actor))->pluck('id')->all();
+        $drivers = Driver::query()->with('user')->whereIn('id', $driverIds)->get();
+
+        foreach ($drivers as $driver) {
+            $notifications->sendToUser(
+                $driver->user,
+                'Pending order area',
+                "Order {$order->order_code} masih menunggu driver di area Anda.",
+                [
+                    'type' => 'dispatcher_broadcast_order',
+                    'order_id' => $order->id,
+                    'order_code' => $order->order_code,
+                    'broadcast_by' => $actor->id,
+                ],
+            );
+        }
+
+        $this->recordAudit($actor, 'broadcast_pending_order_to_drivers', $order, [
+            'driver_count' => $drivers->count(),
+        ]);
+
+        return response()->json([
+            'message' => "Broadcast terkirim ke {$drivers->count()} driver idle area.",
+            'driver_count' => $drivers->count(),
         ]);
     }
 
     public function updateOrderPrice(Request $request, Order $order): JsonResponse
     {
-        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator], true), 403);
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
 
         $payload = $request->validate([
             'price' => ['required', 'integer', 'min:0'],
@@ -419,12 +511,107 @@ class AdminController extends Controller
         return response()->json(['message' => 'Driver config updated']);
     }
 
-    public function manualOrder(Request $request, MultiOrderService $multiOrder): JsonResponse
+    public function previewManualOrder(Request $request, JojoBotService $jojoBot): JsonResponse
     {
-        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true), 403);
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
 
         $payload = $request->validate([
-            'user_id' => ['required', 'exists:users,id'],
+            'user_id' => ['nullable', 'exists:users,id'],
+            'raw_text' => ['required', 'string', 'max:4000'],
+        ]);
+
+        $customer = $this->manualPreviewCustomer($request, $payload);
+        $this->assertManualOrderCustomerScope($request->user(), $customer);
+
+        $preview = $this->withManualOrderContact(
+            $jojoBot->preview($customer, $payload['raw_text']),
+            $this->manualOrderContactFromText($payload['raw_text']),
+        );
+
+        return response()->json([
+            'message' => $preview['message'] ?? $preview['reply'] ?? null,
+            'data' => $preview,
+        ]);
+    }
+
+    public function manualOrder(Request $request, MultiOrderService $multiOrder, CreateOrder $createOrder): JsonResponse
+    {
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
+
+        if ($request->has('order_payload')) {
+            $payload = $request->validate([
+                'user_id' => ['nullable', 'exists:users,id'],
+                'customer_name' => ['nullable', 'string', 'max:255'],
+                'customer_phone' => ['nullable', 'string', 'max:30'],
+                'customer_address' => ['nullable', 'string', 'max:500'],
+                'parsed_customer' => ['nullable', 'array'],
+                'parsed_customer.name' => ['nullable', 'string', 'max:255'],
+                'parsed_customer.phone' => ['nullable', 'string', 'max:30'],
+                'parsed_customer.address' => ['nullable', 'string', 'max:500'],
+                'branch_id' => ['nullable', 'exists:branches,id'],
+                'order_payload' => ['required', 'array'],
+                'order_payload.service_type' => ['required', 'string', 'max:50'],
+                'order_payload.pickup_address' => ['required', 'string', 'max:255'],
+                'order_payload.pickup_lat' => ['nullable', 'numeric', 'between:-90,90'],
+                'order_payload.pickup_lng' => ['nullable', 'numeric', 'between:-180,180'],
+                'order_payload.destination_address' => ['required', 'string', 'max:255'],
+                'order_payload.destination_lat' => ['nullable', 'numeric', 'between:-90,90'],
+                'order_payload.destination_lng' => ['nullable', 'numeric', 'between:-180,180'],
+                'order_payload.stops' => ['sometimes', 'integer', 'min:1'],
+                'order_payload.notes' => ['nullable', 'string'],
+                'order_payload.items' => ['sometimes', 'array'],
+                'order_payload.points' => ['sometimes', 'array', 'max:5'],
+                'order_payload.payment_method' => ['nullable', 'string', 'in:cash,transfer,qris'],
+                'price_override' => ['nullable', 'integer', 'min:0'],
+                'service_charge_override' => ['nullable', 'integer', 'min:0'],
+            ]);
+
+            $customer = $this->manualOrderCustomer($request, $payload);
+            $this->assertManualOrderCustomerScope($request->user(), $customer);
+
+            $orderPayload = $payload['order_payload'];
+            $orderPayload['notes'] = trim((string) ($orderPayload['notes'] ?? '')."\nDibuat dari dashboard oleh ".$request->user()->name);
+
+            try {
+                $order = $createOrder->handle($customer, $orderPayload);
+            } catch (OrderLimitExceededException $exception) {
+                return response()->json([
+                    'message' => $exception->getMessage(),
+                    'active_orders' => $exception->activeOrders,
+                    'max_orders' => $exception->maxOrders,
+                ], 422);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'message' => collect($exception->errors())->flatten()->first() ?? 'Order belum bisa dibuat.',
+                    'errors' => $exception->errors(),
+                ], 422);
+            }
+            $order->forceFill(['source' => 'dashboard_manual'])->save();
+
+            if (array_key_exists('price_override', $payload) || array_key_exists('service_charge_override', $payload)) {
+                $price = $payload['price_override'] ?? $order->price;
+                $serviceCharge = $payload['service_charge_override'] ?? $order->service_charge;
+                $order->forceFill([
+                    'price' => $price,
+                    'service_charge' => $serviceCharge,
+                    'total_price' => $price + $serviceCharge + $order->extra_charge,
+                ])->save();
+            }
+
+            $this->recordAudit($request->user(), 'created_dashboard_text_order', $order, ['order_code' => $order->order_code]);
+
+            return response()->json([
+                'message' => 'Manual order created from dashboard parser',
+                'data' => $this->orderPayload($order->fresh(['user.branch', 'driver.user.branch'])),
+            ], 201);
+        }
+
+        $payload = $request->validate([
+            'user_id' => ['nullable', 'exists:users,id'],
+            'customer_name' => ['required_without:user_id', 'nullable', 'string', 'max:255'],
+            'customer_phone' => ['nullable', 'string', 'max:30'],
+            'customer_address' => ['nullable', 'string', 'max:500'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
             'service_type' => ['required', 'string', 'max:50'],
             'pickup_address' => ['required', 'string', 'max:255'],
             'pickup_lat' => ['required', 'numeric'],
@@ -437,9 +624,23 @@ class AdminController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
+        $customer = $this->manualOrderCustomer($request, $payload);
+        $this->assertManualOrderCustomerScope($request->user(), $customer);
+
         $serviceCharge = $payload['service_charge'] ?? 0;
         $order = Order::create([
-            ...$payload,
+            'user_id' => $customer->id,
+            'branch_id' => $customer->branch_id,
+            'service_type' => $payload['service_type'],
+            'pickup_address' => $payload['pickup_address'],
+            'pickup_lat' => $payload['pickup_lat'],
+            'pickup_lng' => $payload['pickup_lng'],
+            'destination_address' => $payload['destination_address'],
+            'destination_lat' => $payload['destination_lat'],
+            'destination_lng' => $payload['destination_lng'],
+            'price' => $payload['price'],
+            'notes' => $payload['notes'] ?? null,
+            'source' => 'dashboard_manual',
             'service_charge' => $serviceCharge,
             'direction_bearing' => $multiOrder->calculateBearing(
                 (float) $payload['pickup_lat'],
@@ -457,6 +658,117 @@ class AdminController extends Controller
             'message' => 'Manual order created',
             'data' => $this->orderPayload($order->fresh(['user.branch', 'driver.user.branch'])),
         ], 201);
+    }
+
+    private function assertManualOrderCustomerScope(User $actor, User $customer): void
+    {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true)) {
+            return;
+        }
+
+        abort_unless((int) $actor->branch_id === (int) $customer->branch_id, 403, 'Customer di luar area akun ini.');
+    }
+
+    private function manualOrderContactFromText(string $text): array
+    {
+        return [
+            'name' => $this->manualOrderTextField($text, '(?:nama|customer|pemesan)'),
+            'phone' => $this->manualOrderTextField($text, '(?:hp|no\\s*hp|wa|whatsapp|telepon|phone)'),
+            'address' => $this->manualOrderTextField($text, '(?:alamat\\s*(?:customer|pemesan)?|alamat\\s*antar)'),
+        ];
+    }
+
+    private function manualOrderTextField(string $text, string $label): ?string
+    {
+        if (preg_match('/(?:^|\\R)\\s*'.$label.'\\s*(?:\\/\\s*(?:hp|wa|whatsapp|telepon|phone))?\\s*[:=\\-]\\s*(.+)$/imu', $text, $match) === 1) {
+            return trim($match[1]);
+        }
+
+        return null;
+    }
+
+    private function withManualOrderContact(array $preview, array $contact): array
+    {
+        $preview['parsed'] = is_array($preview['parsed'] ?? null) ? $preview['parsed'] : [];
+        $preview['parsed']['name'] = $contact['name'];
+        $preview['parsed']['phone'] = $contact['phone'];
+        $preview['parsed']['address'] = $contact['address'];
+        $preview['parsed']['customer'] = [
+            'name' => $contact['name'],
+            'phone' => $contact['phone'],
+            'address' => $contact['address'],
+        ];
+
+        return $preview;
+    }
+
+    private function manualPreviewCustomer(Request $request, array $payload): User
+    {
+        if (filled($payload['user_id'] ?? null)) {
+            $customer = User::query()->with('branch')->findOrFail($payload['user_id']);
+            abort_unless($customer->role === UserRole::Customer, 422, 'User yang dipilih bukan customer.');
+
+            return $customer;
+        }
+
+        $branchId = $request->user()->branch_id ?? data_get($payload, 'order_payload.branch_id') ?? $payload['branch_id'] ?? null;
+        $customer = new User([
+            'name' => $request->user()->name,
+            'phone' => $request->user()->phone,
+            'address' => $request->user()->address,
+            'branch_id' => $branchId,
+            'role' => UserRole::Customer,
+            'is_active' => true,
+        ]);
+
+        if ($branchId) {
+            $customer->setRelation('branch', Branch::query()->find($branchId));
+        }
+
+        return $customer;
+    }
+
+    private function manualOrderCustomer(Request $request, array $payload): User
+    {
+        if (filled($payload['user_id'] ?? null)) {
+            $customer = User::query()->with('branch')->findOrFail($payload['user_id']);
+            abort_unless($customer->role === UserRole::Customer, 422, 'User yang dipilih bukan customer.');
+
+            return $customer;
+        }
+
+        $parsedCustomer = is_array($payload['parsed_customer'] ?? null) ? $payload['parsed_customer'] : [];
+        $name = trim((string) ($payload['customer_name'] ?? $parsedCustomer['name'] ?? 'Customer Manual'));
+        $phone = trim((string) ($payload['customer_phone'] ?? $parsedCustomer['phone'] ?? ''));
+        $address = trim((string) ($payload['customer_address'] ?? $parsedCustomer['address'] ?? ''));
+        $customer = $phone !== ''
+            ? User::query()->where('role', UserRole::Customer->value)->where('phone', $phone)->first()
+            : null;
+
+        if ($customer) {
+            $customer->forceFill([
+                'name' => $name ?: $customer->name,
+                'address' => $address ?: $customer->address,
+                'branch_id' => $request->user()->branch_id ?? $customer->branch_id ?? $payload['branch_id'] ?? null,
+            ])->save();
+
+            return $customer->load('branch');
+        }
+
+        $branchId = $request->user()->branch_id ?? data_get($payload, 'order_payload.branch_id') ?? $payload['branch_id'] ?? null;
+        $emailSeed = $phone !== '' ? preg_replace('/\D+/', '', $phone) : Str::lower(Str::random(12));
+
+        return User::query()->create([
+            'username' => 'manual_'.Str::lower(Str::random(10)),
+            'name' => $name ?: 'Customer Manual',
+            'email' => 'manual_'.$emailSeed.'_'.Str::lower(Str::random(6)).'@manual.jojo.local',
+            'phone' => $phone ?: null,
+            'address' => $address ?: null,
+            'branch_id' => $branchId,
+            'role' => UserRole::Customer,
+            'password' => Hash::make(Str::random(40)),
+            'is_active' => true,
+        ])->load('branch');
     }
 
     public function priceSettings(): JsonResponse
@@ -742,8 +1054,8 @@ class AdminController extends Controller
 
         return match ($actor->role) {
             UserRole::Admin, UserRole::GM => $query,
-            UserRole::HRD => $query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Driver->value]),
-            UserRole::Manager, UserRole::SPV, UserRole::Operator => $query->where('branch_id', $actor->branch_id)->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value]),
+            UserRole::HRD => $query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Eksekutor->value, UserRole::Driver->value]),
+            UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor => $query->where('branch_id', $actor->branch_id)->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value]),
             default => $query->whereKey($actor->id),
         };
     }
@@ -751,9 +1063,9 @@ class AdminController extends Controller
     private function ordersQuery(User $actor): Builder
     {
         $query = Order::query()
-            ->with(['user.branch', 'driver.user.branch']);
+            ->with(['branch', 'user.branch', 'driver.user.branch']);
 
-        if ($actor->role === UserRole::Manager || $actor->role === UserRole::SPV || $actor->role === UserRole::Operator) {
+        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where(function (Builder $query) use ($actor): void {
                 $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id))
                     ->orWhereHas('driver.user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
@@ -767,7 +1079,7 @@ class AdminController extends Controller
     {
         $query = LocationLog::query()->with(['user', 'branch', 'geofenceArea'])->latest();
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator], true)) {
+        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where('branch_id', $actor->branch_id);
         }
 
@@ -778,7 +1090,7 @@ class AdminController extends Controller
     {
         $query = ChatConversation::query()->with(['customer', 'driver', 'operator', 'branch', 'order', 'latestMessage'])->latest();
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator], true)) {
+        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where('branch_id', $actor->branch_id);
         }
 
@@ -789,7 +1101,7 @@ class AdminController extends Controller
     {
         $query = AuditLog::query()->with('user')->latest();
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator], true)) {
+        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
         }
 
@@ -812,7 +1124,8 @@ class AdminController extends Controller
                 && $user->hasPermission('suspend_driver'),
             'can_manage_system_settings' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
-            'can_create_manual_order' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true),
+            'can_create_manual_order' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::Eksekutor], true),
+            'can_assign_driver' => $user->hasPermission('assign_driver'),
             'can_view_report' => $user->hasPermission('view_report'),
             'can_export_report' => $user->hasPermission('export_report'),
             'can_monitor_live_order' => $user->hasPermission('monitor_live_order'),
@@ -866,8 +1179,10 @@ class AdminController extends Controller
         ];
     }
 
-    private function orderPayload(Order $order): array
+    private function orderPayload(Order $order, ?User $actor = null): array
     {
+        $order->loadMissing(['user.branch', 'driver.user.branch']);
+
         return [
             'id' => $order->id,
             'code' => $order->order_code,
@@ -877,7 +1192,8 @@ class AdminController extends Controller
             'source' => $order->source,
             'status' => $order->status->value,
             'cancel_reason' => $this->cancelReasonFor($order),
-            'branch' => $order->user?->branch?->name ?? $order->driver?->user?->branch?->name,
+            'branch' => $order->branch?->name ?? $order->user?->branch?->name ?? $order->driver?->user?->branch?->name,
+            'branch_area' => $order->branch?->area ?? $order->user?->branch?->area ?? $order->driver?->user?->branch?->area,
             'price' => $order->price,
             'service_charge' => $order->service_charge,
             'extra_charge' => $order->extra_charge,
@@ -885,7 +1201,191 @@ class AdminController extends Controller
             'direction_bearing' => $order->direction_bearing !== null ? (float) $order->direction_bearing : null,
             'is_multi_order' => $order->is_multi_order,
             'created_at' => $order->created_at?->toDateTimeString(),
+            'waiting_seconds' => $this->waitingSeconds($order),
+            'sla_status' => $this->dispatchSlaStatus($order),
+            'suggested_drivers' => $actor ? $this->suggestedDriversForOrder($order, $actor) : [],
+            'customer_preferences' => $this->customerPreferencePayload($order),
         ];
+    }
+
+    private function assertOrderAreaScope(User $actor, Order $order): void
+    {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM], true)) {
+            return;
+        }
+
+        abort_unless($actor->branch_id !== null, 403, 'Akun ini belum memiliki area/cabang.');
+
+        $orderBranchId = $order->branch_id ?? $order->user?->branch_id ?? $order->driver?->user?->branch_id;
+        abort_unless((int) $orderBranchId === (int) $actor->branch_id, 403, 'Order di luar area akun ini.');
+    }
+
+    private function suggestedDriversForOrder(Order $order, User $actor): array
+    {
+        if (! $actor->hasPermission('assign_driver')) {
+            return [];
+        }
+
+        $branchId = $actor->branch_id ?? $order->branch_id ?? $order->user?->branch_id;
+        if (! $branchId) {
+            return [];
+        }
+
+        $favoriteDriverId = $this->favoriteDriverForCustomer($order)?->id;
+        $blockedDriverIds = $this->blockedDriverIdsForCustomer($order);
+
+        return Driver::query()
+            ->with(['user.branch'])
+            ->withAvg('ratings as rating_average', 'rating')
+            ->where('status', 'active')
+            ->where(fn (Builder $query) => $query->where('is_suspend', false)->orWhereNull('is_suspend'))
+            ->where('is_available', true)
+            ->whereHas('user', fn (Builder $query) => $query
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->where('is_suspended', false))
+            ->limit(12)
+            ->get()
+            ->reject(fn (Driver $driver): bool => $this->driverHasActiveOrder($driver) || in_array((int) $driver->id, $blockedDriverIds, true))
+            ->sortByDesc(fn (Driver $driver): int => (int) $driver->id === (int) $favoriteDriverId ? 1 : 0)
+            ->values()
+            ->map(fn (Driver $driver): array => [
+                'id' => $driver->id,
+                'name' => $driver->user?->name ?? 'Driver #'.$driver->id,
+                'phone' => $driver->user?->phone,
+                'vehicle_type' => $driver->vehicle_type ?? 'motor',
+                'branch' => $driver->user?->branch?->name,
+                'branch_area' => $driver->user?->branch?->area,
+                'rating_average' => round((float) ($driver->rating_average ?? 0), 2),
+                'is_favorite' => (int) $driver->id === (int) $favoriteDriverId,
+            ])
+            ->all();
+    }
+
+    private function customerPreferencePayload(Order $order): array
+    {
+        $favorite = $this->favoriteDriverForCustomer($order);
+        $notes = trim((string) $order->notes);
+        $blockedDrivers = $this->blockedDriversForCustomer($order);
+
+        return [
+            'favorite_driver' => $favorite ? [
+                'id' => $favorite->id,
+                'name' => $favorite->user?->name ?? 'Driver #'.$favorite->id,
+            ] : null,
+            'blocked_drivers' => $blockedDrivers !== [] ? $blockedDrivers : $this->blockedDriverHints($notes),
+            'notes' => $notes !== '' ? $notes : ($order->user?->address ?? null),
+        ];
+    }
+
+    private function favoriteDriverForCustomer(Order $order): ?Driver
+    {
+        if (! $order->user_id) {
+            return null;
+        }
+
+        if (Schema::hasTable('customer_driver_preferences')) {
+            $driverId = DB::table('customer_driver_preferences')
+                ->where('user_id', $order->user_id)
+                ->where('type', 'favorite')
+                ->latest('updated_at')
+                ->value('driver_id');
+
+            if ($driverId) {
+                return Driver::query()->with('user')->find($driverId);
+            }
+        }
+
+        $driverId = Order::query()
+            ->where('user_id', $order->user_id)
+            ->whereNotNull('driver_id')
+            ->where('status', OrderStatus::Completed->value)
+            ->selectRaw('driver_id, count(*) as total')
+            ->groupBy('driver_id')
+            ->orderByDesc('total')
+            ->value('driver_id');
+
+        return $driverId ? Driver::query()->with('user')->find($driverId) : null;
+    }
+
+    private function blockedDriverIdsForCustomer(Order $order): array
+    {
+        if (! $order->user_id || ! Schema::hasTable('customer_driver_preferences')) {
+            return [];
+        }
+
+        return DB::table('customer_driver_preferences')
+            ->where('user_id', $order->user_id)
+            ->where('type', 'blocked')
+            ->pluck('driver_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+    }
+
+    private function blockedDriversForCustomer(Order $order): array
+    {
+        $ids = $this->blockedDriverIdsForCustomer($order);
+        if ($ids === []) {
+            return [];
+        }
+
+        return Driver::query()
+            ->with('user')
+            ->whereIn('id', $ids)
+            ->get()
+            ->map(fn (Driver $driver): string => $driver->user?->name ?? 'Driver #'.$driver->id)
+            ->all();
+    }
+
+    private function blockedDriverHints(string $notes): array
+    {
+        if ($notes === '') {
+            return [];
+        }
+
+        preg_match_all('/(?:jangan|tidak\s+mau|blocked?|blokir)\s+(?:driver\s+)?([a-z0-9 ._-]{2,40})/i', $notes, $matches);
+
+        return collect($matches[1] ?? [])
+            ->map(fn (string $name): string => trim($name, " .,-\t\n\r\0\x0B"))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function waitingSeconds(Order $order): int
+    {
+        if (! in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)) {
+            return 0;
+        }
+
+        return max(0, $order->created_at?->diffInSeconds(now()) ?? 0);
+    }
+
+    private function dispatchSlaStatus(Order $order): string
+    {
+        $seconds = $this->waitingSeconds($order);
+
+        return match (true) {
+            $seconds >= 600 => 'critical',
+            $seconds >= 300 => 'warning',
+            $seconds > 0 => 'normal',
+            default => 'assigned',
+        };
+    }
+
+    private function driverHasActiveOrder(Driver $driver): bool
+    {
+        return Order::query()
+            ->where('driver_id', $driver->id)
+            ->whereIn('status', [
+                OrderStatus::DriverAccepted->value,
+                OrderStatus::DriverOnTheWay->value,
+                OrderStatus::ArrivedPickup->value,
+                OrderStatus::OnGoing->value,
+                OrderStatus::PendingCancel->value,
+            ])
+            ->exists();
     }
 
     private function cancelReasonFor(Order $order): ?string
@@ -913,7 +1413,22 @@ class AdminController extends Controller
     {
         return $this->usersQuery($actor)
             ->where('role', UserRole::Driver->value)
-            ->with(['driver.suspensions' => fn ($query) => $query->latest()->limit(5)])
+            ->with([
+                'driver' => fn ($query) => $query
+                    ->withAvg('ratings as rating_average', 'rating')
+                    ->withCount([
+                        'ratings as ratings_count',
+                        'orders as completed_orders_count' => fn ($query) => $query->where('status', OrderStatus::Completed->value),
+                        'orders as cancelled_orders_count' => fn ($query) => $query->where('status', OrderStatus::Cancelled->value),
+                        'suspensions as suspensions_count',
+                        'operHandleRequests as oper_handle_requests_count',
+                        'deposits as unpaid_deposits_count' => fn ($query) => $query->where('status', 'unpaid'),
+                    ])
+                    ->withSum([
+                        'orders as completed_revenue' => fn ($query) => $query->where('status', OrderStatus::Completed->value),
+                    ], 'total_price'),
+                'driver.suspensions' => fn ($query) => $query->latest()->limit(5),
+            ])
             ->limit(100)
             ->get()
             ->map(fn (User $user): array => [
@@ -933,6 +1448,17 @@ class AdminController extends Controller
                 'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,
                 'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
                 'allowed_service_types' => $user->driver?->allowed_service_types ?? [],
+                'performance' => [
+                    'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),
+                    'ratings_count' => (int) ($user->driver?->ratings_count ?? 0),
+                    'completed_orders_count' => (int) ($user->driver?->completed_orders_count ?? 0),
+                    'cancelled_orders_count' => (int) ($user->driver?->cancelled_orders_count ?? 0),
+                    'suspensions_count' => (int) ($user->driver?->suspensions_count ?? 0),
+                    'oper_handle_requests_count' => (int) ($user->driver?->oper_handle_requests_count ?? 0),
+                    'unpaid_deposits_count' => (int) ($user->driver?->unpaid_deposits_count ?? 0),
+                    'completed_revenue' => (int) ($user->driver?->completed_revenue ?? 0),
+                    'online_score' => $user->driver?->is_available ? 1 : 0,
+                ],
                 'suspensions' => $user->driver?->suspensions->map(fn ($suspension): array => [
                     'id' => $suspension->id,
                     'reason' => $suspension->reason,
@@ -942,6 +1468,32 @@ class AdminController extends Controller
                     'status' => $suspension->status,
                 ])->all() ?? [],
             ])
+            ->all();
+    }
+
+    private function operatorPerformanceRows(User $actor): array
+    {
+        return $this->usersQuery($actor)
+            ->whereIn('role', [UserRole::Operator->value, UserRole::Eksekutor->value])
+            ->limit(100)
+            ->get()
+            ->map(function (User $user): array {
+                $query = ChatConversation::query()->where('operator_id', $user->id);
+                $ratedQuery = (clone $query)->whereNotNull('operator_rating');
+
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'role' => $user->role->value,
+                    'branch' => $user->branch?->name,
+                    'branch_area' => $user->branch?->area,
+                    'handled_chats_count' => (clone $query)->count(),
+                    'active_chats_count' => (clone $query)->whereIn('status', ['open', 'active', 'waiting'])->count(),
+                    'rating_average' => round((float) $ratedQuery->avg('operator_rating'), 2),
+                    'ratings_count' => (clone $ratedQuery)->count(),
+                    'late_response_count' => (clone $query)->where('sla_status', 'breached')->count(),
+                ];
+            })
             ->all();
     }
 
