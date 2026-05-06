@@ -1,0 +1,195 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Events\TypingIndicator;
+use App\Http\Controllers\Controller;
+use App\Models\ChatConversation;
+use App\Models\Order;
+use App\Services\BotService;
+use App\Services\ChatService;
+use App\Services\MessageService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
+
+class ChatController extends Controller
+{
+    public function startOperator(Request $request, ChatService $chatService, MessageService $messageService, BotService $botService): JsonResponse
+    {
+        $conversation = $chatService->startCustomerOperator($request->user());
+
+        if ($conversation->messages()->doesntExist()) {
+            $message = $conversation->messages()->create([
+                'sender_type' => 'bot',
+                'message' => $botService->welcome(),
+                'is_read' => false,
+            ]);
+            $this->broadcastSafely(new \App\Events\MessageSent($message));
+        }
+
+        return response()->json(['data' => $conversation->load('latestMessage')]);
+    }
+
+    public function startOrder(Order $order, Request $request, ChatService $chatService): JsonResponse
+    {
+        $this->authorizeOrderParticipant($order, $request);
+
+        try {
+            $conversation = $chatService->forOrder($order, $request->string('type', 'customer_driver')->toString());
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json(['data' => $conversation]);
+    }
+
+    public function orderMessages(Order $order, Request $request, ChatService $chatService): JsonResponse
+    {
+        $this->authorizeOrderParticipant($order, $request);
+
+        try {
+            $conversation = $chatService->forOrder($order, 'customer_driver');
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => $conversation->messages()
+                ->with('sender')
+                ->oldest()
+                ->get(),
+            'conversation' => $conversation,
+        ]);
+    }
+
+    public function messages(ChatConversation $conversation, Request $request): JsonResponse
+    {
+        $this->authorizeParticipant($conversation, $request);
+
+        return response()->json([
+            'data' => $conversation->messages()
+                ->with('sender')
+                ->latest()
+                ->paginate($request->integer('per_page', 30)),
+        ]);
+    }
+
+    public function send(ChatConversation $conversation, Request $request, ChatService $chatService, MessageService $messageService, BotService $botService): JsonResponse
+    {
+        $this->authorizeParticipant($conversation, $request);
+
+        try {
+            $chatService->assertWritable($conversation);
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        $payload = $request->validate([
+            'message' => ['nullable', 'string'],
+            'image' => ['nullable', 'image', 'max:4096'],
+            'audio' => ['nullable', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
+            'audio_duration' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $message = $messageService->send($conversation, $request->user(), $payload);
+
+        if ($conversation->type === 'customer_operator' && $botReply = $botService->replyFor($payload['message'] ?? null)) {
+            $bot = $conversation->messages()->create([
+                'sender_type' => 'bot',
+                'message' => $botReply,
+            ]);
+            $this->broadcastSafely(new \App\Events\MessageSent($bot));
+        }
+
+        if ($conversation->type === 'customer_operator' && $botService->shouldAssignHuman($payload['message'] ?? null)) {
+            $conversation->forceFill(['status' => 'waiting'])->save();
+        }
+
+        return response()->json(['data' => $message], 201);
+    }
+
+    public function sendOrderMessage(Request $request, ChatService $chatService, MessageService $messageService): JsonResponse
+    {
+        $payload = $request->validate([
+            'order_id' => ['required', 'integer', 'exists:orders,id'],
+            'message' => ['nullable', 'string'],
+            'image' => ['nullable', 'image', 'max:4096'],
+            'audio' => ['nullable', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
+            'audio_duration' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $order = Order::query()->findOrFail($payload['order_id']);
+        $this->authorizeOrderParticipant($order, $request);
+
+        try {
+            $conversation = $chatService->forOrder($order, 'customer_driver');
+            $chatService->assertWritable($conversation);
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json([
+            'data' => $messageService->send($conversation, $request->user(), $payload),
+            'conversation' => $conversation,
+        ], 201);
+    }
+
+    public function typing(ChatConversation $conversation, Request $request): JsonResponse
+    {
+        $this->authorizeParticipant($conversation, $request);
+        $this->broadcastSafely(new TypingIndicator($conversation, $request->user()->id, $request->boolean('typing')));
+
+        return response()->json(['data' => ['typing' => $request->boolean('typing')]]);
+    }
+
+    public function read(ChatConversation $conversation, Request $request, MessageService $messageService): JsonResponse
+    {
+        $this->authorizeParticipant($conversation, $request);
+
+        return response()->json(['data' => ['updated' => $messageService->markRead($conversation, $request->user())]]);
+    }
+
+    private function authorizeParticipant(ChatConversation $conversation, Request $request): void
+    {
+        $user = $request->user();
+        $role = $user->role->value ?? $user->role;
+
+        abort_unless(
+            in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)
+            || in_array((int) $user->id, array_filter([
+                $conversation->customer_id,
+                $conversation->driver_id,
+                $conversation->operator_id,
+            ]), true),
+            403,
+        );
+    }
+
+    private function authorizeOrderParticipant(Order $order, Request $request): void
+    {
+        $order->loadMissing('driver');
+        $user = $request->user();
+        $role = $user->role->value ?? $user->role;
+
+        abort_unless(
+            in_array($role, ['admin', 'operator', 'gm', 'manager', 'spv'], true)
+            || (int) $order->user_id === (int) $user->id
+            || (int) optional($order->driver)->user_id === (int) $user->id,
+            403,
+        );
+    }
+
+    private function broadcastSafely(object $event): void
+    {
+        try {
+            broadcast($event)->toOthers();
+        } catch (\Throwable $exception) {
+            Log::warning('Chat broadcast failed', [
+                'event' => $event::class,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+}

@@ -1,0 +1,24 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('drivers', function (Blueprint $table): void {
+            $table->string('status', 30)->default('active')->after('is_available')->index();
+            $table->unsignedInteger('oper_handle_count')->default(0)->after('status');
+            $table->timestamp('suspended_until')->nullable()->after('oper_handle_count');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('drivers', function (Blueprint $table): void {
+            $table->dropColumn(['status', 'oper_handle_count', 'suspended_until']);
+        });
+    }
+};

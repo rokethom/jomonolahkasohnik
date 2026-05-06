@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Jojo App",
+    "slug": "jojo-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "jojo",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.jojo.customer",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Jojo membutuhkan lokasi untuk pickup, tracking, dan estimasi harga."
+      }
+    },
+    "android": {
+      "package": "app.jojo.customer",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Jojo membutuhkan lokasi untuk pickup, tracking, dan estimasi harga."
+        }
+      ]
+    ]
+  }
+}

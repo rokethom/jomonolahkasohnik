@@ -1,0 +1,126 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Enums\UserRole;
+use App\Models\DriverDeposit;
+use App\Models\User;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+
+class DriverDepositResource extends Resource
+{
+    protected static ?string $model = DriverDeposit::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
+
+    protected static ?string $navigationGroup = 'Driver';
+
+    protected static ?string $navigationLabel = 'Setoran Driver';
+
+    public static function form(Form $form): Form
+    {
+        return $form->schema([
+            Forms\Components\TextInput::make('driver_id')->numeric()->required(),
+            Forms\Components\TextInput::make('year')->numeric()->required(),
+            Forms\Components\TextInput::make('month')->numeric()->required(),
+            Forms\Components\TextInput::make('paid_amount')->numeric()->required(),
+            Forms\Components\Select::make('status')->options([
+                'unpaid' => 'Unpaid',
+                'paid' => 'Paid',
+            ])->required(),
+        ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('driver.user.name')->label('Driver')->searchable(),
+                Tables\Columns\TextColumn::make('month')->label('Bulan'),
+                Tables\Columns\TextColumn::make('year')->label('Tahun'),
+                Tables\Columns\TextColumn::make('total')->money('IDR')->sortable(),
+                Tables\Columns\TextColumn::make('paid_amount')->money('IDR')->sortable(),
+                Tables\Columns\TextColumn::make('status')->badge(),
+                Tables\Columns\TextColumn::make('due_date')->date(),
+            ])
+            ->filters([
+                Tables\Filters\SelectFilter::make('driver_id')
+                    ->label('Visible driver')
+                    ->placeholder('All visible drivers')
+                    ->native(false)
+                    ->searchable()
+                    ->options(fn (): array => self::driverOptions()),
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->placeholder('All statuses')
+                    ->native(false)
+                    ->options([
+                        'unpaid' => 'Unpaid',
+                        'paid' => 'Paid',
+                    ]),
+                Tables\Filters\SelectFilter::make('month')
+                    ->label('Bulan')
+                    ->placeholder('All months')
+                    ->native(false)
+                    ->options([
+                        1 => 'Januari',
+                        2 => 'Februari',
+                        3 => 'Maret',
+                        4 => 'April',
+                        5 => 'Mei',
+                        6 => 'Juni',
+                        7 => 'Juli',
+                        8 => 'Agustus',
+                        9 => 'September',
+                        10 => 'Oktober',
+                        11 => 'November',
+                        12 => 'Desember',
+                    ]),
+                Tables\Filters\SelectFilter::make('year')
+                    ->label('Tahun')
+                    ->placeholder('All years')
+                    ->native(false)
+                    ->options(fn (): array => DriverDeposit::query()
+                        ->select('year')
+                        ->distinct()
+                        ->orderByDesc('year')
+                        ->pluck('year', 'year')
+                        ->all()),
+            ])
+            ->filtersLayout(FiltersLayout::AboveContent)
+            ->filtersFormColumns(4)
+            ->contentFooter(view('filament.resources.driver-deposit.flow'))
+            ->actions([])
+            ->bulkActions([]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with(['driver.user.branch']);
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => DriverDepositResource\Pages\ListDriverDeposits::route('/'),
+        ];
+    }
+
+    public static function driverOptions(): array
+    {
+        return User::query()
+            ->where('role', UserRole::Driver->value)
+            ->whereHas('driver')
+            ->with('driver')
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(fn (User $user): array => [$user->driver->id => $user->name])
+            ->all();
+    }
+}

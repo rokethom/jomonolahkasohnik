@@ -1,0 +1,610 @@
+<?php
+
+namespace App\Filament\Pages;
+
+use App\Enums\UserRole;
+use App\Services\SettingService;
+use Filament\Forms;
+use Filament\Forms\Components\Tabs;
+use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Forms\Contracts\HasForms;
+use Filament\Forms\Form;
+use Filament\Notifications\Notification;
+use Filament\Pages\Page;
+
+class SystemSettingsPage extends Page implements HasForms
+{
+    use InteractsWithForms;
+
+    protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
+
+    protected static ?string $navigationGroup = 'System';
+
+    protected static ?string $navigationLabel = 'System Settings';
+
+    protected static ?string $title = 'App Settings';
+
+    protected static ?string $slug = 'app-settings-cms';
+
+    protected static ?int $navigationSort = 1;
+
+    protected static string $view = 'filament.pages.system-settings-page';
+
+    public ?array $data = [];
+
+    public static function canAccess(): bool
+    {
+        return in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true);
+    }
+
+    public function mount(SettingService $settings): void
+    {
+        $this->form->fill([
+            'google_maps_current' => $settings->mask($settings->get('google_maps_api_key')),
+            'mapbox_current' => $settings->mask($settings->get('mapbox_api_key')),
+            'fcm_current' => $settings->mask($settings->get('fcm_server_key')),
+            'fcm_service_account_current' => $settings->mask($settings->get('fcm_service_account_json')),
+            'google_oauth_secret_current' => $settings->mask($settings->get('google_oauth_secret')),
+            'openai_current' => $settings->mask($settings->get('openai_api_key')),
+            'kimi_current' => $settings->mask($settings->get('kimi_api_key')),
+            'blackbox_current' => $settings->mask($settings->get('blackbox_api_key')),
+            'openrouter_current' => $settings->mask($settings->get('openrouter_api_key')),
+            'google_maps_active' => $settings->raw('google_maps_api_key')?->is_active ?? false,
+            'mapbox_active' => $settings->raw('mapbox_api_key')?->is_active ?? false,
+            'fcm_active' => $settings->raw('fcm_server_key')?->is_active ?? false,
+            'fcm_service_account_active' => $settings->raw('fcm_service_account_json')?->is_active ?? false,
+            'firebase_vapid_key' => $settings->get('firebase_vapid_key'),
+            'firebase_vapid_active' => $settings->raw('firebase_vapid_key')?->is_active ?? false,
+            'firebase_web_config' => $settings->get('firebase_web_config'),
+            'firebase_web_config_active' => $settings->raw('firebase_web_config')?->is_active ?? false,
+            'openai_active' => $settings->raw('openai_api_key')?->is_active ?? false,
+            'kimi_active' => $settings->raw('kimi_api_key')?->is_active ?? false,
+            'blackbox_active' => $settings->raw('blackbox_api_key')?->is_active ?? false,
+            'openrouter_active' => $settings->raw('openrouter_api_key')?->is_active ?? false,
+            'map_provider' => $settings->get('map_provider', 'osm'),
+            'map_active' => $settings->raw('map_provider')?->is_active ?? true,
+            'google_oauth_enabled' => $settings->bool('google_oauth_enabled'),
+            'google_oauth_client_id' => $settings->get('google_oauth_client_id'),
+            'multi_order_enabled' => $settings->bool('multi_order_enabled', false),
+            'max_multi_order' => $settings->int('max_multi_order', 3),
+            'order_close_enabled' => $settings->bool('order_close_enabled', true),
+            'order_close_start' => $settings->get('order_close_start', '01:00') ?: '01:00',
+            'order_close_end' => $settings->get('order_close_end', '05:00') ?: '05:00',
+            'order_close_message' => $settings->get('order_close_message', 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.') ?: 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.',
+            'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
+            'night_tariff_rules' => $this->nightTariffRules($settings),
+            'ai_assistant_enabled' => $settings->bool('ai_assistant_enabled', false),
+            'ai_provider' => $settings->get('ai_provider', 'openai'),
+            'ai_model' => $settings->get('ai_model'),
+            'ai_model_custom' => null,
+            'ai_base_url' => $settings->get('ai_base_url'),
+            'ai_max_tokens' => $settings->int('ai_max_tokens', 700),
+        ]);
+    }
+
+    public function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Tabs::make('Settings')
+                    ->persistTabInQueryString()
+                    ->tabs([
+                        Tabs\Tab::make('API Keys')
+                            ->icon('heroicon-o-key')
+                            ->visible(fn (): bool => auth()->user()?->role === UserRole::Admin)
+                            ->schema([
+                                Forms\Components\Section::make('Google Maps')
+                                    ->description('Digunakan untuk menampilkan Google Maps dan pencarian lokasi jika provider Google dipilih.')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('google_maps_current')
+                                            ->label('Key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('google_maps_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('google_maps_active')
+                                            ->label('Aktif'),
+                                        Forms\Components\TextInput::make('google_maps_api_key')
+                                            ->label('Google Maps API Key baru')
+                                            ->password()
+                                            ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
+                                            ->maxLength(500)
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Mapbox')
+                                    ->description('Digunakan untuk provider Mapbox dan tile map premium.')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('mapbox_current')
+                                            ->label('Key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('mapbox_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('mapbox_active')
+                                            ->label('Aktif'),
+                                        Forms\Components\TextInput::make('mapbox_api_key')
+                                            ->label('Mapbox API Key baru')
+                                            ->password()
+                                            ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
+                                            ->maxLength(500)
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Firebase Cloud Messaging')
+                                    ->description('Digunakan untuk push notification customer/driver. Untuk FCM terbaru disarankan memakai Service Account JSON + Web Config + VAPID Key.')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('fcm_current')
+                                            ->label('Legacy server key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('fcm_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('fcm_active')
+                                            ->label('Legacy aktif'),
+                                        Forms\Components\TextInput::make('fcm_server_key')
+                                            ->label('Legacy FCM Server Key baru')
+                                            ->password()
+                                            ->helperText('Legacy API lama. Jika Service Account JSON diisi, sistem memakai HTTP v1.')
+                                            ->maxLength(1000)
+                                            ->columnSpanFull(),
+                                        Forms\Components\Placeholder::make('fcm_service_account_current')
+                                            ->label('Service Account tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('fcm_service_account_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('fcm_service_account_active')
+                                            ->label('HTTP v1 aktif'),
+                                        Forms\Components\Textarea::make('fcm_service_account_json')
+                                            ->label('Service Account JSON baru')
+                                            ->rows(5)
+                                            ->helperText('Paste isi file JSON penuh dari Firebase Service Account. Wajib ada project_id, client_email, dan private_key. Kosongkan jika tidak ingin mengganti.')
+                                            ->columnSpanFull(),
+                                        Forms\Components\Toggle::make('firebase_web_config_active')
+                                            ->label('Web config aktif'),
+                                        Forms\Components\Toggle::make('firebase_vapid_active')
+                                            ->label('VAPID aktif'),
+                                        Forms\Components\Textarea::make('firebase_web_config')
+                                            ->label('Firebase Web Config JSON')
+                                            ->rows(5)
+                                            ->helperText('Berisi apiKey, authDomain, projectId, messagingSenderId, appId. Dikirim ke FE agar token FCM bisa dibuat.')
+                                            ->columnSpanFull(),
+                                        Forms\Components\TextInput::make('firebase_vapid_key')
+                                            ->label('Web Push VAPID Key')
+                                            ->minLength(70)
+                                            ->helperText('Firebase Console > Project Settings > Cloud Messaging > Web Push certificates. Pakai public key, bukan server key/API key.')
+                                            ->columnSpanFull(),
+                                    ]),
+                            ]),
+                        Tabs\Tab::make('AI Assistant')
+                            ->icon('heroicon-o-sparkles')
+                            ->visible(fn (): bool => auth()->user()?->role === UserRole::Admin)
+                            ->schema([
+                                Forms\Components\Section::make('Smart Assistant Layer')
+                                    ->description('AI hanya dipakai untuk membaca maksud dan ekstrak data order. Harga, validasi GPS, limit order, dan create order tetap memakai Laravel service existing.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('ai_assistant_enabled')
+                                            ->label('Enable AI parser')
+                                            ->helperText('Jika mati atau API gagal, sistem otomatis fallback ke parser lama.'),
+                                        Forms\Components\Select::make('ai_provider')
+                                            ->label('Provider aktif')
+                                            ->options([
+                                                'openai' => 'OpenAI',
+                                                'kimi' => 'Kimi / Moonshot',
+                                                'blackbox' => 'Blackbox AI',
+                                                'openrouter' => 'OpenRouter',
+                                            ])
+                                            ->live()
+                                            ->native(false)
+                                            ->required(),
+                                        Forms\Components\Select::make('ai_model')
+                                            ->label('Model parser')
+                                            ->options(fn (Forms\Get $get): array => $this->aiModelOptions((string) $get('ai_provider')))
+                                            ->searchable()
+                                            ->native(false)
+                                            ->helperText('Untuk OpenRouter, pilih model dengan suffix :free agar biaya parser lebih hemat. Bisa ketik custom model ID jika daftar berubah.'),
+                                        Forms\Components\TextInput::make('ai_model_custom')
+                                            ->label('Custom model ID')
+                                            ->placeholder('contoh: qwen/qwen3-8b:free')
+                                            ->helperText('Opsional. Jika diisi, nilai ini menggantikan pilihan Model parser tanpa perlu ubah kode.'),
+                                        Forms\Components\TextInput::make('ai_max_tokens')
+                                            ->label('Max token output')
+                                            ->numeric()
+                                            ->minValue(200)
+                                            ->maxValue(1500)
+                                            ->default(700)
+                                            ->helperText('Batasi output supaya biaya dan latency parser tetap terkendali.'),
+                                        Forms\Components\TextInput::make('ai_base_url')
+                                            ->label('Base URL override')
+                                            ->helperText('Kosongkan untuk default provider. OpenRouter default: https://openrouter.ai/api/v1')
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\View::make('filament.forms.components.ai-parser-flow')
+                                    ->columnSpanFull(),
+                                Forms\Components\Section::make('OpenAI')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('openai_current')
+                                            ->label('Key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('openai_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('openai_active')
+                                            ->label('Aktif'),
+                                        Forms\Components\TextInput::make('openai_api_key')
+                                            ->label('OpenAI API Key baru')
+                                            ->password()
+                                            ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
+                                            ->maxLength(1000)
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Kimi / Moonshot')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('kimi_current')
+                                            ->label('Key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('kimi_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('kimi_active')
+                                            ->label('Aktif'),
+                                        Forms\Components\TextInput::make('kimi_api_key')
+                                            ->label('Kimi API Key baru')
+                                            ->password()
+                                            ->helperText('Default base URL: https://api.moonshot.cn/v1')
+                                            ->maxLength(1000)
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Blackbox AI')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('blackbox_current')
+                                            ->label('Key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('blackbox_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('blackbox_active')
+                                            ->label('Aktif'),
+                                        Forms\Components\TextInput::make('blackbox_api_key')
+                                            ->label('Blackbox API Key baru')
+                                            ->password()
+                                            ->helperText('Jika endpoint akun berbeda, isi Base URL override di atas.')
+                                            ->maxLength(1000)
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('OpenRouter')
+                                    ->description('OpenRouter bersifat OpenAI-compatible. Gunakan model :free untuk parser murah, lalu monitor limit/rate dari dashboard OpenRouter.')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('openrouter_current')
+                                            ->label('Key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('openrouter_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('openrouter_active')
+                                            ->label('Aktif'),
+                                        Forms\Components\TextInput::make('openrouter_api_key')
+                                            ->label('OpenRouter API Key baru')
+                                            ->password()
+                                            ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
+                                            ->maxLength(1000)
+                                            ->columnSpanFull(),
+                                    ]),
+                            ]),
+                        Tabs\Tab::make('Map')
+                            ->icon('heroicon-o-map')
+                            ->visible(fn (): bool => auth()->user()?->role === UserRole::Admin)
+                            ->schema([
+                                Forms\Components\Section::make('Map Settings')
+                                    ->description('Provider aktif akan dikirim ke aplikasi customer. Jika provider berbayar tidak valid, sistem fallback ke OpenStreetMap.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Select::make('map_provider')
+                                            ->label('Provider')
+                                            ->options([
+                                                'google' => 'Google Maps',
+                                                'mapbox' => 'Mapbox',
+                                                'osm' => 'OpenStreetMap',
+                                            ])
+                                            ->required()
+                                            ->helperText('OpenStreetMap adalah fallback gratis bawaan.'),
+                                        Forms\Components\Toggle::make('map_active')
+                                            ->label('Status aktif')
+                                            ->helperText('Matikan untuk memakai fallback .env/default.'),
+                                    ]),
+                            ]),
+                        Tabs\Tab::make('Multi Order')
+                            ->icon('heroicon-o-arrows-right-left')
+                            ->schema([
+                                Forms\Components\Section::make('Direction-Based Multi Order')
+                                    ->description('Driver dapat menerima lebih dari satu order hanya jika arah tujuan masih searah.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('multi_order_enabled')
+                                            ->label('Enable Multi Order')
+                                            ->helperText('Jika nonaktif, driver hanya bisa membawa satu order aktif.'),
+                                        Forms\Components\TextInput::make('max_multi_order')
+                                            ->label('Max Order')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(3)
+                                            ->default(3)
+                                            ->required()
+                                            ->helperText('Batas sistem saat ini maksimal 3 order.'),
+                                    ]),
+                            ]),
+                        Tabs\Tab::make('Operasional Order')
+                            ->icon('heroicon-o-clock')
+                            ->schema([
+                                Forms\Components\Section::make('Jam Operasional Order')
+                                    ->description('Sistem menolak order customer pada rentang tutup dan menampilkan popup informasi di aplikasi customer.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('order_close_enabled')
+                                            ->label('Aktifkan close order otomatis')
+                                            ->helperText('Jika aktif, order ditutup pada jam close sampai jam buka.'),
+                                        Forms\Components\TextInput::make('order_close_start')
+                                            ->label('Jam close')
+                                            ->type('time')
+                                            ->required()
+                                            ->helperText('Default 01:00. Format 24 jam.'),
+                                        Forms\Components\TextInput::make('order_close_end')
+                                            ->label('Jam buka')
+                                            ->type('time')
+                                            ->required()
+                                            ->helperText('Default 05:00. Format 24 jam.'),
+                                        Forms\Components\Textarea::make('order_close_message')
+                                            ->label('Pesan popup customer')
+                                            ->rows(3)
+                                            ->helperText('Gunakan {start} dan {end} untuk menampilkan jam otomatis.')
+                                            ->columnSpanFull(),
+                                    ]),
+                                Forms\Components\Section::make('Tarif Jam Malam')
+                                    ->description('Tambahan tarif dihitung dari tarif dasar sesuai jam dan area branch. Rule area kosong berlaku global.')
+                                    ->schema([
+                                        Forms\Components\Toggle::make('night_tariff_enabled')
+                                            ->label('Aktifkan tarif jam malam'),
+                                        Forms\Components\Repeater::make('night_tariff_rules')
+                                            ->label('Rule tarif malam')
+                                            ->schema([
+                                                Forms\Components\TextInput::make('area')
+                                                    ->label('Area')
+                                                    ->placeholder('Kosong = semua area')
+                                                    ->maxLength(80),
+                                                Forms\Components\TextInput::make('start')
+                                                    ->label('Mulai')
+                                                    ->type('time')
+                                                    ->required(),
+                                                Forms\Components\TextInput::make('end')
+                                                    ->label('Sampai')
+                                                    ->type('time')
+                                                    ->required(),
+                                                Forms\Components\TextInput::make('percent')
+                                                    ->label('Tambahan')
+                                                    ->numeric()
+                                                    ->minValue(0)
+                                                    ->maxValue(200)
+                                                    ->suffix('%')
+                                                    ->required(),
+                                            ])
+                                            ->columns(4)
+                                            ->defaultItems(0)
+                                            ->addActionLabel('Tambah rule tarif malam')
+                                            ->reorderable()
+                                            ->columnSpanFull(),
+                                    ]),
+                            ]),
+                        Tabs\Tab::make('OAuth')
+                            ->icon('heroicon-o-lock-closed')
+                            ->visible(fn (): bool => auth()->user()?->role === UserRole::Admin)
+                            ->schema([
+                                Forms\Components\Section::make('Google Login')
+                                    ->description('Kontrol tombol login Google di aplikasi customer.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('google_oauth_enabled')
+                                            ->label('Enable Google Login')
+                                            ->columnSpanFull(),
+                                        Forms\Components\TextInput::make('google_oauth_client_id')
+                                            ->label('Client ID')
+                                            ->helperText('Client ID dari Google Cloud Console.')
+                                            ->maxLength(500),
+                                        Forms\Components\Placeholder::make('google_oauth_secret_current')
+                                            ->label('Client Secret tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('google_oauth_secret_current') ?: 'Belum diisi'),
+                                        Forms\Components\TextInput::make('google_oauth_secret')
+                                            ->label('Client Secret baru')
+                                            ->password()
+                                            ->helperText('Kosongkan jika tidak ingin mengganti secret.')
+                                            ->maxLength(500)
+                                            ->columnSpanFull(),
+                                    ]),
+                            ]),
+                    ])
+                    ->columnSpanFull(),
+            ])
+            ->statePath('data');
+    }
+
+    public function save(SettingService $settings): void
+    {
+        $data = $this->form->getState();
+
+        $settings->set('multi_order_enabled', (bool) ($data['multi_order_enabled'] ?? false));
+        $settings->set('max_multi_order', max(1, min(3, (int) ($data['max_multi_order'] ?? 3))));
+        $settings->set('order_close_enabled', (bool) ($data['order_close_enabled'] ?? true));
+        $settings->set('order_close_start', $this->normalizeTime((string) ($data['order_close_start'] ?? '01:00')));
+        $settings->set('order_close_end', $this->normalizeTime((string) ($data['order_close_end'] ?? '05:00')));
+        $settings->set('order_close_message', $data['order_close_message'] ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.');
+        $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
+        $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
+
+        if (auth()->user()?->role === UserRole::Admin) {
+            if (filled($data['fcm_service_account_json'] ?? null) && ! $this->isValidServiceAccountJson((string) $data['fcm_service_account_json'])) {
+                Notification::make()
+                    ->title('Service Account JSON tidak valid')
+                    ->body('Paste isi file JSON penuh dari Firebase, bukan hanya email service account.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            if (filled($data['firebase_web_config'] ?? null) && ! $this->isValidFirebaseWebConfig((string) $data['firebase_web_config'])) {
+                Notification::make()
+                    ->title('Firebase Web Config tidak valid')
+                    ->body('Paste object firebaseConfig dari Firebase Console atau JSON yang berisi apiKey, projectId, messagingSenderId, dan appId.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            $this->saveSecret($settings, 'google_maps_api_key', $data['google_maps_api_key'] ?? null, (bool) ($data['google_maps_active'] ?? false));
+            $this->saveSecret($settings, 'mapbox_api_key', $data['mapbox_api_key'] ?? null, (bool) ($data['mapbox_active'] ?? false));
+            $this->saveSecret($settings, 'fcm_server_key', $data['fcm_server_key'] ?? null, (bool) ($data['fcm_active'] ?? false));
+            $this->saveSecret($settings, 'fcm_service_account_json', $data['fcm_service_account_json'] ?? null, (bool) ($data['fcm_service_account_active'] ?? false));
+            $this->saveSecret($settings, 'google_oauth_secret', $data['google_oauth_secret'] ?? null, (bool) ($data['google_oauth_enabled'] ?? false));
+            $this->saveSecret($settings, 'openai_api_key', $data['openai_api_key'] ?? null, (bool) ($data['openai_active'] ?? false));
+            $this->saveSecret($settings, 'kimi_api_key', $data['kimi_api_key'] ?? null, (bool) ($data['kimi_active'] ?? false));
+            $this->saveSecret($settings, 'blackbox_api_key', $data['blackbox_api_key'] ?? null, (bool) ($data['blackbox_active'] ?? false));
+            $this->saveSecret($settings, 'openrouter_api_key', $data['openrouter_api_key'] ?? null, (bool) ($data['openrouter_active'] ?? false));
+
+            $settings->set('map_provider', $data['map_provider'] ?? 'osm', (bool) ($data['map_active'] ?? true));
+            $settings->set('google_oauth_enabled', (bool) ($data['google_oauth_enabled'] ?? false));
+            $settings->set('google_oauth_client_id', $data['google_oauth_client_id'] ?? null, (bool) ($data['google_oauth_enabled'] ?? false));
+            $settings->set('firebase_web_config', $data['firebase_web_config'] ?? null, (bool) ($data['firebase_web_config_active'] ?? false));
+            $settings->set('firebase_vapid_key', $data['firebase_vapid_key'] ?? null, (bool) ($data['firebase_vapid_active'] ?? false));
+            $settings->set('ai_assistant_enabled', (bool) ($data['ai_assistant_enabled'] ?? false));
+            $settings->set('ai_provider', $data['ai_provider'] ?? 'openai');
+            $settings->set('ai_model', filled($data['ai_model_custom'] ?? null) ? $data['ai_model_custom'] : ($data['ai_model'] ?? null));
+            $settings->set('ai_base_url', $data['ai_base_url'] ?? null);
+            $settings->set('ai_max_tokens', max(200, min(1500, (int) ($data['ai_max_tokens'] ?? 700))));
+        }
+        $settings->applyToConfig();
+
+        Notification::make()
+            ->title('App settings tersimpan')
+            ->body('Cache settings sudah dibersihkan dan konfigurasi runtime diperbarui.')
+            ->success()
+            ->send();
+
+        $this->mount($settings);
+    }
+
+    private function saveSecret(SettingService $settings, string $key, ?string $value, bool $active): void
+    {
+        if (filled($value)) {
+            $settings->set($key, $value, $active);
+
+            return;
+        }
+
+        $current = $settings->raw($key);
+        if ($current) {
+            $current->forceFill(['is_active' => $active])->save();
+        }
+    }
+
+    private function aiModelOptions(string $provider): array
+    {
+        return match ($provider) {
+            'openrouter' => [
+                'qwen/qwen3-8b:free' => 'Qwen Qwen3 8B (free) - rekomendasi parser hemat',
+                'qwen/qwen3-14b:free' => 'Qwen Qwen3 14B (free)',
+                'deepseek/deepseek-chat-v3-0324:free' => 'DeepSeek Chat V3 0324 (free)',
+                'deepseek/deepseek-r1:free' => 'DeepSeek R1 (free)',
+                'google/gemma-3-27b-it:free' => 'Google Gemma 3 27B IT (free)',
+                'meta-llama/llama-3.3-8b-instruct:free' => 'Meta Llama 3.3 8B Instruct (free)',
+                'mistralai/mistral-small-3.1-24b-instruct:free' => 'Mistral Small 3.1 24B Instruct (free)',
+            ],
+            'kimi' => [
+                'kimi-pro' => 'Kimi Pro',
+                'moonshot-v1-8k' => 'Moonshot v1 8K',
+            ],
+            'blackbox' => [
+                'blackboxai/openai/gpt-4o-mini' => 'Blackbox GPT-4o Mini',
+            ],
+            default => [
+                'gpt-4o-mini' => 'OpenAI GPT-4o Mini',
+                'gpt-4.1-mini' => 'OpenAI GPT-4.1 Mini',
+            ],
+        };
+    }
+
+    private function isValidServiceAccountJson(string $value): bool
+    {
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded)
+            && filled($decoded['project_id'] ?? null)
+            && filled($decoded['client_email'] ?? null)
+            && filled($decoded['private_key'] ?? null);
+    }
+
+    private function isValidFirebaseWebConfig(string $value): bool
+    {
+        $decoded = json_decode($value, true);
+
+        if (! is_array($decoded) && preg_match('/\{.*\}/s', $value, $match) === 1) {
+            $jsonLike = preg_replace('/\/\/.*$/m', '', $match[0]);
+            $jsonLike = preg_replace('/([,{]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/', '$1"$2":', (string) $jsonLike);
+            $jsonLike = preg_replace('/,\s*}/', '}', (string) $jsonLike);
+            $decoded = json_decode((string) $jsonLike, true);
+        }
+
+        return is_array($decoded)
+            && filled($decoded['apiKey'] ?? null)
+            && filled($decoded['projectId'] ?? null)
+            && filled($decoded['messagingSenderId'] ?? null)
+            && filled($decoded['appId'] ?? null);
+    }
+
+    private function nightTariffRules(SettingService $settings): array
+    {
+        $raw = $settings->get('night_tariff_rules');
+        $decoded = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+
+        if (is_array($decoded) && $decoded !== []) {
+            return $this->normalizeNightTariffRules($decoded);
+        }
+
+        return $this->defaultNightTariffRules();
+    }
+
+    private function defaultNightTariffRules(): array
+    {
+        return [
+            ['area' => 'bws', 'start' => '21:30', 'end' => '00:00', 'percent' => 30],
+            ['area' => 'bondowoso', 'start' => '21:30', 'end' => '00:00', 'percent' => 30],
+            ['area' => '', 'start' => '22:00', 'end' => '00:00', 'percent' => 30],
+            ['area' => '', 'start' => '00:01', 'end' => '04:00', 'percent' => 50],
+            ['area' => '', 'start' => '04:01', 'end' => '06:00', 'percent' => 30],
+        ];
+    }
+
+    private function normalizeNightTariffRules(array $rules): array
+    {
+        $normalized = [];
+
+        foreach ($rules as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+
+            $percent = max(0, min(200, (int) ($rule['percent'] ?? 0)));
+
+            if ($percent <= 0) {
+                continue;
+            }
+
+            $normalized[] = [
+                'area' => strtolower(trim((string) ($rule['area'] ?? ''))),
+                'start' => $this->normalizeTime((string) ($rule['start'] ?? '00:00')),
+                'end' => $this->normalizeTime((string) ($rule['end'] ?? '00:00')),
+                'percent' => $percent,
+            ];
+        }
+
+        return $normalized === [] ? $this->defaultNightTariffRules() : $normalized;
+    }
+
+    private function normalizeTime(string $time): string
+    {
+        if (preg_match('/^(\d{1,2}):(\d{1,2})$/', trim($time), $match) !== 1) {
+            return '00:00';
+        }
+
+        return sprintf('%02d:%02d', min(23, max(0, (int) $match[1])), min(59, max(0, (int) $match[2])));
+    }
+}

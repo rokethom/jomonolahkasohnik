@@ -1,0 +1,603 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Branch;
+use App\Models\Service;
+use App\Models\User;
+use Illuminate\Support\Collection;
+
+class JojoBotService
+{
+    private const MENU_KEYWORDS = ['order', 'menu', 'min', 'hai', 'admin', 'jojo'];
+    private const SHOPPING_KEYWORDS = ['belikan', 'pasar'];
+
+    public function __construct(
+        private readonly PricingService $pricing,
+        private readonly OrderParserService $orderParser,
+        private readonly TextFormatter $formatter,
+        private readonly KeywordParserService $keywordParsers,
+    ) {
+    }
+
+    public function preview(User $user, string $rawText): array
+    {
+        $services = $this->services();
+        $normalized = mb_strtolower(trim($rawText));
+        $keywordMatch = $this->keywordParsers->detect($rawText);
+
+        if ($keywordMatch !== null) {
+            $smartParsed = $this->shouldTrySmartParserForKeyword($rawText, $keywordMatch)
+                ? $this->orderParser->parse($user, $rawText)
+                : null;
+
+            if ($smartParsed) {
+                $payload = $smartParsed['payload'];
+                $quote = $this->pricing->calculate($payload);
+                $reply = $this->formatter->smartParserReply($smartParsed, $quote);
+
+                return [
+                    'intent' => 'order_preview',
+                    'services' => $services->values(),
+                    'selected_service' => $payload['service_type'],
+                    'parsed' => [
+                        'name' => $smartParsed['name'],
+                        'phone' => $smartParsed['phone'],
+                        'pickup_address' => $payload['pickup_address'],
+                        'destination_address' => $payload['destination_address'],
+                        'notes' => $rawText,
+                        'items' => $smartParsed['items'],
+                        'store_location' => $smartParsed['store_location'],
+                        'destination' => $smartParsed['destination'] ?? $payload['destination_address'],
+                        'customer' => $smartParsed['customer'] ?? [
+                            'name' => $smartParsed['name'],
+                            'phone' => $smartParsed['phone'],
+                        ],
+                        'smart_parser' => true,
+                        'keyword_parser' => $keywordMatch,
+                    ],
+                    'message' => $reply,
+                    'form_schema' => null,
+                    'service_type' => $payload['service_type'],
+                    'quote' => $quote,
+                    'order_payload' => $payload,
+                    'actions' => ['add_point', 'preview_order'],
+                    'reply' => $reply,
+                ];
+            }
+
+            $parsed = $this->parseOrderText($rawText);
+            $serviceType = $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
+            $isStructuredFormInput = $this->isStructuredFormInput($rawText);
+            if (($parsed['pickup_address'] ?? null) && ($parsed['destination_address'] ?? null) || $isStructuredFormInput) {
+                if ($this->isPurchaseService($serviceType) && blank($parsed['store_location'] ?? null)) {
+                    return $this->missingPurchaseLocationResponse($services, $serviceType, $parsed, $keywordMatch['form_schema'] ?? null);
+                }
+
+                $parsed = $this->completeParsedForPreview($user, $parsed, $serviceType);
+                $payload = $this->payload($user, $parsed, $serviceType, $this->shouldUseBaseFare($parsed));
+                $quote = $this->pricing->calculate($payload);
+
+                return [
+                    'intent' => 'order_preview',
+                    'services' => $services->values(),
+                    'selected_service' => $serviceType,
+                    'parsed' => [
+                        ...$parsed,
+                        'keyword_parser' => $keywordMatch,
+                        'parser_mode' => $keywordMatch['parser_mode'],
+                    ],
+                    'message' => $this->orderPreviewReply($parsed, $quote),
+                    'form_schema' => null,
+                    'service_type' => $serviceType,
+                    'quote' => $quote,
+                    'order_payload' => $payload,
+                    'actions' => ['add_point', 'preview_order'],
+                    'reply' => $this->orderPreviewReply($parsed, $quote),
+                ];
+            }
+
+            return [
+                'intent' => 'service_selected',
+                'services' => $services->values(),
+                'selected_service' => $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']),
+                'parsed' => [
+                    'keyword_parser' => $keywordMatch,
+                    'parser_mode' => $keywordMatch['parser_mode'],
+                ],
+                'message' => $keywordMatch['response'],
+                'form_schema' => $keywordMatch['form_schema'] ?? null,
+                'service_type' => $keywordMatch['service_type'],
+                'quote' => null,
+                'order_payload' => null,
+                'reply' => $keywordMatch['response'],
+            ];
+        }
+
+        $selectedService = $this->detectService($normalized, $services);
+        $smartParsed = $this->orderParser->parse($user, $rawText);
+
+        if ($smartParsed) {
+            $payload = $smartParsed['payload'];
+            $quote = $this->pricing->calculate($payload);
+
+            return [
+                'intent' => 'order_preview',
+                'services' => $services->values(),
+                'selected_service' => $payload['service_type'],
+                'parsed' => [
+                    'name' => $smartParsed['name'],
+                    'phone' => $smartParsed['phone'],
+                    'pickup_address' => $payload['pickup_address'],
+                    'destination_address' => $payload['destination_address'],
+                    'notes' => $rawText,
+                    'items' => $smartParsed['items'],
+                    'store_location' => $smartParsed['store_location'],
+                    'destination' => $smartParsed['destination'] ?? $payload['destination_address'],
+                    'customer' => $smartParsed['customer'] ?? [
+                        'name' => $smartParsed['name'],
+                        'phone' => $smartParsed['phone'],
+                    ],
+                    'smart_parser' => true,
+                ],
+                'quote' => $quote,
+                'order_payload' => $payload,
+                'actions' => ['add_point', 'preview_order'],
+                'reply' => $this->formatter->smartParserReply($smartParsed, $quote),
+            ];
+        }
+
+        if ($this->containsAny($normalized, self::SHOPPING_KEYWORDS)) {
+            $selectedService = 'belanja';
+        }
+
+        $parsed = $this->parseOrderText($rawText);
+        $hasOrderShape = $parsed['pickup_address'] && $parsed['destination_address'];
+
+        if ($selectedService && $this->isOutsideRegisteredArea($user) && ! $this->isGiftOrder($selectedService)) {
+            return $this->giftOrderDirection($services, $parsed);
+        }
+
+        if ($hasOrderShape || (($selectedService || ($parsed['service_type'] ?? null)) && $this->isStructuredFormInput($rawText))) {
+            $serviceType = $parsed['service_type'] ?: $selectedService ?: 'delivery';
+            if ($this->isPurchaseService($serviceType) && blank($parsed['store_location'] ?? null)) {
+                return $this->missingPurchaseLocationResponse($services, $serviceType, $parsed);
+            }
+
+            $parsed = $this->completeParsedForPreview($user, $parsed, $serviceType);
+            $payload = $this->payload($user, $parsed, $serviceType, $this->shouldUseBaseFare($parsed));
+            $quote = $this->pricing->calculate($payload);
+
+            return [
+                'intent' => 'order_preview',
+                'services' => $services->values(),
+                'selected_service' => $payload['service_type'],
+                'parsed' => $parsed,
+                'quote' => $quote,
+                'order_payload' => $payload,
+                'actions' => ['add_point', 'preview_order'],
+                'reply' => $this->orderPreviewReply($parsed, $quote),
+            ];
+        }
+
+        if ($selectedService) {
+            return [
+                'intent' => 'service_selected',
+                'services' => $services->values(),
+                'selected_service' => $selectedService,
+                'parsed' => $parsed,
+                'quote' => null,
+                'order_payload' => null,
+                'form_schema' => $this->defaultFormSchema($selectedService),
+                'service_type' => $selectedService,
+                'reply' => "Baik, JOJOBOT arahkan ke layanan ".mb_strtoupper($selectedService).".\n\nSilakan lengkapi form order di bawah.",
+            ];
+        }
+
+        if ($this->containsAny($normalized, self::MENU_KEYWORDS)) {
+            return [
+                'intent' => 'service_menu',
+                'services' => $services->values(),
+                'selected_service' => null,
+                'parsed' => $parsed,
+                'quote' => null,
+                'order_payload' => null,
+                'reply' => $this->serviceMenuReply($services),
+            ];
+        }
+
+        return [
+            'intent' => 'fallback_form',
+            'services' => $services->values(),
+            'selected_service' => null,
+            'parsed' => $parsed,
+            'quote' => null,
+            'order_payload' => null,
+            'reply' => "JOJOBOT belum bisa membaca format pesanan.\nSilakan isi form manual layanan.",
+            'fallback_format' => $this->formatter->unrecognizedFormat(),
+        ];
+    }
+
+    private function services(): Collection
+    {
+        $rows = Service::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get(['id', 'code', 'name']);
+
+        if ($rows->isEmpty()) {
+            $rows = collect([
+                ['id' => 1, 'code' => 'DO', 'name' => 'Delivery'],
+                ['id' => 2, 'code' => 'OJ', 'name' => 'Ojek'],
+                ['id' => 3, 'code' => 'KR', 'name' => 'Kurir'],
+                ['id' => 4, 'code' => 'BL', 'name' => 'Belanja'],
+                ['id' => 5, 'code' => 'GO', 'name' => 'Gift Order'],
+            ]);
+        }
+
+        return $rows->map(fn ($service): array => [
+            'id' => (int) ($service['id'] ?? $service->id),
+            'code' => (string) ($service['code'] ?? $service->code),
+            'name' => (string) ($service['name'] ?? $service->name),
+            'service_type' => $this->serviceType((string) ($service['code'] ?? $service->code), (string) ($service['name'] ?? $service->name)),
+        ]);
+    }
+
+    private function detectService(string $text, Collection $services): ?string
+    {
+        foreach ($services as $service) {
+            if (str_contains($text, mb_strtolower($service['name'])) || str_contains($text, mb_strtolower($service['service_type']))) {
+                return $service['service_type'];
+            }
+        }
+
+        return null;
+    }
+
+    private function parseOrderText(string $rawText): array
+    {
+        $fields = [
+            'name' => null,
+            'phone' => null,
+            'pickup_address' => null,
+            'destination_address' => null,
+            'store_location' => null,
+            'notes' => null,
+            'points' => [],
+            'used_fallback_location' => false,
+            'service_type' => null,
+        ];
+
+        foreach (preg_split('/\R/u', $rawText) ?: [] as $line) {
+            if (! str_contains($line, ':')) {
+                continue;
+            }
+
+            [$label, $value] = array_map('trim', explode(':', $line, 2));
+            $key = mb_strtolower($label);
+
+            if (preg_match('/layanan|service/u', $key)) {
+                $fields['service_type'] = $this->normalizeRequestedService($value);
+            } elseif (preg_match('/^nama/u', $key)) {
+                $fields['name'] = $value;
+            } elseif (preg_match('/no|hp|wa|telepon|phone/u', $key)) {
+                $fields['phone'] = $value;
+            } elseif (preg_match('/pembelian|toko|store|warung|resto|restaurant|pasar|lokasi\s+(?:beli|pembelian)/u', $key)) {
+                $fields['store_location'] = $value;
+            } elseif (preg_match('/jemput|pickup|asal/u', $key)) {
+                $fields['pickup_address'] = $value;
+            } elseif (preg_match('/tujuan|antar|destination/u', $key)) {
+                $fields['destination_address'] = $value;
+            } elseif (preg_match('/\balamat\b|address/u', $key)) {
+                $fields['destination_address'] = $value;
+            } elseif (preg_match('/barang|item|produk|list|belanja/u', $key)) {
+                $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], $value])));
+            } elseif (preg_match('/rute|route/u', $key)) {
+                $fields['route'] = $value;
+            } elseif (preg_match('/catatan|notes|barang|pesanan/u', $key)) {
+                $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], $value])));
+            } elseif (preg_match('/titik|stop|mampir/u', $key)) {
+                $fields['points'][] = ['address' => $value, 'label' => $label];
+            }
+        }
+
+        if (str_contains($rawText, ',') && ! $fields['notes']) {
+            $fields['notes'] = $rawText;
+        }
+
+        return $fields;
+    }
+
+    private function completeParsedForPreview(User $user, array $parsed, string $serviceType): array
+    {
+        if ($this->isPurchaseService($serviceType)) {
+            if (blank($parsed['destination_address'] ?? null)) {
+                $parsed['destination_address'] = $user->address ?: 'Alamat customer';
+                $parsed['used_fallback_location'] = true;
+            }
+
+            if (blank($parsed['pickup_address'] ?? null)) {
+                $parsed['pickup_address'] = $parsed['store_location'] ?: ($this->branch($user)?->name ?? 'Lokasi pembelian');
+                $parsed['used_fallback_location'] = true;
+            }
+
+            return $parsed;
+        }
+
+        if (blank($parsed['destination_address'] ?? null)) {
+            $parsed['destination_address'] = $user->address ?: 'Alamat customer';
+            $parsed['used_fallback_location'] = true;
+        }
+
+        if (blank($parsed['pickup_address'] ?? null)) {
+            $parsed['pickup_address'] = $this->branch($user)?->name ?? 'Lokasi jemput';
+            $parsed['used_fallback_location'] = true;
+        }
+
+        return $parsed;
+    }
+
+    private function shouldUseBaseFare(array $parsed): bool
+    {
+        return (bool) ($parsed['used_fallback_location'] ?? false);
+    }
+
+    private function isStructuredFormInput(string $rawText): bool
+    {
+        return preg_match('/^[^:\r\n]{2,80}:/mu', $rawText) === 1;
+    }
+
+    private function shouldTrySmartParserForKeyword(string $rawText, array $keywordMatch): bool
+    {
+        if (($keywordMatch['parser_mode'] ?? null) === 'advanced') {
+            return true;
+        }
+
+        $normalized = mb_strtolower(trim($rawText));
+        if ($this->isStructuredFormInput($rawText)) {
+            return true;
+        }
+
+        $wordCount = str_word_count(str_replace(['/', '-'], ' ', $normalized));
+        if ($wordCount < 3) {
+            return false;
+        }
+
+        return preg_match('/\b(?:belikan|beli|pesan|antar|jemput|tujuan|alamat|lokasi|toko|warung|resto|pasar|ke|dari)\b/iu', $normalized) === 1;
+    }
+
+    private function payload(User $user, array $parsed, string $serviceType, bool $useBaseFare = false): array
+    {
+        $branch = $this->branch($user);
+        $pickupLat = (float) ($branch?->latitude ?: -6.9219);
+        $pickupLng = (float) ($branch?->longitude ?: 107.6071);
+        $destinationLat = $useBaseFare ? $pickupLat : $pickupLat + 0.018;
+        $destinationLng = $useBaseFare ? $pickupLng : $pickupLng + 0.018;
+
+        $payload = [
+            'service_type' => $serviceType,
+            'pickup_address' => $this->isPurchaseService($serviceType)
+                ? ($parsed['store_location'] ?: $parsed['pickup_address'] ?: ($branch?->name ?? 'Lokasi pembelian'))
+                : ($parsed['pickup_address'] ?: ($branch?->name ?? 'Lokasi jemput')),
+            'pickup_lat' => $pickupLat,
+            'pickup_lng' => $pickupLng,
+            'destination_address' => $parsed['destination_address'] ?: 'Alamat tujuan',
+            'destination_lat' => $destinationLat,
+            'destination_lng' => $destinationLng,
+            'branch_id' => $branch?->id,
+            'stops' => 1,
+            'destination_text' => $parsed['destination_address'],
+            'notes' => trim(implode("\n", array_filter([
+                $parsed['notes'],
+                $parsed['name'] ? 'Nama: '.$parsed['name'] : null,
+                $parsed['phone'] ? 'No. Hp: '.$parsed['phone'] : null,
+            ]))),
+            'points' => array_slice($parsed['points'] ?? [], 0, 5),
+            'items' => $serviceType === 'belanja' ? $this->shoppingItems((string) ($parsed['notes'] ?? '')) : [],
+            'service_payload' => [
+                'source' => 'jojobot_form_parser',
+                'store_location' => $parsed['store_location'] ?? null,
+                'location_flow_note' => $this->isPurchaseService($serviceType)
+                    ? 'Alamat pembelian dipakai sebagai titik ambil barang; alamat customer/profile dipakai sebagai tujuan antar.'
+                    : 'Alamat jemput dipakai sebagai titik awal; alamat tujuan dipakai sebagai tujuan akhir.',
+            ],
+        ];
+
+        if ($serviceType === 'travel' && filled($parsed['route'] ?? null)) {
+            $payload['route'] = $parsed['route'];
+        }
+
+        if ($useBaseFare) {
+            $payload['distance'] = 0;
+            $payload['distance_km'] = 0;
+        }
+
+        return $payload;
+    }
+
+    private function shoppingItems(string $text): array
+    {
+        return collect(explode(',', $text))
+            ->map(fn (string $item): string => trim($item))
+            ->filter()
+            ->map(fn (string $item): array => ['name' => $item, 'quantity' => 1])
+            ->values()
+            ->all();
+    }
+
+    private function branch(User $user): ?Branch
+    {
+        if ($user->branch_id) {
+            return Branch::query()->find($user->branch_id);
+        }
+
+        return Branch::query()->whereNotNull('latitude')->whereNotNull('longitude')->first();
+    }
+
+    private function serviceType(string $code, string $name): string
+    {
+        return match (mb_strtoupper($code)) {
+            'OJ' => 'ojek',
+            'KR' => 'kurir',
+            'DO' => 'delivery',
+            'BL' => 'belanja',
+            'GO' => 'gift_order',
+            'TV' => 'travel',
+            'JM' => 'joker_mobil',
+            default => str($name)->lower()->replace(' ', '_')->toString(),
+        };
+    }
+
+    private function normalizeRequestedService(?string $value): ?string
+    {
+        $value = mb_strtolower(trim((string) $value));
+
+        if ($value === '') {
+            return null;
+        }
+
+        return match ($value) {
+            'oj', 'ojek' => 'ojek',
+            'kr', 'kurir' => 'kurir',
+            'do', 'delivery', 'delivery order' => 'delivery',
+            'bl', 'belanja' => 'belanja',
+            'go', 'gift', 'gift order', 'gift_order' => 'gift_order',
+            'tv', 'travel' => 'travel',
+            'jm', 'joker', 'joker mobil', 'joker_mobil' => 'joker_mobil',
+            default => str($value)->replace(['-', ' '], '_')->toString(),
+        };
+    }
+
+    private function containsAny(string $text, array $keywords): bool
+    {
+        foreach ($keywords as $keyword) {
+            if (str_contains($text, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isGiftOrder(string $serviceType): bool
+    {
+        return in_array(strtolower($serviceType), ['gift', 'gift_order', 'go'], true);
+    }
+
+    private function defaultFormSchema(string $serviceType): ?array
+    {
+        if ($this->isPurchaseService($serviceType)) {
+            return [
+                'fields' => [
+                    ['label' => 'Nama', 'name' => 'nama', 'type' => 'text', 'required' => false, 'options' => []],
+                    ['label' => 'Hp / WhatsApp', 'name' => 'phone', 'type' => 'phone', 'required' => false, 'options' => []],
+                    ['label' => 'Alamat Antar', 'name' => 'alamat_antar', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Lokasi Pembelian', 'name' => 'lokasi_pembelian', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Belikan', 'name' => 'belikan', 'type' => 'textarea', 'required' => true, 'options' => []],
+                ],
+            ];
+        }
+
+        if ($serviceType === 'ojek') {
+            return [
+                'fields' => [
+                    ['label' => 'Alamat Jemput', 'name' => 'alamat_jemput', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Alamat Antar', 'name' => 'alamat_antar', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Jumlah Penumpang', 'name' => 'jumlah_penumpang', 'type' => 'number', 'required' => false, 'options' => []],
+                    ['label' => 'Catatan', 'name' => 'catatan', 'type' => 'textarea', 'required' => false, 'options' => []],
+                ],
+            ];
+        }
+
+        if ($serviceType === 'kurir') {
+            return [
+                'fields' => [
+                    ['label' => 'Alamat Jemput', 'name' => 'alamat_jemput', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Alamat Tujuan', 'name' => 'alamat_tujuan', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Barang', 'name' => 'barang', 'type' => 'text', 'required' => true, 'options' => []],
+                    ['label' => 'Catatan', 'name' => 'catatan', 'type' => 'textarea', 'required' => false, 'options' => []],
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    private function isPurchaseService(string $serviceType): bool
+    {
+        return in_array(strtolower($serviceType), ['do', 'delivery', 'belanja', 'gift_order', 'gift'], true);
+    }
+
+    private function isOutsideRegisteredArea(User $user): bool
+    {
+        if ($user->branch_id === null) {
+            return true;
+        }
+
+        $latest = $user->latestLocationLog;
+
+        return $latest !== null && ! $latest->is_valid;
+    }
+
+    private function giftOrderDirection(Collection $services, array $parsed): array
+    {
+        return [
+            'intent' => 'service_selected',
+            'services' => $services->values(),
+            'selected_service' => 'gift_order',
+            'parsed' => $parsed,
+            'quote' => null,
+            'order_payload' => null,
+            'reply' => "Area kamu berada di luar cabang aktif. JOJOBOT arahkan ke layanan GIFT ORDER.\n\nIsi format Gift Order atau pilih layanan Gift Order di chat.",
+        ];
+    }
+
+    private function missingPurchaseLocationResponse(Collection $services, string $serviceType, array $parsed, ?array $formSchema = null): array
+    {
+        return [
+            'intent' => 'service_selected',
+            'services' => $services->values(),
+            'selected_service' => $serviceType,
+            'parsed' => [
+                ...$parsed,
+                'missing_fields' => ['Lokasi Pembelian'],
+            ],
+            'message' => "Lokasi Pembelian belum terbaca.\nIsi nama toko/resto/warung/pasar di field Lokasi Pembelian, jangan isi dengan nama barang.",
+            'form_schema' => $formSchema,
+            'service_type' => $serviceType,
+            'quote' => null,
+            'order_payload' => null,
+            'reply' => "Lokasi Pembelian belum terbaca.\nIsi nama toko/resto/warung/pasar di field Lokasi Pembelian, jangan isi dengan nama barang.",
+        ];
+    }
+
+    private function serviceMenuReply(Collection $services): string
+    {
+        return "Pilih layanan:\n".$services->values()->map(fn ($service, $index): string => ($index + 1).'. '.$service['name'])->implode("\n");
+    }
+
+    private function orderPreviewReply(array $parsed, array $quote): string
+    {
+        $money = fn (int|float|null $value): string => 'Rp '.number_format((int) $value, 0, ',', '.');
+        $serviceType = (string) ($parsed['service_type'] ?? '');
+        $pickupLabel = $this->isPurchaseService($serviceType) ? 'Lokasi pembelian' : 'Alamat jemput';
+        $destinationLabel = $this->isPurchaseService($serviceType) ? 'Alamat antar/customer' : 'Tujuan';
+        $pickupText = $parsed['store_location'] ?? $parsed['pickup_address'] ?? '-';
+
+        return implode("\n", [
+            'Pesanan Anda:',
+            '- Nama: '.($parsed['name'] ?: '-'),
+            '- '.$pickupLabel.': '.$pickupText,
+            '- '.$destinationLabel.': '.($parsed['destination_address'] ?: '-'),
+            '',
+            'Breakdown:',
+            '- Tarif: '.$money($quote['tarif'] ?? $quote['price'] ?? 0),
+            '- Service fee: '.$money($quote['service_fee'] ?? $quote['service_charge'] ?? 0),
+            '- Tambahan: '.$money($quote['extra_charge'] ?? 0),
+            '',
+            'Total: '.$money($quote['total_price'] ?? $quote['final_price'] ?? 0),
+            '',
+            'Apakah pesanan sudah benar? (YA / TIDAK)',
+        ]);
+    }
+}

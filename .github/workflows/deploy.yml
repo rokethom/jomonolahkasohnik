@@ -1,0 +1,152 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PHP_VERSION: "8.2"
+  PNPM_VERSION: "10.33.2"
+  API_URL: "https://aplikasijoker.my.id/api"
+  BACKEND_PATH: "/home/aplikasijoker.my.id/laravel"
+  BACKEND_PUBLIC_PATH: "/home/aplikasijoker.my.id/public_html"
+  ADMIN_PUBLIC_PATH: "/home/admin.aplikasijoker.my.id/public_html"
+  CUSTOMER_PUBLIC_PATH: "/home/app.aplikasijoker.my.id/public_html"
+  DRIVER_PUBLIC_PATH: "/home/driver.aplikasijoker.my.id/public_html"
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create production frontend env files
+        shell: bash
+        run: |
+          for app in admin customer driver; do
+            printf "VITE_API_URL=%s\nVITE_API_BASE_URL=%s\n" "${API_URL}" "${API_URL}" > "apps/${app}/.env.production"
+          done
+
+      - name: Build frontends
+        run: pnpm build
+
+      - name: Setup PHP for backend dependency validation
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: bcmath, ctype, curl, dom, fileinfo, filter, mbstring, openssl, pdo, tokenizer, xml
+          coverage: none
+
+      - name: Validate backend composer dependencies
+        working-directory: backend
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Trust VPS host key
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Ensure remote directories exist
+        shell: bash
+        run: |
+          ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "mkdir -p '${BACKEND_PATH}' '${BACKEND_PUBLIC_PATH}' '${ADMIN_PUBLIC_PATH}' '${CUSTOMER_PUBLIC_PATH}' '${DRIVER_PUBLIC_PATH}'"
+
+      - name: Upload backend source
+        shell: bash
+        run: |
+          rsync -az --delete \
+            -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --exclude='.env' \
+            --exclude='vendor/' \
+            --exclude='node_modules/' \
+            --exclude='storage/app/public/' \
+            --exclude='storage/framework/cache/' \
+            --exclude='storage/framework/sessions/' \
+            --exclude='storage/framework/testing/' \
+            --exclude='storage/framework/views/' \
+            --exclude='storage/logs/' \
+            backend/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${BACKEND_PATH}/"
+
+      - name: Upload Laravel public assets
+        shell: bash
+        run: |
+          rsync -az \
+            -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --exclude='index.php' \
+            --exclude='.htaccess' \
+            --exclude='storage/' \
+            backend/public/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${BACKEND_PUBLIC_PATH}/"
+
+      - name: Upload admin frontend
+        shell: bash
+        run: |
+          rsync -az --delete \
+            -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --exclude='.htaccess' \
+            --exclude='.well-known/' \
+            --exclude='error_log' \
+            apps/admin/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${ADMIN_PUBLIC_PATH}/"
+
+      - name: Upload customer frontend
+        shell: bash
+        run: |
+          rsync -az --delete \
+            -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --exclude='.htaccess' \
+            --exclude='.well-known/' \
+            --exclude='error_log' \
+            apps/customer/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${CUSTOMER_PUBLIC_PATH}/"
+
+      - name: Upload driver frontend
+        shell: bash
+        run: |
+          rsync -az --delete \
+            -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --exclude='.htaccess' \
+            --exclude='.well-known/' \
+            --exclude='error_log' \
+            apps/driver/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${DRIVER_PUBLIC_PATH}/"
+
+      - name: Finalize Laravel deployment
+        shell: bash
+        run: |
+          ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
+            cd '${BACKEND_PATH}'; \
+            composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
+            php artisan storage:link || true; \
+            php artisan migrate --force; \
+            php artisan optimize:clear; \
+            php artisan config:cache; \
+            php artisan route:cache; \
+            php artisan view:cache"
