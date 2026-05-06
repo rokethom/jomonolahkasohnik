@@ -11,6 +11,7 @@ use Google\Client as GoogleClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class DriverGoogleAuthService
 {
@@ -36,8 +37,14 @@ class DriverGoogleAuthService
         $matchedDriver = Driver::query()
             ->with('user')
             ->where(function ($query) use ($email): void {
-                $query->whereRaw('LOWER(email) = ?', [$email])
-                    ->orWhereHas('user', fn ($query) => $query->whereRaw('LOWER(email) = ?', [$email]));
+                if (Schema::hasColumn('drivers', 'email')) {
+                    $query->whereRaw('LOWER(email) = ?', [$email])
+                        ->orWhereHas('user', fn ($query) => $query->whereRaw('LOWER(email) = ?', [$email]));
+
+                    return;
+                }
+
+                $query->whereHas('user', fn ($query) => $query->whereRaw('LOWER(email) = ?', [$email]));
             })
             ->first();
 
@@ -74,15 +81,20 @@ class DriverGoogleAuthService
                 $driver->forceFill(['google_id' => $googleId])->save();
             }
 
-            $driver->forceFill([
+            $updates = [
                 'name' => $driver->name ?: $driver->user?->name,
-                'email' => $driver->email ?: $driver->user?->email,
                 'last_login_at' => now(),
                 'last_login_ip' => $request->ip(),
                 'last_login_device' => trim((string) $request->input('device_name', 'Driver App')) ?: null,
                 'auth_failed_attempts' => 0,
                 'auth_locked_until' => null,
-            ])->save();
+            ];
+
+            if (Schema::hasColumn('drivers', 'email')) {
+                $updates['email'] = $driver->email ?: $driver->user?->email;
+            }
+
+            $driver->forceFill($updates)->save();
 
             $user = $driver->user;
             $user->tokens()->delete();

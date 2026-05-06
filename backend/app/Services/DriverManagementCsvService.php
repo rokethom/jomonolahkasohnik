@@ -9,6 +9,7 @@ use App\Models\Driver;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DriverManagementCsvService
@@ -65,7 +66,7 @@ class DriverManagementCsvService
                             $user->name,
                             $user->username,
                             $user->phone,
-                            $driver?->email ?: $user->email,
+                            $this->driverEmail($user),
                             $user->branch_id,
                             $user->branch?->display_name,
                             $driver?->vehicle_type ?: 'motor',
@@ -200,7 +201,9 @@ class DriverManagementCsvService
         }
 
         $this->ensureUniqueUserValue('email', $email, $user->id);
-        $this->ensureUniqueDriverEmail($email, (int) $user->driver->id);
+        if (Schema::hasColumn('drivers', 'email')) {
+            $this->ensureUniqueDriverEmail($email, (int) $user->driver->id);
+        }
 
         if (filled($data['username'] ?? null)) {
             $this->ensureUniqueUserValue('username', $data['username'], $user->id);
@@ -214,7 +217,7 @@ class DriverManagementCsvService
                 'phone' => $user->phone,
                 'email' => $user->email,
                 'branch_id' => $user->branch_id,
-                'driver_email' => $driver->email,
+                'driver_email' => $this->driverEmail($user),
                 'vehicle_type' => $driver->vehicle_type,
                 'allowed_service_types' => $driver->allowed_service_types,
                 'status' => $driver->status,
@@ -234,7 +237,6 @@ class DriverManagementCsvService
 
             $driverUpdates = [
                 'name' => $data['name'] ?: $user->name,
-                'email' => $email,
                 'vehicle_type' => $this->normalizeVehicleType($data['vehicle_type'] ?? null),
                 'allowed_service_types' => $this->normalizeServiceTypes($data['allowed_service_types'] ?? ''),
                 'status' => $this->normalizeStatus($data['status'] ?? null),
@@ -242,6 +244,10 @@ class DriverManagementCsvService
                 'is_suspend' => $this->booleanValue($data['is_suspend'] ?? 'no'),
                 'auth_suspended_at' => $this->booleanValue($data['auth_suspended'] ?? 'no') ? ($driver->auth_suspended_at ?? now()) : null,
             ];
+
+            if (Schema::hasColumn('drivers', 'email')) {
+                $driverUpdates['email'] = $email;
+            }
 
             if ($this->booleanValue($data['reset_google_bind'] ?? 'no')) {
                 $driverUpdates['google_id'] = null;
@@ -291,10 +297,13 @@ class DriverManagementCsvService
             $user = (clone $query)->whereHas('driver', fn ($query) => $query->whereKey((int) $data['driver_id']))->first();
         } elseif (filled($data['email_google'] ?? null)) {
             $email = strtolower($data['email_google']);
-            $user = (clone $query)->where(fn ($query) => $query
-                ->where('email', $email)
-                ->orWhereHas('driver', fn ($query) => $query->where('email', $email)))
-                ->first();
+            $user = (clone $query)->where(function ($query) use ($email): void {
+                $query->where('email', $email);
+
+                if (Schema::hasColumn('drivers', 'email')) {
+                    $query->orWhereHas('driver', fn ($query) => $query->where('email', $email));
+                }
+            })->first();
         } else {
             $user = null;
         }
@@ -328,6 +337,15 @@ class DriverManagementCsvService
         if ($exists) {
             throw new \RuntimeException('email_google sudah dipakai driver lain.');
         }
+    }
+
+    private function driverEmail(User $user): string
+    {
+        if (Schema::hasColumn('drivers', 'email') && filled($user->driver?->email)) {
+            return (string) $user->driver->email;
+        }
+
+        return (string) $user->email;
     }
 
     /**

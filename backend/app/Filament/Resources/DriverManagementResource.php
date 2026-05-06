@@ -18,6 +18,7 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 class DriverManagementResource extends Resource
@@ -120,11 +121,11 @@ class DriverManagementResource extends Resource
                         'Bound' => 'success',
                         default => 'gray',
                     })
-                    ->description(fn (User $record): string => $record->driver?->email ?: $record->email ?: '-'),
-                Tables\Columns\TextColumn::make('driver.email')
+                    ->description(fn (User $record): string => self::driverGoogleEmail($record) ?: '-'),
+                Tables\Columns\TextColumn::make('google_email_display')
                     ->label('Email Google')
-                    ->getStateUsing(fn (User $record): string => $record->driver?->email ?: $record->email)
-                    ->searchable()
+                    ->getStateUsing(fn (User $record): string => self::driverGoogleEmail($record))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('email', 'like', "%{$search}%"))
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('driver.last_login_at')
                     ->label('Login Terakhir')
@@ -343,7 +344,7 @@ class DriverManagementResource extends Resource
                             ->label('Email Google Driver')
                             ->email()
                             ->required()
-                            ->default(fn (User $record): string => $record->driver?->email ?: $record->email)
+                            ->default(fn (User $record): string => self::driverGoogleEmail($record))
                             ->helperText('Email ini dipakai untuk mencocokkan akun Google driver.'),
                     ])
                     ->action(function (User $record, array $data): void {
@@ -352,11 +353,13 @@ class DriverManagementResource extends Resource
                             return;
                         }
 
-                        $oldEmail = $driver->email ?: $record->email;
+                        $oldEmail = self::driverGoogleEmail($record);
                         $email = strtolower((string) $data['email']);
 
                         $record->forceFill(['email' => $email])->save();
-                        $driver->forceFill(['email' => $email])->save();
+                        if (Schema::hasColumn('drivers', 'email')) {
+                            $driver->forceFill(['email' => $email])->save();
+                        }
 
                         self::recordDriverAuthAudit('filament_updated_driver_google_email', $record, [
                             'driver_id' => $driver->id,
@@ -504,6 +507,15 @@ class DriverManagementResource extends Resource
         }
 
         return filled($driver->google_id) ? 'Bound' : 'Unbound';
+    }
+
+    private static function driverGoogleEmail(User $record): string
+    {
+        if (Schema::hasColumn('drivers', 'email') && filled($record->driver?->email)) {
+            return (string) $record->driver->email;
+        }
+
+        return (string) ($record->email ?? '');
     }
 
     private static function recordDriverAuthAudit(string $action, User $driverUser, array $metadata = []): void

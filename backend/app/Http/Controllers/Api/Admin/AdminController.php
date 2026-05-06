@@ -29,6 +29,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
@@ -329,14 +330,16 @@ class AdminController extends Controller
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($driver->user_id)],
         ]);
 
-        $oldEmail = $driver->email ?: $driver->user->email;
+        $oldEmail = Schema::hasColumn('drivers', 'email') && filled($driver->email) ? $driver->email : $driver->user->email;
         $driver->user->forceFill(['email' => strtolower($payload['email'])])->save();
-        $driver->forceFill(['email' => strtolower($payload['email'])])->save();
+        if (Schema::hasColumn('drivers', 'email')) {
+            $driver->forceFill(['email' => strtolower($payload['email'])])->save();
+        }
 
         $this->recordAudit($request->user(), 'updated_driver_google_email', $driver->user, [
             'driver_id' => $driver->id,
             'old_email' => $oldEmail,
-            'new_email' => $driver->email,
+            'new_email' => strtolower($payload['email']),
         ]);
 
         return response()->json(['message' => 'Email Google driver berhasil diperbarui.']);
@@ -918,7 +921,7 @@ class AdminController extends Controller
                 'driver_id' => $user->driver?->id,
                 'driver_status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
                 'google_bound' => filled($user->driver?->google_id),
-                'google_email' => $user->driver?->email ?? $user->email,
+                'google_email' => Schema::hasColumn('drivers', 'email') ? ($user->driver?->email ?? $user->email) : $user->email,
                 'last_login_at' => $user->driver?->last_login_at?->toDateTimeString(),
                 'last_login_ip' => $user->driver?->last_login_ip,
                 'last_login_device' => $user->driver?->last_login_device,
