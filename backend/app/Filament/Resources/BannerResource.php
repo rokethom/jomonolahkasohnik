@@ -69,9 +69,10 @@ class BannerResource extends Resource
             ->reorderable('order')
             ->defaultSort('order')
             ->columns([
-                Tables\Columns\ImageColumn::make('image_url')
-                    ->label('Preview')
-                    ->height(64),
+                Tables\Columns\TextColumn::make('image')
+                    ->label('File')
+                    ->limit(36)
+                    ->placeholder('Belum ada file'),
                 Tables\Columns\TextColumn::make('title')
                     ->searchable()
                     ->sortable(),
