@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
 use App\Models\Order;
+use App\Enums\OrderStatus;
 use App\Services\Pricing\ServiceFeeCalculator;
 use Illuminate\Support\Carbon;
 
@@ -84,10 +85,28 @@ class DriverFinanceService
     {
         $rating = $driver->ratings()->avg('rating');
         $deposit = $this->monthlyDeposit($driver);
+        $today = now();
+        $monthStart = $today->copy()->startOfMonth();
+        $monthEnd = $today->copy()->endOfMonth();
+        $completedThisMonth = $driver->orders()
+            ->where('status', OrderStatus::Completed->value)
+            ->whereBetween('created_at', [$monthStart, $monthEnd]);
+        $cancelledThisMonth = $driver->orders()
+            ->where('status', OrderStatus::Cancelled->value)
+            ->whereBetween('created_at', [$monthStart, $monthEnd]);
+        $completedToday = $driver->orders()
+            ->where('status', OrderStatus::Completed->value)
+            ->whereDate('created_at', $today->toDateString());
 
         return [
             'rating' => round((float) $rating, 2),
             'ratings_count' => $driver->ratings()->count(),
+            'completed_orders_count' => (clone $completedThisMonth)->count(),
+            'cancelled_orders_count' => (clone $cancelledThisMonth)->count(),
+            'today_completed_orders_count' => (clone $completedToday)->count(),
+            'month_revenue' => (int) (clone $completedThisMonth)->sum('total_price'),
+            'today_revenue' => (int) (clone $completedToday)->sum('total_price'),
+            'period_label' => $today->translatedFormat('F Y'),
             'setoran' => $deposit,
             'suspend_history' => $driver->suspensions()->latest()->limit(20)->get(),
             'oper_handle' => $driver->operHandleRequests()->latest()->limit(20)->get(),

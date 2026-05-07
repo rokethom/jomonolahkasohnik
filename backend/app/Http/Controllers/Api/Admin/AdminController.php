@@ -1419,14 +1419,36 @@ class AdminController extends Controller
                     ->withCount([
                         'ratings as ratings_count',
                         'orders as completed_orders_count' => fn ($query) => $query->where('status', OrderStatus::Completed->value),
+                        'orders as today_completed_orders_count' => fn ($query) => $query
+                            ->where('status', OrderStatus::Completed->value)
+                            ->whereDate('created_at', now()->toDateString()),
+                        'orders as month_completed_orders_count' => fn ($query) => $query
+                            ->where('status', OrderStatus::Completed->value)
+                            ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()]),
                         'orders as cancelled_orders_count' => fn ($query) => $query->where('status', OrderStatus::Cancelled->value),
+                        'orders as today_cancelled_orders_count' => fn ($query) => $query
+                            ->where('status', OrderStatus::Cancelled->value)
+                            ->whereDate('created_at', now()->toDateString()),
+                        'orders as month_cancelled_orders_count' => fn ($query) => $query
+                            ->where('status', OrderStatus::Cancelled->value)
+                            ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()]),
                         'suspensions as suspensions_count',
                         'operHandleRequests as oper_handle_requests_count',
                         'deposits as unpaid_deposits_count' => fn ($query) => $query->where('status', 'unpaid'),
                     ])
                     ->withSum([
                         'orders as completed_revenue' => fn ($query) => $query->where('status', OrderStatus::Completed->value),
+                        'orders as today_revenue' => fn ($query) => $query
+                            ->where('status', OrderStatus::Completed->value)
+                            ->whereDate('created_at', now()->toDateString()),
+                        'orders as month_revenue' => fn ($query) => $query
+                            ->where('status', OrderStatus::Completed->value)
+                            ->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()]),
                     ], 'total_price'),
+                'driver.orders' => fn ($query) => $query
+                    ->where('status', OrderStatus::Completed->value)
+                    ->latest()
+                    ->limit(1),
                 'driver.suspensions' => fn ($query) => $query->latest()->limit(5),
             ])
             ->limit(100)
@@ -1452,11 +1474,18 @@ class AdminController extends Controller
                     'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),
                     'ratings_count' => (int) ($user->driver?->ratings_count ?? 0),
                     'completed_orders_count' => (int) ($user->driver?->completed_orders_count ?? 0),
+                    'today_completed_orders_count' => (int) ($user->driver?->today_completed_orders_count ?? 0),
+                    'month_completed_orders_count' => (int) ($user->driver?->month_completed_orders_count ?? 0),
                     'cancelled_orders_count' => (int) ($user->driver?->cancelled_orders_count ?? 0),
+                    'today_cancelled_orders_count' => (int) ($user->driver?->today_cancelled_orders_count ?? 0),
+                    'month_cancelled_orders_count' => (int) ($user->driver?->month_cancelled_orders_count ?? 0),
                     'suspensions_count' => (int) ($user->driver?->suspensions_count ?? 0),
                     'oper_handle_requests_count' => (int) ($user->driver?->oper_handle_requests_count ?? 0),
                     'unpaid_deposits_count' => (int) ($user->driver?->unpaid_deposits_count ?? 0),
                     'completed_revenue' => (int) ($user->driver?->completed_revenue ?? 0),
+                    'today_revenue' => (int) ($user->driver?->today_revenue ?? 0),
+                    'month_revenue' => (int) ($user->driver?->month_revenue ?? 0),
+                    'last_completed_at' => $user->driver?->orders?->first()?->created_at?->toDateTimeString(),
                     'online_score' => $user->driver?->is_available ? 1 : 0,
                 ],
                 'suspensions' => $user->driver?->suspensions->map(fn ($suspension): array => [

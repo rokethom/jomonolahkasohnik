@@ -150,6 +150,12 @@ type DriverFinance = {
 type DriverPerformance = {
   rating: number
   ratings_count: number
+  completed_orders_count?: number
+  cancelled_orders_count?: number
+  today_completed_orders_count?: number
+  month_revenue?: number
+  today_revenue?: number
+  period_label?: string
   setoran?: DriverFinance
   suspend_history?: Array<{ id: number; type?: string; reason: string; status: string; start_at?: string; end_at?: string }>
   oper_handle?: Array<{ id: number; status: string; reason?: string | null; created_at?: string }>
@@ -1319,10 +1325,24 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
 function PerformancePage() {
   const performance = useDriverStore((state) => state.performance)
   return (
-    <section className="page">
-      <PageTitle title="Performa" subtitle="Evaluasi driver global dari sistem Jojo." />
+    <section className="page performance-page">
+      <PageTitle title="Performa" subtitle={`Evaluasi bulan ${performance?.period_label ?? 'ini'}.`} />
+      <section className="driver-performance-hero panel">
+        <div>
+          <span>Rating customer</span>
+          <strong>{Number(performance?.rating ?? 0).toFixed(1)}/5</strong>
+          <small>{performance?.ratings_count ?? 0} rating masuk</small>
+        </div>
+        <div>
+          <span>Pendapatan bulan ini</span>
+          <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
+          <small>Hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+        </div>
+      </section>
       <section className="stats-grid">
-        <Metric label="Rating" value={`${performance?.rating ?? 0}/5`} />
+        <Metric label="Order selesai bulan ini" value={String(performance?.completed_orders_count ?? 0)} />
+        <Metric label="Order selesai hari ini" value={String(performance?.today_completed_orders_count ?? 0)} />
+        <Metric label="Cancel bulan ini" value={String(performance?.cancelled_orders_count ?? 0)} />
         <Metric label="Jumlah Rating" value={String(performance?.ratings_count ?? 0)} />
       </section>
       <section className="panel performance-panel">
@@ -1331,16 +1351,17 @@ function PerformancePage() {
       </section>
       <section className="panel performance-panel">
         <SectionTitle title="Suspend History" action={`${performance?.suspend_history?.length ?? 0}`} />
-        {(performance?.suspend_history ?? []).map((item) => <p key={item.id} className="note">{item.type ?? 'suspend'} · {item.reason} · {item.status}</p>)}
+        {(performance?.suspend_history ?? []).map((item) => <p key={item.id} className="note">{item.type ?? 'suspend'} - {item.reason} - {item.status}</p>)}
+        {(performance?.suspend_history ?? []).length === 0 && <p className="note">Belum ada suspend.</p>}
       </section>
       <section className="panel performance-panel">
         <SectionTitle title="Oper Handle" action={`${performance?.oper_handle?.length ?? 0}`} />
-        {(performance?.oper_handle ?? []).map((item) => <p key={item.id} className="note">{item.status} · {item.reason ?? '-'}</p>)}
+        {(performance?.oper_handle ?? []).map((item) => <p key={item.id} className="note">{item.status} - {item.reason ?? '-'}</p>)}
+        {(performance?.oper_handle ?? []).length === 0 && <p className="note">Belum ada oper handle.</p>}
       </section>
     </section>
   )
 }
-
 function ActiveOrderRoute({ orders, max }: { orders: Order[]; max: number }) {
   const selectOrder = useDriverStore((state) => state.selectOrder)
   const sortedOrders = [...orders].sort((a, b) => (a.directionBearing ?? 0) - (b.directionBearing ?? 0))
@@ -1745,3 +1766,4 @@ function withReplyPrefix(text: string, reply?: ReplyTarget | null) {
 }
 
 export default App
+

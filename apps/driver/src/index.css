@@ -398,6 +398,41 @@ input:focus, textarea:focus, select:focus {
   gap: 10px;
   margin-bottom: 14px;
 }
+
+.performance-page {
+  display: grid;
+  gap: 14px;
+}
+
+.driver-performance-hero {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border-color: rgba(69, 230, 167, 0.24);
+  background:
+    radial-gradient(circle at 92% 12%, rgba(69, 230, 167, 0.18), transparent 34%),
+    linear-gradient(145deg, rgba(35, 76, 125, 0.92), rgba(12, 30, 57, 0.96));
+}
+
+.driver-performance-hero div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 4px;
+}
+
+.driver-performance-hero span,
+.driver-performance-hero small {
+  color: rgba(226, 239, 255, 0.78);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.driver-performance-hero strong {
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1.1;
+}
 .profile-menu-button {
   width: 100%;
   display: flex;
@@ -494,6 +529,10 @@ input:focus, textarea:focus, select:focus {
 }
 
 @media (max-width: 520px) {
+  .driver-performance-hero {
+    grid-template-columns: 1fr;
+  }
+
   .history-filter-panel {
     grid-template-columns: 1fr;
   }

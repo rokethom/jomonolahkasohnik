@@ -56,11 +56,18 @@ type DriverRow = User & {
     rating_average: number
     ratings_count: number
     completed_orders_count: number
+    today_completed_orders_count?: number
+    month_completed_orders_count?: number
     cancelled_orders_count: number
+    today_cancelled_orders_count?: number
+    month_cancelled_orders_count?: number
     suspensions_count: number
     oper_handle_requests_count: number
     unpaid_deposits_count: number
     completed_revenue: number
+    today_revenue?: number
+    month_revenue?: number
+    last_completed_at?: string | null
     online_score: number
   }
   suspensions: { id: number; reason: string; duration: number; start_at: string | null; end_at: string | null; status: string }[]
@@ -342,7 +349,17 @@ function App() {
   const isRefreshingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
 
-  const api = useMemo(() => makeApi(token), [token])
+  const clearAuthSession = useCallback(() => {
+    localStorage.removeItem('admin_token')
+    localStorage.removeItem('token')
+    setToken('')
+    setData(null)
+    setError('')
+    setLoading(false)
+    isRefreshingRef.current = false
+  }, [])
+
+  const api = useMemo(() => makeApi(token, clearAuthSession), [clearAuthSession, token])
 
   const load = useCallback(async (silent = false) => {
     if (!token) return
@@ -354,9 +371,9 @@ function App() {
       setData(await api<Bootstrap>('/admin/bootstrap'))
       setLastSyncedAt(new Date())
     } catch (error) {
+      if (isAuthError(error)) return
       const message = error instanceof Error ? error.message : 'Failed to load admin data'
       setError(message.includes('403') ? 'Akun ini tidak memiliki akses admin.' : message)
-      if (String(error).includes('401')) setToken('')
     } finally {
       if (!silent) setLoading(false)
       isRefreshingRef.current = false
@@ -446,6 +463,9 @@ function App() {
   if (!token) {
     return <LoginScreen onLogin={(nextToken) => {
       localStorage.setItem('admin_token', nextToken)
+      localStorage.removeItem('token')
+      setError('')
+      setData(null)
       setToken(nextToken)
     }} />
   }
@@ -468,11 +488,8 @@ function App() {
     try {
       await api('/auth/logout', { method: 'POST' })
     } finally {
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('token')
       sessionStorage.clear()
-      setToken('')
-      setData(null)
+      clearAuthSession()
     }
   }
 
@@ -932,7 +949,7 @@ function DriverPerformanceSnapshot({ drivers, onOpenDrivers }: { drivers: Driver
         <button className="secondary-button compact" type="button" onClick={onOpenDrivers}>Lihat detail</button>
       </div>
       <div className="performance-mini-grid">
-        <PerformanceMiniCard label="Rating terbaik" driver={best.rating} value={best.rating ? `${best.rating.performance.rating_average.toFixed(1)} ★` : '-'} />
+        <PerformanceMiniCard label="Rating terbaik" driver={best.rating} value={best.rating ? `${best.rating.performance.rating_average.toFixed(1)}/5` : '-'} />
         <PerformanceMiniCard label="Order terbanyak" driver={best.orders} value={String(best.orders?.performance.completed_orders_count ?? '-')} />
         <PerformanceMiniCard label="Cancel terendah" driver={best.clean} value={String(best.clean?.performance.cancelled_orders_count ?? '-')} />
         <PerformanceMiniCard label="Pendapatan terbaik" driver={best.revenue} value={best.revenue ? `Rp ${best.revenue.performance.completed_revenue.toLocaleString('id-ID')}` : '-'} />
@@ -961,7 +978,7 @@ function OperatorPerformanceSnapshot({ operators, onOpenChats }: { operators: Op
         <button className="secondary-button compact" type="button" onClick={onOpenChats}>Buka chat</button>
       </div>
       <div className="performance-mini-grid">
-        <OperatorMiniCard label="Rating operator" operator={bestRating} value={bestRating && bestRating.rating_average > 0 ? `${bestRating.rating_average.toFixed(1)} ★` : '-'} />
+        <OperatorMiniCard label="Rating operator" operator={bestRating} value={bestRating && bestRating.rating_average > 0 ? `${bestRating.rating_average.toFixed(1)}/5` : '-'} />
         <OperatorMiniCard label="Chat dilayani" operator={busiest} value={String(busiest?.handled_chats_count ?? '-')} />
         <OperatorMiniCard label="Chat aktif" operator={active} value={String(active?.active_chats_count ?? '-')} />
         <OperatorMiniCard label="Respon paling rapi" operator={clean} value={clean ? `${clean.late_response_count} telat` : '-'} />
@@ -1033,11 +1050,18 @@ function normalizedDriverPerformance(driver: DriverRow): DriverPerformanceRow {
       rating_average: Number(driver.performance?.rating_average ?? 0),
       ratings_count: Number(driver.performance?.ratings_count ?? 0),
       completed_orders_count: Number(driver.performance?.completed_orders_count ?? 0),
+      today_completed_orders_count: Number(driver.performance?.today_completed_orders_count ?? 0),
+      month_completed_orders_count: Number(driver.performance?.month_completed_orders_count ?? 0),
       cancelled_orders_count: Number(driver.performance?.cancelled_orders_count ?? 0),
+      today_cancelled_orders_count: Number(driver.performance?.today_cancelled_orders_count ?? 0),
+      month_cancelled_orders_count: Number(driver.performance?.month_cancelled_orders_count ?? 0),
       suspensions_count: Number(driver.performance?.suspensions_count ?? driver.suspensions.length),
       oper_handle_requests_count: Number(driver.performance?.oper_handle_requests_count ?? driver.oper_handle_count ?? 0),
       unpaid_deposits_count: Number(driver.performance?.unpaid_deposits_count ?? 0),
       completed_revenue: Number(driver.performance?.completed_revenue ?? 0),
+      today_revenue: Number(driver.performance?.today_revenue ?? 0),
+      month_revenue: Number(driver.performance?.month_revenue ?? 0),
+      last_completed_at: driver.performance?.last_completed_at ?? null,
       online_score: driver.driver_state === 'online' ? 1 : 0,
     },
   }
@@ -1061,13 +1085,13 @@ function bestDriverFor(rows: DriverPerformanceRow[], metric: keyof DriverPerform
 }
 
 function topDriverToday(drivers: DriverRow[], orders: Order[]) {
-  const bestByPerformance = bestDriverFor(driverPerformanceRows(drivers), 'completed_orders_count', 'desc')
-  if (bestByPerformance && bestByPerformance.performance.completed_orders_count > 0) {
+  const bestByPerformance = bestDriverFor(driverPerformanceRows(drivers), 'today_completed_orders_count', 'desc')
+  if (bestByPerformance && Number(bestByPerformance.performance.today_completed_orders_count ?? 0) > 0) {
     return {
       name: bestByPerformance.name,
-      orders: bestByPerformance.performance.completed_orders_count,
+      orders: Number(bestByPerformance.performance.today_completed_orders_count ?? 0),
       rating: bestByPerformance.performance.rating_average > 0 ? bestByPerformance.performance.rating_average.toFixed(1) : '-',
-      cancel: bestByPerformance.performance.cancelled_orders_count,
+      cancel: Number(bestByPerformance.performance.today_cancelled_orders_count ?? 0),
     }
   }
 
@@ -1129,6 +1153,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
   const [configDriver, setConfigDriver] = useState<DriverRow | null>(null)
   const [authDriver, setAuthDriver] = useState<DriverRow | null>(null)
   const [branchFilter, setBranchFilter] = useState('all')
+  const [performancePeriod, setPerformancePeriod] = useState<'today' | 'month' | 'all'>('month')
   const branchOptions = useMemo(() => {
     const unique = new Map<string, string>()
     drivers.forEach((driver) => unique.set(driverBranchKey(driver), driverBranchLabel(driver)))
@@ -1161,14 +1186,25 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
   return (
     <section className="panel driver-management-panel">
       <PanelHeader title="Driver Management" action={`${filteredDrivers.length}/${drivers.length} driver`} />
-      <div className="table-toolbar">
-        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-          <option value="all">Semua cabang / area</option>
-          {branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-        <span className="toolbar-hint">Performa mengikuti data driver pada cabang yang dipilih.</span>
+      <div className="driver-filter-bar">
+        <label>
+          Cabang / Area
+          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+            <option value="all">Semua cabang / area</option>
+            {branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          Periode Performa
+          <select value={performancePeriod} onChange={(event) => setPerformancePeriod(event.target.value as 'today' | 'month' | 'all')}>
+            <option value="today">Hari ini</option>
+            <option value="month">Bulan ini</option>
+            <option value="all">Semua waktu</option>
+          </select>
+        </label>
+        <span className="toolbar-hint">Ranking driver berubah mengikuti cabang/area dan periode yang dipilih.</span>
       </div>
-      <DriverPerformanceBoard drivers={filteredDrivers} />
+      <DriverPerformanceBoard drivers={filteredDrivers} period={performancePeriod} />
       <div className="driver-table-shell">
         <table className="driver-table">
           <thead><tr><th>Driver</th><th>Phone</th><th>Kendaraan</th><th>Layanan</th><th>Status</th><th>Until</th><th>Oper</th><th>History</th><th>Actions</th></tr></thead>
@@ -2088,26 +2124,48 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
   )
 }
 
-function DriverPerformanceBoard({ drivers }: { drivers: DriverRow[] }) {
+type DriverPerformancePeriod = 'today' | 'month' | 'all'
+
+function performanceMetricKey(period: DriverPerformancePeriod, metric: 'orders' | 'cancel' | 'revenue'): keyof DriverPerformanceRow['performance'] {
+  if (period === 'today') {
+    return metric === 'orders' ? 'today_completed_orders_count' : metric === 'cancel' ? 'today_cancelled_orders_count' : 'today_revenue'
+  }
+
+  if (period === 'month') {
+    return metric === 'orders' ? 'month_completed_orders_count' : metric === 'cancel' ? 'month_cancelled_orders_count' : 'month_revenue'
+  }
+
+  return metric === 'orders' ? 'completed_orders_count' : metric === 'cancel' ? 'cancelled_orders_count' : 'completed_revenue'
+}
+
+function periodLabel(period: DriverPerformancePeriod) {
+  return period === 'today' ? 'hari ini' : period === 'month' ? 'bulan ini' : 'semua waktu'
+}
+
+function DriverPerformanceBoard({ drivers, period }: { drivers: DriverRow[]; period: DriverPerformancePeriod }) {
   const rows = driverPerformanceRows(drivers)
+  const orderMetric = performanceMetricKey(period, 'orders')
+  const cancelMetric = performanceMetricKey(period, 'cancel')
+  const revenueMetric = performanceMetricKey(period, 'revenue')
   const cards = [
-    { label: 'Rating terbaik', driver: bestDriverFor(rows, 'rating_average', 'desc'), value: (row?: DriverPerformanceRow) => row && row.performance.rating_average > 0 ? `${row.performance.rating_average.toFixed(1)} ★` : '-' },
-    { label: 'Terima order terbanyak', driver: bestDriverFor(rows, 'completed_orders_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.completed_orders_count ?? '-') },
-    { label: 'Tidak telat bayar', driver: bestDriverFor(rows, 'unpaid_deposits_count', 'asc'), value: (row?: DriverPerformanceRow) => row ? `${row.performance.unpaid_deposits_count} unpaid` : '-' },
-    { label: 'Suspend terbanyak', driver: bestDriverFor(rows, 'suspensions_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.suspensions_count ?? '-') },
-    { label: 'Cancel terbanyak', driver: bestDriverFor(rows, 'cancelled_orders_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.cancelled_orders_count ?? '-') },
-    { label: 'Oper handle terbanyak', driver: bestDriverFor(rows, 'oper_handle_requests_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.oper_handle_requests_count ?? '-') },
-    { label: 'Pendapatan terbaik', driver: bestDriverFor(rows, 'completed_revenue', 'desc'), value: (row?: DriverPerformanceRow) => row ? `Rp ${row.performance.completed_revenue.toLocaleString('id-ID')}` : '-' },
-    { label: 'Online terbaik', driver: bestDriverFor(rows, 'online_score', 'desc'), value: (row?: DriverPerformanceRow) => row?.driver_state === 'online' ? 'Online' : 'Offline' },
+    { label: 'Rating terbaik', tone: 'rating', driver: bestDriverFor(rows, 'rating_average', 'desc'), value: (row?: DriverPerformanceRow) => row && row.performance.rating_average > 0 ? `${row.performance.rating_average.toFixed(1)}/5` : '-', meta: 'rating customer' },
+    { label: 'Terima order terbanyak', tone: 'orders', driver: bestDriverFor(rows, orderMetric, 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance[orderMetric] ?? '-'), meta: periodLabel(period) },
+    { label: 'Tidak telat bayar', tone: 'clean', driver: bestDriverFor(rows, 'unpaid_deposits_count', 'asc'), value: (row?: DriverPerformanceRow) => row ? `${row.performance.unpaid_deposits_count} unpaid` : '-', meta: 'setoran' },
+    { label: 'Suspend terbanyak', tone: 'risk', driver: bestDriverFor(rows, 'suspensions_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.suspensions_count ?? '-'), meta: 'evaluasi disiplin' },
+    { label: 'Cancel terbanyak', tone: 'risk', driver: bestDriverFor(rows, cancelMetric, 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance[cancelMetric] ?? '-'), meta: periodLabel(period) },
+    { label: 'Oper handle terbanyak', tone: 'ops', driver: bestDriverFor(rows, 'oper_handle_requests_count', 'desc'), value: (row?: DriverPerformanceRow) => String(row?.performance.oper_handle_requests_count ?? '-'), meta: 'oper handle' },
+    { label: 'Pendapatan terbaik', tone: 'revenue', driver: bestDriverFor(rows, revenueMetric, 'desc'), value: (row?: DriverPerformanceRow) => row ? `Rp ${Number(row.performance[revenueMetric] ?? 0).toLocaleString('id-ID')}` : '-', meta: periodLabel(period) },
+    { label: 'Online terbaik', tone: 'online', driver: bestDriverFor(rows, 'online_score', 'desc'), value: (row?: DriverPerformanceRow) => row?.driver_state === 'online' ? 'Online' : 'Offline', meta: 'status sekarang' },
   ]
 
   return (
     <section className="driver-performance-board">
       {cards.map((card) => (
-        <article className="driver-performance-card" key={card.label}>
+        <article className={`driver-performance-card ${card.tone}`} key={card.label}>
           <span>{card.label}</span>
           <strong>{card.value(card.driver)}</strong>
           <small>{card.driver?.name ?? 'Belum ada data'}</small>
+          <em>{card.driver ? driverBranchLabel(card.driver) : card.meta}</em>
         </article>
       ))}
     </section>
@@ -2318,7 +2376,18 @@ function UserFormModal({ permissions, branches, api, onClose, onCreated }: { per
 
 type ApiClient = <T = unknown>(path: string, options?: RequestInit) => Promise<T>
 
-function makeApi(token: string): ApiClient {
+class AuthExpiredError extends Error {
+  constructor(message = 'Sesi login berakhir. Silakan login ulang.') {
+    super(message)
+    this.name = 'AuthExpiredError'
+  }
+}
+
+function isAuthError(error: unknown) {
+  return error instanceof AuthExpiredError
+}
+
+function makeApi(token: string, onUnauthorized?: () => void): ApiClient {
   return async <T,>(path: string, options: RequestInit = {}) => {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
@@ -2330,6 +2399,10 @@ function makeApi(token: string): ApiClient {
       },
     })
     const payload = await response.json().catch(() => ({}))
+    if (response.status === 401 || response.status === 419) {
+      onUnauthorized?.()
+      throw new AuthExpiredError(typeof payload.message === 'string' ? payload.message : undefined)
+    }
     if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
     return payload as T
   }
@@ -2512,3 +2585,4 @@ function Icon({ name }: { name: string }) {
 }
 
 export default App
+
