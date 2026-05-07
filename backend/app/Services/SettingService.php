@@ -23,6 +23,7 @@ class SettingService
         'kimi_api_key',
         'blackbox_api_key',
         'openrouter_api_key',
+        'hermes_api_key',
     ];
 
     private const ENV_FALLBACKS = [
@@ -47,6 +48,12 @@ class SettingService
             'kimi_api_key' => 'KIMI_API_KEY',
             'blackbox_api_key' => 'BLACKBOX_API_KEY',
             'openrouter_api_key' => 'OPENROUTER_API_KEY',
+            'hermes_enabled' => 'HERMES_ENABLED',
+            'hermes_provider' => 'HERMES_PROVIDER',
+            'hermes_model' => 'HERMES_MODEL',
+            'hermes_base_url' => 'HERMES_BASE_URL',
+            'hermes_api_key' => 'HERMES_API_KEY',
+            'hermes_max_tokens' => 'HERMES_MAX_TOKENS',
     ];
 
     public function all(): Collection
@@ -202,6 +209,11 @@ class SettingService
             'jojo.ai.model' => $this->get('ai_model'),
             'jojo.ai.base_url' => $this->get('ai_base_url'),
             'jojo.ai.max_tokens' => $this->int('ai_max_tokens', 700),
+            'jojo.hermes.enabled' => $this->bool('hermes_enabled', false),
+            'jojo.hermes.provider' => $this->get('hermes_provider', 'openai_compatible'),
+            'jojo.hermes.model' => $this->get('hermes_model'),
+            'jojo.hermes.base_url' => $this->get('hermes_base_url'),
+            'jojo.hermes.max_tokens' => $this->int('hermes_max_tokens', 1800),
         ]);
     }
 

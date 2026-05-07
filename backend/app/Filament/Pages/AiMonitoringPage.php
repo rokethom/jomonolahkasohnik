@@ -10,7 +10,7 @@ class AiMonitoringPage extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-cpu-chip';
 
-    protected static ?string $navigationGroup = 'Monitoring';
+    protected static ?string $navigationGroup = 'AI Management';
 
     protected static ?string $navigationLabel = 'AI Monitoring';
 
@@ -18,7 +18,7 @@ class AiMonitoringPage extends Page
 
     protected static ?string $slug = 'ai-monitoring';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     protected static string $view = 'filament.pages.ai-monitoring-page';
 

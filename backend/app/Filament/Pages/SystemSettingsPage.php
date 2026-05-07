@@ -49,6 +49,7 @@ class SystemSettingsPage extends Page implements HasForms
             'kimi_current' => $settings->mask($settings->get('kimi_api_key')),
             'blackbox_current' => $settings->mask($settings->get('blackbox_api_key')),
             'openrouter_current' => $settings->mask($settings->get('openrouter_api_key')),
+            'hermes_current' => $settings->mask($settings->get('hermes_api_key')),
             'google_maps_active' => $settings->raw('google_maps_api_key')?->is_active ?? false,
             'mapbox_active' => $settings->raw('mapbox_api_key')?->is_active ?? false,
             'fcm_active' => $settings->raw('fcm_server_key')?->is_active ?? false,
@@ -61,6 +62,7 @@ class SystemSettingsPage extends Page implements HasForms
             'kimi_active' => $settings->raw('kimi_api_key')?->is_active ?? false,
             'blackbox_active' => $settings->raw('blackbox_api_key')?->is_active ?? false,
             'openrouter_active' => $settings->raw('openrouter_api_key')?->is_active ?? false,
+            'hermes_active' => $settings->raw('hermes_api_key')?->is_active ?? false,
             'map_provider' => $settings->get('map_provider', 'osm'),
             'map_active' => $settings->raw('map_provider')?->is_active ?? true,
             'google_oauth_enabled' => $settings->bool('google_oauth_enabled'),
@@ -84,6 +86,11 @@ class SystemSettingsPage extends Page implements HasForms
             'ai_model_custom' => null,
             'ai_base_url' => $settings->get('ai_base_url'),
             'ai_max_tokens' => $settings->int('ai_max_tokens', 700),
+            'hermes_enabled' => $settings->bool('hermes_enabled', false),
+            'hermes_provider' => $settings->get('hermes_provider', 'openai_compatible'),
+            'hermes_model' => $settings->get('hermes_model', 'nousresearch/hermes-3-llama-3.1-405b'),
+            'hermes_base_url' => $settings->get('hermes_base_url'),
+            'hermes_max_tokens' => $settings->int('hermes_max_tokens', 1800),
         ]);
     }
 
@@ -220,6 +227,52 @@ class SystemSettingsPage extends Page implements HasForms
                                     ]),
                                 Forms\Components\View::make('filament.forms.components.ai-parser-flow')
                                     ->columnSpanFull(),
+                                Forms\Components\Section::make('Hermes Engineering Assistant')
+                                    ->description('Hermes adalah Internal AI Engineering Assistant untuk membaca ringkasan source code, logs, route, schema, dan metrik. Jalurnya dipisah dari AI parser order.')
+                                    ->collapsible()
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('hermes_enabled')
+                                            ->label('Enable Hermes')
+                                            ->helperText('Jika aktif, menu Hermes Engineering Center bisa menjalankan analisa read-only.'),
+                                        Forms\Components\Select::make('hermes_provider')
+                                            ->label('Provider Hermes')
+                                            ->options([
+                                                'openai_compatible' => 'OpenAI-compatible / self-hosted Hermes',
+                                                'openrouter' => 'OpenRouter',
+                                                'openai' => 'OpenAI-compatible default OpenAI URL',
+                                            ])
+                                            ->native(false)
+                                            ->required(),
+                                        Forms\Components\TextInput::make('hermes_model')
+                                            ->label('Hermes model ID')
+                                            ->placeholder('nousresearch/hermes-3-llama-3.1-405b')
+                                            ->helperText('Gunakan model Hermes dari provider pilihan. Dibuat configurable agar tidak terkunci jika daftar model berubah.')
+                                            ->maxLength(180)
+                                            ->required(),
+                                        Forms\Components\TextInput::make('hermes_max_tokens')
+                                            ->label('Max token report')
+                                            ->numeric()
+                                            ->minValue(600)
+                                            ->maxValue(4000)
+                                            ->default(1800),
+                                        Forms\Components\TextInput::make('hermes_base_url')
+                                            ->label('Hermes base URL')
+                                            ->placeholder('https://openrouter.ai/api/v1 atau endpoint self-hosted')
+                                            ->helperText('Wajib untuk provider OpenAI-compatible/self-hosted. Kosongkan jika memakai provider OpenRouter/OpenAI default.')
+                                            ->columnSpanFull(),
+                                        Forms\Components\Placeholder::make('hermes_current')
+                                            ->label('Hermes key tersimpan')
+                                            ->content(fn (Forms\Get $get): string => $get('hermes_current') ?: 'Belum diisi'),
+                                        Forms\Components\Toggle::make('hermes_active')
+                                            ->label('Hermes key aktif'),
+                                        Forms\Components\TextInput::make('hermes_api_key')
+                                            ->label('Hermes API Key baru')
+                                            ->password()
+                                            ->helperText('Kosongkan jika tidak ingin mengganti key. Key Hermes sengaja dipisah dari OpenRouter parser.')
+                                            ->maxLength(1500)
+                                            ->columnSpanFull(),
+                                    ]),
                                 Forms\Components\Section::make('OpenAI')
                                     ->collapsible()
                                     ->columns(2)
@@ -523,6 +576,7 @@ class SystemSettingsPage extends Page implements HasForms
             $this->saveSecret($settings, 'kimi_api_key', $data['kimi_api_key'] ?? null, (bool) ($data['kimi_active'] ?? false));
             $this->saveSecret($settings, 'blackbox_api_key', $data['blackbox_api_key'] ?? null, (bool) ($data['blackbox_active'] ?? false));
             $this->saveSecret($settings, 'openrouter_api_key', $data['openrouter_api_key'] ?? null, (bool) ($data['openrouter_active'] ?? false));
+            $this->saveSecret($settings, 'hermes_api_key', $data['hermes_api_key'] ?? null, (bool) ($data['hermes_active'] ?? false));
 
             $settings->set('map_provider', $data['map_provider'] ?? 'osm', (bool) ($data['map_active'] ?? true));
             $settings->set('google_oauth_enabled', (bool) ($data['google_oauth_enabled'] ?? false));
@@ -534,6 +588,11 @@ class SystemSettingsPage extends Page implements HasForms
             $settings->set('ai_model', filled($data['ai_model_custom'] ?? null) ? $data['ai_model_custom'] : ($data['ai_model'] ?? null));
             $settings->set('ai_base_url', $data['ai_base_url'] ?? null);
             $settings->set('ai_max_tokens', max(200, min(1500, (int) ($data['ai_max_tokens'] ?? 700))));
+            $settings->set('hermes_enabled', (bool) ($data['hermes_enabled'] ?? false));
+            $settings->set('hermes_provider', $data['hermes_provider'] ?? 'openai_compatible');
+            $settings->set('hermes_model', $data['hermes_model'] ?? 'nousresearch/hermes-3-llama-3.1-405b');
+            $settings->set('hermes_base_url', $data['hermes_base_url'] ?? null);
+            $settings->set('hermes_max_tokens', max(600, min(4000, (int) ($data['hermes_max_tokens'] ?? 1800))));
         }
         $settings->applyToConfig();
 
