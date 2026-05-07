@@ -5,15 +5,11 @@ namespace App\Models;
 use App\Models\Concerns\HasActiveDateRange;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Spatie\MediaLibrary\HasMedia;
-use Spatie\MediaLibrary\InteractsWithMedia;
-use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
-class Banner extends Model implements HasMedia
+class Banner extends Model
 {
     use HasActiveDateRange;
     use HasFactory;
-    use InteractsWithMedia;
 
     protected $fillable = [
         'title',
@@ -37,27 +33,13 @@ class Banner extends Model implements HasMedia
         'image_thumb_url',
     ];
 
-    public function registerMediaCollections(): void
-    {
-        $this->addMediaCollection('image')->singleFile();
-    }
-
-    public function registerMediaConversions(Media $media = null): void
-    {
-        $this->addMediaConversion('thumb')
-            ->width(480)
-            ->height(240)
-            ->quality(78)
-            ->nonQueued();
-    }
-
     public function getImageUrlAttribute(): ?string
     {
-        return $this->getFirstMediaUrl('image') ?: ($this->image ? asset('storage/'.$this->image) : null);
+        return $this->image ? asset('storage/'.$this->image) : null;
     }
 
     public function getImageThumbUrlAttribute(): ?string
     {
-        return $this->getFirstMediaUrl('image', 'thumb') ?: $this->image_url;
+        return $this->image_url;
     }
 }
