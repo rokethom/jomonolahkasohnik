@@ -271,4 +271,60 @@ class OrderParserServiceTest extends TestCase
         $this->assertSame('alamat profile', $parsed['payload']['destination_address']);
         $this->assertSame('Kopi Kita Selatan Taman', $parsed['payload']['service_payload']['store_location']);
     }
+
+    public function test_openrouter_ai_parser_falls_back_to_next_free_model_when_rate_limited(): void
+    {
+        $settings = app(SettingService::class);
+        $settings->set('ai_assistant_enabled', true);
+        $settings->set('ai_provider', 'openrouter');
+        $settings->set('ai_model', 'custom/ignored-model:free');
+        $settings->set('ai_base_url', 'https://openrouter.test/api/v1');
+        $settings->set('openrouter_api_key', 'test-openrouter-key', true);
+
+        Http::fakeSequence('openrouter.test/api/v1/chat/completions')
+            ->push(['error' => ['message' => 'rate limited']], 429)
+            ->push([
+                'choices' => [
+                    [
+                        'message' => [
+                            'content' => json_encode([
+                                'service_type' => 'ojek',
+                                'pickup_address' => 'Rumah',
+                                'destination_address' => 'Terminal',
+                                'store_location' => null,
+                                'items' => [],
+                                'passengers' => 1,
+                                'notes' => null,
+                                'missing_fields' => [],
+                            ]),
+                        ],
+                    ],
+                ],
+            ]);
+
+        $user = new User([
+            'id' => 94,
+            'name' => 'Open Router User',
+            'phone' => '08123456789',
+            'address' => 'Jl. Merdeka',
+            'branch_id' => null,
+        ]);
+
+        $parsed = app(OrderParserService::class)->parse($user, 'ojek dari rumah ke terminal');
+
+        $this->assertNotNull($parsed);
+        $this->assertTrue($parsed['ai_parser']);
+        $this->assertSame('Terminal', $parsed['payload']['destination_address']);
+
+        $sentModels = collect(Http::recorded())
+            ->map(fn (array $record) => $record[0]->data()['model'] ?? null)
+            ->filter()
+            ->values()
+            ->all();
+
+        $this->assertSame([
+            'deepseek/deepseek-chat-v3-0324:free',
+            'qwen/qwen3-32b:free',
+        ], $sentModels);
+    }
 }

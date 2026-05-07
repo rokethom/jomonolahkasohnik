@@ -5,12 +5,28 @@ namespace App\Services;
 use App\Models\AiParserRule;
 use App\Models\Branch;
 use App\Models\User;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AiOrderParserService
 {
+    private const OPENROUTER_FREE_MODELS = [
+        'deepseek/deepseek-chat-v3-0324:free',
+        'qwen/qwen3-32b:free',
+        'google/gemma-3-27b-it:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+    ];
+
+    private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503];
+    private const REQUEST_TIMEOUT_SECONDS = 15;
+    private const CONNECT_TIMEOUT_SECONDS = 5;
+    private const SLOW_THRESHOLD_SECONDS = 15.0;
+    private const SLOW_CACHE_SECONDS = 600;
+
     public function __construct(
         private readonly SettingService $settings,
         private readonly AiParserRuleService $rules,
@@ -37,12 +53,16 @@ class AiOrderParserService
 
             $parsed = $this->toParsedOrder($user, $text, $data, 'ai_parser');
             if ($parsed !== null) {
-                $this->rules->remember($text, $data, $this->provider(), $this->model());
+                $this->rules->remember($text, $data, $this->provider(), (string) ($data['_model_used'] ?? $this->model()));
             }
 
             return $parsed;
         } catch (Throwable $exception) {
             Log::warning('ai_order_parser.failed', [
+                'provider' => $this->provider(),
+                'message' => $exception->getMessage(),
+            ]);
+            Log::channel('ai')->warning('ai_order_parser.failed', [
                 'provider' => $this->provider(),
                 'message' => $exception->getMessage(),
             ]);
@@ -83,8 +103,7 @@ class AiOrderParserService
 
     private function request(User $user, string $text): ?array
     {
-        $payload = [
-            'model' => $this->model(),
+        $basePayload = [
             'temperature' => 0.1,
             'max_tokens' => $this->maxTokens(),
             'response_format' => ['type' => 'json_object'],
@@ -107,45 +126,172 @@ class AiOrderParserService
             ],
         ];
 
-        $response = Http::timeout(25)
+        $attempts = 0;
+        $fallbackCount = 0;
+        $lastError = null;
+
+        foreach ($this->modelsForRequest() as $model) {
+            $attempts++;
+            $startedAt = microtime(true);
+
+            try {
+                $payload = ['model' => $model, ...$basePayload];
+                $response = $this->sendCompletionRequest($payload);
+
+                if ($response->status() === 400 && str($response->body())->lower()->contains('response_format')) {
+                    unset($payload['response_format']);
+                    $response = $this->sendCompletionRequest($payload);
+                }
+
+                $elapsed = round(microtime(true) - $startedAt, 3);
+                $this->markSlowIfNeeded($model, $elapsed);
+
+                if ($this->shouldFallbackResponse($response)) {
+                    $lastError = sprintf('HTTP %s: %s', $response->status(), str($response->body())->limit(300)->toString());
+                    $this->logAiAttempt('warning', 'ai_order_parser.model_fallback', $model, $elapsed, $fallbackCount, $lastError);
+                    $fallbackCount++;
+                    continue;
+                }
+
+                if (! $response->successful()) {
+                    $lastError = sprintf('HTTP %s: %s', $response->status(), str($response->body())->limit(300)->toString());
+                    $this->logAiAttempt('warning', 'ai_order_parser.http_failed', $model, $elapsed, $fallbackCount, $lastError);
+
+                    return null;
+                }
+
+                $content = data_get($response->json(), 'choices.0.message.content');
+                if (! is_string($content) || trim($content) === '') {
+                    $lastError = 'empty response';
+                    $this->logAiAttempt('warning', 'ai_order_parser.model_fallback', $model, $elapsed, $fallbackCount, $lastError);
+                    $fallbackCount++;
+                    continue;
+                }
+
+                $decoded = json_decode($content, true);
+
+                if (! is_array($decoded)) {
+                    $json = $this->extractJsonObject($content);
+                    $decoded = $json ? json_decode($json, true) : null;
+                }
+
+                if (! is_array($decoded)) {
+                    $lastError = 'invalid json response';
+                    $this->logAiAttempt('warning', 'ai_order_parser.invalid_json', $model, $elapsed, $fallbackCount, $lastError);
+
+                    return null;
+                }
+
+                $decoded['_model_used'] = $model;
+                $this->logAiAttempt('info', 'ai_order_parser.model_success', $model, $elapsed, $fallbackCount);
+
+                return $decoded;
+            } catch (ConnectionException $exception) {
+                $elapsed = round(microtime(true) - $startedAt, 3);
+                $lastError = $exception->getMessage();
+                $this->markSlowIfNeeded($model, $elapsed, true);
+                $this->logAiAttempt('warning', 'ai_order_parser.model_timeout_or_connection_failed', $model, $elapsed, $fallbackCount, $lastError);
+                $fallbackCount++;
+            } catch (Throwable $exception) {
+                $elapsed = round(microtime(true) - $startedAt, 3);
+                $lastError = $exception->getMessage();
+                $this->markSlowIfNeeded($model, $elapsed);
+                $this->logAiAttempt('warning', 'ai_order_parser.model_exception', $model, $elapsed, $fallbackCount, $lastError);
+                $fallbackCount++;
+            }
+        }
+
+        Log::channel('ai')->warning('ai_order_parser.all_models_failed', [
+            'provider' => $this->provider(),
+            'attempts' => $attempts,
+            'fallback_count' => $fallbackCount,
+            'error' => $lastError,
+        ]);
+
+        return null;
+    }
+
+    private function sendCompletionRequest(array $payload): Response
+    {
+        return Http::connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::REQUEST_TIMEOUT_SECONDS)
             ->acceptJson()
             ->withHeaders($this->headers())
             ->withToken($this->apiKey())
             ->post(rtrim($this->baseUrl(), '/').'/chat/completions', $payload);
+    }
 
-        if ($response->status() === 400 && str($response->body())->lower()->contains('response_format')) {
-            unset($payload['response_format']);
+    private function shouldFallbackResponse(Response $response): bool
+    {
+        return in_array($response->status(), self::FALLBACK_STATUSES, true);
+    }
 
-            $response = Http::timeout(25)
-                ->acceptJson()
-                ->withHeaders($this->headers())
-                ->withToken($this->apiKey())
-                ->post(rtrim($this->baseUrl(), '/').'/chat/completions', $payload);
+    private function modelsForRequest(): array
+    {
+        $models = $this->provider() === 'openrouter'
+            ? self::OPENROUTER_FREE_MODELS
+            : [$this->model()];
+
+        if ($this->provider() !== 'openrouter') {
+            return $models;
         }
 
-        if (! $response->successful()) {
-            Log::warning('ai_order_parser.http_failed', [
-                'provider' => $this->provider(),
-                'status' => $response->status(),
-                'body' => str($response->body())->limit(500)->toString(),
-            ]);
+        $fastModels = array_values(array_filter($models, fn (string $model): bool => ! $this->slowModelIsMarked($model)));
+        $slowModels = array_values(array_filter($models, fn (string $model): bool => $this->slowModelIsMarked($model)));
 
-            return null;
+        return [...$fastModels, ...$slowModels];
+    }
+
+    private function markSlowIfNeeded(string $model, float $elapsed, bool $timeout = false): void
+    {
+        if ($this->provider() !== 'openrouter') {
+            return;
         }
 
-        $content = data_get($response->json(), 'choices.0.message.content');
-        if (! is_string($content) || trim($content) === '') {
-            return null;
+        if (! $timeout && $elapsed < self::SLOW_THRESHOLD_SECONDS) {
+            return;
         }
 
-        $decoded = json_decode($content, true);
+        $this->rememberSlowModel($model, [
+            'model' => $model,
+            'response_time' => $elapsed,
+            'timeout' => $timeout,
+            'marked_at' => now()->toDateTimeString(),
+        ]);
+    }
 
-        if (! is_array($decoded)) {
-            $json = $this->extractJsonObject($content);
-            $decoded = $json ? json_decode($json, true) : null;
+    private function slowModelIsMarked(string $model): bool
+    {
+        try {
+            return Cache::store('redis')->has($this->slowModelCacheKey($model));
+        } catch (Throwable) {
+            return Cache::has($this->slowModelCacheKey($model));
         }
+    }
 
-        return is_array($decoded) ? $decoded : null;
+    private function rememberSlowModel(string $model, array $payload): void
+    {
+        try {
+            Cache::store('redis')->put($this->slowModelCacheKey($model), $payload, self::SLOW_CACHE_SECONDS);
+        } catch (Throwable) {
+            Cache::put($this->slowModelCacheKey($model), $payload, self::SLOW_CACHE_SECONDS);
+        }
+    }
+
+    private function slowModelCacheKey(string $model): string
+    {
+        return 'slow_model:'.$model;
+    }
+
+    private function logAiAttempt(string $level, string $event, string $model, float $elapsed, int $fallbackCount, ?string $error = null): void
+    {
+        Log::channel('ai')->{$level}($event, [
+            'provider' => $this->provider(),
+            'model' => $model,
+            'response_time_seconds' => $elapsed,
+            'fallback_count' => $fallbackCount,
+            'error' => $error,
+        ]);
     }
 
     private function toParsedOrder(User $user, string $text, array $data, string $source = 'ai_parser'): ?array
@@ -361,7 +507,7 @@ PROMPT;
         }
 
         return match ($this->provider()) {
-            'openrouter' => 'qwen/qwen3-8b:free',
+            'openrouter' => self::OPENROUTER_FREE_MODELS[0],
             'kimi' => 'kimi-pro',
             'blackbox' => 'blackboxai/openai/gpt-4o-mini',
             default => 'gpt-4o-mini',

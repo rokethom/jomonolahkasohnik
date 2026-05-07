@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Widgets\AiMonitoringOverview;
 use App\Filament\Widgets\ModernStatsOverview;
 use App\Filament\Widgets\OperationsChartWidget;
 use App\Filament\Widgets\ProductionTimelineWidget;
@@ -180,6 +181,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->widgets([
                 ModernStatsOverview::class,
+                AiMonitoringOverview::class,
                 ServerMonitoringWidget::class,
                 OperationsChartWidget::class,
                 ServerUsageChartWidget::class,
