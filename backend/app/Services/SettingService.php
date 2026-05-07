@@ -316,7 +316,18 @@ class SettingService
             return null;
         }
 
+        if (is_array($path)) {
+            $path = collect($path)->flatten()->filter(fn (mixed $item): bool => filled($item))->first();
+        }
+
+        if (! filled($path)) {
+            return null;
+        }
+
         $path = (string) $path;
+        $path = preg_replace('#^https?://[^/]+/storage/#i', '', $path) ?? $path;
+        $path = preg_replace('#^/?storage/#i', '', $path) ?? $path;
+        $path = ltrim($path, '/');
 
         return str_starts_with($path, 'http') ? $path : asset('storage/'.$path);
     }

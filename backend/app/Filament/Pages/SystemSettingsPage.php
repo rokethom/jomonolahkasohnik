@@ -78,7 +78,7 @@ class SystemSettingsPage extends Page implements HasForms
             'payment_cash_enabled' => true,
             'payment_transfer_enabled' => true,
             'payment_bank_accounts' => $this->transferAccounts($settings),
-            'qris_image' => $settings->get('payment_qris_image'),
+            'qris_image' => $this->normalizeUploadState($settings->get('payment_qris_image')),
             'complaint_whatsapp_number' => $settings->get('complaint_whatsapp_number', '6281299232918'),
             'ai_assistant_enabled' => $settings->bool('ai_assistant_enabled', false),
             'ai_provider' => $settings->get('ai_provider', 'openai'),
@@ -481,9 +481,13 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->label('Gambar QRIS statis')
                                             ->disk('public')
                                             ->directory('settings/payment')
+                                            ->visibility('public')
                                             ->image()
                                             ->imagePreviewHeight('220')
                                             ->maxSize(2048)
+                                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                                            ->downloadable()
+                                            ->openable()
                                             ->helperText('Opsional. Pakai gambar QRIS aplikasi selama payment gateway belum dipakai.')
                                             ->columnSpanFull(),
                                     ]),
@@ -733,10 +737,21 @@ class SystemSettingsPage extends Page implements HasForms
     private function normalizeUploadState(mixed $value): ?string
     {
         if (is_array($value)) {
-            return collect($value)->filter()->first();
+            $value = collect($value)
+                ->flatten()
+                ->filter(fn (mixed $item): bool => filled($item))
+                ->first();
         }
 
-        return filled($value) ? (string) $value : null;
+        if (! filled($value)) {
+            return null;
+        }
+
+        $path = (string) $value;
+        $path = preg_replace('#^https?://[^/]+/storage/#i', '', $path) ?? $path;
+        $path = preg_replace('#^/?storage/#i', '', $path) ?? $path;
+
+        return ltrim($path, '/');
     }
 
     private function paymentMethods(array $data): array
