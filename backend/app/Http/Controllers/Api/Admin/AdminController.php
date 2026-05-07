@@ -107,6 +107,8 @@ class AdminController extends Controller
             'suspension_reason' => ['nullable', 'string'],
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
+            'allowed_service_types' => ['nullable', 'array'],
+            'allowed_service_types.*' => ['string', 'max:80'],
         ]);
 
         $role = UserRole::from($payload['role']);
@@ -115,10 +117,13 @@ class AdminController extends Controller
         $driverPayload = [
             'bpjs_jht_enabled' => $payload['driver_bpjs_jht_enabled'] ?? true,
         ];
+        if (array_key_exists('allowed_service_types', $payload)) {
+            $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
+        }
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['allowed_service_types']);
 
         $password = $this->generatePassword();
         $user = User::create([
@@ -161,6 +166,8 @@ class AdminController extends Controller
             'suspended_until' => ['nullable', 'date'],
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
+            'allowed_service_types' => ['nullable', 'array'],
+            'allowed_service_types.*' => ['string', 'max:80'],
         ]);
 
         if (isset($payload['role'])) {
@@ -175,7 +182,10 @@ class AdminController extends Controller
         if (array_key_exists('driver_bpjs_jht_enabled', $payload)) {
             $driverPayload['bpjs_jht_enabled'] = $payload['driver_bpjs_jht_enabled'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled']);
+        if (array_key_exists('allowed_service_types', $payload)) {
+            $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
+        }
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['allowed_service_types']);
 
         $user->update($payload);
         $nextRole = $payload['role'] ?? ($user->role instanceof UserRole ? $user->role->value : (string) $user->role);
@@ -342,6 +352,11 @@ class AdminController extends Controller
         ]);
 
         $serviceCharge = $payload['service_charge'] ?? $order->service_charge;
+        $before = [
+            'price' => $order->price,
+            'service_charge' => $order->service_charge,
+            'total' => $order->total_price,
+        ];
         $order->update([
             'price' => $payload['price'],
             'service_charge' => $serviceCharge,
@@ -349,13 +364,22 @@ class AdminController extends Controller
         ]);
 
         $freshOrder = $order->fresh(['user.branch', 'driver.user.branch']);
+        $after = [
+            'price' => $freshOrder->price,
+            'service_charge' => $freshOrder->service_charge,
+            'total' => $freshOrder->total_price,
+        ];
         $this->recordAudit($request->user(), 'updated_order_price', $freshOrder, [
-            'price' => $payload['price'],
-            'service_charge' => $serviceCharge,
+            'actor_name' => $request->user()->name,
+            'before' => $before,
+            'after' => $after,
         ]);
 
         try {
-            OrderPriceUpdated::dispatch($freshOrder);
+            OrderPriceUpdated::dispatch($freshOrder, $request->user(), [
+                'before' => $before,
+                'after' => $after,
+            ]);
         } catch (\Throwable $exception) {
             Log::warning('broadcast.order_price_failed', [
                 'order_id' => $order->id,
@@ -518,6 +542,7 @@ class AdminController extends Controller
         $payload = $request->validate([
             'user_id' => ['nullable', 'exists:users,id'],
             'raw_text' => ['required', 'string', 'max:4000'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
         ]);
 
         $customer = $this->manualPreviewCustomer($request, $payload);
@@ -550,6 +575,7 @@ class AdminController extends Controller
                 'parsed_customer.address' => ['nullable', 'string', 'max:500'],
                 'branch_id' => ['nullable', 'exists:branches,id'],
                 'order_payload' => ['required', 'array'],
+                'order_payload.branch_id' => ['nullable', 'exists:branches,id'],
                 'order_payload.service_type' => ['required', 'string', 'max:50'],
                 'order_payload.pickup_address' => ['required', 'string', 'max:255'],
                 'order_payload.pickup_lat' => ['nullable', 'numeric', 'between:-90,90'],
@@ -598,7 +624,10 @@ class AdminController extends Controller
                 ])->save();
             }
 
-            $this->recordAudit($request->user(), 'created_dashboard_text_order', $order, ['order_code' => $order->order_code]);
+            $this->recordAudit($request->user(), 'created_dashboard_text_order', $order, [
+                'order_code' => $order->order_code,
+                'branch_id' => $order->branch_id,
+            ]);
 
             return response()->json([
                 'message' => 'Manual order created from dashboard parser',
@@ -690,13 +719,13 @@ class AdminController extends Controller
     private function withManualOrderContact(array $preview, array $contact): array
     {
         $preview['parsed'] = is_array($preview['parsed'] ?? null) ? $preview['parsed'] : [];
-        $preview['parsed']['name'] = $contact['name'];
-        $preview['parsed']['phone'] = $contact['phone'];
-        $preview['parsed']['address'] = $contact['address'];
+        $preview['parsed']['name'] = $contact['name'] ?? data_get($preview, 'parsed.name');
+        $preview['parsed']['phone'] = $contact['phone'] ?? data_get($preview, 'parsed.phone');
+        $preview['parsed']['address'] = $contact['address'] ?? data_get($preview, 'parsed.address');
         $preview['parsed']['customer'] = [
-            'name' => $contact['name'],
-            'phone' => $contact['phone'],
-            'address' => $contact['address'],
+            'name' => $preview['parsed']['name'],
+            'phone' => $preview['parsed']['phone'],
+            'address' => $preview['parsed']['address'],
         ];
 
         return $preview;
@@ -711,11 +740,12 @@ class AdminController extends Controller
             return $customer;
         }
 
-        $branchId = $request->user()->branch_id ?? data_get($payload, 'order_payload.branch_id') ?? $payload['branch_id'] ?? null;
+        $contact = $this->manualOrderContactFromText((string) ($payload['raw_text'] ?? ''));
+        $branchId = $this->manualOrderBranchId($request, $payload);
         $customer = new User([
-            'name' => $request->user()->name,
-            'phone' => $request->user()->phone,
-            'address' => $request->user()->address,
+            'name' => $contact['name'] ?: 'Customer Manual',
+            'phone' => $contact['phone'],
+            'address' => $contact['address'],
             'branch_id' => $branchId,
             'role' => UserRole::Customer,
             'is_active' => true,
@@ -749,13 +779,13 @@ class AdminController extends Controller
             $customer->forceFill([
                 'name' => $name ?: $customer->name,
                 'address' => $address ?: $customer->address,
-                'branch_id' => $request->user()->branch_id ?? $customer->branch_id ?? $payload['branch_id'] ?? null,
+                'branch_id' => $this->manualOrderBranchId($request, $payload) ?? $customer->branch_id,
             ])->save();
 
             return $customer->load('branch');
         }
 
-        $branchId = $request->user()->branch_id ?? data_get($payload, 'order_payload.branch_id') ?? $payload['branch_id'] ?? null;
+        $branchId = $this->manualOrderBranchId($request, $payload);
         $emailSeed = $phone !== '' ? preg_replace('/\D+/', '', $phone) : Str::lower(Str::random(12));
 
         return User::query()->create([
@@ -769,6 +799,50 @@ class AdminController extends Controller
             'password' => Hash::make(Str::random(40)),
             'is_active' => true,
         ])->load('branch');
+    }
+
+    private function manualOrderBranchId(Request $request, array $payload): ?int
+    {
+        $explicit = data_get($payload, 'order_payload.branch_id') ?? ($payload['branch_id'] ?? null);
+        if ($explicit) {
+            return (int) $explicit;
+        }
+
+        $fromText = $this->manualOrderBranchIdFromText((string) ($payload['raw_text'] ?? data_get($payload, 'order_payload.notes', '')));
+        if ($fromText) {
+            return $fromText;
+        }
+
+        return $request->user()->branch_id ? (int) $request->user()->branch_id : null;
+    }
+
+    private function manualOrderBranchIdFromText(string $text): ?int
+    {
+        $hint = $this->manualOrderTextField($text, '(?:area|branch|cabang|kode\\s*pelanggan)');
+        if (! $hint) {
+            return null;
+        }
+
+        $needle = Str::lower($hint);
+
+        return Branch::query()
+            ->get()
+            ->first(function (Branch $branch) use ($needle): bool {
+                $values = array_filter([
+                    $branch->name,
+                    $branch->area,
+                    trim(($branch->name ?? '').' '.($branch->area ?? '')),
+                ]);
+
+                foreach ($values as $value) {
+                    $value = Str::lower((string) $value);
+                    if ($value !== '' && (str_contains($needle, $value) || str_contains($value, $needle))) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })?->id;
     }
 
     public function priceSettings(): JsonResponse
@@ -1577,6 +1651,7 @@ class AdminController extends Controller
             'subject_type' => class_basename($log->subject_type),
             'subject_id' => $log->subject_id,
             'subject_label' => $log->subject_label,
+            'metadata' => $log->metadata ?? [],
             'created_at' => $log->created_at?->toDateTimeString(),
         ];
     }

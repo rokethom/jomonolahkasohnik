@@ -5,11 +5,9 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\BannerResource\Pages;
 use App\Models\Banner;
 use Filament\Forms;
-use Filament\Forms\Components\SpatieMediaLibraryFileUpload;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Columns\SpatieMediaLibraryImageColumn;
 use Filament\Tables\Table;
 
 class BannerResource extends Resource
@@ -28,8 +26,9 @@ class BannerResource extends Resource
             Forms\Components\Section::make('Banner Slider')
                 ->columns(2)
                 ->schema([
-                    SpatieMediaLibraryFileUpload::make('image')
-                        ->collection('image')
+                    Forms\Components\FileUpload::make('image')
+                        ->disk('public')
+                        ->directory('home/banners')
                         ->image()
                         ->imagePreviewHeight('160')
                         ->maxSize(1024)
@@ -70,9 +69,7 @@ class BannerResource extends Resource
             ->reorderable('order')
             ->defaultSort('order')
             ->columns([
-                SpatieMediaLibraryImageColumn::make('image')
-                    ->collection('image')
-                    ->conversion('thumb')
+                Tables\Columns\ImageColumn::make('image_url')
                     ->label('Preview')
                     ->height(64),
                 Tables\Columns\TextColumn::make('title')

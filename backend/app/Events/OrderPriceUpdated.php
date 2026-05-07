@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\Order;
+use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -13,7 +14,7 @@ class OrderPriceUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Order $order)
+    public function __construct(public Order $order, public ?User $actor = null, public array $change = [])
     {
     }
 
@@ -33,7 +34,14 @@ class OrderPriceUpdated implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
+        $code = $this->order->order_code;
+        $actorName = $this->actor?->name;
+
         return [
+            'actor_id' => $this->actor?->id,
+            'actor_name' => $actorName,
+            'message' => 'Harga order '.$code.' diedit oleh '.($actorName ?: 'operator').'.',
+            'change' => $this->change,
             'order' => [
                 'id' => $this->order->id,
                 'order_code' => $this->order->order_code,

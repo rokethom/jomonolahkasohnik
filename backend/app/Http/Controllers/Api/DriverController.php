@@ -44,6 +44,25 @@ class DriverController extends Controller
             ->latest()
             ->limit(50)
             ->get();
+        $branchId = $driver->user?->branch_id;
+        $branchAcceptedOrders = $branchId
+            ? Order::query()
+                ->with(['user', 'driver.user'])
+                ->where('branch_id', $branchId)
+                ->whereNotNull('driver_id')
+                ->latest('updated_at')
+                ->limit(20)
+                ->get()
+            : collect();
+        $branchRequestOrders = $branchId
+            ? Order::query()
+                ->with(['user', 'driver.user'])
+                ->where('branch_id', $branchId)
+                ->where('source', 'driver_request')
+                ->latest('updated_at')
+                ->limit(30)
+                ->get()
+            : collect();
 
         return response()->json([
             'driver' => $this->driverPayload($request),
@@ -57,6 +76,8 @@ class DriverController extends Controller
                 ...$this->orderPayload($order),
                 'eligibility' => $multiOrder->canAcceptOrder($driver, $order),
             ]),
+            'branch_accepted_orders' => $branchAcceptedOrders->map(fn (Order $order): array => $this->orderPayload($order)),
+            'branch_request_orders' => $branchRequestOrders->map(fn (Order $order): array => $this->orderPayload($order)),
         ]);
     }
 
@@ -285,6 +306,8 @@ class DriverController extends Controller
             'status' => $order->status->value,
             'customer' => $order->user?->name ?? 'Customer',
             'customer_phone' => $order->user?->phone,
+            'driver' => $order->driver?->user?->name,
+            'source' => $order->source,
             'service' => $order->service_type,
             'distance_km' => (float) $order->distance_km,
             'pickup' => $order->pickup_address,

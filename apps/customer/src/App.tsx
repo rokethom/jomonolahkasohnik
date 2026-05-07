@@ -501,12 +501,14 @@ function App() {
     if (!token || !store.user?.id) return
 
     const channel = getEcho().private(`user.${store.user.id}`)
-    channel.listen('.order.price.updated', (event: { order?: Order }) => {
+    channel.listen('.order.price.updated', (event: { order?: Order; actor_name?: string | null; message?: string | null }) => {
       const updatedOrder = event.order
       if (!updatedOrder) return
       setOrders(mergeOrderList(useCustomerStore.getState().orders, updatedOrder))
       setActiveOrder((current) => current?.id === updatedOrder.id ? { ...current, ...updatedOrder } : current)
-      store.showToast('info', `Harga order ${updatedOrder.order_code ?? updatedOrder.code ?? ''} diperbarui admin.`)
+      const code = updatedOrder.order_code ?? updatedOrder.code ?? ''
+      const actor = event.actor_name?.trim()
+      store.showToast('info', event.message ?? `Harga order ${code} diedit oleh ${actor || 'operator'}.`)
     })
     channel.listen('.order.status.updated', (event: { order?: Order; new_status?: string; feedback?: OrderFeedback | null }) => {
       const updatedOrder = event.order
@@ -1156,8 +1158,7 @@ function ManualServicePicker({ services, onService, compact = false }: { service
 }
 
 function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
-  const profileAddress = profileAddressFromUser(user)
-  const [address, setAddress] = useState(profileAddress)
+  const [address, setAddress] = useState('')
   const [items, setItems] = useState('tahu,tempe')
   const [purchaseAddress, setPurchaseAddress] = useState('')
   const [points, setPoints] = useState<string[]>([])
@@ -1174,7 +1175,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
     'Layanan: belanja',
     `Nama: ${user?.name ?? 'Customer Jojo'}`,
     `No. Hp: ${user?.phone ?? '-'}`,
-    `Alamat Antar: ${address || area}`,
+    `Alamat Antar: ${address || '-'}`,
     `Lokasi Pembelian: ${purchaseAddress || '-'}`,
     '',
     'Belikan:',
@@ -1197,7 +1198,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
       <div className="belanja-profile-block">
         <label>Nama<input value={user?.name ?? 'Customer Jojo'} readOnly /></label>
         <label>Hp / WhatsApp<input value={user?.phone ?? '-'} readOnly /></label>
-        <label>Alamat<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Alamat dari profile customer" /></label>
+        <label>Alamat antar<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tulis alamat antar manual" /></label>
       </div>
       <label>Belikan<textarea value={items} onChange={(event) => setItems(event.target.value)} placeholder="tahu,tempe" /></label>
       {parsedItems.length > 0 && <div className="shopping-item-preview">{parsedItems.map((item) => <span key={item}>- {item}</span>)}</div>}
@@ -1206,7 +1207,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
       <label>Area<input value={area} readOnly /></label>
       <div className="belanja-points">
         <strong>Tambah titik</strong>
-        <span>Antar ke: {address || area}</span>
+        <span>Antar ke: {address || 'Belum diisi'}</span>
         <span>Pembelian: {purchaseAddress || 'Belum diisi'}</span>
         {points.map((point, index) => (
           <input
@@ -1230,17 +1231,15 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
 }
 
 function KurirOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
-  const profileAddress = profileAddressFromUser(user)
-  const [senderAddress, setSenderAddress] = useState(profileAddress)
+  const [senderAddress, setSenderAddress] = useState('')
   const [receiver, setReceiver] = useState({ name: '', phone: '', address: '', itemType: '', price: '' })
-  const area = user?.branch_display_name ?? user?.branch_name ?? user?.branch ?? 'Area cabang belum diset silahkan hubungi CS'
 
   const previewText = [
     'Ada Pesanan Kurir untuk Aplikasi Joker',
     '',
     `Nama: ${user?.name ?? 'Customer Jojo'}`,
     `Hp / WhatsApp: ${user?.phone ?? '-'}`,
-    `Alamat: ${senderAddress || area}`,
+    `Alamat: ${senderAddress || '-'}`,
     '',
     'Antarkan barang ke',
     '',
@@ -1265,7 +1264,7 @@ function KurirOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerS
         <span>Pengirim</span>
         <label>Nama<input value={user?.name ?? 'Customer Jojo'} readOnly /></label>
         <label>Hp / WhatsApp<input value={user?.phone ?? '-'} readOnly /></label>
-        <label>Alamat<input value={senderAddress} onChange={(event) => setSenderAddress(event.target.value)} placeholder="Alamat dari profile customer" /></label>
+        <label>Alamat<input value={senderAddress} onChange={(event) => setSenderAddress(event.target.value)} placeholder="Tulis alamat pengirim manual" /></label>
       </div>
       <div className="kurir-section">
         <span>Antarkan barang ke</span>
@@ -1285,19 +1284,17 @@ function KurirOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerS
 }
 
 function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
-  const profileAddress = profileAddressFromUser(user)
-  const [pickupAddress, setPickupAddress] = useState(profileAddress)
+  const [pickupAddress, setPickupAddress] = useState('')
   const [destination, setDestination] = useState('')
   const [passengers, setPassengers] = useState('1')
   const [notes, setNotes] = useState('')
-  const area = user?.branch_display_name ?? user?.branch_name ?? user?.branch ?? 'Area cabang belum diset silahkan hubungi CS'
 
   const previewText = [
     'Ada pesanan Ojek untuk Aplikasi Joker',
     '',
     `Nama: ${user?.name ?? 'Customer Jojo'}`,
     `Hp / WhatsApp: ${user?.phone ?? '-'}`,
-    `Alamat Jemput: ${pickupAddress || area}`,
+    `Alamat Jemput: ${pickupAddress || '-'}`,
     '',
     `Alamat Antar: ${destination}`,
     `Jumlah penumpang: ${passengers}`,
@@ -1317,7 +1314,7 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
       <div className="ojek-section">
         <label>Nama<input value={user?.name ?? 'Customer Jojo'} readOnly /></label>
         <label>Hp / WhatsApp<input value={user?.phone ?? '-'} readOnly /></label>
-        <label>Alamat Jemput<input value={pickupAddress} onChange={(event) => setPickupAddress(event.target.value)} placeholder="Alamat dari profile customer" /></label>
+        <label>Alamat Jemput<input value={pickupAddress} onChange={(event) => setPickupAddress(event.target.value)} placeholder="Tulis alamat jemput manual" /></label>
       </div>
       <div className="ojek-section">
         <label>Alamat Antar<textarea value={destination} onChange={(event) => setDestination(event.target.value)} /></label>
@@ -1536,7 +1533,7 @@ function ChatOrderActions({
   const configuredPaymentMethods = publicSettings?.payment?.methods?.length
     ? publicSettings.payment.methods
     : [{ key: 'cash', label: 'Pembayaran Cash', description: 'Bayar manual ke driver.' }]
-  const qrisImageUrl = publicSettings?.payment?.qris_image_url ?? null
+  const qrisImageUrl = publicSettings?.payment?.qris_image_url ? cmsAssetUrl(publicSettings.payment.qris_image_url) : null
   const paymentMethods = qrisImageUrl && !configuredPaymentMethods.some((method) => method.key === 'qris')
     ? [...configuredPaymentMethods, { key: 'qris', label: 'Pembayaran QRIS', description: 'Scan QRIS aplikasi.' }]
     : configuredPaymentMethods
@@ -2534,7 +2531,7 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   return (
     <div className="simple-page">
       <div className="profile-avatar">
-        {profilePhotoPreview || user?.profile_photo_url ? <img src={profilePhotoPreview ?? user?.profile_photo_url ?? ''} alt="Foto profile" /> : <UserRound size={34} />}
+        {profilePhotoPreview || user?.profile_photo_url ? <img src={profilePhotoPreview ?? cmsAssetUrl(user?.profile_photo_url ?? '')} alt="Foto profile" /> : <UserRound size={34} />}
       </div>
       <h1>{user?.name ?? 'Customer Jojo'}</h1>
       <p>{user?.email ?? 'Belum login'}</p>
@@ -2965,7 +2962,7 @@ function autoFillValue(name: string, label: string, user: ReturnType<typeof useC
   if (/\b(nama|name)\b/.test(key)) return user?.name ?? ''
   if (/\b(hp|phone|telepon|whatsapp|wa)\b/.test(key)) return user?.phone ?? ''
   if (/pembelian|lokasi|toko|store|warung|resto|pasar|belikan|item|barang|produk/.test(key)) return ''
-  if (/\b(alamat|address)\b/.test(key)) return profileAddressFromUser(user)
+  if (/\b(alamat|address|jemput|tujuan|antar|destination|pickup)\b/.test(key)) return ''
 
   return ''
 }
@@ -2975,11 +2972,6 @@ function dynamicFormText(fields: DynamicFormSchema['fields'] = [], values: Recor
     serviceType ? `Layanan: ${serviceType}` : null,
     ...fields.map((field) => `${field.label}: ${values[field.name] ?? ''}`),
   ].filter(Boolean).join('\n')
-}
-
-function profileAddressFromUser(user: ReturnType<typeof useCustomerStore.getState>['user']) {
-  const maybeUser = user as (typeof user & { address?: string | null; alamat?: string | null })
-  return maybeUser?.address ?? maybeUser?.alamat ?? user?.branch_name ?? user?.branch ?? ''
 }
 
 function isProfileComplete(user: ReturnType<typeof useCustomerStore.getState>['user']) {

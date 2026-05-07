@@ -98,6 +98,7 @@ type DriverCandidate = { id: number; name: string; phone?: string | null; vehicl
 type CustomerPreference = { favorite_driver?: { id: number; name: string } | null; blocked_drivers?: string[]; notes?: string | null }
 type ManualOrderPayload = {
   service_type: string
+  branch_id?: number | null
   pickup_address: string
   pickup_lat?: number
   pickup_lng?: number
@@ -142,7 +143,7 @@ type LocationLog = { id: number; user: string | null; branch: string | null; lat
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; updated_at: string | null }
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
-type AuditLog = { id: number; user: string; role: Role | null; action: string; subject_type: string; subject_id: number | null; subject_label: string | null; created_at: string | null }
+type AuditLog = { id: number; user: string; role: Role | null; action: string; subject_type: string; subject_id: number | null; subject_label: string | null; metadata?: Record<string, unknown> | null; created_at: string | null }
 type OperatorPerformance = { id: number; name: string; role: Role; branch: string | null; branch_area?: string | null; handled_chats_count: number; active_chats_count: number; rating_average: number; ratings_count: number; late_response_count: number }
 type Stats = { total_users: number; total_drivers: number; active_orders: number; suspended_drivers: number }
 type SystemSettings = {
@@ -581,7 +582,7 @@ function App() {
           </header>
 
         {safeView === 'dashboard' && <Dashboard data={data} api={api} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
-        {safeView === 'orders' && <OrdersTable orders={data.orders} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'orders' && <OrdersTable orders={data.orders} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -595,7 +596,7 @@ function App() {
         {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} />}
       </main>
 
-      {isUserFormOpen && <UserFormModal permissions={data.permissions} branches={data.branches} api={api} onClose={() => setUserFormOpen(false)} onCreated={async (password) => { alert(`Password sementara: ${password}`); await refresh(); setUserFormOpen(false) }} />}
+      {isUserFormOpen && <UserFormModal permissions={data.permissions} branches={data.branches} services={data.services} api={api} onClose={() => setUserFormOpen(false)} onCreated={async (password) => { alert(`Password sementara: ${password}`); await refresh(); setUserFormOpen(false) }} />}
     </div>
   )
 }
@@ -722,6 +723,7 @@ function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bo
       <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onNavigate('drivers')} />
       <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
       <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
+      <PriceEditActivity auditLogs={data.audit_logs} />
     </div>
   )
 }
@@ -928,6 +930,28 @@ function LiveChatDashboard({ chats, onNavigate, onOpenOrder }: { chats: Chat[]; 
 
 function RecentActivity({ orders, onOpenOrder }: { orders: Order[]; onOpenOrder: (code: string) => void }) {
   return <section className="panel activity-panel compact-activity"><PanelHeader title="Recent order activity" action="Ringkas" /><div className="activity-list">{orders.slice(0, 5).map((order) => <div className="activity-item order-activity-item compact" key={order.id}><div><button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button><span>{order.customer || '-'} - {order.service}</span>{order.status === 'CANCELLED' && <em>{order.cancel_reason || 'Dibatalkan tanpa alasan tersimpan.'}</em>}</div><StatusBadge status={order.status} /></div>)}</div></section>
+}
+
+function PriceEditActivity({ auditLogs }: { auditLogs: AuditLog[] }) {
+  const logs = auditLogs.filter((log) => log.action === 'updated_order_price').slice(0, 6)
+
+  return (
+    <section className="panel activity-panel compact-activity">
+      <PanelHeader title="History edit harga" action={`${logs.length} log`} />
+      <div className="activity-list">
+        {logs.length === 0 && <EmptyPanel title="Belum ada edit harga" copy="Log operator yang mengubah harga akan tampil di sini." />}
+        {logs.map((log) => (
+          <div className="activity-item order-activity-item compact" key={log.id}>
+            <div>
+              <strong>{log.subject_label ?? 'Order'}</strong>
+              <span>{priceLogSummary(log)} oleh {log.user}</span>
+            </div>
+            <small>{formatShortDateTime(log.created_at)}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function DriverPerformanceSnapshot({ drivers, onOpenDrivers }: { drivers: DriverRow[]; onOpenDrivers: () => void }) {
@@ -1542,10 +1566,12 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   )
 }
 
-function OrdersTable({ orders, searchQuery, permissions, api, onChanged }: { orders: Order[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+function OrdersTable({ orders, auditLogs, searchQuery, permissions, api, onChanged }: { orders: Order[]; auditLogs: AuditLog[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const latestOrders = useMemo(() => sortOrdersNewest(orders), [orders])
   const filteredOrders = latestOrders.filter((order) => orderMatchesSearch(order, searchQuery))
+  const priceLogs = auditLogs.filter((log) => log.action === 'updated_order_price').slice(0, 5)
+  void priceLogs.map(priceLogSummary)
   return <section className="panel"><PanelHeader title="Order operations" action={`${filteredOrders.length}/${orders.length} orders`} />{permissions.can_edit_order_price && <div className="notice">Edit harga akan dikirim realtime ke customer dan driver.</div>}<div className="table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Driver</th><th>Service</th><th>Branch</th><th>Total</th><th>Status</th>{permissions.can_edit_order_price && <th>Action</th>}</tr></thead><tbody>{filteredOrders.map((order) => <tr key={order.id}><td><strong>{order.code}</strong><span>{formatShortDateTime(order.created_at)}</span></td><td>{order.customer || '-'}</td><td>{order.driver || '-'}</td><td>{order.service}</td><td>{order.branch || '-'}</td><td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} · Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td><td><StatusBadge status={order.status} /></td>{permissions.can_edit_order_price && <td><button className="mini-button" type="button" onClick={() => setEditingOrder(order)}>Edit harga</button></td>}</tr>)}</tbody></table>{filteredOrders.length === 0 && <EmptyPanel title="Order tidak ditemukan" copy="Coba cek kode order atau hapus filter pencarian." />}</div>{editingOrder && <OrderPriceModal order={editingOrder} api={api} onClose={() => setEditingOrder(null)} onSaved={async () => { await onChanged(); setEditingOrder(null) }} />}</section>
 }
 
@@ -1988,7 +2014,9 @@ function EmptyPanel({ title, copy }: { title: string; copy: string }) {
 
 function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches: Branch[]; api: ApiClient; onChanged: () => Promise<void> }) {
   const ownBranch = branches.find((branch) => branch.id === me.branch_id) ?? null
-  const branchHint = ownBranch ? branchLabel(ownBranch) : me.branch || 'Area akun'
+  const [branchId, setBranchId] = useState(() => String(ownBranch?.id ?? branches[0]?.id ?? ''))
+  const selectedBranch = branches.find((branch) => String(branch.id) === branchId) ?? null
+  const branchHint = selectedBranch ? branchLabel(selectedBranch) : 'Pilih cabang'
   const [rawText, setRawText] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'qris'>('cash')
   const [preview, setPreview] = useState<ManualOrderPreview | null>(null)
@@ -2007,9 +2035,11 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
     try {
       const response = await api<{ data: ManualOrderPreview }>('/admin/orders/manual/preview', {
         method: 'POST',
-        body: JSON.stringify({ raw_text: rawText.trim() }),
+        body: JSON.stringify({ raw_text: rawText.trim(), branch_id: Number(branchId) || null }),
       })
       setPreview(response.data)
+      const parsedBranchId = branchIdFromManualPreview(response.data, branches)
+      if (parsedBranchId) setBranchId(String(parsedBranchId))
       const quote = response.data.quote
       setPriceOverride(String(quote?.price ?? quote?.tarif ?? ''))
       setServiceFeeOverride(String(quote?.service_fee ?? quote?.service_charge ?? ''))
@@ -2032,9 +2062,11 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
           parsed_customer: parsedCustomer,
           order_payload: {
             ...preview.order_payload,
+            branch_id: Number(branchId) || preview.order_payload.branch_id || null,
             payment_method: paymentMethod,
             notes: [preview.order_payload.notes, rawText.trim()].filter(Boolean).join('\n'),
           },
+          branch_id: Number(branchId) || null,
           price_override: priceOverride !== '' ? Number(priceOverride) : undefined,
           service_charge_override: serviceFeeOverride !== '' ? Number(serviceFeeOverride) : undefined,
         }),
@@ -2086,8 +2118,15 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
         <div className="manual-ai-composer manual-workspace-card">
           <div className="manual-card-title">
             <strong>Paste order</strong>
-            <span>Branch otomatis</span>
+            <span>Branch pilihan</span>
           </div>
+          <label className="manual-branch-selector">
+            Cabang / Area
+            <select value={branchId} onChange={(event) => { setBranchId(event.target.value); setPreview(null) }}>
+              <option value="">Pilih cabang</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}
+            </select>
+          </label>
           <label className="manual-textarea-label">
             Teks order dari customer
             <textarea value={rawText} onChange={(event) => { setRawText(event.target.value); setPreview(null) }} placeholder={"Contoh:\nNama: Pak Budi\nNo HP: 08123456789\nOjek dari Perum ASB ke STB Kota, pembayaran cash.\nCatatan: minta driver A jika ada."} />
@@ -2226,8 +2265,8 @@ function ManualOrderPreviewCard({
   return (
     <aside className={payload ? 'manual-preview-card ready' : 'manual-preview-card warning'}>
       <span className="status info">{preview.intent}</span>
-      <strong>{preview.selected_service ?? preview.service_type ?? payload?.service_type ?? 'Order belum terbaca'}</strong>
-      <p>{preview.reply ?? preview.message ?? 'Lengkapi teks order agar sistem bisa membuat preview.'}</p>
+      <strong>{manualDisplayValue(preview.selected_service ?? preview.service_type ?? payload?.service_type) ?? 'Order belum terbaca'}</strong>
+      <p>{sanitizeManualPreviewText(preview.reply ?? preview.message, preview) ?? 'Lengkapi teks order agar sistem bisa membuat preview.'}</p>
       {payload && (
         <div className="manual-preview-detail">
           <div><span>Customer</span><b>{customer.name || 'Belum terbaca'}{customer.phone ? ` - ${customer.phone}` : ''}</b></div>
@@ -2269,6 +2308,38 @@ function previewCustomer(preview: ManualOrderPreview | null) {
 
 function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
+
+function branchIdFromManualPreview(preview: ManualOrderPreview, branches: Branch[]) {
+  const direct = preview.order_payload?.branch_id
+  if (direct) return direct
+  const parsed = preview.parsed ?? {}
+  const hint = manualDisplayValue(parsed.area ?? parsed.branch ?? parsed.cabang ?? parsed.kode_pelanggan)
+  if (!hint) return null
+  const key = hint.toLowerCase()
+  return branches.find((branch) => {
+    const values = [branch.name, branch.area, branchLabel(branch)].filter(Boolean).map((value) => String(value).toLowerCase())
+    return values.some((value) => key.includes(value) || value.includes(key))
+  })?.id ?? null
+}
+
+function sanitizeManualPreviewText(value: unknown, preview: ManualOrderPreview) {
+  const text = stringValue(value)
+  if (!text) return undefined
+  if (!text.includes('[object Object]')) return text
+  const parsed = preview.parsed ?? {}
+  const area = manualDisplayValue(parsed.area ?? parsed.branch ?? parsed.cabang ?? parsed.kode_pelanggan) ?? 'Area belum terbaca'
+  return text.replace(/\[object Object\]/g, area)
+}
+
+function manualDisplayValue(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (value && typeof value === 'object') {
+    const item = value as Record<string, unknown>
+    return stringValue(item.name ?? item.label ?? item.title ?? item.code)
+  }
+
+  return undefined
 }
 function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; me: User; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showForm, setShowForm] = useState(false)
@@ -2347,8 +2418,10 @@ function UserEditModal({ user, branches, permissions, api, onClose, onSaved }: {
   )
 }
 
-function UserFormModal({ permissions, branches, api, onClose, onCreated }: { permissions: Permissions; branches: Branch[]; api: ApiClient; onClose: () => void; onCreated: (password: string) => void }) {
+function UserFormModal({ permissions, branches, services, api, onClose, onCreated }: { permissions: Permissions; branches: Branch[]; services: ServiceRow[]; api: ApiClient; onClose: () => void; onCreated: (password: string) => void }) {
   const [role, setRole] = useState<Role>(permissions.assignable_roles[0] ?? 'operator')
+  const [allowedServices, setAllowedServices] = useState<string[]>([])
+  const toggleService = (code: string) => setAllowedServices((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code])
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -2366,12 +2439,13 @@ function UserFormModal({ permissions, branches, api, onClose, onCreated }: { per
         ...(role === 'driver' ? {
           driver_bansos_amount: form.get('driver_bansos_amount') === '' ? null : Number(form.get('driver_bansos_amount')),
           driver_bpjs_jht_enabled: form.get('driver_bpjs_jht_enabled') === 'on',
+          allowed_service_types: allowedServices,
         } : {}),
       }),
     })
     onCreated(payload.temporary_password)
   }
-  return <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true"><div className="modal-header"><div><h2>Create user</h2><p>Assignable roles: {permissions.assignable_roles.map((item) => roleLabels[item]).join(', ')}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div><form className="user-form" onSubmit={submit}><fieldset><legend>Info User</legend><div className="form-grid"><label>Username<input name="username" required /></label><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Phone<input name="phone" /></label></div></fieldset><fieldset><legend>Role & Branch</legend><div className="form-grid"><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{permissions.assignable_roles.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label><label>Branch<select name="branch_id"><option value="">No branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label><label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked />Active</label>{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked />JHT BPJS</label>}</div></fieldset><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Create real user</button></div></form></div></div>
+  return <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true"><div className="modal-header"><div><h2>Create user</h2><p>Assignable roles: {permissions.assignable_roles.map((item) => roleLabels[item]).join(', ')}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div><form className="user-form" onSubmit={submit}><fieldset><legend>Info User</legend><div className="form-grid"><label>Username<input name="username" required /></label><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Phone<input name="phone" /></label></div></fieldset><fieldset><legend>Role & Branch</legend><div className="form-grid"><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{permissions.assignable_roles.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label><label>Branch<select name="branch_id"><option value="">No branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label><label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked />Active</label>{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked />JHT BPJS</label>}</div>{role === 'driver' && <div className="service-config-pills"><strong>Config layanan driver</strong><span>Kosongkan jika driver boleh menerima semua layanan.</span>{services.map((service) => <label key={service.id} className="toggle-row service-pill"><input type="checkbox" checked={allowedServices.includes(service.code)} onChange={() => toggleService(service.code)} />{service.name}</label>)}</div>}</fieldset><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Create real user</button></div></form></div></div>
 }
 
 type ApiClient = <T = unknown>(path: string, options?: RequestInit) => Promise<T>
@@ -2499,9 +2573,27 @@ function sortOrdersNewest(orders: Order[]) {
 }
 
 function orderMatchesSearch(order: Order, searchQuery: string) {
-  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${order.branch ?? ''} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''}`
+  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''}`
     .toLowerCase()
     .includes(searchQuery.toLowerCase())
+}
+
+function displayBranchValue(branch: unknown, area?: string | null) {
+  if (typeof branch === 'string' && branch.trim()) return [branch, area].filter(Boolean).join(' - ')
+  if (branch && typeof branch === 'object') {
+    const value = branch as { name?: unknown; area?: unknown }
+    return [stringValue(value.name), stringValue(value.area) ?? area].filter(Boolean).join(' - ') || '-'
+  }
+
+  return area || '-'
+}
+
+function priceLogSummary(log: AuditLog) {
+  const metadata = log.metadata ?? {}
+  const after = metadata.after && typeof metadata.after === 'object' ? metadata.after as Record<string, unknown> : {}
+  const total = Number(after.total ?? 0)
+
+  return total > 0 ? `Total baru Rp ${total.toLocaleString('id-ID')}` : 'Harga diedit'
 }
 
 function monthName(month: number) {

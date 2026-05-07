@@ -1288,6 +1288,42 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 
+.branch-feed,
+.request-history-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.branch-feed-row {
+  display: grid;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(191, 219, 254, 0.14);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.62);
+  padding: 12px;
+}
+
+.branch-feed-row strong {
+  color: #f8fafc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-feed-row span {
+  color: rgba(226, 239, 255, 0.78);
+  font-size: 13px;
+}
+
+.branch-feed-row small {
+  color: rgba(226, 239, 255, 0.58);
+  font-size: 12px;
+  text-align: right;
+}
+
 @media (max-width: 420px) {
   .history-row {
     grid-template-columns: 1fr;
@@ -1295,6 +1331,14 @@ input:focus, textarea:focus, select:focus {
 
   .history-total {
     justify-items: start;
+  }
+
+  .branch-feed-row {
+    grid-template-columns: 1fr;
+  }
+
+  .branch-feed-row small {
+    text-align: left;
   }
 }
 

@@ -57,6 +57,8 @@ type Order = {
   status: OrderStatus
   customer: string
   customerPhone: string | null
+  driver?: string | null
+  source?: string | null
   service: string
   distanceKm: number
   pickup: string
@@ -113,6 +115,8 @@ type DriverStore = {
   token: string
   driver: Driver | null
   orders: Order[]
+  branchAcceptedOrders: Order[]
+  branchRequestOrders: Order[]
   selectedOrderId: number | null
   isOnline: boolean
   multiOrderEnabled: boolean
@@ -137,6 +141,8 @@ type BootstrapResponse = {
   finance?: DriverFinance
   performance?: DriverPerformance
   orders: ApiOrder[]
+  branch_accepted_orders?: ApiOrder[]
+  branch_request_orders?: ApiOrder[]
 }
 
 type DriverFinance = {
@@ -168,6 +174,8 @@ type ApiOrder = {
   status: string
   customer: string
   customer_phone: string | null
+  driver?: string | null
+  source?: string | null
   service: string
   distance_km: number
   pickup: string
@@ -241,6 +249,8 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   token: localStorage.getItem('driver_token') || '',
   driver: null,
   orders: [],
+  branchAcceptedOrders: [],
+  branchRequestOrders: [],
   selectedOrderId: null,
   isOnline: true,
   multiOrderEnabled: false,
@@ -256,6 +266,8 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   setBootstrap: (payload) => set({
     driver: payload.driver,
     orders: payload.orders.map(mapOrder),
+    branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
+    branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
     multiOrderEnabled: payload.settings.multi_order_enabled,
     maxMultiOrder: payload.settings.max_multi_order,
     finance: payload.finance ?? null,
@@ -267,7 +279,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   logout: () => {
     resetDriverEcho()
     localStorage.removeItem('driver_token')
-    set({ token: '', driver: null, orders: [], selectedOrderId: null, view: 'login' })
+    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], selectedOrderId: null, view: 'login' })
   },
   selectOrder: (orderId) => set({ selectedOrderId: orderId, view: 'order-detail' }),
   setOnline: (online) => set({ isOnline: online }),
@@ -280,7 +292,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
 }))
 
 function App() {
-  const { view, token, driver, orders, selectedOrderId, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
+  const { view, token, driver, orders, branchAcceptedOrders, selectedOrderId, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
   const [apiState, setApiState] = useState<ApiState>({ loading: false, error: '' })
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
@@ -453,7 +465,7 @@ function App() {
   return (
     <Shell>
       <ToastStack toasts={toasts} />
-      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} loading={apiState.loading} api={api} onAction={action} />}
+      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} />}
@@ -554,11 +566,12 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
   )
 }
 
-function Dashboard({ driver, orders, loading, api, onAction }: { driver: Driver; orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
+function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
   const { isOnline, setOnline, setView, maxMultiOrder, finance } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
   const activeOrders = orders.filter(isActiveOrder)
   const pendingOrders = orders.filter((order) => order.status === 'pending')
+  const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
 
   return (
     <section className="page dashboard">
@@ -592,6 +605,7 @@ function Dashboard({ driver, orders, loading, api, onAction }: { driver: Driver;
           <small>{finance?.status ?? 'sync'}</small>
         </button>
         <Metric label="Order Aktif" value={String(activeOrders.length)} />
+        <Metric label="Total Order Diterima" value={String(acceptedTotal)} />
       </section>
 
       <section className="quick-grid">
@@ -607,7 +621,26 @@ function Dashboard({ driver, orders, loading, api, onAction }: { driver: Driver;
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
+      <BranchAcceptedFeed orders={branchAcceptedOrders} />
       {financeOpen && finance && <SetoranModal finance={finance} onClose={() => setFinanceOpen(false)} />}
+    </section>
+  )
+}
+
+function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
+  const visible = orders.filter((order) => order.driver).slice(0, 8)
+
+  return (
+    <section className="branch-feed panel">
+      <SectionTitle title="Order diterima area" action={`${visible.length} terbaru`} />
+      {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
+      {visible.map((order) => (
+        <div className="branch-feed-row" key={order.id}>
+          <strong>{order.code}</strong>
+          <span>telah diterima oleh {order.driver}</span>
+          <small>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</small>
+        </div>
+      ))}
     </section>
   )
 }
@@ -1216,7 +1249,7 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
       </button>
       <form className="panel profile-form" onSubmit={submit}>
         <div className="driver-profile-photo">
-          {photoPreview || driver.profile_photo_url ? <img src={photoPreview ?? driver.profile_photo_url ?? ''} alt="Foto driver" /> : <UserRound size={36} />}
+          {photoPreview || driver.profile_photo_url ? <img src={photoPreview ?? cmsAssetUrl(driver.profile_photo_url ?? '')} alt="Foto driver" /> : <UserRound size={36} />}
           <label>
             <Camera size={18} />
             Ganti Foto
@@ -1265,6 +1298,8 @@ function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
 
 function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
   const selectOrder = useDriverStore((state) => state.selectOrder)
+  const driver = useDriverStore((state) => state.driver)
+  const branchRequestOrders = useDriverStore((state) => state.branchRequestOrders)
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date().toISOString()))
   const doneOrders = orders.filter((order) => order.status === 'done' || order.status === 'cancelled')
   const monthOptions = useMemo(() => {
@@ -1276,7 +1311,9 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
   const visibleOrders = doneOrders.filter((order) => monthKey(order.updatedAt ?? order.acceptedAt) === selectedMonth)
   const driverIncome = visibleOrders
     .filter((order) => order.status === 'done')
-    .reduce((sum, order) => sum + Math.max((order.total ?? 0) - (order.serviceFee ?? 0), 0), 0)
+    .reduce((sum, order) => sum + Math.max(order.total ?? 0, 0), 0)
+  const visibleRequestOrders = branchRequestOrders.filter((order) => monthKey(order.updatedAt ?? order.acceptedAt) === selectedMonth)
+  const ownRequestOrders = visibleRequestOrders.filter((order) => order.driver === driver?.name || order.customer === driver?.name)
 
   return (
     <section className="page history-page">
@@ -1318,7 +1355,27 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
           </button>
         )})}
       </div>
+      <section className="panel request-history-panel">
+        <SectionTitle title="Request order kamu" action={`${ownRequestOrders.length}`} />
+        {ownRequestOrders.length === 0 && <p className="note">Belum ada request order kamu pada bulan ini.</p>}
+        {ownRequestOrders.map((order) => <RequestHistoryRow key={order.id} order={order} />)}
+      </section>
+      <section className="panel request-history-panel">
+        <SectionTitle title="Request order area" action={`${visibleRequestOrders.length}`} />
+        {visibleRequestOrders.length === 0 && <p className="note">Belum ada request order area pada bulan ini.</p>}
+        {visibleRequestOrders.map((order) => <RequestHistoryRow key={order.id} order={order} />)}
+      </section>
     </section>
+  )
+}
+
+function RequestHistoryRow({ order }: { order: Order }) {
+  return (
+    <div className="branch-feed-row">
+      <strong>{order.code}</strong>
+      <span>{order.driver || order.customer || 'Driver'} · {statusLabel(order.status)}</span>
+      <small>Rp {formatMoney(order.total)} · {formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</small>
+    </div>
   )
 }
 
@@ -1517,6 +1574,8 @@ function mapOrder(order: ApiOrder): Order {
     status: normalizeStatus(order.status),
     customer: order.customer,
     customerPhone: order.customer_phone,
+    driver: order.driver ?? null,
+    source: order.source ?? null,
     service: order.service,
     distanceKm: order.distance_km,
     pickup: order.pickup,
@@ -1550,7 +1609,23 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.service_fee !== undefined || order.service_charge !== undefined ? { serviceFee: order.service_fee ?? order.service_charge ?? 0 } : {}),
     ...(order.extra_charge !== undefined ? { extraCharge: order.extra_charge } : {}),
     ...(order.total !== undefined || order.total_price !== undefined ? { total: order.total ?? order.total_price ?? 0 } : {}),
+    ...(order.driver !== undefined ? { driver: order.driver } : {}),
+    ...(order.source !== undefined ? { source: order.source } : {}),
   }
+}
+
+function cmsAssetUrl(path: string) {
+  if (!/^https?:\/\//i.test(path)) return assetUrl(path)
+  try {
+    const url = new URL(path)
+    if (['localhost', '127.0.0.1'].includes(url.hostname)) {
+      return `${APP_BASE}${url.pathname}${url.search}${url.hash}`
+    }
+  } catch {
+    return path
+  }
+
+  return path
 }
 
 let driverEcho: Echo<'reverb'> | null = null

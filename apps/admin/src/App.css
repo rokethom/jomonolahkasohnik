@@ -2742,6 +2742,44 @@ label {
   padding: 0 12px;
 }
 
+.manual-branch-selector {
+  display: grid;
+  gap: 8px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.service-config-pills {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #dbe4ef;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.service-config-pills > strong,
+.service-config-pills > span {
+  flex: 1 0 100%;
+}
+
+.service-config-pills > span {
+  color: #667085;
+  font-size: 12px;
+}
+
+.service-pill {
+  width: auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #fff;
+  padding: 8px 12px;
+}
+
 .manual-textarea-label {
   display: grid;
   gap: 8px;
