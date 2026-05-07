@@ -153,7 +153,7 @@ jobs:
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
             cd '${BACKEND_PATH}'; \
-            mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs; \
+            mkdir -p bootstrap/cache storage/app/livewire-tmp storage/app/public/settings/payment storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs; \
             rm -f bootstrap/cache/*.php; \
             composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
             php artisan package:discover --ansi; \
@@ -161,6 +161,10 @@ jobs:
             php artisan storage:link || true; \
             php artisan migrate --force; \
             php artisan db:seed --class=RolePermissionSeeder --force; \
+            WEBUSER=\$(ps -eo user:30,comm,args | awk '/lsphp/ && !/awk/ {print \$1; exit}'); \
+            if [ -n \"\$WEBUSER\" ]; then WEBGROUP=\$(id -gn \"\$WEBUSER\"); chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; fi; \
+            find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
+            find storage bootstrap/cache -type f -exec chmod 664 {} \; ; \
             php artisan config:cache; \
             php artisan route:cache; \
             php artisan view:cache"
