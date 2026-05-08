@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MapProviderController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\PublicMediaController;
 use App\Http\Controllers\Api\PushDeviceTokenController;
 use App\Http\Controllers\Api\PricingController;
 use App\Http\Controllers\Api\RatingController;
@@ -55,6 +56,7 @@ Route::get('/home', HomeController::class);
 Route::get('/map/provider', MapProviderController::class);
 Route::get('/settings/public', [SettingsController::class, 'publicSettings']);
 Route::get('/settings', [SettingsController::class, 'publicSettings']);
+Route::get('/media/{path}', PublicMediaController::class)->where('path', '.*');
 Route::get('/services', [ServiceController::class, 'index']);
 Route::get('/keyword-parsers', [KeywordParserController::class, 'index']);
 

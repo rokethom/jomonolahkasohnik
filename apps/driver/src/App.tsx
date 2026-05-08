@@ -1232,11 +1232,17 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
     event.preventDefault()
     try {
       if (photo) {
+        const resizedPhoto = await resizeImageFile(photo, {
+          maxWidth: 900,
+          maxHeight: 900,
+          quality: 0.82,
+          fileNamePrefix: 'driver-profile',
+        })
         const payload = new FormData()
         payload.append('name', form.name)
         payload.append('username', form.username)
         if (form.password) payload.append('password', form.password)
-        payload.append('profile_photo', photo)
+        payload.append('profile_photo', resizedPhoto)
         await api('/driver/profile', { method: 'POST', body: payload })
       } else {
         await api('/driver/profile', { method: 'PUT', body: JSON.stringify(form) })
@@ -1669,9 +1675,14 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
 
 function cmsAssetUrl(path: string) {
   if (!/^https?:\/\//i.test(path)) return assetUrl(path)
+
+  return normalizeRemoteAsset(path)
+}
+
+function normalizeRemoteAsset(path: string) {
   try {
     const url = new URL(path)
-    if (['localhost', '127.0.0.1'].includes(url.hostname)) {
+    if (['localhost', '127.0.0.1'].includes(url.hostname) || url.pathname.startsWith('/storage/') || url.pathname.startsWith('/api/media/')) {
       return `${APP_BASE}${url.pathname}${url.search}${url.hash}`
     }
   } catch {
@@ -1679,6 +1690,37 @@ function cmsAssetUrl(path: string) {
   }
 
   return path
+}
+
+type ResizeImageOptions = {
+  maxWidth: number
+  maxHeight: number
+  quality: number
+  fileNamePrefix: string
+}
+
+async function resizeImageFile(file: File, options: ResizeImageOptions): Promise<File> {
+  if (!file.type.startsWith('image/') || typeof document === 'undefined') return file
+
+  const bitmap = await createImageBitmap(file).catch(() => null)
+  if (!bitmap) return file
+
+  const ratio = Math.min(options.maxWidth / bitmap.width, options.maxHeight / bitmap.height, 1)
+  const width = Math.max(1, Math.round(bitmap.width * ratio))
+  const height = Math.max(1, Math.round(bitmap.height * ratio))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return file
+
+  context.drawImage(bitmap, 0, 0, width, height)
+  bitmap.close?.()
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', options.quality))
+  if (!blob || blob.size >= file.size) return file
+
+  return new File([blob], `${options.fileNamePrefix}-${Date.now()}.jpg`, { type: 'image/jpeg' })
 }
 
 let driverEcho: Echo<'reverb'> | null = null
@@ -1869,7 +1911,13 @@ function getLoginErrorMessage(error: unknown) {
   const message = getErrorMessage(error, 'Login driver gagal')
   return /401|unauthorized/i.test(message) ? 'Login Google gagal. Silakan coba lagi.' : message
 }
-function assetUrl(path: string) { return path.startsWith('http') ? path : `${API_BASE.replace(/\/api$/, '')}${path}` }
+function assetUrl(path: string) {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return normalizeRemoteAsset(path)
+
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return `${APP_BASE}${cleanPath}`
+}
 function formatChatTime(value?: string) { return value ? new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '' }
 function parseSharedLocation(message?: string | null): SharedLocation | null {
   if (!message) return null

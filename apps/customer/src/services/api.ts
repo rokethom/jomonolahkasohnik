@@ -123,18 +123,55 @@ export async function updateUserLocation(payload: { lat: number; lng: number; ac
 
 export async function updateProfile(payload: { name: string; phone: string; address: string; branch_id?: number | null; profile_photo?: File | null }) {
   if (payload.profile_photo) {
+    const profilePhoto = await resizeImageFile(payload.profile_photo, {
+      maxWidth: 900,
+      maxHeight: 900,
+      quality: 0.82,
+      fileNamePrefix: 'customer-profile',
+    })
     const form = new FormData()
     form.append('name', payload.name)
     form.append('phone', payload.phone)
     form.append('address', payload.address)
     if (payload.branch_id) form.append('branch_id', String(payload.branch_id))
-    form.append('profile_photo', payload.profile_photo)
+    form.append('profile_photo', profilePhoto)
     const { data } = await api.post<User>('/user/profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
     return data
   }
 
   const { data } = await api.put<User>('/user/profile', payload)
   return data
+}
+
+type ResizeImageOptions = {
+  maxWidth: number
+  maxHeight: number
+  quality: number
+  fileNamePrefix: string
+}
+
+async function resizeImageFile(file: File, options: ResizeImageOptions): Promise<File> {
+  if (!file.type.startsWith('image/') || typeof document === 'undefined') return file
+
+  const bitmap = await createImageBitmap(file).catch(() => null)
+  if (!bitmap) return file
+
+  const ratio = Math.min(options.maxWidth / bitmap.width, options.maxHeight / bitmap.height, 1)
+  const width = Math.max(1, Math.round(bitmap.width * ratio))
+  const height = Math.max(1, Math.round(bitmap.height * ratio))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return file
+
+  context.drawImage(bitmap, 0, 0, width, height)
+  bitmap.close?.()
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', options.quality))
+  if (!blob || blob.size >= file.size) return file
+
+  return new File([blob], `${options.fileNamePrefix}-${Date.now()}.jpg`, { type: 'image/jpeg' })
 }
 
 export async function fetchBranches() {

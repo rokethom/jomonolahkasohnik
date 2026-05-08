@@ -294,7 +294,7 @@ class DriverController extends Controller
             'username' => $user->username,
             'phone' => $user->phone,
             'email' => $user->email,
-            'profile_photo_url' => $user->profile_photo_path ? asset('storage/'.$user->profile_photo_path) : null,
+            'profile_photo_url' => $user->profile_photo_path ? $request->getSchemeAndHttpHost().'/api/media/'.ltrim($user->profile_photo_path, '/') : null,
             'role' => 'Driver',
             'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
             'status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),

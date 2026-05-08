@@ -329,7 +329,7 @@ class SettingService
         $path = preg_replace('#^/?storage/#i', '', $path) ?? $path;
         $path = ltrim($path, '/');
 
-        return str_starts_with($path, 'http') ? $path : asset('storage/'.$path);
+        return str_starts_with($path, 'http') ? $path : url('/api/media/'.$path);
     }
 
     private function normalizeWhatsappNumber(string $number): string

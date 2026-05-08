@@ -3115,15 +3115,23 @@ function isProfileSetupError(error: unknown, message: string) {
 }
 
 function assetUrl(path: string) {
-  return path.startsWith('http') ? path : `${API_BASE.replace(/\/api$/, '')}${path}`
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return normalizeRemoteAsset(path)
+
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE.replace(/\/api$/, '')}${cleanPath}`
 }
 
 function cmsAssetUrl(path: string) {
   if (!/^https?:\/\//i.test(path)) return assetUrl(path)
 
+  return normalizeRemoteAsset(path)
+}
+
+function normalizeRemoteAsset(path: string) {
   try {
     const url = new URL(path)
-    if (['localhost', '127.0.0.1'].includes(url.hostname)) {
+    if (['localhost', '127.0.0.1'].includes(url.hostname) || url.pathname.startsWith('/storage/') || url.pathname.startsWith('/api/media/')) {
       return `${API_BASE.replace(/\/api$/, '')}${url.pathname}${url.search}${url.hash}`
     }
   } catch {

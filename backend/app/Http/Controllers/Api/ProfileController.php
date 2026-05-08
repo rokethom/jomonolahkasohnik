@@ -58,12 +58,17 @@ class ProfileController extends Controller
             'lat' => $user->lat,
             'lng' => $user->lng,
             'address' => $user->address,
-            'profile_photo_url' => $user->profile_photo_path ? asset('storage/'.$user->profile_photo_path) : null,
+            'profile_photo_url' => $user->profile_photo_path ? $this->publicMediaUrl($request, $user->profile_photo_path) : null,
             'area_status' => $user->currentLocation?->status ?? ($user->branch_id ? 'inside_branch' : 'outside_branch'),
             'location_updated_at' => $user->currentLocation?->updated_at?->toIso8601String(),
             'role' => $role,
             'permissions' => $user->permissions(),
             'profile_completed' => filled($user->name) && filled($user->phone) && filled($user->address),
         ];
+    }
+
+    private function publicMediaUrl(Request $request, string $path): string
+    {
+        return $request->getSchemeAndHttpHost().'/api/media/'.ltrim($path, '/');
     }
 }
