@@ -2091,8 +2091,8 @@
 
 .profile-page {
   min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
-  padding: 22px 0 28px;
-  background: #fff;
+  padding: 0 0 28px;
+  background: linear-gradient(180deg, #f7fbfa 0%, #fff 32%);
   color: #111b21;
 }
 
@@ -2100,8 +2100,11 @@
   display: grid;
   place-items: center;
   gap: 14px;
-  padding: 14px 18px 32px;
+  padding: 28px 18px 30px;
   border-bottom: 1px solid #edf1f3;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(0, 168, 132, 0.12), transparent 34%),
+    #fff;
 }
 
 .profile-photo-button {
@@ -2146,6 +2149,31 @@
   font-weight: 900;
 }
 
+.wa-profile-summary {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+}
+
+.wa-profile-summary strong {
+  color: #111b21;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.wa-profile-summary span,
+.wa-photo-selected {
+  color: #667781;
+  font-size: 14px;
+}
+
+.wa-photo-selected {
+  max-width: min(82vw, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sr-only-file {
   position: absolute;
   width: 1px;
@@ -2166,7 +2194,7 @@
 .wa-profile-form {
   display: grid;
   gap: 0;
-  padding: 4px 0 24px;
+  padding: 8px 0 24px;
 }
 
 .wa-profile-field {

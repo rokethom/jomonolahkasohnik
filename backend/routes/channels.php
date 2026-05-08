@@ -18,7 +18,7 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 Broadcast::channel('orders', function ($user) {
-    return in_array($user->role->value ?? $user->role, ['admin', 'driver'], true);
+    return in_array($user->role->value ?? $user->role, ['admin', 'gm', 'hrd', 'manager', 'spv', 'operator', 'eksekutor', 'driver'], true);
 });
 
 Broadcast::channel('user.{id}', function ($user, $id) {

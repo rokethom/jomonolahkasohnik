@@ -7,7 +7,13 @@ function resolveApiBase() {
   const isPublicHost = isBrowser && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
   const pointsToLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(configured)
 
-  return isPublicHost && pointsToLocalhost ? 'https://api.situapps.tech/api' : configured
+  if (isPublicHost && pointsToLocalhost) {
+    return window.location.hostname.endsWith('aplikasijoker.my.id')
+      ? 'https://aplikasijoker.my.id/api'
+      : `${window.location.origin}/api`
+  }
+
+  return configured
 }
 
 export const API_BASE = resolveApiBase()
@@ -136,7 +142,9 @@ export async function updateProfile(payload: { name: string; phone: string; addr
     form.append('address', payload.address)
     if (payload.branch_id) form.append('branch_id', String(payload.branch_id))
     form.append('profile_photo', profilePhoto)
-    const { data } = await api.post<User>('/user/profile', form)
+    const { data } = await api.post<User>('/user/profile', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
     return data
   }
 

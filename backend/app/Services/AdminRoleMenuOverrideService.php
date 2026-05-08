@@ -24,6 +24,7 @@ class AdminRoleMenuOverrideService
                 'request-orders' => 'Request Order',
                 'chats' => 'Chat Monitor',
                 'internal-chat' => 'Internal Chat',
+                'sticky-notes' => 'Sticky Notes',
                 'manual-order' => 'Manual Order',
             ],
             'Management' => [
@@ -110,6 +111,10 @@ class AdminRoleMenuOverrideService
 
         if ($permissions['can_use_internal_chat'] ?? false) {
             $views[] = 'internal-chat';
+        }
+
+        if ($permissions['can_use_internal_notes'] ?? false) {
+            $views[] = 'sticky-notes';
         }
 
         if ($permissions['can_create_manual_order'] ?? false) {

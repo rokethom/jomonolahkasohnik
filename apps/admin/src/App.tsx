@@ -11,7 +11,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'manual-order'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
 type AdminHistoryState = {
   jojoAdminView?: View
 }
@@ -166,6 +166,31 @@ type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: {
 type InternalChatRoom = { id: number; name: string; type: 'global' | 'branch' | 'private' | string; branch_id?: number | null; branch?: string | null; branch_area?: string | null; participants_count?: number; participants?: Array<{ id: number; name: string; role: Role | string }>; last_message?: string | null; last_sender?: string | null; unread_count?: number; updated_at?: string | null }
 type InternalChatMessage = { id: number; room_id: number; sender_id: number | null; sender_name: string; sender_role?: Role | string | null; message: string; metadata?: Record<string, unknown> | null; created_at?: string | null }
 type InternalChatDetail = { room: InternalChatRoom; messages: InternalChatMessage[] }
+type InternalNoteStatus = 'open' | 'in_progress' | 'done' | 'archived'
+type InternalNotePriority = 'low' | 'normal' | 'high' | 'urgent'
+type InternalNoteUser = { id: number; name: string; role: Role | string }
+type InternalNoteReply = { id: number; note_id: number; author: InternalNoteUser | null; body: string; created_at?: string | null }
+type InternalNote = {
+  id: number
+  title: string
+  body: string
+  category: string
+  priority: InternalNotePriority
+  status: InternalNoteStatus
+  author: InternalNoteUser | null
+  assigned_to: InternalNoteUser | null
+  branch: { id: number; name: string; area?: string | null } | null
+  replies_count: number
+  latest_reply?: InternalNoteReply | null
+  last_activity_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+type InternalNotesResponse = {
+  data: InternalNote[]
+  summary: { open: number; in_progress: number; done: number; urgent: number; assigned_to_me: number }
+  options?: { statuses: InternalNoteStatus[]; priorities: InternalNotePriority[]; categories: string[] }
+}
 type AuditLog = { id: number; user: string; role: Role | null; action: string; subject_type: string; subject_id: number | null; subject_label: string | null; metadata?: Record<string, unknown> | null; created_at: string | null }
 type OperatorPerformance = { id: number; name: string; role: Role; branch: string | null; branch_area?: string | null; handled_chats_count: number; active_chats_count: number; rating_average: number; rating_score?: number; rating_confidence?: number; ratings_count: number; late_response_count: number }
 type Stats = { total_users: number; total_drivers: number; active_orders: number; suspended_drivers: number }
@@ -220,6 +245,7 @@ type Permissions = {
   can_monitor_live_order?: boolean
   can_monitor_live_chat?: boolean
   can_use_internal_chat?: boolean
+  can_use_internal_notes?: boolean
   can_approve_cancel_order?: boolean
   can_reject_cancel_order?: boolean
   can_assign_driver?: boolean
@@ -248,7 +274,13 @@ function resolveApiBase() {
   const isPublicHost = !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
   const pointsToLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(configured)
 
-  return isPublicHost && pointsToLocalhost ? 'https://api.situapps.tech/api' : configured
+  if (isPublicHost && pointsToLocalhost) {
+    return window.location.hostname.endsWith('aplikasijoker.my.id')
+      ? 'https://aplikasijoker.my.id/api'
+      : `${window.location.origin}/api`
+  }
+
+  return configured
 }
 
 const API_BASE = resolveApiBase()
@@ -300,6 +332,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'request-orders', label: 'Request Order', icon: 'receipt' },
       { id: 'chats', label: 'Chat Monitor', icon: 'chat' },
       { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
+      { id: 'sticky-notes', label: 'Sticky Notes', icon: 'note' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
     ],
   },
@@ -355,6 +388,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_view_report) views.add('reports')
   if (permissions.can_monitor_live_chat) views.add('chats')
   if (permissions.can_use_internal_chat) views.add('internal-chat')
+  if (permissions.can_use_internal_notes) views.add('sticky-notes')
   if (permissions.can_create_manual_order) views.add('manual-order')
   if (['manager', 'spv', 'operator'].includes(role)) views.add('locations')
 
@@ -636,6 +670,7 @@ function App() {
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
@@ -2309,6 +2344,228 @@ function InternalChatPanel({ api, me, branches, onOpenOrder }: { api: ApiClient;
   )
 }
 
+function StickyNotesPanel({ api, me, users, branches }: { api: ApiClient; me: User; users: User[]; branches: Branch[] }) {
+  const [notes, setNotes] = useState<InternalNote[]>([])
+  const [summary, setSummary] = useState<InternalNotesResponse['summary']>({ open: 0, in_progress: 0, done: 0, urgent: 0, assigned_to_me: 0 })
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [statusFilter, setStatusFilter] = useState<InternalNoteStatus | 'all'>('all')
+  const [query, setQuery] = useState('')
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [priority, setPriority] = useState<InternalNotePriority>('normal')
+  const [category, setCategory] = useState('operasional')
+  const [assignedToId, setAssignedToId] = useState('')
+  const [branchId, setBranchId] = useState(() => String(me.branch_id ?? ''))
+  const [reply, setReply] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const staffUsers = users.filter((user) => !['driver', 'customer'].includes(user.role))
+  const activeNote = notes.find((note) => note.id === activeId) ?? notes[0] ?? null
+  const filteredNotes = notes.filter((note) => {
+    const matchesStatus = statusFilter === 'all' || note.status === statusFilter
+    const haystack = `${note.title} ${note.body} ${note.author?.name ?? ''} ${note.assigned_to?.name ?? ''} ${note.branch?.name ?? ''} ${note.branch?.area ?? ''}`.toLowerCase()
+    return matchesStatus && haystack.includes(query.toLowerCase())
+  })
+  const boardStatuses: InternalNoteStatus[] = ['open', 'in_progress', 'done']
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const params = new URLSearchParams()
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (query.trim()) params.set('q', query.trim())
+      const payload = await api<InternalNotesResponse>(`/admin/internal-notes${params.toString() ? `?${params}` : ''}`)
+      setNotes(payload.data)
+      setSummary(payload.summary)
+      setActiveId((current) => current ?? payload.data[0]?.id ?? null)
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Gagal memuat sticky notes')
+    }
+  }, [api, query, statusFilter])
+
+  useEffect(() => {
+    void loadNotes()
+    const timer = window.setInterval(() => void loadNotes(), 10000)
+    return () => window.clearInterval(timer)
+  }, [loadNotes])
+
+  const createNote = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!title.trim() || !body.trim() || loading) return
+    setLoading(true)
+    try {
+      const payload = await api<{ data: InternalNote }>('/admin/internal-notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          priority,
+          category,
+          assigned_to_id: assignedToId ? Number(assignedToId) : null,
+          branch_id: branchId ? Number(branchId) : null,
+        }),
+      })
+      setNotes((rows) => [payload.data, ...rows])
+      setActiveId(payload.data.id)
+      setTitle('')
+      setBody('')
+      setPriority('normal')
+      setCategory('operasional')
+      setAssignedToId('')
+      setError('')
+      void loadNotes()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Sticky note gagal dibuat')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const updateNote = async (note: InternalNote, updates: Partial<Pick<InternalNote, 'status' | 'priority' | 'category'>>) => {
+    try {
+      const payload = await api<{ data: InternalNote }>(`/admin/internal-notes/${note.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      })
+      setNotes((rows) => rows.map((item) => item.id === note.id ? payload.data : item))
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Update sticky note gagal')
+    }
+  }
+
+  const sendReply = async () => {
+    if (!activeNote || !reply.trim()) return
+    try {
+      const payload = await api<{ data: InternalNoteReply }>(`/admin/internal-notes/${activeNote.id}/replies`, {
+        method: 'POST',
+        body: JSON.stringify({ body: reply.trim() }),
+      })
+      setNotes((rows) => rows.map((note) => note.id === activeNote.id ? { ...note, latest_reply: payload.data, replies_count: note.replies_count + 1, last_activity_at: payload.data.created_at } : note))
+      setReply('')
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Balasan note gagal dikirim')
+    }
+  }
+
+  return (
+    <section className="sticky-notes-shell">
+      <aside className="panel sticky-note-compose">
+        <PanelHeader title="Sticky Notes" action={`${notes.length} note`} />
+        <div className="sticky-note-summary">
+          <span><b>{summary.open}</b> Open</span>
+          <span><b>{summary.in_progress}</b> Progress</span>
+          <span><b>{summary.urgent}</b> Urgent</span>
+          <span><b>{summary.assigned_to_me}</b> Untuk saya</span>
+        </div>
+        <form onSubmit={createNote}>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul singkat, contoh: Follow up QRIS" />
+          <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Tulis masukan, bug, todo, atau hal yang perlu ditindaklanjuti..." />
+          <div className="sticky-form-grid">
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option value="operasional">Operasional</option>
+              <option value="bug">Bug</option>
+              <option value="ide">Ide</option>
+              <option value="follow_up">Follow up</option>
+              <option value="customer">Customer</option>
+              <option value="driver">Driver</option>
+            </select>
+            <select value={priority} onChange={(event) => setPriority(event.target.value as InternalNotePriority)}>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+            <select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}>
+              <option value="">Assign nanti</option>
+              {staffUsers.map((user) => <option key={user.id} value={user.id}>{user.name} - {roleLabels[user.role] ?? user.role}</option>)}
+            </select>
+            <select value={branchId} onChange={(event) => setBranchId(event.target.value)}>
+              <option value="">Global</option>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}
+            </select>
+          </div>
+          <button className="primary-button" type="submit" disabled={loading || !title.trim() || !body.trim()}>{loading ? 'Menyimpan...' : '+ Tambah Note'}</button>
+        </form>
+        {error && <p className="error-text">{error}</p>}
+      </aside>
+
+      <main className="sticky-board">
+        <div className="panel sticky-toolbar">
+          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari note, user, area..." /></div>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as InternalNoteStatus | 'all')}>
+            <option value="all">Semua status</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In progress</option>
+            <option value="done">Done</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+        <div className="sticky-columns">
+          {boardStatuses.map((status) => (
+            <section className="panel sticky-column" key={status}>
+              <PanelHeader title={internalNoteStatusLabel(status)} action={`${filteredNotes.filter((note) => note.status === status).length}`} />
+              <div className="sticky-card-list">
+                {filteredNotes.filter((note) => note.status === status).map((note) => (
+                  <button key={note.id} className={activeNote?.id === note.id ? `sticky-card active ${note.priority}` : `sticky-card ${note.priority}`} onClick={() => setActiveId(note.id)}>
+                    <span className={`note-priority ${note.priority}`}>{internalNotePriorityLabel(note.priority)}</span>
+                    <strong>{note.title}</strong>
+                    <p>{note.body}</p>
+                    <footer>
+                      <small>{note.author?.name ?? 'System'}</small>
+                      <small>{note.branch ? `${note.branch.name}${note.branch.area ? ` - ${note.branch.area}` : ''}` : 'Global'}</small>
+                    </footer>
+                    {note.latest_reply && <em>{note.latest_reply.author?.name ?? 'Tim'}: {note.latest_reply.body}</em>}
+                  </button>
+                ))}
+                {filteredNotes.filter((note) => note.status === status).length === 0 && <EmptyPanel title="Kosong" copy="Tidak ada note di kolom ini." />}
+              </div>
+            </section>
+          ))}
+        </div>
+      </main>
+
+      <aside className="panel sticky-detail">
+        {!activeNote && <EmptyPanel title="Pilih note" copy="Detail, reply, dan aksi status tampil di sini." />}
+        {activeNote && (
+          <>
+            <div className="sticky-detail-head">
+              <span className={`note-priority ${activeNote.priority}`}>{internalNotePriorityLabel(activeNote.priority)}</span>
+              <h2>{activeNote.title}</h2>
+              <p>{activeNote.author?.name ?? 'System'} · {formatShortDateTime(activeNote.created_at)}</p>
+            </div>
+            <p className="sticky-detail-body">{activeNote.body}</p>
+            <div className="sticky-meta-grid">
+              <span><small>Status</small><b>{internalNoteStatusLabel(activeNote.status)}</b></span>
+              <span><small>Assign</small><b>{activeNote.assigned_to?.name ?? '-'}</b></span>
+              <span><small>Area</small><b>{activeNote.branch ? `${activeNote.branch.name}${activeNote.branch.area ? ` - ${activeNote.branch.area}` : ''}` : 'Global'}</b></span>
+              <span><small>Reply</small><b>{activeNote.replies_count}</b></span>
+            </div>
+            <div className="sticky-actions">
+              <button className="mini-button" onClick={() => void updateNote(activeNote, { status: 'open' })}>Open</button>
+              <button className="mini-button approve" onClick={() => void updateNote(activeNote, { status: 'in_progress' })}>Progress</button>
+              <button className="mini-button reject" onClick={() => void updateNote(activeNote, { status: 'done' })}>Done</button>
+            </div>
+            {activeNote.latest_reply && (
+              <div className="sticky-latest-reply">
+                <small>Balasan terakhir</small>
+                <p>{activeNote.latest_reply.body}</p>
+                <span>{activeNote.latest_reply.author?.name ?? 'Tim'} · {formatShortDateTime(activeNote.latest_reply.created_at)}</span>
+              </div>
+            )}
+            <form className="sticky-reply-form" onSubmit={(event) => { event.preventDefault(); void sendReply() }}>
+              <textarea value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Balas note atau tambahkan update progress..." />
+              <button className="primary-button" type="submit" disabled={!reply.trim()}>Kirim Reply</button>
+            </form>
+          </>
+        )}
+      </aside>
+    </section>
+  )
+}
+
 function renderOrderCodeLinks(text: string, onOpenOrder: (code: string) => void) {
   const pattern = /\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b/g
   const parts: ReactNode[] = []
@@ -2806,17 +3063,37 @@ function makeApi(token: string, onUnauthorized?: () => void): ApiClient {
 
 let adminEcho: Echo<'reverb'> | null = null
 
+function isLocalRealtimeHost(host?: string) {
+  return !host || ['localhost', '127.0.0.1', '::1'].includes(host)
+}
+
+function resolveRealtimeConfig() {
+  const configuredHost = import.meta.env.VITE_REVERB_HOST
+  const browserHost = window.location.hostname
+  const isPublicHost = !isLocalRealtimeHost(browserHost)
+  const host = isPublicHost && isLocalRealtimeHost(configuredHost) ? browserHost : (configuredHost || browserHost)
+  const scheme = isPublicHost && isLocalRealtimeHost(configuredHost)
+    ? window.location.protocol.replace(':', '')
+    : (import.meta.env.VITE_REVERB_SCHEME ?? window.location.protocol.replace(':', '') ?? 'http')
+  const port = isPublicHost && isLocalRealtimeHost(configuredHost) && scheme === 'https'
+    ? 443
+    : Number(import.meta.env.VITE_REVERB_PORT ?? (scheme === 'https' ? 443 : 8080))
+
+  return { host, scheme, port }
+}
+
 function makeEcho(token: string) {
   if (adminEcho) return adminEcho
 
   window.Pusher = Pusher
+  const realtime = resolveRealtimeConfig()
   adminEcho = new Echo({
     broadcaster: 'reverb',
     key: import.meta.env.VITE_REVERB_APP_KEY ?? 'local',
-    wsHost: import.meta.env.VITE_REVERB_HOST ?? window.location.hostname,
-    wsPort: Number(import.meta.env.VITE_REVERB_PORT ?? 8080),
-    wssPort: Number(import.meta.env.VITE_REVERB_PORT ?? 8080),
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'http') === 'https',
+    wsHost: realtime.host,
+    wsPort: realtime.port,
+    wssPort: realtime.port,
+    forceTLS: realtime.scheme === 'https',
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${APP_BASE}/broadcasting/auth`,
     auth: {
@@ -2878,7 +3155,15 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'manual-order': 'Manual Order' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order' }[view]
+}
+
+function internalNoteStatusLabel(status: InternalNoteStatus) {
+  return status === 'open' ? 'Open' : status === 'in_progress' ? 'In progress' : status === 'done' ? 'Done' : 'Archived'
+}
+
+function internalNotePriorityLabel(priority: InternalNotePriority) {
+  return priority === 'urgent' ? 'Urgent' : priority === 'high' ? 'High' : priority === 'low' ? 'Low' : 'Normal'
 }
 
 function senderLabel(sender: string) {
@@ -3021,6 +3306,7 @@ function Icon({ name }: { name: string }) {
     chart: 'M4 19h16v2H2V3h2v16Zm3-2V9h3v8H7Zm5 0V5h3v12h-3Zm5 0v-6h3v6h-3Z',
     chat: 'M4 4h16v11H7l-5 5V4h2Zm3 4v2h10V8H7Zm0 4v2h7v-2H7Z',
     receipt: 'M6 2h12v20l-3-2-3 2-3-2-3 2V2Zm3 5v2h6V7H9Zm0 4v2h6v-2H9Zm0 4v2h4v-2H9Z',
+    note: 'M5 3h11l3 3v15H5V3Zm10 2v4h4l-4-4ZM8 10v2h8v-2H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z',
     settings: 'M19.4 13.5a7.8 7.8 0 0 0 .1-1.5 7.8 7.8 0 0 0-.1-1.5l2-1.5-2-3.5-2.4 1a7.2 7.2 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A7.2 7.2 0 0 0 7 6L4.6 5 2.6 8.5l2 1.5a7.8 7.8 0 0 0-.1 1.5c0 .5 0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a7.2 7.2 0 0 0 2.6 1.5L10 22h4l.4-2.5A7.2 7.2 0 0 0 17 18l2.4 1 2-3.5-2-1.5ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z',
     moon: 'M21 14.8A8.5 8.5 0 0 1 9.2 3a7 7 0 1 0 11.8 11.8Z',
     sun: 'M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0-5h2v3h-2V2Zm0 17h2v3h-2v-3ZM2 12h3v2H2v-2Zm17 0h3v2h-3v-2ZM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1Zm12.1 12.1 1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1Zm2.1-13.5 1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1ZM6.3 16.3l1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1Z',

@@ -1232,6 +1232,7 @@ class AdminController extends Controller
             'can_monitor_live_order' => $user->hasPermission('monitor_live_order'),
             'can_monitor_live_chat' => $user->hasPermission('monitor_live_chat'),
             'can_use_internal_chat' => $user->role instanceof UserRole && $user->role->isStaff(),
+            'can_use_internal_notes' => $user->role instanceof UserRole && $user->role->isStaff(),
             'can_approve_cancel_order' => $user->hasPermission('approve_cancel_order'),
             'can_reject_cancel_order' => $user->hasPermission('reject_cancel_order'),
         ];

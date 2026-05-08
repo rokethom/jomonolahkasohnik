@@ -51,6 +51,7 @@ class MessageSent implements ShouldBroadcastNow
                 'chat_id' => $this->message->chat_conversation_id,
                 'sender_id' => $this->message->sender_id,
                 'sender_type' => $this->message->sender_type,
+                'sender_name' => $this->message->sender?->name,
                 'message' => $this->message->message,
                 'image_url' => $this->message->image_url,
                 'audio_url' => $this->message->audio_url,

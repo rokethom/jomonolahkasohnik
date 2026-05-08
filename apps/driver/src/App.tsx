@@ -234,7 +234,13 @@ function resolveApiBase() {
   const isPublicHost = !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
   const pointsToLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/api\/?$/i.test(configured)
 
-  return isPublicHost && pointsToLocalhost ? 'https://api.situapps.tech/api' : configured
+  if (isPublicHost && pointsToLocalhost) {
+    return window.location.hostname.endsWith('aplikasijoker.my.id')
+      ? 'https://aplikasijoker.my.id/api'
+      : `${window.location.origin}/api`
+  }
+
+  return configured
 }
 
 const API_BASE = resolveApiBase()
@@ -1742,6 +1748,25 @@ async function resizeImageFile(file: File, options: ResizeImageOptions): Promise
 let driverEcho: Echo<'reverb'> | null = null
 let driverEchoToken = ''
 
+function isLocalRealtimeHost(host?: string) {
+  return !host || ['localhost', '127.0.0.1', '::1'].includes(host)
+}
+
+function resolveRealtimeConfig() {
+  const configuredHost = import.meta.env.VITE_REVERB_HOST
+  const browserHost = window.location.hostname
+  const isPublicHost = !isLocalRealtimeHost(browserHost)
+  const host = isPublicHost && isLocalRealtimeHost(configuredHost) ? browserHost : (configuredHost || browserHost)
+  const scheme = isPublicHost && isLocalRealtimeHost(configuredHost)
+    ? window.location.protocol.replace(':', '')
+    : (import.meta.env.VITE_REVERB_SCHEME ?? window.location.protocol.replace(':', '') ?? 'http')
+  const port = isPublicHost && isLocalRealtimeHost(configuredHost) && scheme === 'https'
+    ? 443
+    : Number(import.meta.env.VITE_REVERB_PORT ?? (scheme === 'https' ? 443 : 8080))
+
+  return { host, scheme, port }
+}
+
 function makeEcho(token: string) {
   if (driverEcho && driverEchoToken === token) return driverEcho
 
@@ -1752,13 +1777,14 @@ function makeEcho(token: string) {
 
   window.Pusher = Pusher
   driverEchoToken = token
+  const realtime = resolveRealtimeConfig()
   driverEcho = new Echo({
     broadcaster: 'reverb',
     key: import.meta.env.VITE_REVERB_APP_KEY ?? 'local',
-    wsHost: import.meta.env.VITE_REVERB_HOST ?? window.location.hostname,
-    wsPort: Number(import.meta.env.VITE_REVERB_PORT ?? 8080),
-    wssPort: Number(import.meta.env.VITE_REVERB_PORT ?? 8080),
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'http') === 'https',
+    wsHost: realtime.host,
+    wsPort: realtime.port,
+    wssPort: realtime.port,
+    forceTLS: realtime.scheme === 'https',
     enabledTransports: ['ws', 'wss'],
     authEndpoint: `${APP_BASE}/broadcasting/auth`,
     auth: {

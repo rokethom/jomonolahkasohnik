@@ -2987,10 +2987,15 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
     <div className="profile-page">
       <section className="wa-profile-hero">
         <button className="profile-photo-button" type="button" onClick={() => fileInputRef.current?.click()} aria-label="Ganti foto profile">
-          {photoUrl && !imageFailed ? <img src={photoUrl} alt="Foto profile" onError={() => setImageFailed(true)} /> : <UserRound size={58} />}
+          {photoUrl && !imageFailed ? <img src={photoUrl} alt="Foto profile" loading="eager" decoding="async" onError={() => setImageFailed(true)} /> : <UserRound size={58} />}
           <span><Camera size={18} /></span>
         </button>
         <button type="button" className="wa-edit-link" onClick={() => fileInputRef.current?.click()}>Edit</button>
+        <div className="wa-profile-summary">
+          <strong>{name.trim() || user?.name || 'Customer JojoApp'}</strong>
+          <span>{phone.trim() || user?.phone || 'Nomor belum diisi'}</span>
+        </div>
+        {profilePhoto && <small className="wa-photo-selected">{profilePhoto.name}</small>}
         <input ref={fileInputRef} className="sr-only-file" type="file" accept="image/*" onChange={(event) => choosePhoto(event.target.files?.[0] ?? null)} />
       </section>
       {setupMode && <div className="profile-setup-alert">Nama, phone, dan alamat wajib diisi sebelum membuat order.</div>}
