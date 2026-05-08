@@ -1873,6 +1873,7 @@ td span {
 .status.info { color: #0369a1; background: #e0f2fe; }
 .status.danger { color: #b91c1c; background: #fee2e2; }
 .status.muted { color: #475569; background: #e2e8f0; }
+.driver-table td .status + .status { margin-left: 6px; }
 
 .table-toolbar {
   justify-content: space-between;
@@ -2889,6 +2890,19 @@ label {
 .toggle-row input {
   width: 18px;
   min-height: 18px;
+}
+
+.ladies-status,
+.driver-ladies-toggle {
+  border-color: rgba(236, 72, 153, 0.34);
+  background: rgba(236, 72, 153, 0.14);
+  color: #be185d;
+}
+
+.admin-shell.dark .ladies-status,
+.admin-shell.dark .driver-ladies-toggle {
+  color: #fbcfe8;
+  background: rgba(236, 72, 153, 0.18);
 }
 
 .span-2 {

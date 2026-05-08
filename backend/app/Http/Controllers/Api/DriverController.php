@@ -38,7 +38,12 @@ class DriverController extends Controller
                 $query->where('driver_id', $driver->id)
                     ->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->where('branch_id', $driver->user?->branch_id);
+                            ->where('branch_id', $driver->user?->branch_id)
+                            ->where(function ($query) use ($driver): void {
+                                $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
+                                    ->orWhereNull('pricing_breakdown->driver_preference')
+                                    ->when((bool) $driver->is_ladies_driver, fn ($query) => $query->orWhere('pricing_breakdown->driver_preference', 'ladies'));
+                            });
                     });
             })
             ->latest()
@@ -291,6 +296,7 @@ class DriverController extends Controller
             'email' => $user->email,
             'profile_photo_url' => $user->profile_photo_path ? asset('storage/'.$user->profile_photo_path) : null,
             'role' => 'Driver',
+            'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
             'status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
             'suspended_until' => $user->driver?->suspended_until?->toIso8601String() ?? $user->suspended_until?->toIso8601String(),
             'suspension_reason' => $user->suspension_reason,
@@ -327,6 +333,7 @@ class DriverController extends Controller
             'payment_label' => $order->payment_label,
             'payment_meta' => $order->payment_meta,
             'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
+            'driver_preference' => data_get($order->pricing_breakdown, 'driver_preference', 'general'),
             'detail' => $order->raw_text,
             'accepted_at' => in_array($order->status->value, ['DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING'], true)
                 ? $order->updated_at?->toIso8601String()

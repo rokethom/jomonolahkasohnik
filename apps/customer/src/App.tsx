@@ -260,6 +260,12 @@ function normalizeWhatsappNumber(value?: string | null) {
   return digits
 }
 
+function isOjekService(service?: string | null) {
+  const value = String(service ?? '').toLowerCase()
+
+  return value === 'ojek' || value === 'oj' || value.includes('ojek')
+}
+
 function renderServiceWhatsappMessage(
   service: Pick<DynamicService, 'name' | 'code' | 'service_type' | 'whatsapp_message_template'>,
   user: ReturnType<typeof useCustomerStore.getState>['user'],
@@ -321,12 +327,15 @@ function App() {
 
   const submitOrderPayload = async (payload: OrderPayload) => {
     const preferredVehicle = payload.preferred_vehicle_type ?? 'motor'
+    const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const order = await createOrder({
       ...payload,
       preferred_vehicle_type: preferredVehicle,
+      driver_preference: driverPreference,
       service_payload: {
         ...(payload.service_payload ?? {}),
         preferred_vehicle_type: preferredVehicle,
+        driver_preference: driverPreference,
       },
     })
     const driverResult = await findDriver(order.id)
@@ -1602,6 +1611,8 @@ function ChatOrderActions({
     : configuredPaymentMethods
   const selectedPayment = pendingOrder?.payment_method ?? paymentMethods[0]?.key ?? 'cash'
   const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? 'motor'
+  const isOjekOrder = isOjekService(pendingOrder?.service_type)
+  const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
   const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
     ? publicSettings.payment.transfer_accounts
     : publicSettings?.payment?.transfer_account
@@ -1616,6 +1627,17 @@ function ChatOrderActions({
       service_payload: {
         ...(pendingOrder.service_payload ?? {}),
         preferred_vehicle_type: vehicle,
+      },
+    })
+  }
+  const updateDriverPreference = (preference: 'general' | 'ladies') => {
+    if (!pendingOrder) return
+    onPendingOrderChange({
+      ...pendingOrder,
+      driver_preference: preference,
+      service_payload: {
+        ...(pendingOrder.service_payload ?? {}),
+        driver_preference: preference,
       },
     })
   }
@@ -1656,6 +1678,16 @@ function ChatOrderActions({
           <strong>Summary final</strong>
           <p>{preview.reply}</p>
           <div className="payment-choice">
+            {isOjekOrder && (
+              <div className="ladies-choice">
+                <span>Pilihan driver</span>
+                <div>
+                  <button type="button" className={selectedDriverPreference !== 'ladies' ? 'active' : ''} onClick={() => updateDriverPreference('general')}>Umum</button>
+                  <button type="button" className={selectedDriverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => updateDriverPreference('ladies')}>Ladies</button>
+                </div>
+                <small>{selectedDriverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
+              </div>
+            )}
             <label>
               <span>Pilih kendaraan</span>
               <select value={selectedVehicle} onChange={(event) => updateVehicle(event.target.value as 'motor' | 'mobil')}>
@@ -1717,6 +1749,12 @@ function ChatOrderActions({
             <span>Kendaraan</span>
             <strong>{selectedVehicle === 'mobil' ? 'Mobil' : 'Motor'}</strong>
           </div>
+          {isOjekOrder && (
+            <div className="payment-order-note ladies-note">
+              <span>Driver</span>
+              <strong>{selectedDriverPreference === 'ladies' ? 'Ladies' : 'Umum'}</strong>
+            </div>
+          )}
           {submitBlocked && <p>Anda melebihi batas order aktif. Silakan selesaikan salah satu pesanan terlebih dahulu.</p>}
           {points.filter(Boolean).length > 0 && <p>{points.filter(Boolean).map((point, index) => `Titik ${index + 1}: ${point}`).join('\n')}</p>}
           <div>

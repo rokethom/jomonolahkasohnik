@@ -43,9 +43,14 @@ class CreateOrder
             $payload['destination_address'] = str($payload['destination_address'])->limit(250, '')->toString();
             $payment = $this->paymentPayload((string) ($payload['payment_method'] ?? 'cash'));
             $preferredVehicle = $this->preferredVehicleType($payload);
+            $driverPreference = $this->driverPreference($payload);
             if ($preferredVehicle) {
                 $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nKendaraan diminta: ".($preferredVehicle === 'mobil' ? 'Mobil' : 'Motor'));
                 $pricing['preferred_vehicle_type'] = $preferredVehicle;
+            }
+            if ($driverPreference === 'ladies') {
+                $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nPreferensi driver: Ladies");
+                $pricing['driver_preference'] = 'ladies';
             }
 
             $order = Order::create([
@@ -124,6 +129,18 @@ class CreateOrder
         $vehicle = strtolower((string) ($payload['preferred_vehicle_type'] ?? data_get($payload, 'service_payload.preferred_vehicle_type', '')));
 
         return in_array($vehicle, ['motor', 'mobil'], true) ? $vehicle : null;
+    }
+
+    private function driverPreference(array $payload): string
+    {
+        $preference = strtolower((string) ($payload['driver_preference'] ?? data_get($payload, 'service_payload.driver_preference', 'general')));
+        $service = strtolower((string) ($payload['service_type'] ?? ''));
+
+        if (! in_array($service, ['ojek', 'oj'], true)) {
+            return 'general';
+        }
+
+        return $preference === 'ladies' ? 'ladies' : 'general';
     }
 
     private function paymentPayload(string $method): array

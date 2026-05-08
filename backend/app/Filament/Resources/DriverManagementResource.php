@@ -92,6 +92,12 @@ class DriverManagementResource extends Resource
                     ->badge()
                     ->default('motor')
                     ->toggleable(),
+                Tables\Columns\IconColumn::make('driver.is_ladies_driver')
+                    ->label('Ladies')
+                    ->boolean()
+                    ->trueColor('danger')
+                    ->falseColor('gray')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('driver.allowed_service_types')
                     ->label('Layanan')
                     ->formatStateUsing(fn (?array $state): string => $state ? implode(', ', $state) : 'Semua layanan')
@@ -201,6 +207,13 @@ class DriverManagementResource extends Resource
                             default => $query,
                         };
                     }),
+                Tables\Filters\TernaryFilter::make('is_ladies_driver')
+                    ->label('Driver Ladies')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereHas('driver', fn (Builder $query): Builder => $query->where('is_ladies_driver', true)),
+                        false: fn (Builder $query): Builder => $query->whereHas('driver', fn (Builder $query): Builder => $query->where(fn (Builder $query): Builder => $query->where('is_ladies_driver', false)->orWhereNull('is_ladies_driver'))),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
             ])
             ->filtersLayout(FiltersLayout::AboveContent)
             ->filtersFormColumns(2)
@@ -439,6 +452,10 @@ class DriverManagementResource extends Resource
                             ->default(fn (User $record): string => $record->driver?->vehicle_type ?: 'motor')
                             ->required()
                             ->native(false),
+                        Forms\Components\Toggle::make('is_ladies_driver')
+                            ->label('Driver Ladies')
+                            ->helperText('Jika aktif, driver bisa menerima order Ojek Ladies sesuai area/cabang.')
+                            ->default(fn (User $record): bool => (bool) $record->driver?->is_ladies_driver),
                         Forms\Components\CheckboxList::make('allowed_service_types')
                             ->label('Layanan yang bisa diterima')
                             ->options(fn (): array => Service::query()
@@ -454,6 +471,7 @@ class DriverManagementResource extends Resource
                     ->action(function (User $record, array $data): void {
                         $record->driver?->update([
                             'vehicle_type' => $data['vehicle_type'],
+                            'is_ladies_driver' => (bool) ($data['is_ladies_driver'] ?? false),
                             'allowed_service_types' => array_values($data['allowed_service_types'] ?? []),
                         ]);
 

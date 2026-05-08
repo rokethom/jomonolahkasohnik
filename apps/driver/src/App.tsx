@@ -36,6 +36,7 @@ type Driver = {
   email?: string | null
   profile_photo_url?: string | null
   role: string
+  is_ladies_driver?: boolean
   status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
   suspended_until?: string | null
   suspension_reason?: string | null
@@ -77,6 +78,7 @@ type Order = {
   detail: string | null
   paymentMethod?: string | null
   paymentLabel?: string | null
+  driverPreference?: string | null
   acceptedAt?: string | null
   updatedAt?: string | null
   eligibility?: Eligibility
@@ -196,6 +198,7 @@ type ApiOrder = {
   detail: string | null
   payment_method?: string | null
   payment_label?: string | null
+  driver_preference?: string | null
   payment_meta?: Record<string, unknown> | null
   accepted_at?: string | null
   updated_at?: string | null
@@ -427,6 +430,8 @@ function App() {
     })
     channel.listen('.order.created', (event: { order?: ApiOrder }) => {
       if (!event.order?.id) return
+      const currentDriver = useDriverStore.getState().driver
+      if (event.order.driver_preference === 'ladies' && !currentDriver?.is_ladies_driver) return
       void load()
       toast(`Order baru ${event.order.code ?? event.order.order_code ?? ''} masuk`, 'success')
     })
@@ -629,6 +634,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onActio
 
 function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
   const visible = orders.filter((order) => order.driver && order.source !== 'driver_request').slice(0, 6)
+  const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
 
   return (
     <section className="branch-feed panel">
@@ -637,7 +643,7 @@ function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
           <span>Monitor area</span>
           <h2>Order diterima area</h2>
         </div>
-        <strong>{visible.length} terbaru</strong>
+        <strong>{visible.length} terbaru{ladiesCount > 0 ? ` - ${ladiesCount} Ladies` : ''}</strong>
       </div>
       {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
       {visible.map((order) => (
@@ -645,7 +651,10 @@ function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
           <div className="branch-accepted-icon">{driverInitial(order.driver)}</div>
           <div className="branch-accepted-main">
             <strong>{order.code}</strong>
-            <span>{order.driver} menerima order {order.service}</span>
+            <span>
+              {order.driver} menerima order {order.service}
+              {order.driverPreference === 'ladies' && <em className="ladies-chip">Ladies</em>}
+            </span>
             <small>{shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
           </div>
           <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
@@ -698,6 +707,7 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
         <span className="badge"><PackageCheck size={13} />{order.service}</span>
         <span>{order.distanceKm} km</span>
         <span>{statusLabel(order.status)}</span>
+        {order.driverPreference === 'ladies' && <span className="direction-badge ladies">LADIES</span>}
         {order.eligibility?.area_match === false && <span className="direction-badge mismatch">LUAR AREA</span>}
         {hasActiveOrders && <span className={directionMatch ? 'direction-badge match' : 'direction-badge mismatch'}>{directionMatch ? 'SEARAH' : 'TIDAK SEARAH'}</span>}
       </div>
@@ -749,6 +759,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <InfoTile label="Status" value={statusLabel(order.status)} />
         <InfoTile label="Multi Order" value={order.isMultiOrder ? 'Aktif' : 'Tidak'} />
         <InfoTile label="Pembayaran" value={order.paymentLabel ?? driverPaymentLabel(order.paymentMethod)} />
+        <InfoTile label="Driver" value={order.driverPreference === 'ladies' ? 'Ladies' : 'Umum'} />
       </section>
 
       <section className={directionMatch ? 'direction-panel match' : 'direction-panel mismatch'}>
@@ -1634,6 +1645,7 @@ function mapOrder(order: ApiOrder): Order {
     detail: order.detail,
     paymentMethod: order.payment_method ?? null,
     paymentLabel: order.payment_label ?? null,
+    driverPreference: order.driver_preference ?? null,
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     updatedAt: order.updated_at ?? null,
     eligibility: order.eligibility,
@@ -1651,6 +1663,7 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.total !== undefined || order.total_price !== undefined ? { total: order.total ?? order.total_price ?? 0 } : {}),
     ...(order.driver !== undefined ? { driver: order.driver } : {}),
     ...(order.source !== undefined ? { source: order.source } : {}),
+    ...(order.driver_preference !== undefined ? { driverPreference: order.driver_preference } : {}),
   }
 }
 

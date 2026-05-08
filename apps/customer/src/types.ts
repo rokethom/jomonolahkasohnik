@@ -111,6 +111,7 @@ export type Order = {
   payment_label?: string | null
   payment_meta?: Record<string, unknown> | null
   preferred_vehicle_type?: 'motor' | 'mobil' | string | null
+  driver_preference?: 'general' | 'ladies' | string | null
 }
 
 export type OrderFeedback = {

@@ -44,6 +44,10 @@ class FindDriver
 
             $driver = Driver::query()
                 ->where('is_available', true)
+                ->when(
+                    data_get($order->pricing_breakdown, 'driver_preference') === 'ladies',
+                    fn ($query) => $query->where('is_ladies_driver', true)
+                )
                 ->orderByRaw('current_lat IS NULL, current_lng IS NULL')
                 ->first();
 

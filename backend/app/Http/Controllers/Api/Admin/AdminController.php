@@ -109,6 +109,7 @@ class AdminController extends Controller
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
             'vehicle_type' => ['nullable', 'string', 'in:motor,mobil'],
+            'is_ladies_driver' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['nullable', 'array'],
             'allowed_service_types.*' => ['string', 'max:80'],
         ]);
@@ -119,6 +120,7 @@ class AdminController extends Controller
         $driverPayload = [
             'bpjs_jht_enabled' => $payload['driver_bpjs_jht_enabled'] ?? true,
             'vehicle_type' => $payload['vehicle_type'] ?? 'motor',
+            'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
         ];
         if (array_key_exists('allowed_service_types', $payload)) {
             $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
@@ -126,7 +128,7 @@ class AdminController extends Controller
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
 
         $password = $this->generatePassword();
         $user = User::create([
@@ -169,6 +171,7 @@ class AdminController extends Controller
             'suspended_until' => ['nullable', 'date'],
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
+            'is_ladies_driver' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['nullable', 'array'],
             'allowed_service_types.*' => ['string', 'max:80'],
         ]);
@@ -185,10 +188,13 @@ class AdminController extends Controller
         if (array_key_exists('driver_bpjs_jht_enabled', $payload)) {
             $driverPayload['bpjs_jht_enabled'] = $payload['driver_bpjs_jht_enabled'];
         }
+        if (array_key_exists('is_ladies_driver', $payload)) {
+            $driverPayload['is_ladies_driver'] = $payload['is_ladies_driver'];
+        }
         if (array_key_exists('allowed_service_types', $payload)) {
             $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
 
         $user->update($payload);
         $nextRole = $payload['role'] ?? ($user->role instanceof UserRole ? $user->role->value : (string) $user->role);
@@ -517,12 +523,14 @@ class AdminController extends Controller
 
         $payload = $request->validate([
             'vehicle_type' => ['required', 'string', 'in:motor,mobil'],
+            'is_ladies_driver' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['array'],
             'allowed_service_types.*' => ['string', 'max:50'],
         ]);
 
         $driver->update([
             'vehicle_type' => $payload['vehicle_type'],
+            'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
             'allowed_service_types' => array_values(array_unique(array_map(
                 fn ($service): string => $this->normalizeServiceType((string) $service),
                 $payload['allowed_service_types'] ?? [],
@@ -532,6 +540,7 @@ class AdminController extends Controller
         $this->recordAudit($request->user(), 'updated_driver_config', $driver->user, [
             'driver_id' => $driver->id,
             'vehicle_type' => $driver->vehicle_type,
+            'is_ladies_driver' => $driver->is_ladies_driver,
             'allowed_service_types' => $driver->allowed_service_types,
         ]);
 
@@ -1283,6 +1292,7 @@ class AdminController extends Controller
             'payment_label' => $order->payment_label,
             'payment_meta' => $order->payment_meta,
             'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
+            'driver_preference' => data_get($order->pricing_breakdown, 'driver_preference', 'general'),
             'notes' => $order->notes,
             'raw_text' => $order->raw_text,
             'pricing_breakdown' => $order->pricing_breakdown,
@@ -1329,6 +1339,7 @@ class AdminController extends Controller
             ->where('status', 'active')
             ->where(fn (Builder $query) => $query->where('is_suspend', false)->orWhereNull('is_suspend'))
             ->where('is_available', true)
+            ->when(data_get($order->pricing_breakdown, 'driver_preference') === 'ladies', fn (Builder $query) => $query->where('is_ladies_driver', true))
             ->whereHas('user', fn (Builder $query) => $query
                 ->where('branch_id', $branchId)
                 ->where('is_active', true)
@@ -1343,6 +1354,7 @@ class AdminController extends Controller
                 'name' => $driver->user?->name ?? 'Driver #'.$driver->id,
                 'phone' => $driver->user?->phone,
                 'vehicle_type' => $driver->vehicle_type ?? 'motor',
+                'is_ladies_driver' => (bool) $driver->is_ladies_driver,
                 'branch' => $driver->user?->branch?->name,
                 'branch_area' => $driver->user?->branch?->area,
                 'rating_average' => round((float) ($driver->rating_average ?? 0), 2),
@@ -1558,6 +1570,7 @@ class AdminController extends Controller
                 'suspension_reason' => $user->suspension_reason,
                 'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,
                 'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
+                'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
                 'allowed_service_types' => $user->driver?->allowed_service_types ?? [],
                 'performance' => [
                     'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),

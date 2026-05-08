@@ -23,6 +23,7 @@ class DriverResource extends JsonResource
             'branch' => $this->user?->branch?->name,
             'vehicle_type' => $this->vehicle_type,
             'vehicle_number' => $this->vehicle_number,
+            'is_ladies_driver' => (bool) $this->is_ladies_driver,
             'status' => $this->status,
             'is_suspend' => (bool) ($this->is_suspend ?? false),
             'auth_suspended_at' => $this->auth_suspended_at?->toIso8601String(),

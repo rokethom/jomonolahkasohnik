@@ -71,6 +71,7 @@ class AcceptOrder
                     'tidak searah' => 'Order tidak searah dengan perjalanan Anda',
                     'di luar area driver' => 'Order berada di luar area/cabang driver Anda.',
                     'layanan tidak aktif untuk driver' => 'Layanan order ini belum aktif untuk akun driver Anda.',
+                    'khusus driver ladies' => 'Order ini khusus untuk driver Ladies.',
                     'multi order nonaktif' => 'Multi order sedang nonaktif.',
                     default => 'Driver sudah mencapai batas order aktif.',
                 });

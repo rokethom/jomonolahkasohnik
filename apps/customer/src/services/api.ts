@@ -63,6 +63,7 @@ export type OrderPayload = {
   points?: Array<{ label?: string; address: string }>
   payment_method?: 'cash' | 'transfer' | string
   preferred_vehicle_type?: 'motor' | 'mobil'
+  driver_preference?: 'general' | 'ladies'
 }
 
 export type GeocodePayload = {

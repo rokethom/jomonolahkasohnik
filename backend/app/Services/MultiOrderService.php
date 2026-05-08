@@ -23,6 +23,18 @@ class MultiOrderService
         $maxOrders = max(1, min(3, $this->settings->int('max_multi_order', 3)));
         $areaMatch = $this->isSameArea($driver, $newOrder);
         $serviceMatch = $this->canServe($driver, $newOrder);
+        $ladiesMatch = $this->canServeLadiesOrder($driver, $newOrder);
+
+        if (! $ladiesMatch) {
+            return [
+                'can_accept' => false,
+                'reason' => 'khusus driver ladies',
+                'direction_match' => false,
+                'area_match' => $areaMatch,
+                'active_order_count' => $activeCount,
+                'max_order' => $maxOrders,
+            ];
+        }
 
         if (! $serviceMatch) {
             return [
@@ -181,6 +193,12 @@ class MultiOrderService
         $service = $this->normalizeService((string) $order->service_type);
 
         return in_array($service, array_map(fn ($item): string => $this->normalizeService((string) $item), $allowed), true);
+    }
+
+    private function canServeLadiesOrder(Driver $driver, Order $order): bool
+    {
+        return data_get($order->pricing_breakdown, 'driver_preference') !== 'ladies'
+            || (bool) $driver->is_ladies_driver;
     }
 
     private function normalizeService(string $service): string
