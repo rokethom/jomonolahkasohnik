@@ -70,6 +70,7 @@ class AcceptOrder
                 throw new RuntimeException(match ($eligibility['reason'] ?? null) {
                     'tidak searah' => 'Order tidak searah dengan perjalanan Anda',
                     'di luar area driver' => 'Order berada di luar area/cabang driver Anda.',
+                    'kendaraan tidak sesuai' => 'Kendaraan driver tidak sesuai dengan kebutuhan order.',
                     'layanan tidak aktif untuk driver' => 'Layanan order ini belum aktif untuk akun driver Anda.',
                     'khusus driver ladies' => 'Order ini khusus untuk driver Ladies.',
                     'multi order nonaktif' => 'Multi order sedang nonaktif.',

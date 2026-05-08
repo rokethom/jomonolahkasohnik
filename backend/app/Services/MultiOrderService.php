@@ -23,7 +23,19 @@ class MultiOrderService
         $maxOrders = max(1, min(3, $this->settings->int('max_multi_order', 3)));
         $areaMatch = $this->isSameArea($driver, $newOrder);
         $serviceMatch = $this->canServe($driver, $newOrder);
+        $vehicleMatch = $this->canServeVehicle($driver, $newOrder);
         $ladiesMatch = $this->canServeLadiesOrder($driver, $newOrder);
+
+        if (! $vehicleMatch) {
+            return [
+                'can_accept' => false,
+                'reason' => 'kendaraan tidak sesuai',
+                'direction_match' => false,
+                'area_match' => $areaMatch,
+                'active_order_count' => $activeCount,
+                'max_order' => $maxOrders,
+            ];
+        }
 
         if (! $ladiesMatch) {
             return [
@@ -199,6 +211,27 @@ class MultiOrderService
     {
         return data_get($order->pricing_breakdown, 'driver_preference') !== 'ladies'
             || (bool) $driver->is_ladies_driver;
+    }
+
+    private function canServeVehicle(Driver $driver, Order $order): bool
+    {
+        $preferredVehicle = data_get($order->pricing_breakdown, 'preferred_vehicle_type');
+        if (! in_array($preferredVehicle, ['motor', 'mobil'], true)) {
+            return true;
+        }
+
+        if (($driver->vehicle_type ?? 'motor') !== $preferredVehicle) {
+            return false;
+        }
+
+        if ($preferredVehicle !== 'mobil') {
+            return true;
+        }
+
+        $requiredRows = (int) data_get($order->pricing_breakdown, 'required_vehicle_seat_rows', 2);
+        $driverRows = (int) ($driver->vehicle_seat_rows ?: 2);
+
+        return $driverRows >= max(2, min(3, $requiredRows));
     }
 
     private function normalizeService(string $service): string

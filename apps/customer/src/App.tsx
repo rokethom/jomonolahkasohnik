@@ -12,6 +12,8 @@ import {
   Headphones,
   Home,
   Image as ImageIcon,
+  Info,
+  Link as LinkIcon,
   Mic,
   MessageCircle,
   MoreVertical,
@@ -327,14 +329,17 @@ function App() {
 
   const submitOrderPayload = async (payload: OrderPayload) => {
     const preferredVehicle = payload.preferred_vehicle_type ?? 'motor'
+    const vehicleSeatRows = preferredVehicle === 'mobil' ? (payload.vehicle_seat_rows === 3 ? 3 : 2) : undefined
     const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const order = await createOrder({
       ...payload,
       preferred_vehicle_type: preferredVehicle,
+      ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
       driver_preference: driverPreference,
       service_payload: {
         ...(payload.service_payload ?? {}),
         preferred_vehicle_type: preferredVehicle,
+        ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
         driver_preference: driverPreference,
       },
     })
@@ -1611,6 +1616,7 @@ function ChatOrderActions({
     : configuredPaymentMethods
   const selectedPayment = pendingOrder?.payment_method ?? paymentMethods[0]?.key ?? 'cash'
   const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? 'motor'
+  const selectedSeatRows = pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2
   const isOjekOrder = isOjekService(pendingOrder?.service_type)
   const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
   const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
@@ -1624,9 +1630,24 @@ function ChatOrderActions({
     onPendingOrderChange({
       ...pendingOrder,
       preferred_vehicle_type: vehicle,
+      vehicle_seat_rows: vehicle === 'mobil' ? (pendingOrder.vehicle_seat_rows === 3 ? 3 : 2) : undefined,
       service_payload: {
         ...(pendingOrder.service_payload ?? {}),
         preferred_vehicle_type: vehicle,
+        vehicle_seat_rows: vehicle === 'mobil' ? (pendingOrder.vehicle_seat_rows === 3 ? 3 : 2) : undefined,
+      },
+    })
+  }
+  const updateSeatRows = (rows: 2 | 3) => {
+    if (!pendingOrder) return
+    onPendingOrderChange({
+      ...pendingOrder,
+      preferred_vehicle_type: 'mobil',
+      vehicle_seat_rows: rows,
+      service_payload: {
+        ...(pendingOrder.service_payload ?? {}),
+        preferred_vehicle_type: 'mobil',
+        vehicle_seat_rows: rows,
       },
     })
   }
@@ -1696,6 +1717,21 @@ function ChatOrderActions({
               </select>
             </label>
             <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
+            {selectedVehicle === 'mobil' && (
+              <div className="vehicle-seat-choice">
+                <span>Tempat duduk</span>
+                <div>
+                  <button type="button" className={selectedSeatRows === 2 ? 'active' : ''} onClick={() => updateSeatRows(2)}>
+                    <b>2 baris</b>
+                    <small>Citycar / umum</small>
+                  </button>
+                  <button type="button" className={selectedSeatRows === 3 ? 'active' : ''} onClick={() => updateSeatRows(3)}>
+                    <b>3 baris</b>
+                    <small>MPV / keluarga</small>
+                  </button>
+                </div>
+              </div>
+            )}
             <label>
               <span>Metode pembayaran</span>
               <select value={selectedPayment} onChange={(event) => pendingOrder && onPendingOrderChange({ ...pendingOrder, payment_method: event.target.value })}>
@@ -1747,7 +1783,7 @@ function ChatOrderActions({
           </div>
           <div className="payment-order-note vehicle-note">
             <span>Kendaraan</span>
-            <strong>{selectedVehicle === 'mobil' ? 'Mobil' : 'Motor'}</strong>
+            <strong>{selectedVehicle === 'mobil' ? `Mobil ${selectedSeatRows} baris` : 'Motor'}</strong>
           </div>
           {isOjekOrder && (
             <div className="payment-order-note ladies-note">
@@ -2640,38 +2676,65 @@ function HistoryRating({
 function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onDone?: () => void }) {
   const store = useCustomerStore()
   const user = store.user
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [name, setName] = useState(user?.name ?? '')
   const [phone, setPhone] = useState(user?.phone ?? '')
   const [address, setAddress] = useState(user?.address ?? '')
   const [profilePhoto, setProfilePhoto] = useState<File | null>(null)
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null)
+  const [photoVersion, setPhotoVersion] = useState(() => Date.now())
+  const [imageFailed, setImageFailed] = useState(false)
   const [saving, setSaving] = useState(false)
+  const photoUrl = useMemo(() => {
+    if (profilePhotoPreview) return profilePhotoPreview
+    if (!user?.profile_photo_url) return ''
+
+    const url = cmsAssetUrl(user.profile_photo_url)
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}v=${photoVersion}`
+  }, [photoVersion, profilePhotoPreview, user?.profile_photo_url])
 
   useEffect(() => {
     setName(user?.name ?? '')
     setPhone(user?.phone ?? '')
     setAddress(user?.address ?? '')
-  }, [user?.address, user?.name, user?.phone])
+    setImageFailed(false)
+  }, [user?.address, user?.name, user?.phone, user?.profile_photo_url])
+
+  useEffect(() => () => {
+    if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
+  }, [profilePhotoPreview])
+
+  const choosePhoto = (file: File | null) => {
+    if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
+    setImageFailed(false)
+    setProfilePhoto(file)
+    setProfilePhotoPreview(file ? URL.createObjectURL(file) : null)
+  }
 
   return (
-    <div className="simple-page">
-      <div className="profile-avatar">
-        {profilePhotoPreview || user?.profile_photo_url ? <img src={profilePhotoPreview ?? cmsAssetUrl(user?.profile_photo_url ?? '')} alt="Foto profile" /> : <UserRound size={34} />}
-      </div>
-      <h1>{user?.name ?? 'Customer Jojo'}</h1>
-      <p>{user?.email ?? 'Belum login'}</p>
-      <p>{user?.phone ?? 'Nomor HP belum diisi'}</p>
-      {setupMode && <p>Nama, Phone, dan Alamat wajib diisi sebelum membuat order.</p>}
+    <div className="profile-page">
+      <section className="wa-profile-hero">
+        <button className="profile-photo-button" type="button" onClick={() => fileInputRef.current?.click()} aria-label="Ganti foto profile">
+          {photoUrl && !imageFailed ? <img src={photoUrl} alt="Foto profile" onError={() => setImageFailed(true)} /> : <UserRound size={58} />}
+          <span><Camera size={18} /></span>
+        </button>
+        <button type="button" className="wa-edit-link" onClick={() => fileInputRef.current?.click()}>Edit</button>
+        <input ref={fileInputRef} className="sr-only-file" type="file" accept="image/*" onChange={(event) => choosePhoto(event.target.files?.[0] ?? null)} />
+      </section>
+      {setupMode && <div className="profile-setup-alert">Nama, phone, dan alamat wajib diisi sebelum membuat order.</div>}
       <form
-        className="profile-edit-form"
+        className="wa-profile-form"
         onSubmit={async (event) => {
           event.preventDefault()
           setSaving(true)
           try {
             const updated = await updateProfile({ name, phone, address, profile_photo: profilePhoto })
             store.setUserSession(updated, store.token)
-            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
+            setPhotoVersion(Date.now())
+            setImageFailed(false)
             setProfilePhoto(null)
+            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
             setProfilePhotoPreview(null)
             store.showToast('success', 'Profile tersimpan')
             window.history.replaceState({}, document.title, '/')
@@ -2683,28 +2746,21 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
           }
         }}
       >
-        <h2>Edit Profile</h2>
-        <label>
-          Foto Profile
-          <input type="file" accept="image/*" onChange={(event) => {
-            const file = event.target.files?.[0] ?? null
-            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
-            setProfilePhoto(file)
-            setProfilePhotoPreview(file ? URL.createObjectURL(file) : null)
-          }} />
-        </label>
-        <label>
-          Nama
-          <input value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label>
-          Nomor HP
-          <input value={phone} onChange={(event) => setPhone(event.target.value)} />
-        </label>
-        <label>
-          Alamat
-          <textarea value={address} onChange={(event) => setAddress(event.target.value)} />
-        </label>
+        <ProfileField icon={<UserRound size={25} />} label="Nama" hint="Nama ini terlihat oleh operator dan driver.">
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nama customer" />
+        </ProfileField>
+        <ProfileField icon={<Info size={25} />} label="Tentang" hint="Status singkat untuk akun JojoApp.">
+          <input value="Pengguna JojoApp" readOnly />
+        </ProfileField>
+        <ProfileField icon={<Phone size={25} />} label="Telepon" hint="Nomor aktif untuk konfirmasi order.">
+          <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+62..." />
+        </ProfileField>
+        <ProfileField icon={<MapPin size={25} />} label="Alamat" hint="Alamat profil, alamat order tetap bisa diisi manual.">
+          <textarea value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Alamat utama" />
+        </ProfileField>
+        <ProfileField icon={<LinkIcon size={25} />} label="Tautan" hint="Fitur tautan profil akan disiapkan bertahap.">
+          <input value="Tambah tautan" readOnly />
+        </ProfileField>
         <details className="profile-address-note">
           <summary>
             <ShieldCheck size={16} />
@@ -2712,9 +2768,22 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
           </summary>
           <p>Alamat ini hanya untuk display dan tujuan. Lokasi validasi tetap memakai GPS yang tersimpan.</p>
         </details>
-        <button disabled={saving || !name.trim() || !phone.trim() || !address.trim()}>{saving ? 'Menyimpan...' : 'Simpan Profile'}</button>
+        <button className="wa-save-button" disabled={saving || !name.trim() || !phone.trim() || !address.trim()}>{saving ? 'Menyimpan...' : 'Simpan Profile'}</button>
       </form>
     </div>
+  )
+}
+
+function ProfileField({ icon, label, hint, children }: { icon: ReactNode; label: string; hint: string; children: ReactNode }) {
+  return (
+    <label className="wa-profile-field">
+      <span className="wa-profile-icon">{icon}</span>
+      <span className="wa-profile-control">
+        <strong>{label}</strong>
+        {children}
+        <small>{hint}</small>
+      </span>
+    </label>
   )
 }
 

@@ -45,6 +45,21 @@ class FindDriver
             $driver = Driver::query()
                 ->where('is_available', true)
                 ->when(
+                    data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'motor',
+                    fn ($query) => $query->where('vehicle_type', 'motor')
+                )
+                ->when(
+                    data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'mobil',
+                    fn ($query) => $query->where('vehicle_type', 'mobil')->where(function ($query) use ($order): void {
+                        $requiredRows = (int) data_get($order->pricing_breakdown, 'required_vehicle_seat_rows', 2);
+                        $query->where('vehicle_seat_rows', '>=', $requiredRows);
+
+                        if ($requiredRows <= 2) {
+                            $query->orWhereNull('vehicle_seat_rows');
+                        }
+                    })
+                )
+                ->when(
                     data_get($order->pricing_breakdown, 'driver_preference') === 'ladies',
                     fn ($query) => $query->where('is_ladies_driver', true)
                 )

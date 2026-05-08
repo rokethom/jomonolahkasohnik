@@ -43,6 +43,20 @@ class DriverController extends Controller
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
                                     ->when((bool) $driver->is_ladies_driver, fn ($query) => $query->orWhere('pricing_breakdown->driver_preference', 'ladies'));
+                            })
+                            ->where(function ($query) use ($driver): void {
+                                $vehicle = $driver->vehicle_type ?? 'motor';
+                                $seatRows = (int) ($driver->vehicle_seat_rows ?: 2);
+
+                                $query->whereNull('pricing_breakdown->preferred_vehicle_type')
+                                    ->orWhere('pricing_breakdown->preferred_vehicle_type', $vehicle);
+
+                                if ($vehicle === 'mobil') {
+                                    $query->where(function ($query) use ($seatRows): void {
+                                        $query->whereNull('pricing_breakdown->required_vehicle_seat_rows')
+                                            ->orWhere('pricing_breakdown->required_vehicle_seat_rows', '<=', $seatRows);
+                                    });
+                                }
                             });
                     });
             })
@@ -296,6 +310,8 @@ class DriverController extends Controller
             'email' => $user->email,
             'profile_photo_url' => $user->profile_photo_path ? $request->getSchemeAndHttpHost().'/api/media/'.ltrim($user->profile_photo_path, '/') : null,
             'role' => 'Driver',
+            'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
+            'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
             'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
             'status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
             'suspended_until' => $user->driver?->suspended_until?->toIso8601String() ?? $user->suspended_until?->toIso8601String(),
@@ -333,6 +349,7 @@ class DriverController extends Controller
             'payment_label' => $order->payment_label,
             'payment_meta' => $order->payment_meta,
             'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
+            'required_vehicle_seat_rows' => data_get($order->pricing_breakdown, 'required_vehicle_seat_rows'),
             'driver_preference' => data_get($order->pricing_breakdown, 'driver_preference', 'general'),
             'detail' => $order->raw_text,
             'accepted_at' => in_array($order->status->value, ['DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING'], true)

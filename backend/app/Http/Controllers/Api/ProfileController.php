@@ -34,6 +34,7 @@ class ProfileController extends Controller
 
         unset($payload['profile_photo']);
         $request->user()->update($payload);
+        $request->user()->refresh();
 
         return response()->json($this->payload($request));
     }

@@ -36,6 +36,7 @@ type User = {
   driver_bansos_amount?: number | null
   driver_bpjs_jht_enabled?: boolean
   is_ladies_driver?: boolean
+  vehicle_seat_rows?: number | null
 }
 type DriverRow = User & {
   driver_id: number | null
@@ -52,6 +53,7 @@ type DriverRow = User & {
   suspension_reason: string | null
   oper_handle_count: number
   vehicle_type?: 'motor' | 'mobil' | string | null
+  vehicle_seat_rows?: number | null
   is_ladies_driver?: boolean
   allowed_service_types?: string[]
   performance?: {
@@ -100,6 +102,7 @@ type Order = {
   payment_label?: string | null
   payment_meta?: Record<string, unknown> | null
   preferred_vehicle_type?: 'motor' | 'mobil' | string | null
+  required_vehicle_seat_rows?: 2 | 3 | number | null
   driver_preference?: 'general' | 'ladies' | string | null
   notes?: string | null
   raw_text?: string | null
@@ -111,7 +114,7 @@ type Order = {
   created_at: string | null
   updated_at?: string | null
 }
-type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
+type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
 type CustomerPreference = { favorite_driver?: { id: number; name: string } | null; blocked_drivers?: string[]; notes?: string | null }
 type ManualOrderPayload = {
   service_type: string
@@ -897,7 +900,7 @@ function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; 
           <label>Driver area online & idle
             <select value={driverId} onChange={(event) => setDriverId(event.target.value)} required>
               <option value="">Pilih driver</option>
-              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? 'Favorit - ' : ''}{driver.name} - {driver.vehicle_type ?? 'motor'}{driver.is_ladies_driver ? ' - Ladies' : ''} - rating {driver.rating_average ?? 0}</option>)}
+              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? 'Favorit - ' : ''}{driver.name} - {vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}{driver.is_ladies_driver ? ' - Ladies' : ''} - rating {driver.rating_average ?? 0}</option>)}
             </select>
           </label>
           <label>Alasan assign<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
@@ -1273,7 +1276,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
               <tr key={driver.id}>
                 <td><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></td>
                 <td><span className="driver-phone">{driver.phone || '-'}</span></td>
-                <td><span className="status info">{driver.vehicle_type ?? 'motor'}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
+                <td><span className="status info">{vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
                 <td><span className="driver-phone">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
                 <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
                 <td>{driver.suspended_until || '-'}</td>
@@ -1381,6 +1384,7 @@ function StatusInfo({ label, value, tone }: { label: string; value: string; tone
 function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver: DriverRow; services: ServiceRow[]; api: ApiClient; onClose: () => void; onSaved: () => Promise<void> }) {
   const serviceOptions = services.map((service) => ({ label: service.name, value: serviceTypeFromService(service) }))
   const [vehicleType, setVehicleType] = useState<'motor' | 'mobil'>((driver.vehicle_type === 'mobil' ? 'mobil' : 'motor'))
+  const [vehicleSeatRows, setVehicleSeatRows] = useState<2 | 3>((driver.vehicle_seat_rows === 3 ? 3 : 2))
   const [isLadiesDriver, setIsLadiesDriver] = useState(Boolean(driver.is_ladies_driver))
   const [allowed, setAllowed] = useState<string[]>(driver.allowed_service_types ?? [])
   const [saving, setSaving] = useState(false)
@@ -1397,6 +1401,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
         method: 'PUT',
         body: JSON.stringify({
           vehicle_type: vehicleType,
+          vehicle_seat_rows: vehicleType === 'mobil' ? vehicleSeatRows : null,
           is_ladies_driver: isLadiesDriver,
           allowed_service_types: allowed,
         }),
@@ -1419,6 +1424,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
             <legend>Kendaraan</legend>
             <div className="form-grid">
               <label>Vehicle Type<select value={vehicleType} onChange={(event) => setVehicleType(event.target.value as 'motor' | 'mobil')}><option value="motor">Driver sepeda motor</option><option value="mobil">Driver mobil</option></select></label>
+              {vehicleType === 'mobil' && <label>Kapasitas Mobil<select value={vehicleSeatRows} onChange={(event) => setVehicleSeatRows(Number(event.target.value) as 2 | 3)}><option value={2}>2 baris - citycar/default</option><option value={3}>3 baris - MPV/keluarga</option></select></label>}
             </div>
             <label className="driver-ladies-card">
               <input type="checkbox" checked={isLadiesDriver} onChange={(event) => setIsLadiesDriver(event.target.checked)} />
@@ -1687,6 +1693,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice }: { order: Order | 
         <DetailItem label="Cabang / Area" value={displayBranchValue(order.branch, order.branch_area)} />
         <DetailItem label="Pembayaran" value={payment} />
         <DetailItem label="Kendaraan" value={vehicleLabel(order.preferred_vehicle_type)} />
+        {order.preferred_vehicle_type === 'mobil' && <DetailItem label="Seat Mobil" value={`${order.required_vehicle_seat_rows ?? 2} baris`} />}
         <DetailItem label="Preferensi" value={driverPreferenceLabel(order.driver_preference)} />
         <DetailItem label="Jarak" value={formatDistance(order.distance_km)} />
         <DetailItem label="SLA" value={`${order.sla_status ?? 'normal'} · ${formatWaitingTime(order.waiting_seconds)}`} />
@@ -2554,6 +2561,7 @@ function UserEditModal({ user, branches, permissions, api, onClose, onSaved }: {
 
 function UserFormModal({ permissions, branches, services, api, onClose, onCreated }: { permissions: Permissions; branches: Branch[]; services: ServiceRow[]; api: ApiClient; onClose: () => void; onCreated: (password: string) => void }) {
   const [role, setRole] = useState<Role>(permissions.assignable_roles[0] ?? 'operator')
+  const [vehicleType, setVehicleType] = useState<'motor' | 'mobil'>('motor')
   const [allowedServices, setAllowedServices] = useState<string[]>([])
   const toggleService = (code: string) => setAllowedServices((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code])
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -2573,7 +2581,8 @@ function UserFormModal({ permissions, branches, services, api, onClose, onCreate
         ...(role === 'driver' ? {
           driver_bansos_amount: form.get('driver_bansos_amount') === '' ? null : Number(form.get('driver_bansos_amount')),
           driver_bpjs_jht_enabled: form.get('driver_bpjs_jht_enabled') === 'on',
-          vehicle_type: form.get('vehicle_type') || 'motor',
+          vehicle_type: vehicleType,
+          vehicle_seat_rows: vehicleType === 'mobil' ? Number(form.get('vehicle_seat_rows') || 2) : null,
           is_ladies_driver: form.get('is_ladies_driver') === 'on',
           allowed_service_types: allowedServices,
         } : {}),
@@ -2581,7 +2590,7 @@ function UserFormModal({ permissions, branches, services, api, onClose, onCreate
     })
     onCreated(payload.temporary_password)
   }
-  return <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true"><div className="modal-header"><div><h2>Create user</h2><p>Assignable roles: {permissions.assignable_roles.map((item) => roleLabels[item]).join(', ')}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div><form className="user-form" onSubmit={submit}><fieldset><legend>Info User</legend><div className="form-grid"><label>Username<input name="username" required /></label><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Phone<input name="phone" /></label></div></fieldset><fieldset><legend>Role & Branch</legend><div className="form-grid"><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{permissions.assignable_roles.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label><label>Branch<select name="branch_id"><option value="">No branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label><label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked />Active</label>{role === 'driver' && <label>Tipe kendaraan<select name="vehicle_type" defaultValue="motor"><option value="motor">Motor</option><option value="mobil">Mobil</option></select></label>}{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked />JHT BPJS</label>}{role === 'driver' && <label className="toggle-row driver-ladies-toggle"><input name="is_ladies_driver" type="checkbox" />Driver Ladies</label>}</div>{role === 'driver' && <div className="service-config-pills"><strong>Config layanan driver</strong><span>Kosongkan jika driver boleh menerima semua layanan.</span>{services.map((service) => <label key={service.id} className="toggle-row service-pill"><input type="checkbox" checked={allowedServices.includes(service.code)} onChange={() => toggleService(service.code)} />{service.name}</label>)}</div>}</fieldset><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Create real user</button></div></form></div></div>
+  return <div className="modal-backdrop" role="presentation"><div className="modal" role="dialog" aria-modal="true"><div className="modal-header"><div><h2>Create user</h2><p>Assignable roles: {permissions.assignable_roles.map((item) => roleLabels[item]).join(', ')}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div><form className="user-form" onSubmit={submit}><fieldset><legend>Info User</legend><div className="form-grid"><label>Username<input name="username" required /></label><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Phone<input name="phone" /></label></div></fieldset><fieldset><legend>Role & Branch</legend><div className="form-grid"><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{permissions.assignable_roles.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label><label>Branch<select name="branch_id"><option value="">No branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label><label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked />Active</label>{role === 'driver' && <label>Tipe kendaraan<select name="vehicle_type" value={vehicleType} onChange={(event) => setVehicleType(event.target.value as 'motor' | 'mobil')}><option value="motor">Motor</option><option value="mobil">Mobil</option></select></label>}{role === 'driver' && vehicleType === 'mobil' && <label>Kapasitas mobil<select name="vehicle_seat_rows" defaultValue="2"><option value="2">2 baris - citycar/default</option><option value="3">3 baris - MPV/keluarga</option></select></label>}{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked />JHT BPJS</label>}{role === 'driver' && <label className="toggle-row driver-ladies-toggle"><input name="is_ladies_driver" type="checkbox" />Driver Ladies</label>}</div>{role === 'driver' && <div className="service-config-pills"><strong>Config layanan driver</strong><span>Kosongkan jika driver boleh menerima semua layanan.</span>{services.map((service) => <label key={service.id} className="toggle-row service-pill"><input type="checkbox" checked={allowedServices.includes(service.code)} onChange={() => toggleService(service.code)} />{service.name}</label>)}</div>}</fieldset><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">Create real user</button></div></form></div></div>
 }
 
 type ApiClient = <T = unknown>(path: string, options?: RequestInit) => Promise<T>
@@ -2742,7 +2751,7 @@ function shortOrderRoute(order: Order) {
   const pickup = stringValue(order.pickup_address) || 'pickup'
   const destination = stringValue(order.destination_address) || 'tujuan'
 
-  return `${pickup.slice(0, 24)} → ${destination.slice(0, 24)}`
+  return `${pickup.slice(0, 24)} ? ${destination.slice(0, 24)}`
 }
 
 function displayBranchValue(branch: unknown, area?: string | null) {

@@ -63,6 +63,7 @@ export type OrderPayload = {
   points?: Array<{ label?: string; address: string }>
   payment_method?: 'cash' | 'transfer' | string
   preferred_vehicle_type?: 'motor' | 'mobil'
+  vehicle_seat_rows?: 2 | 3
   driver_preference?: 'general' | 'ladies'
 }
 
@@ -135,7 +136,7 @@ export async function updateProfile(payload: { name: string; phone: string; addr
     form.append('address', payload.address)
     if (payload.branch_id) form.append('branch_id', String(payload.branch_id))
     form.append('profile_photo', profilePhoto)
-    const { data } = await api.post<User>('/user/profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const { data } = await api.post<User>('/user/profile', form)
     return data
   }
 

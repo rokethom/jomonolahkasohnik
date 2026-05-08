@@ -29,6 +29,7 @@ class DriverManagementCsvService
         'branch_id',
         'branch_name',
         'vehicle_type',
+        'vehicle_seat_rows',
         'is_ladies_driver',
         'allowed_service_types',
         'status',
@@ -71,6 +72,7 @@ class DriverManagementCsvService
                             $user->branch_id,
                             $user->branch?->display_name,
                             $driver?->vehicle_type ?: 'motor',
+                            $driver?->vehicle_seat_rows ?: ($driver?->vehicle_type === 'mobil' ? 2 : ''),
                             $driver?->is_ladies_driver ? 'yes' : 'no',
                             implode('|', $driver?->allowed_service_types ?? []),
                             $driver?->status ?: 'active',
@@ -221,6 +223,7 @@ class DriverManagementCsvService
                 'branch_id' => $user->branch_id,
                 'driver_email' => $this->driverEmail($user),
                 'vehicle_type' => $driver->vehicle_type,
+                'vehicle_seat_rows' => $driver->vehicle_seat_rows,
                 'is_ladies_driver' => $driver->is_ladies_driver,
                 'allowed_service_types' => $driver->allowed_service_types,
                 'status' => $driver->status,
@@ -241,6 +244,7 @@ class DriverManagementCsvService
             $driverUpdates = [
                 'name' => $data['name'] ?: $user->name,
                 'vehicle_type' => $this->normalizeVehicleType($data['vehicle_type'] ?? null),
+                'vehicle_seat_rows' => $this->normalizeVehicleType($data['vehicle_type'] ?? null) === 'mobil' ? $this->normalizeSeatRows($data['vehicle_seat_rows'] ?? null) : null,
                 'is_ladies_driver' => $this->booleanValue($data['is_ladies_driver'] ?? 'no'),
                 'allowed_service_types' => $this->normalizeServiceTypes($data['allowed_service_types'] ?? ''),
                 'status' => $this->normalizeStatus($data['status'] ?? null),
@@ -384,6 +388,13 @@ class DriverManagementCsvService
         $value = strtolower(trim((string) $value));
 
         return in_array($value, ['motor', 'mobil'], true) ? $value : 'motor';
+    }
+
+    private function normalizeSeatRows(?string $value): int
+    {
+        $rows = (int) trim((string) $value);
+
+        return in_array($rows, [2, 3], true) ? $rows : 2;
     }
 
     private function normalizeStatus(?string $value): string

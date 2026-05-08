@@ -92,6 +92,11 @@ class DriverManagementResource extends Resource
                     ->badge()
                     ->default('motor')
                     ->toggleable(),
+                Tables\Columns\TextColumn::make('driver.vehicle_seat_rows')
+                    ->label('Seat')
+                    ->formatStateUsing(fn ($state, User $record): string => $record->driver?->vehicle_type === 'mobil' ? (($state ?: 2).' baris') : '-')
+                    ->badge()
+                    ->toggleable(),
                 Tables\Columns\IconColumn::make('driver.is_ladies_driver')
                     ->label('Ladies')
                     ->boolean()
@@ -452,6 +457,15 @@ class DriverManagementResource extends Resource
                             ->default(fn (User $record): string => $record->driver?->vehicle_type ?: 'motor')
                             ->required()
                             ->native(false),
+                        Forms\Components\Select::make('vehicle_seat_rows')
+                            ->label('Kapasitas Mobil')
+                            ->options([
+                                2 => '2 baris - citycar/default',
+                                3 => '3 baris - MPV/lebih besar',
+                            ])
+                            ->default(fn (User $record): int => (int) ($record->driver?->vehicle_seat_rows ?: 2))
+                            ->visible(fn (Forms\Get $get): bool => $get('vehicle_type') === 'mobil')
+                            ->native(false),
                         Forms\Components\Toggle::make('is_ladies_driver')
                             ->label('Driver Ladies')
                             ->helperText('Jika aktif, driver bisa menerima order Ojek Ladies sesuai area/cabang.')
@@ -471,6 +485,7 @@ class DriverManagementResource extends Resource
                     ->action(function (User $record, array $data): void {
                         $record->driver?->update([
                             'vehicle_type' => $data['vehicle_type'],
+                            'vehicle_seat_rows' => $data['vehicle_type'] === 'mobil' ? ($data['vehicle_seat_rows'] ?? 2) : null,
                             'is_ladies_driver' => (bool) ($data['is_ladies_driver'] ?? false),
                             'allowed_service_types' => array_values($data['allowed_service_types'] ?? []),
                         ]);

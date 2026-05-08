@@ -37,6 +37,8 @@ type Driver = {
   profile_photo_url?: string | null
   role: string
   is_ladies_driver?: boolean
+  vehicle_type?: 'motor' | 'mobil' | string | null
+  vehicle_seat_rows?: number | null
   status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
   suspended_until?: string | null
   suspension_reason?: string | null
@@ -78,6 +80,8 @@ type Order = {
   detail: string | null
   paymentMethod?: string | null
   paymentLabel?: string | null
+  preferredVehicleType?: string | null
+  requiredVehicleSeatRows?: number | null
   driverPreference?: string | null
   acceptedAt?: string | null
   updatedAt?: string | null
@@ -198,6 +202,8 @@ type ApiOrder = {
   detail: string | null
   payment_method?: string | null
   payment_label?: string | null
+  preferred_vehicle_type?: string | null
+  required_vehicle_seat_rows?: number | null
   driver_preference?: string | null
   payment_meta?: Record<string, unknown> | null
   accepted_at?: string | null
@@ -705,6 +711,11 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
       </header>
       <div className="order-meta">
         <span className="badge"><PackageCheck size={13} />{order.service}</span>
+        {order.preferredVehicleType && (
+          <span className="direction-badge vehicle">
+            {driverVehicleLabel(order)}
+          </span>
+        )}
         <span>{order.distanceKm} km</span>
         <span>{statusLabel(order.status)}</span>
         {order.driverPreference === 'ladies' && <span className="direction-badge ladies">LADIES</span>}
@@ -760,6 +771,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <InfoTile label="Multi Order" value={order.isMultiOrder ? 'Aktif' : 'Tidak'} />
         <InfoTile label="Pembayaran" value={order.paymentLabel ?? driverPaymentLabel(order.paymentMethod)} />
         <InfoTile label="Driver" value={order.driverPreference === 'ladies' ? 'Ladies' : 'Umum'} />
+        <InfoTile label="Kendaraan" value={driverVehicleLabel(order)} />
       </section>
 
       <section className={directionMatch ? 'direction-panel match' : 'direction-panel mismatch'}>
@@ -1651,6 +1663,8 @@ function mapOrder(order: ApiOrder): Order {
     detail: order.detail,
     paymentMethod: order.payment_method ?? null,
     paymentLabel: order.payment_label ?? null,
+    preferredVehicleType: order.preferred_vehicle_type ?? null,
+    requiredVehicleSeatRows: order.required_vehicle_seat_rows ?? null,
     driverPreference: order.driver_preference ?? null,
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     updatedAt: order.updated_at ?? null,
@@ -1669,6 +1683,8 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.total !== undefined || order.total_price !== undefined ? { total: order.total ?? order.total_price ?? 0 } : {}),
     ...(order.driver !== undefined ? { driver: order.driver } : {}),
     ...(order.source !== undefined ? { source: order.source } : {}),
+    ...(order.preferred_vehicle_type !== undefined ? { preferredVehicleType: order.preferred_vehicle_type } : {}),
+    ...(order.required_vehicle_seat_rows !== undefined ? { requiredVehicleSeatRows: order.required_vehicle_seat_rows } : {}),
     ...(order.driver_preference !== undefined ? { driverPreference: order.driver_preference } : {}),
   }
 }
@@ -1800,6 +1816,17 @@ function driverPaymentLabel(method?: string | null) {
   if (method === 'transfer') return 'Transfer'
   if (method === 'qris') return 'QRIS'
   return 'Cash'
+}
+function driverVehicleLabel(order: Pick<Order, 'preferredVehicleType' | 'requiredVehicleSeatRows'>) {
+  if (order.preferredVehicleType === 'mobil') {
+    return `Mobil ${order.requiredVehicleSeatRows === 3 ? 3 : 2} baris`
+  }
+
+  if (order.preferredVehicleType === 'motor') {
+    return 'Motor'
+  }
+
+  return 'Sesuai layanan'
 }
 function formatRemaining(ms: number) {
   const totalSeconds = Math.ceil(ms / 1000)
