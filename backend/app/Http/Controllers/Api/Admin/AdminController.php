@@ -107,6 +107,7 @@ class AdminController extends Controller
             'suspension_reason' => ['nullable', 'string'],
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
+            'vehicle_type' => ['nullable', 'string', 'in:motor,mobil'],
             'allowed_service_types' => ['nullable', 'array'],
             'allowed_service_types.*' => ['string', 'max:80'],
         ]);
@@ -116,6 +117,7 @@ class AdminController extends Controller
 
         $driverPayload = [
             'bpjs_jht_enabled' => $payload['driver_bpjs_jht_enabled'] ?? true,
+            'vehicle_type' => $payload['vehicle_type'] ?? 'motor',
         ];
         if (array_key_exists('allowed_service_types', $payload)) {
             $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
@@ -123,7 +125,7 @@ class AdminController extends Controller
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['allowed_service_types']);
 
         $password = $this->generatePassword();
         $user = User::create([
