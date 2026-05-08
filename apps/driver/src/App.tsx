@@ -670,8 +670,8 @@ function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onActio
           <strong>Rp {formatMoney(finance?.total ?? 0)}</strong>
           <small>{finance?.status ?? 'sync'}</small>
         </button>
-        <Metric label="Order Aktif" value={String(activeOrders.length)} />
         <Metric label="Total Order Diterima" value={String(acceptedTotal)} />
+        <Metric label="Order Berjalan" value={String(activeOrders.length)} />
       </section>
 
       <section className="quick-grid">
@@ -727,12 +727,15 @@ function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
 
 function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: () => void }) {
   const rows = setoranBreakdownRows(finance.breakdown)
+  const remaining = Math.max(0, finance.total - finance.paid_amount)
   return (
     <Modal title="Detail Setoran" onClose={onClose}>
       <p className="modal-copy">Due date: {finance.due_date ?? '-'} · Status: {finance.status}</p>
       <div className="setoran-breakdown">
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
         <div className="total-row"><span>Total bulan ini</span><strong>Rp {formatMoney(finance.total)}</strong></div>
+        <PriceRow label="Sudah dibayar" value={finance.paid_amount} />
+        <div className="total-row"><span>Sisa tagihan</span><strong>Rp {formatMoney(remaining)}</strong></div>
       </div>
     </Modal>
   )

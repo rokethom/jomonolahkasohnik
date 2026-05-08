@@ -447,14 +447,27 @@ class AdminController extends Controller
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true), 403);
 
+        $payload = $request->validate([
+            'amount' => ['nullable', 'integer', 'min:1'],
+            'full' => ['nullable', 'boolean'],
+        ]);
+
         $deposit = $finance->monthlyDeposit($driver->load('user.branch'));
+        $targetTotal = (int) $deposit->total;
+        $currentPaid = (int) $deposit->paid_amount;
+        $paymentAmount = $request->boolean('full', false) || ! isset($payload['amount'])
+            ? max(0, $targetTotal - $currentPaid)
+            : min((int) $payload['amount'], max(0, $targetTotal - $currentPaid));
+        $paidAmount = min($targetTotal, $currentPaid + $paymentAmount);
+        $isPaid = $targetTotal <= 0 || $paidAmount >= $targetTotal;
+
         $deposit->forceFill([
-            'paid_amount' => max((int) $deposit->total, (int) $deposit->paid_amount),
-            'paid_at' => now(),
-            'status' => 'paid',
+            'paid_amount' => $paidAmount,
+            'paid_at' => $paidAmount > 0 ? now() : null,
+            'status' => $isPaid ? 'paid' : 'unpaid',
         ])->save();
 
-        if ($driver->status === 'suspended_unpaid') {
+        if ($isPaid && $driver->status === 'suspended_unpaid') {
             $suspensions->release($driver->fresh('user'), $request->user());
         }
 
@@ -463,11 +476,16 @@ class AdminController extends Controller
         $this->recordAudit($request->user(), 'marked_driver_deposit_paid', $driver, [
             'deposit_id' => $deposit->id,
             'paid_amount' => $deposit->paid_amount,
+            'payment_amount' => $paymentAmount,
+            'remaining_amount' => max(0, $targetTotal - $paidAmount),
+            'status' => $deposit->status,
             'period' => $deposit->year.'-'.str_pad((string) $deposit->month, 2, '0', STR_PAD_LEFT),
         ]);
 
         return response()->json([
-            'message' => 'Setoran driver ditandai paid. Driver bisa ON dari aplikasi driver.',
+            'message' => $isPaid
+                ? 'Setoran driver lunas. Driver bisa ON dari aplikasi driver.'
+                : 'Pembayaran setoran tersimpan. Sisa tagihan akan terbawa ke bulan berikutnya.',
             'deposit' => $deposit->fresh(),
             'driver' => $driver->fresh(['user.branch']),
         ]);

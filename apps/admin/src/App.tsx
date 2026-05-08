@@ -1299,16 +1299,21 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
     await onChanged()
   }
 
-  const markDeposit = async (driver: DriverRow, status: 'paid' | 'unpaid') => {
+  const markDeposit = async (driver: DriverRow, status: 'paid' | 'unpaid', full = false) => {
     if (!driver.driver_id) return
-    const label = status === 'paid' ? 'PAID' : 'UNPAID'
+    const label = status === 'paid' ? (full ? 'LUNAS' : 'BAYAR SETORAN') : 'UNPAID'
     const reason = status === 'unpaid' ? prompt(`Alasan setoran ${driver.name} dibuat unpaid`, 'Belum bayar setoran') : null
     if (status === 'unpaid' && !reason) return
+    const amount = status === 'paid' && !full
+      ? Number(prompt(`Nominal dibayar ${driver.name}\nSisa tagihan: Rp ${Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}`, String(driver.deposit_remaining ?? 0)) ?? 0)
+      : null
+    const paymentAmount = amount ?? 0
+    if (status === 'paid' && !full && (!Number.isFinite(paymentAmount) || paymentAmount <= 0)) return
     if (!confirm(`Tandai setoran ${driver.name} sebagai ${label}?`)) return
 
     await api(`/admin/drivers/${driver.driver_id}/deposit/${status}`, {
       method: 'POST',
-      body: JSON.stringify(status === 'unpaid' ? { reason } : {}),
+      body: JSON.stringify(status === 'unpaid' ? { reason } : { full, amount: paymentAmount }),
     })
     await onChanged()
   }
@@ -1357,7 +1362,8 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                   <div className="row-actions">
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 1, 'suspended')}>1h</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 12, 'suspended')}>12h</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || driver.deposit_status === 'paid'} onClick={() => void markDeposit(driver, 'paid')}>Paid</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || driver.deposit_status === 'paid'} onClick={() => void markDeposit(driver, 'paid')}>Bayar</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || driver.deposit_status === 'paid'} onClick={() => void markDeposit(driver, 'paid', true)}>Lunas</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id || driver.deposit_status === 'unpaid'} onClick={() => void markDeposit(driver, 'unpaid')}>Unpaid</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setConfigDriver(driver)}>Config</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => void resetToken(driver)}>Reset Token</button>}
