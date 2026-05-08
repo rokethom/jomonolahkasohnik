@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Enums\UserRole;
+use App\Services\AdminRoleMenuOverrideService;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -57,13 +58,17 @@ class AdminRolePreviewPage extends Page implements HasForms
     {
         $role = $this->rolePreview ?: 'operator';
         $permissions = $this->permissionsFor($role);
-        $menus = $this->menusFor($role, $permissions);
+        $menuService = app(AdminRoleMenuOverrideService::class);
+        $visibleViews = $menuService->allowedViewsForRole($role, $this->permissionFlags($role, $permissions));
+        $menus = $this->menusFor($visibleViews);
 
         return [
             'role' => $role,
             'label' => $this->roleOptions()[$role] ?? $role,
             'permissions' => $permissions,
+            'visible_views' => $visibleViews,
             'menus' => $menus,
+            'menu_groups' => $menuService->menuGroups(),
             'cards' => $this->cardsFor($role, $permissions),
             'notes' => $this->notesFor($role),
         ];
@@ -95,48 +100,58 @@ class AdminRolePreviewPage extends Page implements HasForms
         };
     }
 
-    private function menusFor(string $role, array $permissions): array
+    public function toggleMenu(string $view): void
     {
-        $menus = ['Dashboard'];
+        $role = $this->rolePreview ?: 'operator';
+        $menuService = app(AdminRoleMenuOverrideService::class);
+        $visible = in_array($view, $menuService->allowedViewsForRole($role, $this->permissionFlags($role, $this->permissionsFor($role))), true);
 
-        if (in_array('monitor_live_order', $permissions, true)) {
-            $menus[] = 'Order Operations';
-            $menus[] = 'Request Order';
+        $menuService->setViewVisible($role, $view, ! $visible);
+    }
+
+    /**
+     * @param  array<int, string>  $views
+     * @return array<int, string>
+     */
+    private function menusFor(array $views): array
+    {
+        $labels = collect(app(AdminRoleMenuOverrideService::class)->menuGroups())->collapse();
+
+        return collect($views)
+            ->map(fn (string $view): string => (string) ($labels[$view] ?? $view))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $permissions
+     * @return array<string, mixed>
+     */
+    private function permissionFlags(string $role, array $permissions): array
+    {
+        return [
+            'can_manage_policy' => in_array('edit_tarif', $permissions, true),
+            'can_manage_users' => in_array('create_user', $permissions, true),
+            'can_suspend_drivers' => in_array('suspend_driver', $permissions, true),
+            'can_unsuspend_drivers' => in_array('unsuspend_driver', $permissions, true),
+            'can_edit_order_price' => in_array('edit_tarif', $permissions, true),
+            'can_create_manual_order' => in_array('manual_order', $permissions, true) || in_array($role, ['operator', 'eksekutor'], true),
+            'can_assign_driver' => in_array('assign_driver', $permissions, true),
+            'can_view_report' => in_array('view_report', $permissions, true),
+            'can_monitor_live_order' => in_array('monitor_live_order', $permissions, true),
+            'can_monitor_live_chat' => in_array('monitor_live_chat', $permissions, true),
+            'can_use_internal_chat' => in_array('internal_chat', $permissions, true),
+        ];
+    }
+
+    public function resetRoleOverride(): void
+    {
+        $role = $this->rolePreview ?: 'operator';
+        $menuService = app(AdminRoleMenuOverrideService::class);
+
+        foreach ($menuService->allViews() as $view) {
+            $menuService->setViewVisible($role, $view, true);
         }
-
-        if (in_array('monitor_live_chat', $permissions, true)) {
-            $menus[] = 'Chat Monitor';
-        }
-
-        if (in_array('internal_chat', $permissions, true)) {
-            $menus[] = 'Internal Chat';
-        }
-
-        if (in_array('manual_order', $permissions, true) || in_array($role, ['operator', 'eksekutor'], true)) {
-            $menus[] = 'Manual Order';
-        }
-
-        if (in_array('create_user', $permissions, true)) {
-            $menus[] = 'Users';
-        }
-
-        if (in_array('suspend_driver', $permissions, true) || in_array('assign_driver', $permissions, true)) {
-            $menus[] = 'Driver Management';
-        }
-
-        if (in_array('view_report', $permissions, true)) {
-            $menus[] = 'Reports';
-        }
-
-        if (in_array('edit_tarif', $permissions, true)) {
-            $menus[] = 'Pricing & Policy';
-        }
-
-        if (in_array($role, ['manager', 'spv', 'operator', 'eksekutor'], true)) {
-            $menus[] = 'Location Logs';
-        }
-
-        return array_values(array_unique($menus));
     }
 
     private function cardsFor(string $role, array $permissions): array

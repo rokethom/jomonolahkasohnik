@@ -223,6 +223,7 @@ type Permissions = {
   can_approve_cancel_order?: boolean
   can_reject_cancel_order?: boolean
   can_assign_driver?: boolean
+  allowed_views?: View[]
 }
 type Bootstrap = {
   me: User
@@ -336,6 +337,11 @@ function adminViewFromHistoryState(state: unknown) {
 
 function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (role === 'admin' || role === 'gm') return allMenus.map((item) => item.id)
+
+  if (Array.isArray(permissions.allowed_views) && permissions.allowed_views.length > 0) {
+    const allowed = allMenus.map((item) => item.id).filter((id) => permissions.allowed_views?.includes(id))
+    return allowed.includes('dashboard') ? allowed : ['dashboard', ...allowed]
+  }
 
   const views = new Set<View>(['dashboard'])
   if (permissions.can_monitor_live_order) {
@@ -515,7 +521,7 @@ function App() {
   }
 
   const allowedViews = allowedViewsFor(data.me.role, data.permissions)
-  const safeView = allowedViews.includes(view) ? view : 'dashboard'
+  const safeView = allowedViews.includes(view) ? view : (allowedViews[0] ?? 'dashboard')
   const visibleMenuGroups = menuGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => allowedViews.includes(item.id)) }))
     .filter((group) => group.items.length > 0)

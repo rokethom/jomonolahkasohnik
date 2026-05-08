@@ -20,6 +20,7 @@ use App\Models\PriceSetting;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminDashboardMetricsService;
+use App\Services\AdminRoleMenuOverrideService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
 use App\Services\JojoBotService;
@@ -1212,7 +1213,7 @@ class AdminController extends Controller
     {
         $permissionNames = $user->permissions();
 
-        return [
+        $permissions = [
             'backend_access' => in_array($user->role, [UserRole::Admin, UserRole::GM], true),
             'names' => $permissionNames,
             'assignable_roles' => collect($user->role->assignableRoles())->map->value->all(),
@@ -1234,6 +1235,8 @@ class AdminController extends Controller
             'can_approve_cancel_order' => $user->hasPermission('approve_cancel_order'),
             'can_reject_cancel_order' => $user->hasPermission('reject_cancel_order'),
         ];
+
+        return app(AdminRoleMenuOverrideService::class)->applyToPermissions($user, $permissions);
     }
 
     private function canAssignRole(User $actor, UserRole $role): bool

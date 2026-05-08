@@ -5,14 +5,10 @@
         $menus = $data['menus'];
         $cards = $data['cards'];
         $permissions = $data['permissions'];
-        $menuGroups = [
-            'Overview' => ['Dashboard', 'Reports'],
-            'Operations' => ['Order Operations', 'Request Order', 'Chat Monitor', 'Internal Chat', 'Manual Order'],
-            'Management' => ['Users', 'Driver Management'],
-            'Area & System' => ['Location Logs', 'Pricing & Policy'],
-        ];
-        $allMenus = collect($menuGroups)->flatten()->values();
-        $hiddenMenus = $allMenus->reject(fn (string $menu): bool => in_array($menu, $menus, true))->values();
+        $visibleViews = $data['visible_views'];
+        $menuGroups = $data['menu_groups'];
+        $allMenus = collect($menuGroups)->flatMap(fn (array $group) => $group);
+        $hiddenMenus = $allMenus->reject(fn (string $label, string $view): bool => in_array($view, $visibleViews, true));
     @endphp
 
     <style>
@@ -78,6 +74,7 @@
         }
 
         .role-preview-menu {
+            width: 100%;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -90,6 +87,14 @@
             margin-bottom: 7px;
             background: rgba(148, 163, 184, .08);
             border: 1px solid rgba(148, 163, 184, .12);
+            cursor: pointer;
+            transition: opacity 180ms ease, transform 180ms ease, background 180ms ease;
+            text-align: left;
+        }
+
+        .role-preview-menu:hover {
+            transform: translateX(2px);
+            background: rgba(148, 163, 184, .14);
         }
 
         .role-preview-menu.is-muted {
@@ -104,6 +109,27 @@
             background: rgba(59, 130, 246, .14);
             font-size: 11px;
             font-weight: 800;
+        }
+
+        .role-preview-switch {
+            min-width: 42px;
+            border-radius: 999px;
+            padding: 4px 9px;
+            color: #dcfce7;
+            background: rgba(34, 197, 94, .20);
+            font-size: 11px;
+            font-weight: 900;
+            text-align: center;
+        }
+
+        .role-preview-menu.is-muted .role-preview-switch {
+            color: #fecaca;
+            background: rgba(239, 68, 68, .18);
+        }
+
+        .role-preview-switch.is-locked {
+            color: #e0f2fe;
+            background: rgba(14, 165, 233, .18);
         }
 
         .role-preview-topbar {
@@ -237,7 +263,7 @@
                     {{ $this->form }}
                 </div>
                 <div class="rounded-2xl border border-sky-200/40 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-400/20 dark:bg-sky-950/40 dark:text-sky-100">
-                    Preview ini membaca mapping permission backend dan menu FE Admin. Ini bukan impersonate login, jadi aman untuk cek tampilan role tanpa masuk sebagai HRD, SPV, Manager, Operator, atau Eksekutor.
+                    Klik status on/off pada menu untuk mengatur tampilan FE Admin role tersebut. Dashboard dikunci sebagai landing page, menu lain akan langsung dibaca API bootstrap FE Admin.
                 </div>
             </div>
         </x-filament::section>
@@ -256,11 +282,19 @@
                     @foreach ($menuGroups as $group => $groupMenus)
                         <div class="role-preview-group">
                             <p class="role-preview-group-title">{{ $group }}</p>
-                            @foreach ($groupMenus as $menu)
-                                <div class="role-preview-menu {{ in_array($menu, $menus, true) ? '' : 'is-muted' }}">
+                            @foreach ($groupMenus as $view => $menu)
+                                @php($isVisible = in_array($view, $visibleViews, true))
+                                <button
+                                    type="button"
+                                    class="role-preview-menu {{ $isVisible ? '' : 'is-muted' }}"
+                                    wire:click="toggleMenu('{{ $view }}')"
+                                    @disabled($view === 'dashboard')
+                                >
                                     <span>{{ $menu }}</span>
-                                    <span>{{ in_array($menu, $menus, true) ? 'on' : 'off' }}</span>
-                                </div>
+                                    <span class="role-preview-switch {{ $view === 'dashboard' ? 'is-locked' : '' }}">
+                                        {{ $view === 'dashboard' ? 'lock' : ($isVisible ? 'on' : 'off') }}
+                                    </span>
+                                </button>
                             @endforeach
                         </div>
                     @endforeach
@@ -273,7 +307,10 @@
                             <h2 class="mt-3 text-2xl font-black text-white">{{ $data['label'] }} Dashboard</h2>
                             <p class="mt-1 text-sm font-medium text-slate-300">Simulasi akses visual FE Admin berdasarkan role dan permission aktif.</p>
                         </div>
-                        <div class="role-preview-search">Search, auto refresh, theme switch</div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" class="role-preview-search" wire:click="resetRoleOverride">Reset role default</button>
+                            <div class="role-preview-search">Search, auto refresh, theme switch</div>
+                        </div>
                     </div>
 
                     <div class="role-preview-card-grid">
@@ -301,7 +338,7 @@
                         <section class="role-preview-panel">
                             <small>Menu disembunyikan</small>
                             <ul class="role-preview-list">
-                                @forelse ($hiddenMenus as $menu)
+                                @forelse ($hiddenMenus as $view => $menu)
                                     <li>
                                         <span>{{ $menu }}</span>
                                         <span>locked</span>
