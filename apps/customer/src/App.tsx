@@ -229,6 +229,52 @@ function findServiceByKeyword(text: string, services: DynamicService[]) {
   return services.find((service) => serviceKeywords(service).includes(keyword)) ?? null
 }
 
+function openServiceWhatsapp(
+  service: Pick<DynamicService, 'name' | 'code' | 'service_type' | 'whatsapp_redirect_enabled' | 'whatsapp_number' | 'whatsapp_message_template'>,
+  user: ReturnType<typeof useCustomerStore.getState>['user'],
+  pushMessage: (message: Omit<LocalMessage, 'id' | 'time'>) => void,
+) {
+  if (!service.whatsapp_redirect_enabled || !service.whatsapp_number) {
+    return false
+  }
+
+  const number = normalizeWhatsappNumber(service.whatsapp_number)
+  if (!number) {
+    pushMessage({ from: 'bot', text: `Nomor WhatsApp untuk layanan ${service.name} belum valid. Silakan hubungi operator.` })
+    return true
+  }
+
+  const message = renderServiceWhatsappMessage(service, user)
+  const url = `https://wa.me/${number}?text=${encodeURIComponent(message)}`
+  pushMessage({ from: 'bot', text: `Layanan ${service.name} masih ditangani via WhatsApp. Saya arahkan ke admin layanan sekarang.` })
+  window.open(url, '_blank', 'noopener,noreferrer')
+
+  return true
+}
+
+function normalizeWhatsappNumber(value?: string | null) {
+  const digits = String(value ?? '').replace(/\D+/g, '')
+  if (!digits) return ''
+  if (digits.startsWith('0')) return `62${digits.slice(1)}`
+
+  return digits
+}
+
+function renderServiceWhatsappMessage(
+  service: Pick<DynamicService, 'name' | 'code' | 'service_type' | 'whatsapp_message_template'>,
+  user: ReturnType<typeof useCustomerStore.getState>['user'],
+) {
+  const template = service.whatsapp_message_template?.trim()
+    || 'Halo JojoApp, saya ingin pesan layanan {service_name}. Nama saya {customer_name}.'
+
+  return template
+    .replaceAll('{service_name}', service.name)
+    .replaceAll('{service_code}', service.code)
+    .replaceAll('{service_type}', service.service_type ?? service.code)
+    .replaceAll('{customer_name}', user?.name ?? 'Customer Jojo')
+    .replaceAll('{customer_phone}', user?.phone ?? '-')
+}
+
 function App() {
   const store = useCustomerStore()
   const token = useCustomerStore((state) => state.token)
@@ -274,7 +320,15 @@ function App() {
     ?? null
 
   const submitOrderPayload = async (payload: OrderPayload) => {
-    const order = await createOrder(payload)
+    const preferredVehicle = payload.preferred_vehicle_type ?? 'motor'
+    const order = await createOrder({
+      ...payload,
+      preferred_vehicle_type: preferredVehicle,
+      service_payload: {
+        ...(payload.service_payload ?? {}),
+        preferred_vehicle_type: preferredVehicle,
+      },
+    })
     const driverResult = await findDriver(order.id)
     const assignedOrder = driverResult.data ?? order
     setActiveOrder(assignedOrder)
@@ -595,6 +649,10 @@ function App() {
       setPendingOrder(null)
       setOrderSubmitBlocked(false)
 
+      if (openServiceWhatsapp(requestedService, store.user, pushMessage)) {
+        return
+      }
+
       if (manualFormKindForService(requestedService)) {
         openManualServiceForm(requestedService, { pushUser: false })
         return
@@ -729,6 +787,10 @@ function App() {
   }
 
   const handleManualService = (service: DynamicService) => {
+    if (openServiceWhatsapp(service, store.user, pushMessage)) {
+      return
+    }
+
     if (manualFormKindForService(service)) {
       openManualServiceForm(service)
       return
@@ -1147,9 +1209,10 @@ function ManualServicePicker({ services, onService, compact = false }: { service
       <strong>Pilih layanan manual</strong>
       <div>
         {services.map((service, index) => (
-          <button key={service.id} onClick={() => onService(service)}>
+          <button className={service.whatsapp_redirect_enabled ? 'wa-service' : undefined} key={service.id} onClick={() => onService(service)}>
             <span>{index + 1}</span>
             {service.name}
+            {service.whatsapp_redirect_enabled && <small>WhatsApp</small>}
           </button>
         ))}
       </div>
@@ -1538,12 +1601,24 @@ function ChatOrderActions({
     ? [...configuredPaymentMethods, { key: 'qris', label: 'Pembayaran QRIS', description: 'Scan QRIS aplikasi.' }]
     : configuredPaymentMethods
   const selectedPayment = pendingOrder?.payment_method ?? paymentMethods[0]?.key ?? 'cash'
+  const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? 'motor'
   const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
     ? publicSettings.payment.transfer_accounts
     : publicSettings?.payment?.transfer_account
       ? [publicSettings.payment.transfer_account]
       : []
   const selectedPaymentMethod = paymentMethods.find((method) => method.key === selectedPayment)
+  const updateVehicle = (vehicle: 'motor' | 'mobil') => {
+    if (!pendingOrder) return
+    onPendingOrderChange({
+      ...pendingOrder,
+      preferred_vehicle_type: vehicle,
+      service_payload: {
+        ...(pendingOrder.service_payload ?? {}),
+        preferred_vehicle_type: vehicle,
+      },
+    })
+  }
 
   const updatePoint = (index: number, value: string) => {
     const nextPoints = points.map((point, pointIndex) => pointIndex === index ? value : point)
@@ -1581,6 +1656,14 @@ function ChatOrderActions({
           <strong>Summary final</strong>
           <p>{preview.reply}</p>
           <div className="payment-choice">
+            <label>
+              <span>Pilih kendaraan</span>
+              <select value={selectedVehicle} onChange={(event) => updateVehicle(event.target.value as 'motor' | 'mobil')}>
+                <option value="motor">Motor</option>
+                <option value="mobil">Mobil</option>
+              </select>
+            </label>
+            <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
             <label>
               <span>Metode pembayaran</span>
               <select value={selectedPayment} onChange={(event) => pendingOrder && onPendingOrderChange({ ...pendingOrder, payment_method: event.target.value })}>
@@ -1629,6 +1712,10 @@ function ChatOrderActions({
           <div className="payment-order-note">
             <span>Pembayaran order</span>
             <strong>{selectedPaymentMethod?.label ?? selectedPayment}</strong>
+          </div>
+          <div className="payment-order-note vehicle-note">
+            <span>Kendaraan</span>
+            <strong>{selectedVehicle === 'mobil' ? 'Mobil' : 'Motor'}</strong>
           </div>
           {submitBlocked && <p>Anda melebihi batas order aktif. Silakan selesaikan salah satu pesanan terlebih dahulu.</p>}
           {points.filter(Boolean).length > 0 && <p>{points.filter(Boolean).map((point, index) => `Titik ${index + 1}: ${point}`).join('\n')}</p>}

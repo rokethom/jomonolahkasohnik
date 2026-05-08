@@ -42,6 +42,11 @@ class CreateOrder
             $payload['pickup_address'] = str($payload['pickup_address'])->limit(250, '')->toString();
             $payload['destination_address'] = str($payload['destination_address'])->limit(250, '')->toString();
             $payment = $this->paymentPayload((string) ($payload['payment_method'] ?? 'cash'));
+            $preferredVehicle = $this->preferredVehicleType($payload);
+            if ($preferredVehicle) {
+                $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nKendaraan diminta: ".($preferredVehicle === 'mobil' ? 'Mobil' : 'Motor'));
+                $pricing['preferred_vehicle_type'] = $preferredVehicle;
+            }
 
             $order = Order::create([
                 ...Arr::only($payload, [
@@ -112,6 +117,13 @@ class CreateOrder
 
             return $order->fresh(['user', 'items']);
         });
+    }
+
+    private function preferredVehicleType(array $payload): ?string
+    {
+        $vehicle = strtolower((string) ($payload['preferred_vehicle_type'] ?? data_get($payload, 'service_payload.preferred_vehicle_type', '')));
+
+        return in_array($vehicle, ['motor', 'mobil'], true) ? $vehicle : null;
     }
 
     private function paymentPayload(string $method): array

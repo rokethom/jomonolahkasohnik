@@ -53,13 +53,31 @@ class RatingService
     public function driverSummary(int $driverId): array
     {
         $query = Rating::query()->where('driver_id', $driverId);
+        $average = (float) $query->avg('rating');
+        $count = (clone $query)->count();
 
         return [
-            'average' => round((float) $query->avg('rating'), 2),
-            'count' => (clone $query)->count(),
+            'average' => round($average, 2),
+            'weighted_score' => $this->weightedScore($average, $count),
+            'confidence' => $this->ratingConfidence($count),
+            'count' => $count,
             'histogram' => collect(range(1, 5))->mapWithKeys(fn (int $score): array => [
                 $score => (clone $query)->where('rating', $score)->count(),
             ])->all(),
         ];
+    }
+
+    public function weightedScore(float $average, int $count, float $globalAverage = 4.2, int $minimumTrustedRatings = 10): float
+    {
+        if ($count <= 0 || $average <= 0) {
+            return 0;
+        }
+
+        return round((($count * $average) + ($minimumTrustedRatings * $globalAverage)) / ($count + $minimumTrustedRatings), 2);
+    }
+
+    public function ratingConfidence(int $count, int $minimumTrustedRatings = 10): float
+    {
+        return round(min(1, $count / max(1, $minimumTrustedRatings)), 2);
     }
 }

@@ -77,7 +77,7 @@ class DriverReportService
                     ->where('driver_id', $driver->id)
                     ->where('status', OrderStatus::Completed->value)
                     ->whereBetween('created_at', [$start, $end])
-                    ->get(['id', 'source', 'price', 'service_charge', 'stops', 'pricing_breakdown']);
+                    ->get(['id', 'source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown']);
 
                 app(DriverFinanceService::class)->monthlyDeposit($driver, $period->copy());
 
@@ -151,11 +151,7 @@ class DriverReportService
 
     private function depositAmount(Order $order): int
     {
-        if ($order->source === 'driver_request') {
-            return (int) data_get($order->pricing_breakdown, 'service_fee', $this->serviceFees->calculate(max(1, (int) $order->stops)));
-        }
-
-        return (int) $order->service_charge;
+        return app(DriverFinanceService::class)->depositAmount($order);
     }
 
     private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, Carbon $period, int $previousBaseDeposit): int

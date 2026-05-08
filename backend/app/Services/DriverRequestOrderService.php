@@ -26,6 +26,7 @@ class DriverRequestOrderService
         $lat = (float) ($driver->current_lat ?: $branch?->latitude ?: 0);
         $lng = (float) ($driver->current_lng ?: $branch?->longitude ?: 0);
         $serviceFee = $this->serviceFees->calculate(1);
+        $depositJasa = max(0, (int) ($parsed['deposit_jasa'] ?? $parsed['price']));
         $basePrice = max(0, (int) $parsed['price'] - $serviceFee);
 
         return DB::transaction(fn (): Order => Order::query()->create([
@@ -59,6 +60,9 @@ class DriverRequestOrderService
                 'service_charge' => $serviceFee,
                 'total_price' => (int) $parsed['price'],
                 'final_price' => (int) $parsed['price'],
+                'request_accepted_jasa' => (int) $parsed['price'],
+                'request_deposit_jasa' => $depositJasa,
+                'deposit_base' => $depositJasa,
             ],
             'raw_text' => $rawText,
             'notes' => $parsed['notes'],

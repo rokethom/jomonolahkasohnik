@@ -208,6 +208,7 @@
 }
 
 .admin-shell.dark .live-order-row small,
+.admin-shell.dark .live-order-row em,
 .admin-shell.dark .dashboard-chat-row span {
   color: #9fb0c6;
 }
@@ -220,6 +221,59 @@
 .admin-shell.dark .dashboard-chat-row em {
   color: #bae6fd;
   background: rgba(14, 165, 233, .16);
+}
+
+.admin-shell.dark tr.selected-row td {
+  background: rgba(14, 165, 233, .12);
+}
+
+.admin-shell.dark .order-table-wrap td {
+  color: #dbeafe;
+}
+
+.admin-shell.dark .order-table-wrap td span {
+  color: #9fb0c6;
+}
+
+.admin-shell.dark .order-table-wrap,
+.admin-shell.dark .order-detail-panel,
+.admin-shell.dark .detail-item {
+  border-color: rgba(148, 163, 184, .16);
+}
+
+.admin-shell.dark .order-detail-panel {
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, .18), transparent 34%),
+    linear-gradient(180deg, rgba(15, 23, 42, .84), rgba(30, 41, 59, .72));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .22);
+}
+
+.admin-shell.dark .order-detail-hero strong,
+.admin-shell.dark .detail-item strong {
+  color: #f8fafc;
+}
+
+.admin-shell.dark .order-detail-hero span,
+.admin-shell.dark .order-detail-hero small,
+.admin-shell.dark .detail-item span,
+.admin-shell.dark .order-route-card span,
+.admin-shell.dark .order-raw-note span {
+  color: #9fb0c6;
+}
+
+.admin-shell.dark .detail-item,
+.admin-shell.dark .order-route-card {
+  background: rgba(15, 23, 42, .48);
+}
+
+.admin-shell.dark .order-route-card p,
+.admin-shell.dark .order-raw-note p {
+  color: #cbd5e1;
+}
+
+.admin-shell.dark .order-raw-note {
+  border-color: rgba(251, 146, 60, .22);
+  background: rgba(120, 53, 15, .2);
 }
 
 .admin-shell.dark .performance-mini-card,
@@ -1415,6 +1469,17 @@ svg {
   white-space: nowrap;
 }
 
+.live-order-row em {
+  min-width: 0;
+  color: #94a3b8;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .live-order-row b,
 .dashboard-chat-row b {
   color: #047857;
@@ -1829,6 +1894,200 @@ td span {
   overflow: auto;
   border-radius: 16px;
   -webkit-overflow-scrolling: touch;
+}
+
+.order-operations-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.order-operations-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 420px);
+  gap: 14px;
+  align-items: start;
+}
+
+.order-table-wrap {
+  max-height: calc(100dvh - 240px);
+  border: 1px solid #eef2f7;
+}
+
+.order-table-wrap table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.order-table-wrap th,
+.order-table-wrap td {
+  vertical-align: middle;
+}
+
+.order-table-wrap th:nth-child(1),
+.order-table-wrap td:nth-child(1) { width: 150px; }
+.order-table-wrap th:nth-child(2),
+.order-table-wrap td:nth-child(2) { width: 150px; }
+.order-table-wrap th:nth-child(3),
+.order-table-wrap td:nth-child(3) { width: 140px; }
+.order-table-wrap th:nth-child(4),
+.order-table-wrap td:nth-child(4) { width: 105px; }
+.order-table-wrap th:nth-child(5),
+.order-table-wrap td:nth-child(5) { width: 170px; }
+.order-table-wrap th:nth-child(6),
+.order-table-wrap td:nth-child(6) { width: 140px; }
+.order-table-wrap th:nth-child(7),
+.order-table-wrap td:nth-child(7) { width: 150px; }
+.order-table-wrap th:nth-child(8),
+.order-table-wrap td:nth-child(8) { width: 94px; }
+
+.order-table-wrap td:first-child strong,
+.order-table-wrap td:nth-child(6) strong {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.order-table-wrap td:first-child strong {
+  white-space: nowrap;
+  line-height: 1.15;
+  font-size: 13px;
+}
+
+.order-table-wrap td {
+  color: #0f172a;
+}
+
+.order-table-wrap td span {
+  color: #64748b;
+  line-height: 1.35;
+}
+
+tr.selected-row td {
+  background: #eff6ff;
+}
+
+.order-detail-panel {
+  position: sticky;
+  top: 96px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 34%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  padding: 16px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+}
+
+.order-detail-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.order-detail-hero > div {
+  display: grid;
+  gap: 4px;
+}
+
+.order-detail-hero span,
+.order-detail-money span,
+.detail-item span,
+.order-route-card span,
+.order-raw-note span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.order-detail-hero strong {
+  color: #0f172a;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.order-detail-hero small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.order-detail-money {
+  display: grid;
+  gap: 4px;
+  border-radius: 18px;
+  background: #0f172a;
+  padding: 14px;
+  color: #e2e8f0;
+}
+
+.order-detail-money strong {
+  color: #67e8f9;
+  font-size: 25px;
+}
+
+.order-detail-money small {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.order-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #eef2f7;
+  border-radius: 15px;
+  background: rgba(248, 250, 252, 0.86);
+  padding: 10px;
+}
+
+.detail-item strong {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.order-route-card {
+  display: grid;
+  gap: 10px;
+  border-left: 3px solid #0ea5e9;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.order-route-card p,
+.order-raw-note p {
+  margin: 3px 0 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.order-raw-note {
+  border-radius: 18px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  padding: 12px;
+}
+
+.order-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.empty-detail {
+  min-height: 260px;
+  align-content: center;
 }
 
 .driver-management-panel {
@@ -3330,10 +3589,15 @@ label {
   .insight-grid,
   .dashboard-live-grid,
   .dispatch-layout,
+  .order-operations-layout,
   .manual-ai-layout,
   .manual-parser-layout,
   .driver-filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .order-detail-panel {
+    position: static;
   }
 }
 

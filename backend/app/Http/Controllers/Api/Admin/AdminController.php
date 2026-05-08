@@ -28,6 +28,7 @@ use App\Services\NotificationService;
 use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
+use App\Services\RatingService;
 use App\Services\SettingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -61,7 +62,7 @@ class AdminController extends Controller
             'operator_performance' => $this->operatorPerformanceRows($user),
             'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)),
             'branches' => Branch::query()->withCount('geofenceAreas')->orderBy('name')->get(),
-            'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']),
+            'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
             'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
@@ -1265,18 +1266,30 @@ class AdminController extends Controller
             'customer' => $order->user?->name,
             'driver' => $order->driver?->user?->name,
             'service' => $order->service_type,
+            'service_code' => $order->service_code,
             'source' => $order->source,
             'status' => $order->status->value,
             'cancel_reason' => $this->cancelReasonFor($order),
             'branch' => $order->branch?->name ?? $order->user?->branch?->name ?? $order->driver?->user?->branch?->name,
             'branch_area' => $order->branch?->area ?? $order->user?->branch?->area ?? $order->driver?->user?->branch?->area,
+            'pickup_address' => $order->pickup_address,
+            'destination_address' => $order->destination_address,
+            'distance_km' => $order->distance_km !== null ? (float) $order->distance_km : null,
             'price' => $order->price,
             'service_charge' => $order->service_charge,
             'extra_charge' => $order->extra_charge,
             'total' => $order->total_price,
+            'payment_method' => $order->payment_method,
+            'payment_label' => $order->payment_label,
+            'payment_meta' => $order->payment_meta,
+            'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
+            'notes' => $order->notes,
+            'raw_text' => $order->raw_text,
+            'pricing_breakdown' => $order->pricing_breakdown,
             'direction_bearing' => $order->direction_bearing !== null ? (float) $order->direction_bearing : null,
             'is_multi_order' => $order->is_multi_order,
             'created_at' => $order->created_at?->toDateTimeString(),
+            'updated_at' => $order->updated_at?->toDateTimeString(),
             'waiting_seconds' => $this->waitingSeconds($order),
             'sla_status' => $this->dispatchSlaStatus($order),
             'suggested_drivers' => $actor ? $this->suggestedDriversForOrder($order, $actor) : [],
@@ -1549,6 +1562,8 @@ class AdminController extends Controller
                 'performance' => [
                     'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),
                     'ratings_count' => (int) ($user->driver?->ratings_count ?? 0),
+                    'rating_score' => app(RatingService::class)->weightedScore((float) ($user->driver?->rating_average ?? 0), (int) ($user->driver?->ratings_count ?? 0)),
+                    'rating_confidence' => app(RatingService::class)->ratingConfidence((int) ($user->driver?->ratings_count ?? 0)),
                     'completed_orders_count' => (int) ($user->driver?->completed_orders_count ?? 0),
                     'today_completed_orders_count' => (int) ($user->driver?->today_completed_orders_count ?? 0),
                     'month_completed_orders_count' => (int) ($user->driver?->month_completed_orders_count ?? 0),
@@ -1586,6 +1601,9 @@ class AdminController extends Controller
                 $query = ChatConversation::query()->where('operator_id', $user->id);
                 $ratedQuery = (clone $query)->whereNotNull('operator_rating');
 
+                $ratingAverage = (float) $ratedQuery->avg('operator_rating');
+                $ratingCount = (clone $ratedQuery)->count();
+
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
@@ -1594,8 +1612,10 @@ class AdminController extends Controller
                     'branch_area' => $user->branch?->area,
                     'handled_chats_count' => (clone $query)->count(),
                     'active_chats_count' => (clone $query)->whereIn('status', ['open', 'active', 'waiting'])->count(),
-                    'rating_average' => round((float) $ratedQuery->avg('operator_rating'), 2),
-                    'ratings_count' => (clone $ratedQuery)->count(),
+                    'rating_average' => round($ratingAverage, 2),
+                    'rating_score' => app(RatingService::class)->weightedScore($ratingAverage, $ratingCount, 4.2, 8),
+                    'rating_confidence' => app(RatingService::class)->ratingConfidence($ratingCount, 8),
+                    'ratings_count' => $ratingCount,
                     'late_response_count' => (clone $query)->where('sla_status', 'breached')->count(),
                 ];
             })

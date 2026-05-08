@@ -326,6 +326,7 @@ class DriverController extends Controller
             'payment_method' => $order->payment_method,
             'payment_label' => $order->payment_label,
             'payment_meta' => $order->payment_meta,
+            'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
             'detail' => $order->raw_text,
             'accepted_at' => in_array($order->status->value, ['DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING'], true)
                 ? $order->updated_at?->toIso8601String()

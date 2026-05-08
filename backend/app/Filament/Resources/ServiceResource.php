@@ -72,6 +72,27 @@ class ServiceResource extends Resource
                         ->dehydrateStateUsing(fn (?string $state): ?array => $state ? json_decode($state, true) : null)
                         ->columnSpanFull(),
                 ]),
+            Forms\Components\Section::make('WhatsApp Handling')
+                ->description('Aktifkan untuk layanan yang masih perlu ditangani manual, misalnya Travel.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\Toggle::make('whatsapp_redirect_enabled')
+                        ->label('Arahkan customer ke WhatsApp')
+                        ->default(false)
+                        ->live(),
+                    Forms\Components\TextInput::make('whatsapp_number')
+                        ->label('Nomor WhatsApp')
+                        ->placeholder('62812xxxxxxx')
+                        ->helperText('Gunakan format internasional tanpa +. Contoh: 6281299232918.')
+                        ->maxLength(32)
+                        ->dehydrateStateUsing(fn (?string $state): ?string => $state ? preg_replace('/\D+/', '', $state) : null),
+                    Forms\Components\Textarea::make('whatsapp_message_template')
+                        ->label('Pesan pembuka')
+                        ->placeholder('Halo JojoApp, saya ingin pesan layanan {service_name}. Nama saya {customer_name}.')
+                        ->helperText('Placeholder: {service_name}, {service_code}, {customer_name}, {customer_phone}.')
+                        ->rows(4)
+                        ->columnSpanFull(),
+                ]),
         ]);
     }
 
@@ -82,6 +103,8 @@ class ServiceResource extends Resource
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('code')->badge()->searchable()->sortable(),
                 Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),
+                Tables\Columns\IconColumn::make('whatsapp_redirect_enabled')->label('WA')->boolean()->sortable(),
+                Tables\Columns\TextColumn::make('whatsapp_number')->label('WA Number')->toggleable(),
                 Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable(),
             ])
             ->filters([

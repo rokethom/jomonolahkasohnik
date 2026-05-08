@@ -110,6 +110,7 @@ export type Order = {
   payment_method?: 'cash' | 'transfer' | string | null
   payment_label?: string | null
   payment_meta?: Record<string, unknown> | null
+  preferred_vehicle_type?: 'motor' | 'mobil' | string | null
 }
 
 export type OrderFeedback = {
@@ -215,6 +216,10 @@ export type DynamicService = {
   id: number
   name: string
   code: string
+  service_type?: string
+  whatsapp_redirect_enabled?: boolean
+  whatsapp_number?: string | null
+  whatsapp_message_template?: string | null
   form_schema?: {
     fields?: DynamicServiceField[]
   } | null

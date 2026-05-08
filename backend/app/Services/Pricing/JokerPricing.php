@@ -7,16 +7,20 @@ class JokerPricing
     public function calculate(float $distance): array
     {
         $billingDistance = $this->roundDistance($distance);
+        $extraDistance = 0;
+        $tarif = 25000;
 
-        $tarif = match (true) {
-            $distance <= 3.5 => 25000,
-            $distance <= 10.5 => (int) (($billingDistance * 5000) + 10000),
-            default => (int) (($billingDistance * 4000) + 20000),
-        };
+        if ($distance > 3) {
+            $extraDistance = max(1, (int) ceil($distance - 3));
+            $tarif += $extraDistance * 4000;
+        }
 
         return [
             'distance' => $distance,
             'billing_distance' => $billingDistance,
+            'base_tarif' => 25000,
+            'extra_distance' => $extraDistance,
+            'per_km_rate' => 4000,
             'tarif' => $tarif,
         ];
     }

@@ -230,7 +230,7 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase()
 const APP_BASE = API_BASE.replace(/\/api$/, '')
-const pricePattern = /(\d+(?:[.,]\d+)?)\s*k\b/i
+const pricePattern = /(\d+(?:[.,]\d+)?)\s*k\b/gi
 const driverViews: View[] = ['login', 'dashboard', 'orders', 'order-detail', 'chat', 'history', 'request', 'profile', 'performance']
 
 function viewFromHistoryState(state: unknown) {
@@ -1278,8 +1278,14 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
 function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
   const [request, setRequest] = useState('')
   const [loading, setLoading] = useState(false)
-  const { token, toast } = useDriverStore()
-  const parsedPrice = parseRequestPrice(request)
+  const { token, toast, driver, branchRequestOrders } = useDriverStore()
+  const parsedPrices = parseRequestPrices(request)
+  const ownRequestOrders = branchRequestOrders
+    .filter((order) => order.driver === driver?.name || order.customer === driver?.name)
+    .slice(0, 8)
+  const areaRequestOrders = branchRequestOrders
+    .filter((order) => order.driver !== driver?.name && order.customer !== driver?.name)
+    .slice(0, 12)
   const submit = async () => {
     setLoading(true)
     try {
@@ -1293,7 +1299,31 @@ function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
       setLoading(false)
     }
   }
-  return <section className="page"><PageTitle title="Request Order" subtitle="Tetap bisa dipakai saat suspend." /><div className="panel"><textarea className="request-box" placeholder={"Do\npiscok dawuhan\nke Ayani\njasa/js 7k"} value={request} onChange={(event) => setRequest(event.target.value)} /><div className="preview-price">Preview harga: <strong>{parsedPrice ? `Rp ${formatMoney(parsedPrice)}` : 'Belum terdeteksi'}</strong></div><button className="primary-button full" disabled={loading || !parsedPrice} onClick={submit}>{loading ? 'Mengirim...' : 'Kirim Request'}</button></div></section>
+  return (
+    <section className="page request-page">
+      <PageTitle title="Request Order" subtitle="Paste format request, history area tampil seperti grup driver cabang." />
+      <div className="panel request-compose-panel">
+        <textarea className="request-box" placeholder={"DO\npiscok dawuhan\nke Ayani\njasa 10k D 7k"} value={request} onChange={(event) => setRequest(event.target.value)} />
+        <div className="preview-price request-price-preview">
+          <span>Jasa diterima: <strong>{parsedPrices.acceptedPrice ? `Rp ${formatMoney(parsedPrices.acceptedPrice)}` : 'Belum terdeteksi'}</strong></span>
+          <span>Dasar setoran: <strong>{parsedPrices.depositBase ? `Rp ${formatMoney(parsedPrices.depositBase)}` : 'Belum terdeteksi'}</strong></span>
+        </div>
+        <button className="primary-button full" disabled={loading || !parsedPrices.acceptedPrice} onClick={submit}>{loading ? 'Mengirim...' : 'Kirim Request'}</button>
+      </div>
+
+      <section className="panel request-history-panel">
+        <SectionTitle title="Request kamu" action={`${ownRequestOrders.length}`} />
+        {ownRequestOrders.length === 0 && <p className="note">Request yang kamu kirim akan tampil di sini.</p>}
+        {ownRequestOrders.map((order) => <RequestHistoryRow key={order.id} order={order} />)}
+      </section>
+
+      <section className="panel request-history-panel">
+        <SectionTitle title="Request driver area" action={`${areaRequestOrders.length}`} />
+        {areaRequestOrders.length === 0 && <p className="note">Belum ada request dari driver lain di cabang kamu.</p>}
+        {areaRequestOrders.map((order) => <RequestHistoryRow key={order.id} order={order} />)}
+      </section>
+    </section>
+  )
 }
 
 function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
@@ -1681,7 +1711,14 @@ function isDoneStatus(status?: string) {
   return normalizeStatus(String(status ?? '')) === 'done'
 }
 
-function parseRequestPrice(text: string) { const match = text.match(pricePattern); return match ? Math.round(Number(match[1].replace(',', '.')) * 1000) : null }
+function parseRequestPrices(text: string) {
+  const prices = [...text.matchAll(pricePattern)].map((match) => Math.round(Number(match[1].replace(',', '.')) * 1000))
+
+  return {
+    acceptedPrice: prices[0] ?? null,
+    depositBase: prices.length > 0 ? prices[prices.length - 1] : null,
+  }
+}
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
 function isOrderListVisible(order: Order) { return order.status === 'pending' || isActiveOrder(order) }
 function sortNewestOrderFirst(a: Order, b: Order) {

@@ -13,7 +13,7 @@ class ServiceController extends Controller
             'data' => Service::query()
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get(['id', 'name', 'code', 'form_schema']),
+                ->get(['id', 'name', 'code', 'form_schema', 'whatsapp_redirect_enabled', 'whatsapp_number', 'whatsapp_message_template']),
         ]);
     }
 }

@@ -19,7 +19,7 @@ class DriverFinanceService
         'bondowoso' => 5000,
     ];
 
-    public function __construct(private readonly ServiceFeeCalculator $serviceFees)
+    public function __construct(private readonly ServiceFeeCalculator $serviceFees, private readonly RatingService $ratings)
     {
     }
 
@@ -100,6 +100,8 @@ class DriverFinanceService
 
         return [
             'rating' => round((float) $rating, 2),
+            'rating_score' => $this->ratings->weightedScore((float) $rating, $driver->ratings()->count()),
+            'rating_confidence' => $this->ratings->ratingConfidence($driver->ratings()->count()),
             'ratings_count' => $driver->ratings()->count(),
             'completed_orders_count' => (clone $completedThisMonth)->count(),
             'cancelled_orders_count' => (clone $cancelledThisMonth)->count(),
@@ -139,17 +141,31 @@ class DriverFinanceService
             ->where('driver_id', $driver->id)
             ->where('status', 'COMPLETED')
             ->whereBetween('created_at', [$start, $end])
-            ->get(['source', 'price', 'service_charge'])
+            ->get(['source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown'])
             ->sum(fn (Order $order): int => $this->depositAmount($order));
     }
 
-    private function depositAmount(Order $order): int
+    public function depositAmount(Order $order): int
     {
-        $serviceCash = $order->source === 'driver_request'
-            ? (int) data_get($order->pricing_breakdown, 'service_fee', $this->serviceFees->calculate(max(1, (int) $order->stops)))
-            : (int) $order->service_charge;
-        $jasa = max(0, (int) $order->price) + max(0, $serviceCash);
+        if ($this->isJokerMobilOrder($order)) {
+            return $this->jokerMobilDeposit($order);
+        }
 
+        if ($order->source === 'driver_request') {
+            $jasa = (int) data_get(
+                $order->pricing_breakdown,
+                'request_deposit_jasa',
+                data_get($order->pricing_breakdown, 'deposit_base', max(0, (int) $order->price + (int) $order->service_charge)),
+            );
+
+            return $this->depositFromJasa($jasa);
+        }
+
+        return $this->depositFromJasa(max(0, (int) $order->price) + max(0, (int) $order->service_charge));
+    }
+
+    private function depositFromJasa(int $jasa): int
+    {
         if ($jasa < 12000) {
             return 1000;
         }
@@ -159,6 +175,26 @@ class DriverFinanceService
         }
 
         return (int) floor(min($jasa, 60000) * 0.2);
+    }
+
+    private function isJokerMobilOrder(Order $order): bool
+    {
+        $service = strtolower(trim((string) ($order->service_code ?: $order->service_type)));
+
+        return in_array($service, ['jm', 'joker_mobil', 'joker mobil'], true)
+            || str_contains($service, 'joker mobil');
+    }
+
+    private function jokerMobilDeposit(Order $order): int
+    {
+        $distance = (float) ($order->distance_km ?: data_get($order->pricing_breakdown, 'distance', 0));
+        $jasa = max(0, (int) ($order->total_price ?: $order->price));
+
+        if ($distance <= 3) {
+            return 1000;
+        }
+
+        return (int) floor($jasa * 0.1);
     }
 
     private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, Carbon $period, int $previousBaseDeposit): int

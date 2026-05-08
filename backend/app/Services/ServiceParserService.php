@@ -56,6 +56,7 @@ class ServiceParserService
             'service_code' => $service->code,
             'service_type' => $service->name,
             'price' => $price,
+            'deposit_jasa' => $this->pricingParser->parseLast($rawText) ?? $price,
             'pickup_address' => $lines->get(1, 'Driver request'),
             'destination_address' => $this->parseDestination($lines->all()),
             'notes' => $rawText,

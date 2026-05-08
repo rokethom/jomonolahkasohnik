@@ -62,6 +62,7 @@ export type OrderPayload = {
   items?: Array<{ name: string; quantity?: number; qty?: number; price?: number; notes?: string }>
   points?: Array<{ label?: string; address: string }>
   payment_method?: 'cash' | 'transfer' | string
+  preferred_vehicle_type?: 'motor' | 'mobil'
 }
 
 export type GeocodePayload = {
@@ -197,7 +198,7 @@ export async function createOrder(payload: OrderPayload) {
 
 export type JojoBotPreview = {
   intent: 'service_menu' | 'service_selected' | 'order_preview' | 'fallback_form'
-  services: Array<{ id: number; code: string; name: string; service_type: string }>
+  services: Array<{ id: number; code: string; name: string; service_type: string; whatsapp_redirect_enabled?: boolean; whatsapp_number?: string | null; whatsapp_message_template?: string | null }>
   selected_service?: string | null
   message?: string | null
   form_schema?: DynamicFormSchema | null

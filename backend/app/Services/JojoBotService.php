@@ -223,7 +223,7 @@ class JojoBotService
         $rows = Service::query()
             ->where('is_active', true)
             ->orderBy('id')
-            ->get(['id', 'code', 'name']);
+            ->get(['id', 'code', 'name', 'whatsapp_redirect_enabled', 'whatsapp_number', 'whatsapp_message_template']);
 
         if ($rows->isEmpty()) {
             $rows = collect([
@@ -240,6 +240,9 @@ class JojoBotService
             'code' => (string) ($service['code'] ?? $service->code),
             'name' => (string) ($service['name'] ?? $service->name),
             'service_type' => $this->serviceType((string) ($service['code'] ?? $service->code), (string) ($service['name'] ?? $service->name)),
+            'whatsapp_redirect_enabled' => (bool) ($service['whatsapp_redirect_enabled'] ?? $service->whatsapp_redirect_enabled ?? false),
+            'whatsapp_number' => $service['whatsapp_number'] ?? $service->whatsapp_number ?? null,
+            'whatsapp_message_template' => $service['whatsapp_message_template'] ?? $service->whatsapp_message_template ?? null,
         ]);
     }
 

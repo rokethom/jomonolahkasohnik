@@ -15,11 +15,15 @@ class Service extends Model
         'code',
         'is_active',
         'form_schema',
+        'whatsapp_redirect_enabled',
+        'whatsapp_number',
+        'whatsapp_message_template',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'form_schema' => 'array',
+        'whatsapp_redirect_enabled' => 'boolean',
     ];
 
     public function orders(): HasMany

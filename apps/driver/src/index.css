@@ -1199,6 +1199,15 @@ input:focus, textarea:focus, select:focus {
   justify-items: end;
 }
 
+.request-page {
+  gap: 14px;
+}
+
+.request-compose-panel {
+  display: grid;
+  gap: 12px;
+}
+
 .request-box { min-height: 170px; }
 .preview-price {
   margin: 14px 0;
@@ -1212,6 +1221,19 @@ input:focus, textarea:focus, select:focus {
 
 .preview-price strong {
   color: var(--green-dark);
+}
+
+.request-price-preview {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.request-price-preview span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
 }
 
 .history-page {
