@@ -27,6 +27,22 @@ class OrderCodeGenerator
         throw new \RuntimeException('Gagal generate kode order unik. Silakan coba lagi.');
     }
 
+    public function generateRequest(Service|string|null $service = null): string
+    {
+        $serviceCode = $this->normalizeCode($service instanceof Service ? $service->code : ($service ?: 'JO'), 'JO');
+        $datetime = now()->format('ymdH');
+
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            $code = "{$serviceCode}-{$datetime}-REQ".$this->uniqueRequestSuffix();
+
+            if (! Order::query()->where('order_code', $code)->exists()) {
+                return $code;
+            }
+        }
+
+        throw new \RuntimeException('Gagal generate kode request order unik. Silakan coba lagi.');
+    }
+
     private function branchCode(Branch $branch): string
     {
         $name = $branch->area ?: $branch->name;
@@ -48,5 +64,10 @@ class OrderCodeGenerator
         $unique = (string) ($micro + $entropy);
 
         return str_pad(substr($unique, -4), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function uniqueRequestSuffix(): string
+    {
+        return str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
     }
 }

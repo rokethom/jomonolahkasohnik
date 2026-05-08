@@ -628,18 +628,28 @@ function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onActio
 }
 
 function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
-  const visible = orders.filter((order) => order.driver).slice(0, 8)
+  const visible = orders.filter((order) => order.driver && order.source !== 'driver_request').slice(0, 6)
 
   return (
     <section className="branch-feed panel">
-      <SectionTitle title="Order diterima area" action={`${visible.length} terbaru`} />
+      <div className="branch-feed-head">
+        <div>
+          <span>Monitor area</span>
+          <h2>Order diterima area</h2>
+        </div>
+        <strong>{visible.length} terbaru</strong>
+      </div>
       {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
       {visible.map((order) => (
-        <div className="branch-feed-row" key={order.id}>
-          <strong>{order.code}</strong>
-          <span>telah diterima oleh {order.driver}</span>
-          <small>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</small>
-        </div>
+        <article className="branch-accepted-card" key={order.id}>
+          <div className="branch-accepted-icon">{driverInitial(order.driver)}</div>
+          <div className="branch-accepted-main">
+            <strong>{order.code}</strong>
+            <span>{order.driver} menerima order {order.service}</span>
+            <small>{shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
+          </div>
+          <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
+        </article>
       ))}
     </section>
   )
@@ -1719,6 +1729,7 @@ function parseRequestPrices(text: string) {
     depositBase: prices.length > 0 ? prices[prices.length - 1] : null,
   }
 }
+function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
 function isOrderListVisible(order: Order) { return order.status === 'pending' || isActiveOrder(order) }
 function sortNewestOrderFirst(a: Order, b: Order) {

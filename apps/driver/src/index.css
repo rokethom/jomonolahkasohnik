@@ -1317,6 +1317,109 @@ input:focus, textarea:focus, select:focus {
   margin-top: 14px;
 }
 
+.branch-feed {
+  position: relative;
+  overflow: hidden;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(24, 212, 255, 0.12), transparent 34%),
+    linear-gradient(145deg, rgba(15, 35, 59, 0.94), rgba(11, 24, 43, 0.88));
+}
+
+.branch-feed-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.branch-feed-head div {
+  min-width: 0;
+}
+
+.branch-feed-head span {
+  display: block;
+  margin-bottom: 4px;
+  color: rgba(226, 239, 255, 0.56);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.branch-feed-head h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 20px;
+  line-height: 1.12;
+}
+
+.branch-feed-head strong {
+  flex: 0 0 auto;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.1);
+  color: #bae6fd;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.branch-accepted-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(191, 219, 254, 0.16);
+  border-radius: 20px;
+  background: rgba(8, 20, 37, 0.72);
+  padding: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.branch-accepted-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #16d9ff, #1477ff);
+  color: white;
+  font-weight: 950;
+  box-shadow: 0 10px 24px rgba(20, 119, 255, 0.24);
+}
+
+.branch-accepted-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.branch-accepted-main strong {
+  min-width: 0;
+  color: #f8fafc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-accepted-main span {
+  color: rgba(226, 239, 255, 0.78);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.branch-accepted-main small,
+.branch-accepted-card time {
+  color: rgba(226, 239, 255, 0.52);
+  font-size: 12px;
+}
+
+.branch-accepted-card time {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .branch-feed-row {
   display: grid;
   grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr) auto;
@@ -1361,6 +1464,21 @@ input:focus, textarea:focus, select:focus {
 
   .branch-feed-row small {
     text-align: left;
+  }
+
+  .branch-accepted-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .branch-accepted-card time {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .branch-accepted-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
   }
 }
 
