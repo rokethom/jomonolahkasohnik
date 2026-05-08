@@ -478,6 +478,19 @@ function App() {
     )
   }, [token, view])
 
+  useEffect(() => {
+    const closeBackdropModal = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target?.classList.contains('modal-backdrop')) return
+
+      target.querySelector<HTMLButtonElement>('.modal-header .icon-button, .modal-actions .secondary-button')?.click()
+    }
+
+    document.addEventListener('mousedown', closeBackdropModal)
+
+    return () => document.removeEventListener('mousedown', closeBackdropModal)
+  }, [])
+
   if (!token) {
     return <LoginScreen onLogin={(nextToken) => {
       localStorage.setItem('admin_token', nextToken)
@@ -489,7 +502,7 @@ function App() {
   }
 
   if (!data) {
-    return <div className="loading-screen">{isLoading ? 'Loading real admin data...' : error || 'No data loaded'}</div>
+    return <div className="loading-screen">{isLoading ? 'Memuat data admin...' : error || 'Data belum tersedia'}</div>
   }
 
   const allowedViews = allowedViewsFor(data.me.role, data.permissions)
@@ -574,7 +587,7 @@ function App() {
             <button className="mobile-menu-button" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Icon name="grid" />Menu</button>
             <div className="topbar-title"><h1>{titleFor(safeView)}</h1><p>{subtitleFor(data)}</p>{error && <p className="error-text">{error}</p>}</div>
             <div className="topbar-actions">
-              <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search real data" /></div>
+              <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari data" /></div>
               <div className="auto-refresh-pill" title="Data admin tersinkron otomatis tiap 5 detik">
                 <span />
                 Auto refresh
@@ -1406,8 +1419,15 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
             <legend>Kendaraan</legend>
             <div className="form-grid">
               <label>Vehicle Type<select value={vehicleType} onChange={(event) => setVehicleType(event.target.value as 'motor' | 'mobil')}><option value="motor">Driver sepeda motor</option><option value="mobil">Driver mobil</option></select></label>
-              <label className="toggle-row driver-ladies-toggle"><input type="checkbox" checked={isLadiesDriver} onChange={(event) => setIsLadiesDriver(event.target.checked)} />Driver Ladies</label>
             </div>
+            <label className="driver-ladies-card">
+              <input type="checkbox" checked={isLadiesDriver} onChange={(event) => setIsLadiesDriver(event.target.checked)} />
+              <span>
+                <strong>Driver Ladies</strong>
+                <small>Aktifkan agar driver dapat menerima order Ojek Ladies sesuai cabang/area.</small>
+              </span>
+              <b>{isLadiesDriver ? 'Aktif' : 'Nonaktif'}</b>
+            </label>
           </fieldset>
           <fieldset>
             <legend>Pilihan Layanan</legend>
