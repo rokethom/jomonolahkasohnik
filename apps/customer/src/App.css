@@ -2248,6 +2248,39 @@
   line-height: 1.35;
 }
 
+.double-order-confirm,
+.passenger-warning {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.double-order-confirm {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-weight: 850;
+}
+
+.double-order-confirm input {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+
+.passenger-warning {
+  grid-template-columns: 1fr;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 900;
+}
+
 .vehicle-seat-choice {
   display: grid;
   grid-template-columns: 1fr;

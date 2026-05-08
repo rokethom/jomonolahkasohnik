@@ -170,6 +170,51 @@ function paymentMethodLabel(method?: string | null) {
   return 'Pembayaran Cash'
 }
 
+function defaultVehicleForService(serviceType?: string | null): 'motor' | 'mobil' {
+  const value = String(serviceType ?? '').toLowerCase().replace(/[\s-]+/g, '_')
+  return ['jm', 'joker_mobil', 'joker', 'mobil'].includes(value) || value.includes('mobil') ? 'mobil' : 'motor'
+}
+
+function passengerCountFromPayload(payload?: OrderPayload | null) {
+  const raw = payload?.service_payload?.passengers ?? payload?.service_payload?.jumlah_penumpang ?? payload?.service_payload?.passenger_count
+  const value = Number(String(raw ?? 1).replace(/\D+/g, ''))
+  return Number.isFinite(value) && value > 0 ? value : 1
+}
+
+function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPreview) {
+  const quote = preview?.quote
+  const lines = [
+    'Pesanan Anda:',
+    '',
+    `Layanan: ${serviceDisplayLabel(payload?.service_type ?? preview?.service_type)}`,
+    passengerCountFromPayload(payload) > 1 ? `Jumlah penumpang: ${passengerCountFromPayload(payload)}` : null,
+    '',
+    'Alamat jemput:',
+    payload?.pickup_address ?? preview?.parsed?.pickup_address ?? '-',
+    '',
+    'Alamat antar:',
+    payload?.destination_address ?? preview?.parsed?.destination_address ?? '-',
+    '',
+    quote ? 'Breakdown harga:' : null,
+    quote ? `Tarif: ${formatRupiah(quote.tarif ?? quote.price ?? 0)}` : null,
+    quote ? `Service fee: ${formatRupiah(quote.service_fee ?? quote.service_charge ?? 0)}` : null,
+    quote ? `Tambahan: ${formatRupiah(quote.extra_charge ?? 0)}` : null,
+    quote ? `Total: ${formatRupiah(quote.total_price ?? quote.final_price ?? 0)}` : null,
+  ]
+
+  return lines.filter((line) => line !== null).join('\n')
+}
+
+function serviceDisplayLabel(service?: string | null) {
+  const value = String(service ?? '').toLowerCase()
+  if (value.includes('joker_mobil') || value.includes('mobil') || value === 'jm') return 'Joker Mobil'
+  if (value.includes('ojek')) return 'Ojek'
+  if (value.includes('belanja') || value === 'bl') return 'Belanja'
+  if (value.includes('kurir') || value === 'kr') return 'Kurir'
+  if (value.includes('gift') || value === 'go') return 'Gift Order'
+  return service || '-'
+}
+
 function driverNameFromOrder(order?: Order | null) {
   return order?.driver?.user?.name ?? order?.driver_name ?? '-'
 }
@@ -328,28 +373,41 @@ function App() {
     ?? null
 
   const submitOrderPayload = async (payload: OrderPayload) => {
-    const preferredVehicle = payload.preferred_vehicle_type ?? 'motor'
+    const preferredVehicle = payload.preferred_vehicle_type ?? defaultVehicleForService(payload.service_type)
     const vehicleSeatRows = preferredVehicle === 'mobil' ? (payload.vehicle_seat_rows === 3 ? 3 : 2) : undefined
     const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
-    const order = await createOrder({
-      ...payload,
-      preferred_vehicle_type: preferredVehicle,
-      ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
-      driver_preference: driverPreference,
-      service_payload: {
-        ...(payload.service_payload ?? {}),
+    const passengers = passengerCountFromPayload(payload)
+    const orderCount = isOjekService(payload.service_type) && passengers === 2 && payload.service_payload?.confirm_double_order === true ? 2 : 1
+    const createdOrders: Order[] = []
+
+    for (let index = 0; index < orderCount; index += 1) {
+      const order = await createOrder({
+        ...payload,
+        notes: [payload.notes, orderCount > 1 ? `Order penumpang ${index + 1} dari ${orderCount}` : null].filter(Boolean).join('\n'),
         preferred_vehicle_type: preferredVehicle,
         ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
         driver_preference: driverPreference,
-      },
-    })
-    const driverResult = await findDriver(order.id)
-    const assignedOrder = driverResult.data ?? order
+        service_payload: {
+          ...(payload.service_payload ?? {}),
+          ...(orderCount > 1 ? { passenger_order_index: index + 1, passenger_order_count: orderCount } : {}),
+          preferred_vehicle_type: preferredVehicle,
+          ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
+          driver_preference: driverPreference,
+        },
+      })
+      const driverResult = await findDriver(order.id)
+      const assignedOrder = driverResult.data ?? order
+      createdOrders.push(assignedOrder)
+      addOrder(assignedOrder)
+    }
+
+    const assignedOrder = createdOrders[0]
     setActiveOrder(assignedOrder)
-    addOrder(assignedOrder)
     pushMessage({
       from: 'bot',
-      text: `Order berhasil dibuat.\nKode: ${assignedOrder.order_code ?? `#${assignedOrder.id}`}\nJOJOBOT sedang assign driver.`,
+      text: createdOrders.length > 1
+        ? `Order berhasil dibuat ${createdOrders.length} order.\nKode: ${createdOrders.map((order) => order.order_code ?? `#${order.id}`).join(', ')}\nJOJOBOT sedang assign driver.`
+        : `Order berhasil dibuat.\nKode: ${assignedOrder.order_code ?? `#${assignedOrder.id}`}\nJOJOBOT sedang assign driver.`,
       order: assignedOrder,
     })
     if (isAcceptedOrder(assignedOrder)) setScreen('driver-chat')
@@ -704,7 +762,20 @@ function App() {
     if (/^tidak$/i.test(text) && pendingOrder) {
       setPendingOrder(null)
       setOrderSubmitBlocked(false)
-      pushMessage({ from: 'bot', text: 'Baik, kirim ulang detail pesanan atau pilih layanan manual.' })
+      pushMessage({
+        from: 'bot',
+        text: 'Baik, kirim ulang detail pesanan dengan cara ketik "menu" atau klik menu layanan di bawah.',
+        preview: {
+          intent: 'service_menu',
+          services: services.map((service) => ({ ...service, service_type: service.service_type ?? service.code })),
+          selected_service: null,
+          service_type: null,
+          parsed: {},
+          quote: null,
+          order_payload: null,
+          reply: '',
+        },
+      })
       return
     }
 
@@ -1214,7 +1285,7 @@ function ChatOrderScreen({
 }
 
 function shouldShowChatMessage(message: LocalMessage) {
-  return !(message.from === 'bot' && message.preview?.intent === 'service_menu')
+  return !(message.from === 'bot' && (message.preview?.intent === 'service_menu' || message.preview?.intent === 'order_preview'))
 }
 
 function ManualServicePicker({ services, onService, compact = false }: { services: DynamicService[]; onService: (service: DynamicService) => void; compact?: boolean }) {
@@ -1236,7 +1307,7 @@ function ManualServicePicker({ services, onService, compact = false }: { service
 
 function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
   const [address, setAddress] = useState('')
-  const [items, setItems] = useState('tahu,tempe')
+  const [items, setItems] = useState('')
   const [purchaseAddress, setPurchaseAddress] = useState('')
   const [points, setPoints] = useState<string[]>([])
   const parsedItems = parseShoppingItems(items)
@@ -1255,7 +1326,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
     `Alamat Antar: ${address || '-'}`,
     `Lokasi Pembelian: ${purchaseAddress || '-'}`,
     '',
-    'Belikan:',
+    'Pembelian:',
     ...parsedItems.map((item) => `- ${item}`),
     '',
     `Alamat pembelian: ${purchaseAddress || '-'}`,
@@ -1277,7 +1348,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
         <label>Hp / WhatsApp<input value={user?.phone ?? '-'} readOnly /></label>
         <label>Alamat antar<input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Tulis alamat antar manual" /></label>
       </div>
-      <label>Belikan<textarea value={items} onChange={(event) => setItems(event.target.value)} placeholder="tahu,tempe" /></label>
+      <label>Pembelian<textarea value={items} onChange={(event) => setItems(event.target.value)} placeholder="Tulis item yang ingin dibeli" /></label>
       {parsedItems.length > 0 && <div className="shopping-item-preview">{parsedItems.map((item) => <span key={item}>- {item}</span>)}</div>}
       <label>Alamat pembelian<textarea value={purchaseAddress} readOnly={hasGacoan} onChange={(event) => setPurchaseAddress(event.target.value)} placeholder="Contoh: Pasar Panji, toko Bu Sari" /></label>
       {hasGacoan && <span className="locked-address-note">Alamat pembelian dikunci karena item berisi kata gacoan.</span>}
@@ -1615,9 +1686,12 @@ function ChatOrderActions({
     ? [...configuredPaymentMethods, { key: 'qris', label: 'Pembayaran QRIS', description: 'Scan QRIS aplikasi.' }]
     : configuredPaymentMethods
   const selectedPayment = pendingOrder?.payment_method ?? paymentMethods[0]?.key ?? 'cash'
-  const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? 'motor'
+  const defaultVehicle = defaultVehicleForService(pendingOrder?.service_type)
+  const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? defaultVehicle
   const selectedSeatRows = pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2
   const isOjekOrder = isOjekService(pendingOrder?.service_type)
+  const passengerCount = passengerCountFromPayload(pendingOrder)
+  const doubleOrderConfirmed = pendingOrder?.service_payload?.confirm_double_order === true
   const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
   const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
     ? publicSettings.payment.transfer_accounts
@@ -1697,8 +1771,29 @@ function ChatOrderActions({
       {showSummary && (
         <div className="final-preview-card">
           <strong>Summary final</strong>
-          <p>{preview.reply}</p>
+          <p>{orderSummaryText(pendingOrder, preview)}</p>
           <div className="payment-choice">
+            {isOjekOrder && passengerCount > 2 && (
+              <div className="passenger-warning">
+                Penumpang lebih dari 2 orang. Silakan pilih layanan Mobil agar order lebih aman.
+              </div>
+            )}
+            {isOjekOrder && passengerCount === 2 && (
+              <label className="double-order-confirm">
+                <input
+                  type="checkbox"
+                  checked={doubleOrderConfirmed}
+                  onChange={(event) => pendingOrder && onPendingOrderChange({
+                    ...pendingOrder,
+                    service_payload: {
+                      ...(pendingOrder.service_payload ?? {}),
+                      confirm_double_order: event.target.checked,
+                    },
+                  })}
+                />
+                <span>Buat 2 order ojek dengan detail yang sama untuk 2 penumpang.</span>
+              </label>
+            )}
             {isOjekOrder && (
               <div className="ladies-choice">
                 <span>Pilihan driver</span>
@@ -1794,7 +1889,7 @@ function ChatOrderActions({
           {submitBlocked && <p>Anda melebihi batas order aktif. Silakan selesaikan salah satu pesanan terlebih dahulu.</p>}
           {points.filter(Boolean).length > 0 && <p>{points.filter(Boolean).map((point, index) => `Titik ${index + 1}: ${point}`).join('\n')}</p>}
           <div>
-            <button type="button" disabled={submitBlocked} onClick={onConfirm}>YA KIRIM</button>
+            <button type="button" disabled={submitBlocked || (isOjekOrder && passengerCount > 2) || (isOjekOrder && passengerCount === 2 && !doubleOrderConfirmed)} onClick={onConfirm}>YA KIRIM</button>
             <button type="button" onClick={() => setShowSummary(false)}>EDIT</button>
           </div>
         </div>

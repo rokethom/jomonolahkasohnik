@@ -496,7 +496,7 @@ class JojoBotService
                     ['label' => 'Hp / WhatsApp', 'name' => 'phone', 'type' => 'phone', 'required' => false, 'options' => []],
                     ['label' => 'Alamat Antar', 'name' => 'alamat_antar', 'type' => 'text', 'required' => true, 'options' => []],
                     ['label' => 'Lokasi Pembelian', 'name' => 'lokasi_pembelian', 'type' => 'text', 'required' => true, 'options' => []],
-                    ['label' => 'Belikan', 'name' => 'belikan', 'type' => 'textarea', 'required' => true, 'options' => []],
+                    ['label' => 'Pembelian', 'name' => 'belikan', 'type' => 'textarea', 'required' => true, 'options' => []],
                 ],
             ];
         }
@@ -585,7 +585,9 @@ class JojoBotService
         $serviceType = (string) ($parsed['service_type'] ?? '');
         $pickupLabel = $this->isPurchaseService($serviceType) ? 'Lokasi pembelian' : 'Alamat jemput';
         $destinationLabel = $this->isPurchaseService($serviceType) ? 'Alamat antar/customer' : 'Tujuan';
-        $pickupText = $parsed['store_location'] ?? $parsed['pickup_address'] ?? '-';
+        $pickupText = $this->isPurchaseService($serviceType)
+            ? ($parsed['store_location'] ?? $parsed['pickup_address'] ?? '-')
+            : ($parsed['pickup_address'] ?? '-');
 
         return implode("\n", [
             'Pesanan Anda:',
