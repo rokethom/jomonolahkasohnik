@@ -2209,17 +2209,26 @@ function ImageEditorModal({ imageUrl, onClose, onSend }: { imageUrl: string; onC
 
 function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTranscript: (text: string) => void; compact?: boolean; hidden?: boolean }) {
   const [listening, setListening] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'listening' | 'processing' | 'stopped'>('idle')
+  const [language, setLanguage] = useState('id-ID')
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const shouldListenRef = useRef(false)
   const finalTranscriptRef = useRef('')
+  const restartTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     return () => {
       shouldListenRef.current = false
+      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current)
       recognitionRef.current?.abort?.()
       recognitionRef.current = null
     }
   }, [])
+
+  const emitTranscript = useCallback((text: string) => {
+    const corrected = correctSpeechText(text)
+    if (corrected) onTranscript(corrected)
+  }, [onTranscript])
 
   const start = useCallback(() => {
     const SpeechRecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -2228,12 +2237,19 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       return
     }
 
+    if (restartTimerRef.current) {
+      window.clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = null
+    }
+
     recognitionRef.current?.abort?.()
 
     const recognition = new SpeechRecognitionApi()
-    recognition.lang = 'id-ID'
+    recognition.lang = language
     recognition.continuous = true
     recognition.interimResults = true
+    recognition.maxAlternatives = 1
+    setStatus('listening')
     recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
       let interimTranscript = ''
 
@@ -2242,27 +2258,33 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
         if (!transcript) continue
 
         if (event.results[index]?.isFinal) {
-          finalTranscriptRef.current = `${finalTranscriptRef.current} ${transcript}`.trim()
+          finalTranscriptRef.current = appendSpeechSegment(finalTranscriptRef.current, transcript)
         } else {
-          interimTranscript = `${interimTranscript} ${transcript}`.trim()
+          interimTranscript = appendSpeechSegment(interimTranscript, transcript)
         }
       }
 
-      const nextText = `${finalTranscriptRef.current} ${interimTranscript}`.trim()
-      if (nextText) onTranscript(nextText)
+      const nextText = appendSpeechSegment(finalTranscriptRef.current, interimTranscript)
+      setStatus(interimTranscript ? 'processing' : 'listening')
+      emitTranscript(nextText)
     }
     recognition.onerror = () => {
-      if (!shouldListenRef.current) setListening(false)
+      if (!shouldListenRef.current) {
+        setListening(false)
+        setStatus('stopped')
+      }
     }
     recognition.onend = () => {
       if (!shouldListenRef.current) {
         setListening(false)
+        setStatus('stopped')
         return
       }
 
-      window.setTimeout(() => {
+      setStatus('processing')
+      restartTimerRef.current = window.setTimeout(() => {
         if (shouldListenRef.current) start()
-      }, 240)
+      }, 180)
     }
     recognitionRef.current = recognition
     setListening(true)
@@ -2270,14 +2292,18 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       recognition.start()
     } catch {
       setListening(false)
+      setStatus('stopped')
     }
-  }, [onTranscript])
+  }, [emitTranscript, language, onTranscript])
 
   const toggle = () => {
     if (listening) {
       shouldListenRef.current = false
+      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current)
       recognitionRef.current?.stop()
       setListening(false)
+      setStatus('stopped')
+      emitTranscript(finalTranscriptRef.current)
       return
     }
 
@@ -2287,10 +2313,75 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
   }
 
   return (
-    <button type="button" className={`${compact ? 'input-icon voice-inline' : 'mic-button'} ${listening ? 'recording' : ''} ${hidden && !listening ? 'is-hidden' : ''}`} onClick={toggle} aria-label={listening ? 'Stop voice input' : 'Voice input'} tabIndex={hidden && !listening ? -1 : 0} aria-hidden={hidden && !listening}>
-      {listening ? <Square size={compact ? 20 : 24} fill="currentColor" /> : <Mic size={compact ? 25 : 28} />}
-    </button>
+    <div className={`voice-control ${listening ? 'recording' : ''} ${hidden && !listening ? 'is-hidden' : ''}`} data-status={status}>
+      {listening && (
+        <button type="button" className="voice-language" onClick={() => setLanguage((value) => value === 'id-ID' ? 'en-US' : 'id-ID')} aria-label="Ganti bahasa voice">
+          {language === 'id-ID' ? 'ID' : 'EN'}
+        </button>
+      )}
+      <button type="button" className={`${compact ? 'input-icon voice-inline' : 'mic-button'} ${listening ? 'recording' : ''}`} onClick={toggle} aria-label={listening ? 'Stop voice input' : 'Voice input'} tabIndex={hidden && !listening ? -1 : 0} aria-hidden={hidden && !listening}>
+        {listening ? (
+          <span className="voice-wave" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        ) : <Mic size={compact ? 25 : 28} />}
+        {listening && <Square className="voice-stop-icon" size={compact ? 13 : 16} fill="currentColor" />}
+      </button>
+    </div>
   )
+}
+
+function appendSpeechSegment(current: string, segment: string) {
+  const cleanSegment = correctSpeechText(segment)
+  if (!cleanSegment) return correctSpeechText(current)
+
+  const currentText = correctSpeechText(current)
+  if (!currentText) return cleanSegment
+
+  const currentWords = currentText.split(/\s+/u)
+  const segmentWords = cleanSegment.split(/\s+/u)
+  const maxOverlap = Math.min(12, currentWords.length, segmentWords.length)
+
+  for (let size = maxOverlap; size > 0; size -= 1) {
+    const tail = currentWords.slice(-size).join(' ').toLowerCase()
+    const head = segmentWords.slice(0, size).join(' ').toLowerCase()
+    if (tail === head) {
+      return correctSpeechText([...currentWords, ...segmentWords.slice(size)].join(' '))
+    }
+  }
+
+  const normalizedCurrent = currentText.toLowerCase()
+  const normalizedSegment = cleanSegment.toLowerCase()
+  if (normalizedCurrent.endsWith(normalizedSegment)) return currentText
+
+  return correctSpeechText(`${currentText} ${cleanSegment}`)
+}
+
+function correctSpeechText(value: string) {
+  const words = value
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+
+  if (words.length === 0) return ''
+
+  const withoutRepeatedWords = words.filter((word, index) => index === 0 || word.toLowerCase() !== words[index - 1]?.toLowerCase())
+
+  for (let phraseSize = 6; phraseSize >= 2; phraseSize -= 1) {
+    for (let index = 0; index <= withoutRepeatedWords.length - phraseSize * 2; index += 1) {
+      const first = withoutRepeatedWords.slice(index, index + phraseSize).join(' ').toLowerCase()
+      const second = withoutRepeatedWords.slice(index + phraseSize, index + phraseSize * 2).join(' ').toLowerCase()
+      if (first === second) {
+        withoutRepeatedWords.splice(index + phraseSize, phraseSize)
+        index = Math.max(-1, index - phraseSize)
+      }
+    }
+  }
+
+  return withoutRepeatedWords.join(' ').trim()
 }
 
 function TypingIndicator() {
@@ -3447,8 +3538,9 @@ type BrowserSpeechRecognition = {
   lang: string
   continuous: boolean
   interimResults: boolean
+  maxAlternatives?: number
   onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
-  onerror: (() => void) | null
+  onerror: ((event?: { error?: string }) => void) | null
   onend: (() => void) | null
   start: () => void
   stop: () => void

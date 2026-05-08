@@ -147,11 +147,7 @@ class AdminRolePreviewPage extends Page implements HasForms
     public function resetRoleOverride(): void
     {
         $role = $this->rolePreview ?: 'operator';
-        $menuService = app(AdminRoleMenuOverrideService::class);
-
-        foreach ($menuService->allViews() as $view) {
-            $menuService->setViewVisible($role, $view, true);
-        }
+        app(AdminRoleMenuOverrideService::class)->resetRole($role);
     }
 
     private function cardsFor(string $role, array $permissions): array
