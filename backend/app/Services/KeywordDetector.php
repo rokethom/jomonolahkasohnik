@@ -5,9 +5,10 @@ namespace App\Services;
 class KeywordDetector
 {
     private const SERVICE_KEYWORDS = [
-        'DO' => ['beli', 'belikan', 'pesan'],
-        'kurir' => ['antar'],
         'ojek' => ['ojek'],
+        'joker_mobil' => ['joker mobil', 'citycar'],
+        'kurir' => ['kurir', 'kirim barang', 'antar barang', 'dokumen', 'paket'],
+        'DO' => ['beli', 'belikan', 'pesan'],
     ];
 
     public function detectService(string $text): ?string

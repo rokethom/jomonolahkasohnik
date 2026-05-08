@@ -21,10 +21,12 @@ class NaturalLanguageParserService
         }
 
         $destination = $this->addresses->destination($text, $user);
+        $pickup = $this->pickupAddress($text);
         $storeLocation = $this->addresses->storeLocation($text);
         $items = $this->items($text);
+        $passengers = $this->passengers($text);
 
-        if ($serviceType === 'DO' && ($items === [] || ! $storeLocation || ! $destination)) {
+        if ($serviceType === 'DO' && ($items === [] || ! $storeLocation)) {
             return null;
         }
 
@@ -36,17 +38,22 @@ class NaturalLanguageParserService
             return null;
         }
 
+        if ($serviceType === 'joker_mobil' && ! $destination) {
+            return null;
+        }
+
         $branch = $this->branch($user);
         $userLat = (float) ($user->lat ?: $user->currentLocation?->lat ?: $branch?->latitude ?: -7.7063);
         $userLng = (float) ($user->lng ?: $user->currentLocation?->lng ?: $branch?->longitude ?: 114.0098);
         $pickupLat = $serviceType === 'DO' ? $userLat + 0.01 : $userLat;
         $pickupLng = $serviceType === 'DO' ? $userLng + 0.01 : $userLng;
-        $pickupAddress = $serviceType === 'DO' ? $storeLocation : $this->addresses->profileAddress($user);
-        $destinationAddress = $destination ?: $storeLocation ?: $this->addresses->profileAddress($user);
+        $pickupAddress = $serviceType === 'DO' ? $storeLocation : ($pickup ?: $this->addresses->profileAddress($user));
+        $destinationAddress = $destination ?: $this->addresses->profileAddress($user);
         $servicePayload = [
             'source' => 'smart_parser',
             'raw_text' => $text,
             'store_location' => $storeLocation,
+            'passengers' => $passengers,
             'customer' => [
                 'name' => $user->name,
                 'phone' => $user->phone,
@@ -66,6 +73,7 @@ class NaturalLanguageParserService
                 'name' => $user->name,
                 'phone' => $user->phone,
             ],
+            'passengers' => $passengers,
             'stops' => [],
             'branch' => $branch,
             'payload' => [
@@ -91,7 +99,7 @@ class NaturalLanguageParserService
     {
         $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text));
 
-        if (preg_match('/\b(?:beli|belikan|pesan)\s+(.+?)(?=\s+\b(?:di|dari|dan|kirim|antar)\b|$)/u', $normalized, $match) !== 1) {
+        if (preg_match('/\b(?:beli|belikan|pesan)\s+(.+?)(?=\s+\b(?:di|dari|dan|kirim|antar|ke|pak|bu|toko|warung|resto|rumah\s+makan)\b|$)/u', $normalized, $match) !== 1) {
             return [];
         }
 
@@ -115,6 +123,40 @@ class NaturalLanguageParserService
             $storeLocation ? 'Lokasi pembelian: '.$storeLocation : null,
             'Tujuan: '.$destination,
         ])));
+    }
+
+    private function pickupAddress(string $text): ?string
+    {
+        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text));
+
+        if (preg_match('/(?:alamat\s+jemput|jemput\s+di|jemput|dari)\s+(.+?)\s+(?:alamat\s+antar|antar\s+ke|tujuan|ke)\s+.+$/u', $normalized, $match) === 1) {
+            return $this->cleanAddress($match[1]);
+        }
+
+        return null;
+    }
+
+    private function passengers(string $text): int
+    {
+        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text));
+
+        if (preg_match('/(?:jumlah\s+)?penumpang\s*:?\s*(\d+)/u', $normalized, $match) === 1) {
+            return max(1, (int) $match[1]);
+        }
+
+        if (preg_match('/(\d+)\s*(?:orang|penumpang)/u', $normalized, $match) === 1) {
+            return max(1, (int) $match[1]);
+        }
+
+        return 1;
+    }
+
+    private function cleanAddress(string $value): string
+    {
+        $value = preg_replace('/\s+/u', ' ', trim($value)) ?? trim($value);
+        $value = preg_replace('/\s+(?:jumlah\s+)?penumpang\s*:?\s*\d+.*$/iu', '', $value) ?? $value;
+
+        return trim($value, " \t\n\r\0\x0B.,");
     }
 
     private function branch(User $user): ?Branch

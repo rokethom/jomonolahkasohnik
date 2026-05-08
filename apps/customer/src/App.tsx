@@ -2308,6 +2308,7 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const shouldListenRef = useRef(false)
   const finalTranscriptRef = useRef('')
+  const lastEmittedTranscriptRef = useRef('')
   const restartTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -2321,7 +2322,10 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
 
   const emitTranscript = useCallback((text: string) => {
     const corrected = correctSpeechText(text)
-    if (corrected) onTranscript(corrected)
+    if (corrected && corrected !== lastEmittedTranscriptRef.current) {
+      lastEmittedTranscriptRef.current = corrected
+      onTranscript(corrected)
+    }
   }, [onTranscript])
 
   const start = useCallback(() => {
@@ -2402,6 +2406,7 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
     }
 
     finalTranscriptRef.current = ''
+    lastEmittedTranscriptRef.current = ''
     shouldListenRef.current = true
     start()
   }
@@ -2454,7 +2459,7 @@ function appendSpeechSegment(current: string, segment: string) {
 }
 
 function correctSpeechText(value: string) {
-  const words = value
+  let words = value
     .replace(/\s+/gu, ' ')
     .trim()
     .split(' ')
@@ -2462,20 +2467,35 @@ function correctSpeechText(value: string) {
 
   if (words.length === 0) return ''
 
-  const withoutRepeatedWords = words.filter((word, index) => index === 0 || word.toLowerCase() !== words[index - 1]?.toLowerCase())
+  words = words.filter((word, index) => index === 0 || word.toLowerCase() !== words[index - 1]?.toLowerCase())
 
-  for (let phraseSize = 6; phraseSize >= 2; phraseSize -= 1) {
-    for (let index = 0; index <= withoutRepeatedWords.length - phraseSize * 2; index += 1) {
-      const first = withoutRepeatedWords.slice(index, index + phraseSize).join(' ').toLowerCase()
-      const second = withoutRepeatedWords.slice(index + phraseSize, index + phraseSize * 2).join(' ').toLowerCase()
-      if (first === second) {
-        withoutRepeatedWords.splice(index + phraseSize, phraseSize)
+  let changed = true
+  while (changed) {
+    changed = false
+    for (let phraseSize = Math.min(10, Math.floor(words.length / 2)); phraseSize >= 2; phraseSize -= 1) {
+      for (let index = 0; index <= words.length - phraseSize * 2; index += 1) {
+        const first = words.slice(index, index + phraseSize).join(' ').toLowerCase()
+        const second = words.slice(index + phraseSize, index + phraseSize * 2).join(' ').toLowerCase()
+        if (first !== second) continue
+        words.splice(index + phraseSize, phraseSize)
+        changed = true
         index = Math.max(-1, index - phraseSize)
       }
     }
   }
 
-  return withoutRepeatedWords.join(' ').trim()
+  for (let phraseSize = Math.min(8, Math.floor(words.length / 2)); phraseSize >= 2; phraseSize -= 1) {
+    for (let index = 0; index <= words.length - phraseSize * 2; index += 1) {
+      const first = words.slice(index, index + phraseSize).join(' ').toLowerCase()
+      const second = words.slice(index + phraseSize, index + phraseSize * 2).join(' ').toLowerCase()
+      if (first === second) {
+        words.splice(index + phraseSize, phraseSize)
+        index = Math.max(-1, index - phraseSize)
+      }
+    }
+  }
+
+  return words.join(' ').trim()
 }
 
 function TypingIndicator() {

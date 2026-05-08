@@ -44,7 +44,7 @@ class OrderParserService
             return $this->parseCourier($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
-        if ($serviceType === 'ojek') {
+        if (in_array($serviceType, ['ojek', 'joker_mobil'], true)) {
             return $this->parseOjek($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
@@ -95,6 +95,10 @@ class OrderParserService
 
     private function detectService(string $text): ?string
     {
+        if (preg_match('/joker\s+mobil|(?:^|\W)mobil(?:\W|$)|citycar/iu', $text) === 1) {
+            return 'joker_mobil';
+        }
+
         if (preg_match('/pesanan\s+kurir|(?:^|\W)kurir(?:\W|$)/iu', $text) === 1) {
             return 'kurir';
         }
@@ -165,9 +169,10 @@ class OrderParserService
 
     private function parseOjek(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng, ?string $rawText = null): ?array
     {
-        $pickupAddress = $this->field($text, 'alamat\s+jemput') ?: $profileAddress;
-        $destinationAddress = $this->field($text, 'alamat\s+antar');
-        $passengers = $this->field($text, 'jumlah\s+penumpang') ?: '1';
+        [$loosePickup, $looseDestination] = $this->routeAddresses($text);
+        $pickupAddress = $this->field($text, 'alamat\s+jemput') ?: $loosePickup ?: $profileAddress;
+        $destinationAddress = $this->field($text, 'alamat\s+antar') ?: $looseDestination;
+        $passengers = $this->field($text, 'jumlah\s+penumpang') ?: $this->passengers($text) ?: '1';
         $notes = $this->field($text, 'catatan');
 
         if (! $destinationAddress) {
@@ -175,7 +180,7 @@ class OrderParserService
         }
 
         return [
-            'service_type' => 'ojek',
+            'service_type' => $this->detectService($text) === 'joker_mobil' ? 'joker_mobil' : 'ojek',
             'customer_id' => $user->id,
             'name' => $user->name,
             'phone' => $user->phone,
@@ -186,7 +191,7 @@ class OrderParserService
             'stops' => [],
             'branch' => $branch,
             'payload' => [
-                'service_type' => 'ojek',
+                'service_type' => $this->detectService($text) === 'joker_mobil' ? 'joker_mobil' : 'ojek',
                 'pickup_address' => $pickupAddress,
                 'pickup_lat' => $pickupLat,
                 'pickup_lng' => $pickupLng,
@@ -275,6 +280,48 @@ class OrderParserService
         }
 
         return null;
+    }
+
+    private function routeAddresses(string $text): array
+    {
+        $patterns = [
+            '/(?:alamat\s+jemput|jemput\s+di|jemput|dari)\s+(.+?)\s+(?:alamat\s+antar|antar\s+ke|tujuan|ke)\s+(.+)$/iu',
+            '/(?:ojek|motor|mobil|joker\s+mobil).+?(?:dari|jemput\s+di)\s+(.+?)\s+(?:ke|tujuan|antar\s+ke)\s+(.+)$/iu',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $text, $match) === 1) {
+                return [$this->cleanAddress($match[1]), $this->cleanAddress($match[2])];
+            }
+        }
+
+        if (preg_match('/(?:alamat\s+antar|tujuan|antar\s+ke|ke)\s+(.+)$/iu', $text, $match) === 1) {
+            return [null, $this->cleanAddress($match[1])];
+        }
+
+        return [null, null];
+    }
+
+    private function passengers(string $text): ?string
+    {
+        if (preg_match('/(?:jumlah\s+)?penumpang\s*:?\s*(\d+)/iu', $text, $match) === 1) {
+            return $match[1];
+        }
+
+        if (preg_match('/(\d+)\s*(?:orang|penumpang)/iu', $text, $match) === 1) {
+            return $match[1];
+        }
+
+        return null;
+    }
+
+    private function cleanAddress(string $value): string
+    {
+        $value = preg_replace('/\s+/u', ' ', trim($value)) ?? trim($value);
+        $value = preg_replace('/\s+(?:jumlah\s+)?penumpang\s*:?\s*\d+.*$/iu', '', $value) ?? $value;
+        $value = preg_replace('/\s+\d+\s*(?:orang|penumpang).*$/iu', '', $value) ?? $value;
+
+        return trim($value, " \t\n\r\0\x0B.,");
     }
 
     private function afterMarker(string $text, string $marker): string

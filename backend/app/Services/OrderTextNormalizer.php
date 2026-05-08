@@ -49,6 +49,9 @@ class OrderTextNormalizer
             'beliin' => 'beli',
             'pesenin' => 'pesan',
             'psn' => 'pesan',
+            'psen' => 'pesan',
+            'pesen' => 'pesan',
+            'pesankan' => 'pesan',
             'mkn' => 'makan',
             'mknn' => 'makanan',
             'brg' => 'barang',
@@ -68,6 +71,7 @@ class OrderTextNormalizer
             'wa' => 'whatsapp',
             'waq' => 'whatsapp saya',
             'ojol' => 'ojek',
+            'ojolan' => 'ojek',
             'ojk' => 'ojek',
             'ojeg' => 'ojek',
             'mtr' => 'motor',
@@ -86,6 +90,8 @@ class OrderTextNormalizer
             'skrng' => 'sekarang',
             'nnti' => 'nanti',
             'ntar' => 'nanti',
+            'skalian' => 'sekalian',
+            'sekalianin' => 'sekalian',
             'bs' => 'bisa',
             'bsa' => 'bisa',
             'gk' => 'tidak',
@@ -119,6 +125,7 @@ class OrderTextNormalizer
         $normalized = mb_strtolower(trim($text));
         $normalized = str_replace(["\r\n", "\r"], "\n", $normalized);
         $normalized = preg_replace('/[^\S\n]+/u', ' ', $normalized) ?? $normalized;
+        $normalized = $this->removeSpeechRepeats($normalized);
         $normalized = $this->normalizeMoney($normalized);
         $normalized = $this->normalizeNumberWords($normalized);
 
@@ -167,5 +174,42 @@ class OrderTextNormalizer
         }
 
         return $text;
+    }
+
+    private function removeSpeechRepeats(string $text): string
+    {
+        $lines = preg_split('/\R/u', $text) ?: [$text];
+
+        return collect($lines)
+            ->map(function (string $line): string {
+                $words = preg_split('/\s+/u', trim($line)) ?: [];
+                $words = array_values(array_filter($words, fn (string $word): bool => $word !== ''));
+                if ($words === []) {
+                    return '';
+                }
+
+                $words = array_values(array_filter($words, fn (string $word, int $index): bool => $index === 0 || mb_strtolower($word) !== mb_strtolower($words[$index - 1] ?? ''), ARRAY_FILTER_USE_BOTH));
+
+                $changed = true;
+                while ($changed) {
+                    $changed = false;
+                    for ($size = min(10, intdiv(count($words), 2)); $size >= 2; $size--) {
+                        for ($index = 0; $index <= count($words) - ($size * 2); $index++) {
+                            $first = mb_strtolower(implode(' ', array_slice($words, $index, $size)));
+                            $second = mb_strtolower(implode(' ', array_slice($words, $index + $size, $size)));
+                            if ($first !== $second) {
+                                continue;
+                            }
+
+                            array_splice($words, $index + $size, $size);
+                            $changed = true;
+                            $index = max(-1, $index - $size);
+                        }
+                    }
+                }
+
+                return implode(' ', $words);
+            })
+            ->implode("\n");
     }
 }

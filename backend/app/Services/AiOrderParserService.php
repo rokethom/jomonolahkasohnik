@@ -394,6 +394,7 @@ class AiOrderParserService
 Kamu adalah smart parser order JOJOBOT. Tugasmu hanya ekstrak data order ke JSON valid.
 Jangan menentukan harga, jangan membuat order, jangan menebak koordinat.
 Input berisi text asli dan normalized_text. Pakai normalized_text untuk memahami typo, slang, singkatan, dan bahasa Indonesia informal, tapi tetap jaga maksud dari text asli.
+Input sering berasal dari voice-to-text Android sehingga bisa berisi pengulangan kata/frasa. Abaikan pengulangan seperti "pesan pesan pesan", "belikan belikan", atau frasa yang muncul berulang karena noise.
 Return JSON object saja dengan schema:
 {
   "service_type": "DO|ojek|kurir|belanja|gift_order|travel|joker_mobil|null",
@@ -415,13 +416,18 @@ Definisi field:
 - destination_address = alamat antar/tujuan akhir. Untuk DO/belanja jika user bilang alamat saya/rumah/profile, isi dari profile.address.
 - customer_name/customer_phone/customer_address = data pemesan jika ada pada teks. Jika tidak ada, null.
 - Untuk DO/belanja/gift_order, JANGAN masukkan alamat pembelian ke pickup_address. Masukkan ke store_location/purchase_address.
+- Untuk ojek/joker_mobil, frasa "dari/jemput di/alamat jemput" adalah pickup_address dan "ke/tujuan/alamat antar" adalah destination_address. Jangan tertukar.
 Aturan layanan:
 - beli/belikan/pesan makanan/barang => DO atau belanja
 - antar/kirim barang/dokumen => kurir
 - ojek/antar orang/penumpang => ojek
+- mobil/joker mobil/citycar/penumpang mobil => joker_mobil
 - gift/kado/hadiah => gift_order
 - travel => travel
 Jika user berkata alamat saya/rumah/profile, gunakan alamat profile yang diberikan.
+Contoh:
+"pesen ojol jemput di smasa ke katolik penumpang 2" => service_type ojek, pickup_address smasa, destination_address katolik, passengers 2.
+"belikan bakso pak gani antar ke rumah saya" => service_type DO, items bakso, store_location pak gani, destination_address profile.address.
 PROMPT;
     }
 
