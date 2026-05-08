@@ -69,6 +69,12 @@ type JojoHistoryState = {
   jojoScreen?: Screen
 }
 
+type NotificationOpenTarget = {
+  screen: 'driver-chat' | 'cs-chat'
+  conversationId?: number
+  orderId?: number
+}
+
 type LocalMessage = {
   id: string
   from: 'bot' | 'user' | 'driver' | 'system'
@@ -125,6 +131,37 @@ function guardScreenForSession(screen: Screen, token?: string | null, user?: Ret
   if (!user) return screen === 'login' ? 'home' : screen
   if (!isProfileComplete(user ?? null)) return 'profile-setup'
   return screen === 'login' || screen === 'profile-setup' ? 'home' : screen
+}
+
+function numericParam(value: string | null) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : undefined
+}
+
+function readNotificationOpenTarget(): NotificationOpenTarget | null {
+  const params = new URLSearchParams(window.location.search)
+  const open = params.get('open') ?? params.get('screen')
+  const type = params.get('notification_type') ?? params.get('type')
+  const conversationId = numericParam(params.get('conversation_id'))
+  const orderId = numericParam(params.get('order_id'))
+
+  if (open === 'driver-chat' || (type === 'chat_message' && orderId)) {
+    return { screen: 'driver-chat', conversationId, orderId }
+  }
+
+  if (open === 'cs-chat' || (type === 'chat_message' && conversationId)) {
+    return { screen: 'cs-chat', conversationId }
+  }
+
+  return null
+}
+
+function clearNotificationOpenParams(screen: Screen) {
+  window.history.replaceState(
+    { ...(window.history.state as JojoHistoryState | null), jojoScreen: screen },
+    document.title,
+    screenPath(screen),
+  )
 }
 
 function readOAuthCallback() {
@@ -338,6 +375,11 @@ function App() {
   const setOrders = useCustomerStore((state) => state.setOrders)
   const addOrder = useCustomerStore((state) => state.addOrder)
   const showToast = useCustomerStore((state) => state.showToast)
+  const [notificationTarget, setNotificationTarget] = useState<NotificationOpenTarget | null>(() => readNotificationOpenTarget())
+  const [csConversationFromNotification, setCsConversationFromNotification] = useState<number | null>(() => {
+    const target = readNotificationOpenTarget()
+    return target?.screen === 'cs-chat' ? target.conversationId ?? null : null
+  })
   const [screen, setScreen] = useState<Screen>(() => token ? window.location.pathname === '/profile/setup' ? 'profile-setup' : 'home' : 'login')
   const [services, setServices] = useState<DynamicService[]>([])
   const [homeData, setHomeData] = useState<HomeData | null>(null)
@@ -555,7 +597,7 @@ function App() {
         if (window.location.pathname === '/profile/setup') {
           window.history.replaceState({}, document.title, '/')
         }
-        setScreen((current) => current === 'profile-setup' ? 'home' : current)
+        setScreen((current) => current === 'profile-setup' && !notificationTarget ? 'home' : current)
         await syncRealtimeUserLocation(token, setUserSession, showToast)
       })
       .catch((error) => {
@@ -565,7 +607,54 @@ function App() {
     void fetchOrders()
       .then(setOrders)
       .catch(() => undefined)
-  }, [clearSession, setOrders, setUserSession, showToast, token])
+  }, [clearSession, notificationTarget, setOrders, setUserSession, showToast, token])
+
+  useEffect(() => {
+    if (!token || !store.user || !notificationTarget || !isProfileComplete(store.user)) return
+
+    if (notificationTarget.screen === 'cs-chat') {
+      setCsConversationFromNotification(notificationTarget.conversationId ?? null)
+      setScreen('cs-chat')
+      clearNotificationOpenParams('cs-chat')
+      setNotificationTarget(null)
+      return
+    }
+
+    const openDriverChat = (orders: Order[]) => {
+      const order = orders.find((item) => item.id === notificationTarget.orderId)
+
+      if (!order) {
+        showToast('info', 'Chat order belum ditemukan. Membuka riwayat order.')
+        setScreen('history')
+        clearNotificationOpenParams('history')
+        setNotificationTarget(null)
+        return
+      }
+
+      setActiveOrder(order)
+      setScreen('driver-chat')
+      clearNotificationOpenParams('driver-chat')
+      setNotificationTarget(null)
+    }
+
+    if (notificationTarget.orderId) {
+      const existingOrder = store.orders.find((item) => item.id === notificationTarget.orderId)
+      if (existingOrder) {
+        openDriverChat(store.orders)
+        return
+      }
+
+      void fetchOrders()
+        .then((orders) => {
+          setOrders(orders)
+          openDriverChat(orders)
+        })
+        .catch(() => {
+          showToast('error', 'Gagal membuka chat order dari notifikasi.')
+          setNotificationTarget(null)
+        })
+    }
+  }, [notificationTarget, setOrders, showToast, store.orders, store.user, token])
 
   const refreshCustomerOrders = useCallback(async () => {
     if (!useCustomerStore.getState().token) return
@@ -973,7 +1062,7 @@ function App() {
         />
       )}
       {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
-      {screen === 'cs-chat' && <CsChatScreen />}
+      {screen === 'cs-chat' && <CsChatScreen initialConversationId={csConversationFromNotification} />}
       {screen === 'history' && (
         <HistoryScreen
           orders={store.orders}
@@ -2551,9 +2640,9 @@ function DriverChatScreen({ order }: { order: Order | null }) {
   )
 }
 
-function CsChatScreen() {
+function CsChatScreen({ initialConversationId }: { initialConversationId?: number | null }) {
   const store = useCustomerStore()
-  const [conversationId, setConversationId] = useState<number | null>(null)
+  const [conversationId, setConversationId] = useState<number | null>(initialConversationId ?? null)
   const [conversation, setConversation] = useState<ChatConversation | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null)
@@ -2565,6 +2654,15 @@ function CsChatScreen() {
   const [error, setError] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
   const cancellableOrders = store.orders.filter((order) => !['cancelled', 'CANCELLED', 'completed', 'COMPLETED', 'pending_cancel', 'PENDING_CANCEL'].includes(String(order.status)))
+
+  useEffect(() => {
+    if (!initialConversationId || initialConversationId === conversationId) return
+
+    setConversationId(initialConversationId)
+    setConversation(null)
+    setMessages([])
+    setError('')
+  }, [conversationId, initialConversationId])
 
   const loadCsMessages = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)

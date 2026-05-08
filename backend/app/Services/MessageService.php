@@ -63,6 +63,7 @@ class MessageService
                     'conversation_id' => $conversation->id,
                     'order_id' => $conversation->order_id,
                     'message_id' => $message->id,
+                    'url' => $this->chatNotificationUrl($conversation),
                 ],
             );
         }
@@ -85,5 +86,15 @@ class MessageService
         }
 
         return '/storage/'.$file->store($path, 'public');
+    }
+
+    private function chatNotificationUrl(ChatConversation $conversation): string
+    {
+        return '/?'.http_build_query(array_filter([
+            'open' => $conversation->order_id ? 'driver-chat' : 'cs-chat',
+            'conversation_id' => $conversation->id,
+            'order_id' => $conversation->order_id,
+            'notification_type' => 'chat_message',
+        ], fn ($value) => filled($value)));
     }
 }

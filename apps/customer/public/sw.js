@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jojo-customer-pwa-v1'
+const CACHE_NAME = 'jojo-customer-pwa-v2'
 const APP_ASSETS = ['/logo.png', '/favicon.ico', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
@@ -32,7 +32,46 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, options))
 })
 
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
+})
+
+function notificationTarget(data = {}) {
+  if (data.url) return data.url
+
+  const params = new URLSearchParams()
+  const type = data.type || data.notification_type
+  const conversationId = data.conversation_id || data.conversationId
+  const orderId = data.order_id || data.orderId
+
+  if (type) params.set('notification_type', String(type))
+  if (conversationId) params.set('conversation_id', String(conversationId))
+  if (orderId) params.set('order_id', String(orderId))
+
+  if (type === 'chat_message') {
+    params.set('open', orderId ? 'driver-chat' : 'cs-chat')
+  }
+
+  return params.toString() ? `/?${params.toString()}` : '/'
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  event.waitUntil(self.clients.openWindow('/'))
+  const targetUrl = new URL(notificationTarget(event.notification.data || {}), self.location.origin).href
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const client = clients.find((item) => new URL(item.url).origin === self.location.origin)
+
+      if (client) {
+        if ('navigate' in client) {
+          return client.navigate(targetUrl).then((navigatedClient) => navigatedClient?.focus())
+        }
+
+        return client.focus()
+      }
+
+      return self.clients.openWindow(targetUrl)
+    }),
+  )
 })
