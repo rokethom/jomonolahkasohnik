@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\Admin\AdminChatController;
+use App\Http\Controllers\Api\Admin\InternalChatController;
 use App\Http\Controllers\Api\Admin\OperHandleApprovalController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CancelRequestController;
@@ -106,6 +107,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/chat/{conversation}/close', [AdminChatController::class, 'close'])->middleware('permission:monitor_live_chat');
         Route::post('/chat/cancel-requests/{cancelRequest}/approve', [AdminChatController::class, 'approveCancel'])->middleware('permission:approve_cancel_order');
         Route::post('/chat/cancel-requests/{cancelRequest}/reject', [AdminChatController::class, 'rejectCancel'])->middleware('permission:reject_cancel_order');
+        Route::get('/internal-chat/rooms', [InternalChatController::class, 'rooms']);
+        Route::post('/internal-chat/rooms', [InternalChatController::class, 'storeRoom']);
+        Route::get('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'messages']);
+        Route::post('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'sendMessage']);
         Route::post('/oper-handles/{operHandle}/approve', [OperHandleApprovalController::class, 'approve']);
         Route::get('/reports', [AdminController::class, 'reports'])->middleware('permission:view_report');
         Route::get('/reports/driver-deposits', [AdminController::class, 'driverDepositReport'])->middleware('permission:view_report');

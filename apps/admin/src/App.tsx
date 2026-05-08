@@ -11,7 +11,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'manual-order'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'manual-order'
 type AdminHistoryState = {
   jojoAdminView?: View
 }
@@ -163,6 +163,9 @@ type LocationLog = { id: number; user: string | null; branch: string | null; lat
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; updated_at: string | null }
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
+type InternalChatRoom = { id: number; name: string; type: 'global' | 'branch' | 'private' | string; branch_id?: number | null; branch?: string | null; branch_area?: string | null; participants_count?: number; participants?: Array<{ id: number; name: string; role: Role | string }>; last_message?: string | null; last_sender?: string | null; unread_count?: number; updated_at?: string | null }
+type InternalChatMessage = { id: number; room_id: number; sender_id: number | null; sender_name: string; sender_role?: Role | string | null; message: string; metadata?: Record<string, unknown> | null; created_at?: string | null }
+type InternalChatDetail = { room: InternalChatRoom; messages: InternalChatMessage[] }
 type AuditLog = { id: number; user: string; role: Role | null; action: string; subject_type: string; subject_id: number | null; subject_label: string | null; metadata?: Record<string, unknown> | null; created_at: string | null }
 type OperatorPerformance = { id: number; name: string; role: Role; branch: string | null; branch_area?: string | null; handled_chats_count: number; active_chats_count: number; rating_average: number; rating_score?: number; rating_confidence?: number; ratings_count: number; late_response_count: number }
 type Stats = { total_users: number; total_drivers: number; active_orders: number; suspended_drivers: number }
@@ -216,6 +219,7 @@ type Permissions = {
   can_export_report?: boolean
   can_monitor_live_order?: boolean
   can_monitor_live_chat?: boolean
+  can_use_internal_chat?: boolean
   can_approve_cancel_order?: boolean
   can_reject_cancel_order?: boolean
   can_assign_driver?: boolean
@@ -294,6 +298,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'orders', label: 'Order Operations', icon: 'bag' },
       { id: 'request-orders', label: 'Request Order', icon: 'receipt' },
       { id: 'chats', label: 'Chat Monitor', icon: 'chat' },
+      { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
     ],
   },
@@ -343,6 +348,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
   if (permissions.can_view_report) views.add('reports')
   if (permissions.can_monitor_live_chat) views.add('chats')
+  if (permissions.can_use_internal_chat) views.add('internal-chat')
   if (permissions.can_create_manual_order) views.add('manual-order')
   if (['manager', 'spv', 'operator'].includes(role)) views.add('locations')
 
@@ -623,6 +629,7 @@ function App() {
         {safeView === 'pricing' && <PricingPanel settings={data.price_settings} branches={data.branches} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
@@ -2132,6 +2139,170 @@ function ChatStatusBadge({ status }: { status: string }) {
   return <span className={`status ${tone}`}>{status}</span>
 }
 
+function InternalChatPanel({ api, me, branches, onOpenOrder }: { api: ApiClient; me: User; branches: Branch[]; onOpenOrder: (code: string) => void }) {
+  const [rooms, setRooms] = useState<InternalChatRoom[]>([])
+  const [activeId, setActiveId] = useState<number | null>(null)
+  const [detail, setDetail] = useState<InternalChatDetail | null>(null)
+  const [message, setMessage] = useState('')
+  const [query, setQuery] = useState('')
+  const [roomType, setRoomType] = useState<'branch' | 'global' | 'private'>('branch')
+  const [roomName, setRoomName] = useState('')
+  const [roomBranchId, setRoomBranchId] = useState(() => String(me.branch_id ?? branches[0]?.id ?? ''))
+  const [isCreating, setCreating] = useState(false)
+  const [isSending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const messagesRef = useRef<HTMLDivElement | null>(null)
+
+  const filteredRooms = rooms.filter((room) => `${room.name} ${room.branch ?? ''} ${room.last_message ?? ''}`.toLowerCase().includes(query.toLowerCase()))
+  const activeRoom = detail?.room ?? rooms.find((room) => room.id === activeId) ?? null
+
+  const loadRooms = useCallback(async () => {
+    try {
+      const payload = await api<{ data: InternalChatRoom[] }>('/admin/internal-chat/rooms')
+      setRooms(payload.data)
+      setActiveId((current) => current ?? payload.data[0]?.id ?? null)
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Gagal memuat internal chat')
+    }
+  }, [api])
+
+  const loadMessages = useCallback(async (roomId: number) => {
+    try {
+      const payload = await api<InternalChatDetail>(`/admin/internal-chat/rooms/${roomId}/messages`)
+      setDetail(payload)
+      setRooms((rows) => rows.map((room) => room.id === payload.room.id ? payload.room : room))
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Gagal memuat pesan internal')
+    }
+  }, [api])
+
+  useEffect(() => {
+    void loadRooms()
+    const timer = window.setInterval(() => void loadRooms(), 6000)
+    return () => window.clearInterval(timer)
+  }, [loadRooms])
+
+  useEffect(() => {
+    if (!activeId) return
+    setDetail(null)
+    void loadMessages(activeId)
+    const timer = window.setInterval(() => void loadMessages(activeId), 3500)
+    return () => window.clearInterval(timer)
+  }, [activeId, loadMessages])
+
+  useEffect(() => {
+    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' })
+  }, [detail?.messages.length])
+
+  const createRoom = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!roomName.trim() || isCreating) return
+    setCreating(true)
+    try {
+      const payload = await api<{ data: InternalChatRoom }>('/admin/internal-chat/rooms', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: roomName.trim(),
+          type: roomType,
+          branch_id: roomType === 'global' ? null : Number(roomBranchId) || me.branch_id,
+        }),
+      })
+      setRooms((rows) => [payload.data, ...rows.filter((room) => room.id !== payload.data.id)])
+      setActiveId(payload.data.id)
+      setRoomName('')
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Gagal membuat room')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const send = async () => {
+    if (!activeId || !message.trim() || isSending) return
+    setSending(true)
+    try {
+      const payload = await api<{ data: InternalChatMessage }>(`/admin/internal-chat/rooms/${activeId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      })
+      setDetail((current) => current ? { ...current, messages: current.messages.some((item) => item.id === payload.data.id) ? current.messages : [...current.messages, payload.data] } : current)
+      setRooms((rows) => rows.map((room) => room.id === activeId ? { ...room, last_message: payload.data.message, last_sender: payload.data.sender_name, updated_at: payload.data.created_at } : room))
+      setMessage('')
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Pesan internal gagal dikirim')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <section className="admin-chat-shell internal-chat-shell">
+      <aside className="admin-chat-list panel">
+        <PanelHeader title="Internal Chat" action={`${filteredRooms.length}/${rooms.length} room`} />
+        <div className="admin-chat-filters internal-chat-filters">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari room/pesan..." />
+          <select value={roomType} onChange={(event) => setRoomType(event.target.value as typeof roomType)}>
+            <option value="branch">Area</option>
+            {['admin', 'gm'].includes(me.role) && <option value="global">Global</option>}
+            <option value="private">Private</option>
+          </select>
+        </div>
+        <form className="internal-room-form" onSubmit={createRoom}>
+          <input value={roomName} onChange={(event) => setRoomName(event.target.value)} placeholder="Room baru, contoh: Dispatch ASB" />
+          {roomType !== 'global' && (
+            <select value={roomBranchId} disabled={!['admin', 'gm'].includes(me.role)} onChange={(event) => setRoomBranchId(event.target.value)}>
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}
+            </select>
+          )}
+          <button className="mini-button" type="submit" disabled={isCreating || !roomName.trim()}>Buat</button>
+        </form>
+        <div className="admin-chat-scroll">
+          {filteredRooms.map((room) => (
+            <button key={room.id} className={activeId === room.id ? 'admin-chat-item active' : 'admin-chat-item'} onClick={() => setActiveId(room.id)}>
+              <div><strong>{room.name}</strong><span>{room.type}{room.branch ? ` - ${room.branch}` : ''}</span></div>
+              <p>{room.last_sender ? `${room.last_sender}: ` : ''}{room.last_message ?? 'Belum ada pesan internal'}</p>
+              <footer><small>{room.participants_count ?? 0} user</small>{Boolean(room.unread_count) && <b>{room.unread_count}</b>}<small>{formatShortTime(room.updated_at)}</small></footer>
+            </button>
+          ))}
+          {filteredRooms.length === 0 && <EmptyPanel title="Belum ada room" copy="Buat room area atau tunggu room default tersinkron." />}
+        </div>
+      </aside>
+      <main className="admin-chat-room panel">
+        {!activeRoom && <EmptyPanel title="Pilih room" copy="Koordinasi internal akan tampil di sini." />}
+        {activeRoom && (
+          <>
+            <header className="admin-chat-room-head">
+              <div>
+                <h2>{activeRoom.name}</h2>
+                <p>{activeRoom.type} {activeRoom.branch ? `- ${activeRoom.branch}` : ''} · {activeRoom.participants_count ?? 0} peserta</p>
+              </div>
+              <span className="status success">Internal</span>
+            </header>
+            {error && <div className="chat-error">{error}</div>}
+            <div className="admin-chat-messages" ref={messagesRef}>
+              {detail?.messages.length === 0 && <EmptyPanel title="Belum ada pesan" copy="Mulai koordinasi dengan tim di room ini." />}
+              {detail?.messages.map((item) => (
+                <article key={item.id} className={item.sender_id === me.id ? 'admin-bubble mine' : 'admin-bubble'}>
+                  <span>{item.sender_name} <small>{roleLabels[(item.sender_role as Role) || 'operator'] ?? item.sender_role} · {formatShortTime(item.created_at)}</small></span>
+                  <p>{renderOrderCodeLinks(item.message, onOpenOrder)}</p>
+                </article>
+              ))}
+            </div>
+            <form className="admin-chat-composer" onSubmit={(event) => { event.preventDefault(); void send() }}>
+              <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Tulis pesan internal, mention order, atau koordinasi driver..." onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
+              <button className="primary-button" disabled={isSending || !message.trim()} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
+            </form>
+          </>
+        )}
+      </main>
+    </section>
+  )
+}
+
 function renderOrderCodeLinks(text: string, onOpenOrder: (code: string) => void) {
   const pattern = /\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b/g
   const parts: ReactNode[] = []
@@ -2701,7 +2872,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'manual-order': 'Manual Order' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'manual-order': 'Manual Order' }[view]
 }
 
 function senderLabel(sender: string) {
