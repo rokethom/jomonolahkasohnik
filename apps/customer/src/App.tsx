@@ -356,6 +356,27 @@ function App() {
   const locationSyncTokenRef = useRef<string | null>(null)
   const [orderSubmitBlocked, setOrderSubmitBlocked] = useState(false)
   const isBrowserBackRef = useRef(false)
+
+  useEffect(() => {
+    const root = document.documentElement
+
+    const syncViewportHeight = () => {
+      const height = window.visualViewport?.height ?? window.innerHeight
+      root.style.setProperty('--jojo-viewport-height', `${Math.round(height)}px`)
+    }
+
+    syncViewportHeight()
+    window.visualViewport?.addEventListener('resize', syncViewportHeight)
+    window.visualViewport?.addEventListener('scroll', syncViewportHeight)
+    window.addEventListener('resize', syncViewportHeight)
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', syncViewportHeight)
+      window.visualViewport?.removeEventListener('scroll', syncViewportHeight)
+      window.removeEventListener('resize', syncViewportHeight)
+    }
+  }, [])
+
   const openOrder = () => {
     if (!token) {
       setScreen('login')

@@ -13,11 +13,13 @@
 }
 
 .jojo-shell {
-  min-height: 100dvh;
+  height: var(--jojo-viewport-height, 100dvh);
+  min-height: var(--jojo-viewport-height, 100dvh);
   background: #fff;
   color: #070b26;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .wa-header {
@@ -118,6 +120,7 @@
 .jojo-stage {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   background-color: #f4ecdf;
   background-image:
     radial-gradient(circle at 18px 18px, rgba(135, 119, 100, 0.13) 2px, transparent 2px),
@@ -651,7 +654,8 @@
 .chat-screen,
 .driver-chat,
 .cs-chat {
-  height: calc(100dvh - 98px);
+  height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -670,6 +674,7 @@
 
 .message-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 4px 12px 16px;
 }
@@ -917,7 +922,8 @@
 }
 
 .input-bar {
-  padding: 8px 10px 10px;
+  flex: 0 0 auto;
+  padding: 8px 10px max(8px, env(safe-area-inset-bottom));
   display: flex;
   gap: 6px;
   align-items: flex-end;
@@ -1799,7 +1805,7 @@
 }
 
 .simple-page {
-  min-height: calc(100dvh - 98px);
+  min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
   padding: 24px 18px;
   background: #f8faf9;
 }
@@ -1998,7 +2004,7 @@
 }
 
 .profile-page {
-  min-height: calc(100dvh - 98px);
+  min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
   padding: 22px 0 28px;
   background: #fff;
   color: #111b21;
