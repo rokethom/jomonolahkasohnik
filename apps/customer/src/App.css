@@ -2091,9 +2091,10 @@
 
 .profile-page {
   min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
-  padding: 0 0 28px;
+  padding: 0 0 calc(34px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f7fbfa 0%, #fff 32%);
   color: #111b21;
+  overflow-x: hidden;
 }
 
 .wa-profile-hero {
@@ -2109,8 +2110,9 @@
 
 .profile-photo-button {
   position: relative;
-  width: 168px;
-  height: 168px;
+  width: 138px;
+  height: 138px;
+  flex: 0 0 138px;
   border: 0;
   border-radius: 50%;
   background: #d9f1ff;
@@ -2124,6 +2126,7 @@
 .profile-photo-button img {
   width: 100%;
   height: 100%;
+  display: block;
   object-fit: cover;
 }
 
@@ -2194,7 +2197,7 @@
 .wa-profile-form {
   display: grid;
   gap: 0;
-  padding: 8px 0 24px;
+  padding: 8px 0 18px;
 }
 
 .wa-profile-field {
@@ -2246,7 +2249,8 @@
 }
 
 .wa-profile-control textarea {
-  min-height: 48px;
+  min-height: 74px;
+  max-height: 180px;
   resize: vertical;
 }
 
@@ -2257,6 +2261,9 @@
 }
 
 .wa-save-button {
+  position: sticky;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 5;
   min-height: 52px;
   margin: 18px 22px 0;
   border: 0;
@@ -2265,6 +2272,7 @@
   color: #fff;
   font-weight: 900;
   box-shadow: 0 10px 24px rgba(0, 168, 132, 0.2);
+  transform: translateZ(0);
 }
 
 .wa-save-button:disabled {

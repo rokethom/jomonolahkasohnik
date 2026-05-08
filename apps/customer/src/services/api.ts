@@ -131,9 +131,9 @@ export async function updateUserLocation(payload: { lat: number; lng: number; ac
 export async function updateProfile(payload: { name: string; phone: string; address: string; branch_id?: number | null; profile_photo?: File | null }) {
   if (payload.profile_photo) {
     const profilePhoto = await resizeImageFile(payload.profile_photo, {
-      maxWidth: 900,
-      maxHeight: 900,
-      quality: 0.82,
+      maxWidth: 640,
+      maxHeight: 640,
+      quality: 0.78,
       fileNamePrefix: 'customer-profile',
     })
     const form = new FormData()

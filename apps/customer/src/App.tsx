@@ -2948,6 +2948,8 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   const store = useCustomerStore()
   const user = store.user
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const formDirtyRef = useRef(false)
+  const syncedUserIdRef = useRef<number | null>(user?.id ?? null)
   const [name, setName] = useState(user?.name ?? '')
   const [phone, setPhone] = useState(user?.phone ?? '')
   const [address, setAddress] = useState(user?.address ?? '')
@@ -2966,11 +2968,14 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   }, [photoVersion, profilePhotoPreview, user?.profile_photo_url])
 
   useEffect(() => {
+    if (syncedUserIdRef.current === user?.id && formDirtyRef.current) return
+
+    syncedUserIdRef.current = user?.id ?? null
     setName(user?.name ?? '')
     setPhone(user?.phone ?? '')
     setAddress(user?.address ?? '')
     setImageFailed(false)
-  }, [user?.address, user?.name, user?.phone, user?.profile_photo_url])
+  }, [user?.id, user?.address, user?.name, user?.phone, user?.profile_photo_url])
 
   useEffect(() => () => {
     if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
@@ -2978,9 +2983,15 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
 
   const choosePhoto = (file: File | null) => {
     if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
+    formDirtyRef.current = true
     setImageFailed(false)
     setProfilePhoto(file)
     setProfilePhotoPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  const updateField = (setter: (value: string) => void) => (value: string) => {
+    formDirtyRef.current = true
+    setter(value)
   }
 
   return (
@@ -3006,7 +3017,12 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
           setSaving(true)
           try {
             const updated = await updateProfile({ name, phone, address, profile_photo: profilePhoto })
+            formDirtyRef.current = false
+            syncedUserIdRef.current = updated.id
             store.setUserSession(updated, store.token)
+            setName(updated.name ?? '')
+            setPhone(updated.phone ?? '')
+            setAddress(updated.address ?? '')
             setPhotoVersion(Date.now())
             setImageFailed(false)
             setProfilePhoto(null)
@@ -3023,16 +3039,16 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         }}
       >
         <ProfileField icon={<UserRound size={25} />} label="Nama" hint="Nama ini terlihat oleh operator dan driver.">
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nama customer" />
+          <input value={name} onChange={(event) => updateField(setName)(event.target.value)} placeholder="Nama customer" autoComplete="name" />
         </ProfileField>
         <ProfileField icon={<Info size={25} />} label="Tentang" hint="Status singkat untuk akun JojoApp.">
           <input value="Pengguna JojoApp" readOnly />
         </ProfileField>
         <ProfileField icon={<Phone size={25} />} label="Telepon" hint="Nomor aktif untuk konfirmasi order.">
-          <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+62..." />
+          <input value={phone} onChange={(event) => updateField(setPhone)(event.target.value)} placeholder="+62..." inputMode="tel" autoComplete="tel" />
         </ProfileField>
         <ProfileField icon={<MapPin size={25} />} label="Alamat" hint="Alamat profil, alamat order tetap bisa diisi manual.">
-          <textarea value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Alamat utama" />
+          <textarea value={address} onChange={(event) => updateField(setAddress)(event.target.value)} placeholder="Alamat utama" autoComplete="street-address" />
         </ProfileField>
         <ProfileField icon={<LinkIcon size={25} />} label="Tautan" hint="Fitur tautan profil akan disiapkan bertahap.">
           <input value="Tambah tautan" readOnly />
