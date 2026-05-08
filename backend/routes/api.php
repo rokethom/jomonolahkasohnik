@@ -88,6 +88,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/orders/{order}/price', [AdminController::class, 'updateOrderPrice'])->middleware('permission:edit_tarif');
         Route::post('/drivers/{driver}/suspend', [AdminController::class, 'suspendDriver'])->middleware('permission:suspend_driver');
         Route::post('/drivers/{driver}/release-suspend', [AdminController::class, 'releaseDriverSuspend'])->middleware('permission:unsuspend_driver');
+        Route::post('/drivers/{driver}/deposit/paid', [AdminController::class, 'markDriverDepositPaid'])->middleware('permission:suspend_driver');
+        Route::post('/drivers/{driver}/deposit/unpaid', [AdminController::class, 'markDriverDepositUnpaid'])->middleware('permission:suspend_driver');
         Route::post('/drivers/{driver}/reset-token', [AdminController::class, 'resetDriverToken'])->middleware('permission:suspend_driver');
         Route::patch('/drivers/{driver}/google-auth', [AdminController::class, 'updateDriverGoogleAuth'])->middleware('permission:suspend_driver');
         Route::post('/drivers/{driver}/google-auth/reset-bind', [AdminController::class, 'resetDriverGoogleBind'])->middleware('permission:suspend_driver');

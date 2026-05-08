@@ -5,7 +5,10 @@ namespace App\Filament\Resources;
 use App\Enums\UserRole;
 use App\Models\DriverDeposit;
 use App\Models\User;
+use App\Services\DriverFinanceService;
+use App\Services\DriverSuspendService;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -96,7 +99,55 @@ class DriverDepositResource extends Resource
             ->filtersLayout(FiltersLayout::AboveContent)
             ->filtersFormColumns(4)
             ->contentFooter(view('filament.resources.driver-deposit.flow'))
-            ->actions([])
+            ->actions([
+                Tables\Actions\Action::make('markPaid')
+                    ->label('Paid')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->visible(fn (DriverDeposit $record): bool => $record->status !== 'paid')
+                    ->action(function (DriverDeposit $record): void {
+                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver);
+                        $record->forceFill([
+                            'paid_amount' => max((int) $record->total, (int) $record->paid_amount),
+                            'paid_at' => now(),
+                            'status' => 'paid',
+                        ])->save();
+
+                        if ($record->driver?->status === 'suspended_unpaid') {
+                            app(DriverSuspendService::class)->release($record->driver->load('user'), auth()->user());
+                        }
+
+                        $record->driver?->update(['is_available' => false]);
+
+                        Notification::make()
+                            ->title('Setoran driver paid')
+                            ->body('Driver bisa ON kembali dari aplikasi driver.')
+                            ->success()
+                            ->send();
+                    }),
+                Tables\Actions\Action::make('markUnpaid')
+                    ->label('Unpaid')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->visible(fn (DriverDeposit $record): bool => $record->status !== 'unpaid')
+                    ->action(function (DriverDeposit $record): void {
+                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver);
+                        $record->forceFill([
+                            'paid_amount' => 0,
+                            'paid_at' => null,
+                            'status' => 'unpaid',
+                        ])->save();
+                        $record->driver?->update(['is_available' => false]);
+
+                        Notification::make()
+                            ->title('Setoran driver unpaid')
+                            ->body('Driver otomatis OFF dan hanya bisa request order.')
+                            ->warning()
+                            ->send();
+                    }),
+            ])
             ->bulkActions([]);
     }
 

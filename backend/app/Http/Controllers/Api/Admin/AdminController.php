@@ -21,6 +21,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminDashboardMetricsService;
 use App\Services\AdminRoleMenuOverrideService;
+use App\Services\DriverFinanceService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
 use App\Services\JojoBotService;
@@ -440,6 +441,66 @@ class AdminController extends Controller
         $suspensions->release($driver->load('user'), $request->user());
 
         return response()->json(['message' => 'Driver suspension released']);
+    }
+
+    public function markDriverDepositPaid(Request $request, Driver $driver, DriverFinanceService $finance, DriverSuspendService $suspensions): JsonResponse
+    {
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true), 403);
+
+        $deposit = $finance->monthlyDeposit($driver->load('user.branch'));
+        $deposit->forceFill([
+            'paid_amount' => max((int) $deposit->total, (int) $deposit->paid_amount),
+            'paid_at' => now(),
+            'status' => 'paid',
+        ])->save();
+
+        if ($driver->status === 'suspended_unpaid') {
+            $suspensions->release($driver->fresh('user'), $request->user());
+        }
+
+        $driver->fresh()->update(['is_available' => false]);
+
+        $this->recordAudit($request->user(), 'marked_driver_deposit_paid', $driver, [
+            'deposit_id' => $deposit->id,
+            'paid_amount' => $deposit->paid_amount,
+            'period' => $deposit->year.'-'.str_pad((string) $deposit->month, 2, '0', STR_PAD_LEFT),
+        ]);
+
+        return response()->json([
+            'message' => 'Setoran driver ditandai paid. Driver bisa ON dari aplikasi driver.',
+            'deposit' => $deposit->fresh(),
+            'driver' => $driver->fresh(['user.branch']),
+        ]);
+    }
+
+    public function markDriverDepositUnpaid(Request $request, Driver $driver, DriverFinanceService $finance): JsonResponse
+    {
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true), 403);
+
+        $payload = $request->validate([
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $deposit = $finance->monthlyDeposit($driver->load('user.branch'));
+        $deposit->forceFill([
+            'paid_amount' => 0,
+            'paid_at' => null,
+            'status' => 'unpaid',
+        ])->save();
+
+        $driver->update(['is_available' => false]);
+
+        $this->recordAudit($request->user(), 'marked_driver_deposit_unpaid', $driver, [
+            'deposit_id' => $deposit->id,
+            'period' => $deposit->year.'-'.str_pad((string) $deposit->month, 2, '0', STR_PAD_LEFT),
+            'reason' => $payload['reason'] ?? null,
+        ]);
+
+        return response()->json([
+            'message' => 'Setoran driver ditandai unpaid. Driver otomatis OFF dan hanya bisa request order.',
+            'deposit' => $deposit->fresh(),
+            'driver' => $driver->fresh(['user.branch']),
+        ]);
     }
 
     public function resetDriverToken(Request $request, Driver $driver): JsonResponse
@@ -1598,10 +1659,18 @@ class AdminController extends Controller
             ])
             ->limit(100)
             ->get()
-            ->map(fn (User $user): array => [
+            ->map(function (User $user): array {
+                $deposit = $user->driver ? app(DriverFinanceService::class)->monthlyDeposit($user->driver) : null;
+
+                return [
                 ...$this->userPayload($user),
                 'driver_id' => $user->driver?->id,
                 'driver_status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
+                'deposit_status' => $deposit?->status,
+                'deposit_total' => (int) ($deposit?->total ?? 0),
+                'deposit_paid_amount' => (int) ($deposit?->paid_amount ?? 0),
+                'deposit_remaining' => max(0, (int) ($deposit?->total ?? 0) - (int) ($deposit?->paid_amount ?? 0)),
+                'deposit_paid_at' => $deposit?->paid_at?->toDateTimeString(),
                 'google_bound' => filled($user->driver?->google_id),
                 'google_email' => Schema::hasColumn('drivers', 'email') ? ($user->driver?->email ?? $user->email) : $user->email,
                 'last_login_at' => $user->driver?->last_login_at?->toDateTimeString(),
@@ -1645,7 +1714,8 @@ class AdminController extends Controller
                     'end_at' => $suspension->end_at?->toDateTimeString(),
                     'status' => $suspension->status,
                 ])->all() ?? [],
-            ])
+            ];
+            })
             ->all();
     }
 

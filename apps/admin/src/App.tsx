@@ -41,6 +41,11 @@ type User = {
 type DriverRow = User & {
   driver_id: number | null
   driver_status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
+  deposit_status?: 'paid' | 'unpaid' | string | null
+  deposit_total?: number
+  deposit_paid_amount?: number
+  deposit_remaining?: number
+  deposit_paid_at?: string | null
   google_bound?: boolean
   google_email?: string | null
   last_login_at?: string | null
@@ -1294,6 +1299,20 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
     await onChanged()
   }
 
+  const markDeposit = async (driver: DriverRow, status: 'paid' | 'unpaid') => {
+    if (!driver.driver_id) return
+    const label = status === 'paid' ? 'PAID' : 'UNPAID'
+    const reason = status === 'unpaid' ? prompt(`Alasan setoran ${driver.name} dibuat unpaid`, 'Belum bayar setoran') : null
+    if (status === 'unpaid' && !reason) return
+    if (!confirm(`Tandai setoran ${driver.name} sebagai ${label}?`)) return
+
+    await api(`/admin/drivers/${driver.driver_id}/deposit/${status}`, {
+      method: 'POST',
+      body: JSON.stringify(status === 'unpaid' ? { reason } : {}),
+    })
+    await onChanged()
+  }
+
   return (
     <section className="panel driver-management-panel">
       <PanelHeader title="Driver Management" action={`${filteredDrivers.length}/${drivers.length} driver`} />
@@ -1318,7 +1337,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
       <DriverPerformanceBoard drivers={filteredDrivers} period={performancePeriod} />
       <div className="driver-table-shell">
         <table className="driver-table">
-          <thead><tr><th>Driver</th><th>Phone</th><th>Kendaraan</th><th>Layanan</th><th>Status</th><th>Until</th><th>Oper</th><th>History</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Driver</th><th>Phone</th><th>Kendaraan</th><th>Layanan</th><th>Status</th><th>Setoran</th><th>Until</th><th>Oper</th><th>History</th><th>Actions</th></tr></thead>
           <tbody>
             {filteredDrivers.map((driver) => (
               <tr key={driver.id}>
@@ -1327,6 +1346,10 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                 <td><span className="status info">{vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
                 <td><span className="driver-phone">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
                 <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
+                <td>
+                  <span className={driver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{driver.deposit_status ?? 'sync'}</span>
+                  <span className="driver-phone">Sisa Rp {Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}</span>
+                </td>
                 <td>{driver.suspended_until || '-'}</td>
                 <td>{driver.oper_handle_count}</td>
                 <td><div className="driver-history">{driver.suspensions.slice(0, 2).map((item) => <span key={item.id}>{item.duration}h - {item.reason}</span>)}{driver.suspensions.length === 0 && <span>-</span>}</div></td>
@@ -1334,7 +1357,8 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                   <div className="row-actions">
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 1, 'suspended')}>1h</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 12, 'suspended')}>12h</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 168, 'suspended_unpaid')}>Unpaid</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || driver.deposit_status === 'paid'} onClick={() => void markDeposit(driver, 'paid')}>Paid</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id || driver.deposit_status === 'unpaid'} onClick={() => void markDeposit(driver, 'unpaid')}>Unpaid</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setConfigDriver(driver)}>Config</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => void resetToken(driver)}>Reset Token</button>}
                     {permissions.can_manage_driver_auth && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setAuthDriver(driver)}>Google Auth</button>}
@@ -1345,7 +1369,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
             ))}
             {filteredDrivers.length === 0 && (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <EmptyPanel title="Belum ada driver" copy="Driver yang terlihat sesuai filter cabang akan muncul di sini." />
                 </td>
               </tr>
