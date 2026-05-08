@@ -11,6 +11,7 @@ class OrderParserService
         private readonly ItemExtractor $items,
         private readonly NaturalLanguageParserService $naturalLanguage,
         private readonly AiOrderParserService $aiParser,
+        private readonly OrderTextNormalizer $normalizer,
     ) {
     }
 
@@ -21,12 +22,15 @@ class OrderParserService
             return $aiParsed;
         }
 
-        $natural = $this->naturalLanguage->parse($user, $text);
+        $normalizedText = $this->normalizer->normalize($text);
+        $natural = $this->naturalLanguage->parse($user, $normalizedText);
         if ($natural !== null) {
+            $natural['payload']['service_payload']['raw_text'] = $text;
+            $natural['payload']['service_payload']['normalized_text'] = $normalizedText;
             return $natural;
         }
 
-        $serviceType = $this->detectService($text);
+        $serviceType = $this->detectService($normalizedText);
         if (! $serviceType) {
             return null;
         }
@@ -37,19 +41,19 @@ class OrderParserService
         $pickupLng = (float) ($branch?->longitude ?: 107.6071);
 
         if ($serviceType === 'kurir') {
-            return $this->parseCourier($user, $text, $branch, $profileAddress, $pickupLat, $pickupLng);
+            return $this->parseCourier($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
         if ($serviceType === 'ojek') {
-            return $this->parseOjek($user, $text, $branch, $profileAddress, $pickupLat, $pickupLng);
+            return $this->parseOjek($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
         if ($serviceType === 'gift_order') {
-            return $this->parseGiftOrder($user, $text, $branch, $profileAddress, $pickupLat, $pickupLng);
+            return $this->parseGiftOrder($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
-        $items = $this->items->extract($text);
-        $storeLocation = $this->storeLocation($text);
+        $items = $this->items->extract($normalizedText);
+        $storeLocation = $this->storeLocation($normalizedText);
 
         if ($items === [] || ! $storeLocation) {
             return null;
@@ -81,6 +85,7 @@ class OrderParserService
                     'store_location' => $storeLocation,
                     'location_flow_note' => 'Alamat pembelian dipakai sebagai titik ambil barang; alamat profile customer dipakai sebagai tujuan antar.',
                     'source' => 'smart_parser',
+                    'normalized_text' => $normalizedText,
                 ],
                 'items' => $items,
                 'points' => [],
@@ -105,7 +110,7 @@ class OrderParserService
         return preg_match('/delivery\s+order|(?:^|\W)do(?:\W|$)/iu', $text) === 1 ? 'DO' : null;
     }
 
-    private function parseCourier(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng): ?array
+    private function parseCourier(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng, ?string $rawText = null): ?array
     {
         $receiverBlock = $this->afterMarker($text, 'Antarkan barang ke');
         $receiverName = $this->field($receiverBlock, 'nama');
@@ -144,12 +149,13 @@ class OrderParserService
                 'branch_id' => $branch?->id,
                 'stops' => 1,
                 'destination_text' => $receiverAddress,
-                'notes' => $text,
+                'notes' => $rawText ?: $text,
                 'service_payload' => [
                     'receiver' => compact('receiverName', 'receiverPhone', 'receiverAddress'),
                     'item_type' => $itemType,
                     'item_price_text' => $price,
                     'source' => 'smart_parser',
+                    'normalized_text' => $text,
                 ],
                 'items' => [['name' => $itemType, 'quantity' => 1, 'price' => (int) preg_replace('/\D/u', '', (string) $price)]],
                 'points' => [],
@@ -157,7 +163,7 @@ class OrderParserService
         ];
     }
 
-    private function parseOjek(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng): ?array
+    private function parseOjek(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng, ?string $rawText = null): ?array
     {
         $pickupAddress = $this->field($text, 'alamat\s+jemput') ?: $profileAddress;
         $destinationAddress = $this->field($text, 'alamat\s+antar');
@@ -193,11 +199,12 @@ class OrderParserService
                 'notes' => trim(implode("\n", array_filter([
                     'Jumlah penumpang: '.$passengers,
                     $notes ? 'Catatan: '.$notes : null,
-                    $text,
+                    $rawText ?: $text,
                 ]))),
                 'service_payload' => [
                     'passengers' => max(1, (int) preg_replace('/\D/u', '', $passengers)),
                     'source' => 'smart_parser',
+                    'normalized_text' => $text,
                 ],
                 'items' => [],
                 'points' => [],
@@ -205,7 +212,7 @@ class OrderParserService
         ];
     }
 
-    private function parseGiftOrder(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng): ?array
+    private function parseGiftOrder(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng, ?string $rawText = null): ?array
     {
         $receiverBlock = $this->afterMarker($text, 'Diantar ke');
         $receiverName = $this->field($receiverBlock, 'nama');
@@ -246,13 +253,14 @@ class OrderParserService
                 'branch_id' => $branch?->id,
                 'stops' => 1,
                 'destination_text' => $receiverAddress,
-                'notes' => $text,
+                'notes' => $rawText ?: $text,
                 'service_payload' => [
                     'receiver' => compact('receiverName', 'receiverPhone', 'receiverAddress'),
                     'store_location' => $storeLocation,
                     'purchase_address' => $purchaseAddress,
                     'area' => $area,
                     'source' => 'smart_parser',
+                    'normalized_text' => $text,
                 ],
                 'items' => $items,
                 'points' => [],

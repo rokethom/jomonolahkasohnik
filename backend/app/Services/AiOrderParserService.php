@@ -30,6 +30,7 @@ class AiOrderParserService
     public function __construct(
         private readonly SettingService $settings,
         private readonly AiParserRuleService $rules,
+        private readonly OrderTextNormalizer $normalizer,
     )
     {
     }
@@ -103,6 +104,9 @@ class AiOrderParserService
 
     private function request(User $user, string $text): ?array
     {
+        $normalizedText = $this->normalizer->normalize($text);
+        $aliases = $this->normalizer->detectedAliases($text);
+
         $basePayload = [
             'temperature' => 0.1,
             'max_tokens' => $this->maxTokens(),
@@ -121,6 +125,8 @@ class AiOrderParserService
                             'address' => $user->address,
                         ],
                         'text' => $text,
+                        'normalized_text' => $normalizedText,
+                        'detected_aliases' => $aliases,
                     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 ],
             ],
@@ -387,6 +393,7 @@ class AiOrderParserService
         return <<<'PROMPT'
 Kamu adalah smart parser order JOJOBOT. Tugasmu hanya ekstrak data order ke JSON valid.
 Jangan menentukan harga, jangan membuat order, jangan menebak koordinat.
+Input berisi text asli dan normalized_text. Pakai normalized_text untuk memahami typo, slang, singkatan, dan bahasa Indonesia informal, tapi tetap jaga maksud dari text asli.
 Return JSON object saja dengan schema:
 {
   "service_type": "DO|ojek|kurir|belanja|gift_order|travel|joker_mobil|null",

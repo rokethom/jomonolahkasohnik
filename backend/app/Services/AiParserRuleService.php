@@ -6,11 +6,20 @@ use App\Models\AiParserRule;
 
 class AiParserRuleService
 {
+    public function __construct(
+        private readonly OrderTextNormalizer $normalizer,
+    ) {
+    }
+
     public function find(string $text): ?AiParserRule
     {
         return AiParserRule::query()
-            ->where('text_hash', $this->hash($text))
+            ->whereIn('text_hash', array_values(array_unique([
+                $this->hash($text),
+                $this->legacyHash($text),
+            ])))
             ->where('is_active', true)
+            ->orderByDesc('hit_count')
             ->first();
     }
 
@@ -45,16 +54,21 @@ class AiParserRuleService
 
     public function normalize(string $text): string
     {
-        $text = mb_strtolower(trim($text));
-        $text = preg_replace('/[ \t]+/u', ' ', $text) ?? $text;
-        $text = preg_replace('/\R+/u', "\n", $text) ?? $text;
-
-        return trim($text);
+        return $this->normalizer->normalize($text);
     }
 
     private function hash(string $text): string
     {
         return hash('sha256', $this->normalize($text));
+    }
+
+    private function legacyHash(string $text): string
+    {
+        $text = mb_strtolower(trim($text));
+        $text = preg_replace('/[ \t]+/u', ' ', $text) ?? $text;
+        $text = preg_replace('/\R+/u', "\n", $text) ?? $text;
+
+        return hash('sha256', trim($text));
     }
 
     private function serviceType(array $aiData): ?string
@@ -73,6 +87,12 @@ class AiParserRuleService
                 'destination_address',
                 'store_location',
                 'purchase_address',
+                'customer_name',
+                'customer_phone',
+                'customer_address',
+                'name',
+                'phone',
+                'address',
                 'items',
                 'passengers',
                 'notes',

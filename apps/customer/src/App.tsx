@@ -23,6 +23,7 @@ import {
   SendHorizontal,
   ShieldCheck,
   ShoppingBag,
+  Square,
   Store,
   ThumbsUp,
   UserRound,
@@ -2071,7 +2072,14 @@ function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { 
           rows={1}
           placeholder="Ketik pesan"
         />
-        <VoiceRecorder onTranscript={(value) => setText(value)} hidden={hasText} compact />
+        <VoiceRecorder
+          onTranscript={(value) => {
+            setText(value)
+            requestAnimationFrame(() => textareaRef.current && autoResizeTextarea(textareaRef.current))
+          }}
+          hidden={hasText}
+          compact
+        />
       </div>
       <button className="send-button" aria-label="Kirim" disabled={!hasText || sending} aria-busy={sending}>
         {sending ? <span className="send-spinner" /> : <SendHorizontal size={25} />}
@@ -2181,29 +2189,85 @@ function ImageEditorModal({ imageUrl, onClose, onSend }: { imageUrl: string; onC
 function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTranscript: (text: string) => void; compact?: boolean; hidden?: boolean }) {
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const shouldListenRef = useRef(false)
+  const finalTranscriptRef = useRef('')
 
-  const start = () => {
+  useEffect(() => {
+    return () => {
+      shouldListenRef.current = false
+      recognitionRef.current?.abort?.()
+      recognitionRef.current = null
+    }
+  }, [])
+
+  const start = useCallback(() => {
     const SpeechRecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition
     if (!SpeechRecognitionApi) {
       onTranscript('Voice tidak didukung browser ini')
       return
     }
 
+    recognitionRef.current?.abort?.()
+
     const recognition = new SpeechRecognitionApi()
     recognition.lang = 'id-ID'
-    recognition.interimResults = false
+    recognition.continuous = true
+    recognition.interimResults = true
     recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
-      onTranscript(event.results[0]?.[0]?.transcript ?? '')
+      let interimTranscript = ''
+
+      for (let index = event.resultIndex ?? 0; index < event.results.length; index += 1) {
+        const transcript = event.results[index]?.[0]?.transcript ?? ''
+        if (!transcript) continue
+
+        if (event.results[index]?.isFinal) {
+          finalTranscriptRef.current = `${finalTranscriptRef.current} ${transcript}`.trim()
+        } else {
+          interimTranscript = `${interimTranscript} ${transcript}`.trim()
+        }
+      }
+
+      const nextText = `${finalTranscriptRef.current} ${interimTranscript}`.trim()
+      if (nextText) onTranscript(nextText)
     }
-    recognition.onend = () => setListening(false)
+    recognition.onerror = () => {
+      if (!shouldListenRef.current) setListening(false)
+    }
+    recognition.onend = () => {
+      if (!shouldListenRef.current) {
+        setListening(false)
+        return
+      }
+
+      window.setTimeout(() => {
+        if (shouldListenRef.current) start()
+      }, 240)
+    }
     recognitionRef.current = recognition
     setListening(true)
-    recognition.start()
+    try {
+      recognition.start()
+    } catch {
+      setListening(false)
+    }
+  }, [onTranscript])
+
+  const toggle = () => {
+    if (listening) {
+      shouldListenRef.current = false
+      recognitionRef.current?.stop()
+      setListening(false)
+      return
+    }
+
+    finalTranscriptRef.current = ''
+    shouldListenRef.current = true
+    start()
   }
 
   return (
-    <button type="button" className={`${compact ? 'input-icon voice-inline' : 'mic-button'} ${listening ? 'recording' : ''} ${hidden ? 'is-hidden' : ''}`} onClick={start} aria-label="Voice input" tabIndex={hidden ? -1 : 0} aria-hidden={hidden}>
-      <Mic size={compact ? 25 : 28} />
+    <button type="button" className={`${compact ? 'input-icon voice-inline' : 'mic-button'} ${listening ? 'recording' : ''} ${hidden && !listening ? 'is-hidden' : ''}`} onClick={toggle} aria-label={listening ? 'Stop voice input' : 'Voice input'} tabIndex={hidden && !listening ? -1 : 0} aria-hidden={hidden && !listening}>
+      {listening ? <Square size={compact ? 20 : 24} fill="currentColor" /> : <Mic size={compact ? 25 : 28} />}
     </button>
   )
 }
@@ -3354,15 +3418,20 @@ declare global {
 }
 
 type BrowserSpeechRecognitionEvent = {
-  results: ArrayLike<ArrayLike<{ transcript: string }>>
+  resultIndex?: number
+  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>
 }
 
 type BrowserSpeechRecognition = {
   lang: string
+  continuous: boolean
   interimResults: boolean
   onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
+  onerror: (() => void) | null
   onend: (() => void) | null
   start: () => void
+  stop: () => void
+  abort?: () => void
 }
 
 type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition
