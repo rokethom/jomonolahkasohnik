@@ -1378,7 +1378,18 @@ class AdminController extends Controller
                 ->where('is_suspended', false))
             ->limit(12)
             ->get()
-            ->reject(fn (Driver $driver): bool => $this->driverHasActiveOrder($driver) || in_array((int) $driver->id, $blockedDriverIds, true))
+            ->reject(function (Driver $driver) use ($blockedDriverIds): bool {
+                $deposit = app(\App\Services\DriverFinanceService::class)->monthlyDeposit($driver);
+                if (($deposit->status ?? 'unpaid') !== 'paid') {
+                    if ($driver->is_available) {
+                        $driver->forceFill(['is_available' => false])->save();
+                    }
+
+                    return true;
+                }
+
+                return $this->driverHasActiveOrder($driver) || in_array((int) $driver->id, $blockedDriverIds, true);
+            })
             ->sortByDesc(fn (Driver $driver): int => (int) $driver->id === (int) $favoriteDriverId ? 1 : 0)
             ->values()
             ->map(fn (Driver $driver): array => [

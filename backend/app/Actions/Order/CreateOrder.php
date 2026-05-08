@@ -4,6 +4,7 @@ namespace App\Actions\Order;
 
 use App\Enums\OrderStatus;
 use App\Events\OrderCreated;
+use App\Models\Driver;
 use App\Models\Order;
 use App\Models\Service;
 use App\Models\User;
@@ -14,6 +15,8 @@ use App\Services\LocationValidationService;
 use App\Services\OrderService;
 use App\Services\PricingService;
 use App\Services\SettingService;
+use App\Services\NotificationService;
+use App\Services\DriverFinanceService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -28,6 +31,8 @@ class CreateOrder
         private readonly OrderService $orders,
         private readonly LocationValidationService $locations,
         private readonly SettingService $settings,
+        private readonly NotificationService $notifications,
+        private readonly DriverFinanceService $finance,
     ) {
     }
 
@@ -125,8 +130,50 @@ class CreateOrder
                 ]);
             }
 
+            DB::afterCommit(fn () => $this->notifyEligibleDrivers($order->fresh(['user', 'items'])));
+
             return $order->fresh(['user', 'items']);
         });
+    }
+
+    private function notifyEligibleDrivers(Order $order): void
+    {
+        $drivers = Driver::query()
+            ->with(['user', 'setting'])
+            ->where('status', 'active')
+            ->where('is_available', true)
+            ->whereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id))
+            ->whereDoesntHave('deposits', fn ($query) => $query
+                ->where('year', now()->year)
+                ->where('month', now()->month)
+                ->where('status', 'unpaid'))
+            ->get()
+            ->filter(function (Driver $driver) use ($order): bool {
+                $deposit = $this->finance->monthlyDeposit($driver);
+                if (($deposit->status ?? 'unpaid') !== 'paid') {
+                    if ($driver->is_available) {
+                        $driver->forceFill(['is_available' => false])->save();
+                    }
+
+                    return false;
+                }
+
+                return (bool) data_get($this->multiOrder->canAcceptOrder($driver->fresh(['user', 'setting']), $order), 'can_accept');
+            });
+
+        foreach ($drivers as $driver) {
+            $this->notifications->sendToUser(
+                $driver->user,
+                'Order baru JOJO',
+                trim(($order->order_code ?? 'Order baru').' - '.ucfirst((string) $order->service_type).' dari '.$order->pickup_address),
+                [
+                    'type' => 'new_order',
+                    'order_id' => $order->id,
+                    'order_code' => $order->order_code,
+                    'url' => '/?open=orders&order_id='.$order->id,
+                ],
+            );
+        }
     }
 
     private function preferredVehicleType(array $payload): ?string

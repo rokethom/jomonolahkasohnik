@@ -11,6 +11,7 @@ use App\Models\Driver;
 use App\Models\Order;
 use App\Services\MultiOrderService;
 use App\Services\NotificationService;
+use App\Services\DriverFinanceService;
 use App\Services\SuspendService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -22,6 +23,7 @@ class AcceptOrder
         private readonly MultiOrderService $multiOrder,
         private readonly SuspendService $suspensions,
         private readonly NotificationService $notifications,
+        private readonly DriverFinanceService $finance,
     )
     {
     }
@@ -59,6 +61,16 @@ class AcceptOrder
 
             if (! $this->suspensions->canAcceptOrder($driver)) {
                 throw new RuntimeException('Driver tidak bisa menerima order karena suspend setoran/permanent.');
+            }
+
+            $deposit = $this->finance->monthlyDeposit($driver);
+            if (($deposit->status ?? 'unpaid') !== 'paid') {
+                $driver->update(['is_available' => false]);
+                throw new RuntimeException('Setoran masih unpaid. Driver otomatis OFF dan hanya bisa request order.');
+            }
+
+            if (! $driver->is_available) {
+                throw new RuntimeException('Status driver OFF. Aktifkan ON terlebih dahulu untuk menerima order.');
             }
 
             if (! in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)) {

@@ -329,6 +329,7 @@ input:focus, textarea:focus, select:focus {
 .online-card div { display: grid; gap: 4px; }
 .online-card strong { font-size: 19px; }
 .online-card span { color: var(--muted); font-size: 13px; }
+.online-card small { color: rgba(191, 219, 254, 0.76); font-size: 12px; font-weight: 750; }
 
 .switch { position: relative; width: 58px; height: 34px; }
 .switch input { width: 0; height: 0; opacity: 0; }
@@ -353,6 +354,17 @@ input:focus, textarea:focus, select:focus {
 }
 .switch input:checked + span { background: var(--green); }
 .switch input:checked + span::after { transform: translateX(24px); }
+.switch input:disabled + span { opacity: 0.58; cursor: wait; }
+
+.notice-card {
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 18px;
+  padding: 13px 14px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+  font-size: 13px;
+  font-weight: 850;
+}
 
 .stats-grid, .quick-grid {
   display: grid;

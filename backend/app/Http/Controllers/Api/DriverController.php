@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
+use App\Models\DriverDeposit;
 use App\Models\Order;
 use App\Services\DriverSuspendService;
 use App\Services\DriverFinanceService;
@@ -30,13 +31,18 @@ class DriverController extends Controller
     {
         $orders->cancelExpiredCreatedOrders();
 
-        $driver = $this->ensureDriver($request)->load('user');
+        $driver = $this->ensureDriver($request)->load('user.branch');
+        $deposit = $finance->monthlyDeposit($driver);
+        $driver = $this->syncAvailabilityForFinance($driver, $deposit);
+        $canReceiveOrders = $this->canReceiveOrders($driver, $deposit);
 
         $orders = Order::query()
             ->with(['user', 'driver.user', 'adjustments'])
-            ->where(function ($query) use ($driver): void {
-                $query->where('driver_id', $driver->id)
-                    ->orWhere(function ($query) use ($driver): void {
+            ->where(function ($query) use ($driver, $canReceiveOrders): void {
+                $query->where('driver_id', $driver->id);
+
+                if ($canReceiveOrders) {
+                    $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
                             ->where('branch_id', $driver->user?->branch_id)
                             ->where(function ($query) use ($driver): void {
@@ -59,6 +65,7 @@ class DriverController extends Controller
                                 }
                             });
                     });
+                }
             })
             ->latest()
             ->limit(50)
@@ -84,12 +91,12 @@ class DriverController extends Controller
             : collect();
 
         return response()->json([
-            'driver' => $this->driverPayload($request),
+            'driver' => $this->driverPayload($request, $deposit),
             'settings' => [
                 'multi_order_enabled' => $settings->bool('multi_order_enabled', true),
                 'max_multi_order' => max(1, min(3, $settings->int('max_multi_order', 3))),
             ],
-            'finance' => $finance->monthlyDeposit($driver->load('user.branch')),
+            'finance' => $deposit,
             'performance' => $finance->performance($driver),
             'orders' => $orders->map(fn (Order $order): array => [
                 ...$this->orderPayload($order),
@@ -106,6 +113,44 @@ class DriverController extends Controller
 
         return response()->json([
             'data' => $this->driverPayload($request),
+        ]);
+    }
+
+    public function updateAvailability(Request $request, DriverFinanceService $finance): JsonResponse
+    {
+        $driver = $this->ensureDriver($request)->load('user.branch');
+        $payload = $request->validate([
+            'online' => ['required', 'boolean'],
+        ]);
+
+        $deposit = $finance->monthlyDeposit($driver);
+
+        if (($deposit->status ?? 'unpaid') !== 'paid') {
+            $driver->update(['is_available' => false]);
+
+            return response()->json([
+                'message' => 'Setoran masih unpaid. Driver otomatis OFF dan hanya bisa request order.',
+                'driver' => $this->driverPayload($request, $deposit),
+                'finance' => $deposit->fresh(),
+            ], $request->boolean('online') ? 422 : 200);
+        }
+
+        if ($driver->status !== 'active' && $request->boolean('online')) {
+            $driver->update(['is_available' => false]);
+
+            return response()->json([
+                'message' => 'Driver tidak aktif/suspend sehingga tidak bisa ON.',
+                'driver' => $this->driverPayload($request, $deposit),
+                'finance' => $deposit,
+            ], 422);
+        }
+
+        $driver->update(['is_available' => $request->boolean('online')]);
+
+        return response()->json([
+            'message' => $request->boolean('online') ? 'Driver ON dan bisa menerima order.' : 'Driver OFF. Anda tetap bisa request order.',
+            'driver' => $this->driverPayload($request, $deposit),
+            'finance' => $deposit,
         ]);
     }
 
@@ -298,9 +343,11 @@ class DriverController extends Controller
         return $user->driver;
     }
 
-    private function driverPayload(Request $request): array
+    private function driverPayload(Request $request, ?DriverDeposit $deposit = null): array
     {
         $user = $request->user()->load('driver.suspensions');
+        $driver = $user->driver;
+        $canReceiveOrders = $driver ? $this->canReceiveOrders($driver, $deposit) : false;
 
         return [
             'id' => $user->id,
@@ -310,14 +357,60 @@ class DriverController extends Controller
             'email' => $user->email,
             'profile_photo_url' => $user->profile_photo_path ? $request->getSchemeAndHttpHost().'/api/media/'.ltrim($user->profile_photo_path, '/') : null,
             'role' => 'Driver',
-            'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
-            'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
-            'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
-            'status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
-            'suspended_until' => $user->driver?->suspended_until?->toIso8601String() ?? $user->suspended_until?->toIso8601String(),
+            'vehicle_type' => $driver?->vehicle_type ?? 'motor',
+            'vehicle_seat_rows' => $driver?->vehicle_seat_rows,
+            'is_ladies_driver' => (bool) ($driver?->is_ladies_driver ?? false),
+            'is_available' => (bool) ($driver?->is_available ?? false),
+            'can_receive_orders' => $canReceiveOrders,
+            'deposit_status' => $deposit?->status,
+            'availability_block_reason' => $this->availabilityBlockReason($driver, $deposit),
+            'status' => $driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
+            'suspended_until' => $driver?->suspended_until?->toIso8601String() ?? $user->suspended_until?->toIso8601String(),
             'suspension_reason' => $user->suspension_reason,
-            'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,
+            'oper_handle_count' => $driver?->oper_handle_count ?? 0,
         ];
+    }
+
+    private function syncAvailabilityForFinance(Driver $driver, DriverDeposit $deposit): Driver
+    {
+        if (($deposit->status ?? 'unpaid') !== 'paid' && $driver->is_available) {
+            $driver->forceFill(['is_available' => false])->save();
+            $driver->refresh();
+        }
+
+        return $driver;
+    }
+
+    private function canReceiveOrders(?Driver $driver, ?DriverDeposit $deposit = null): bool
+    {
+        if (! $driver) {
+            return false;
+        }
+
+        return $driver->status === 'active'
+            && (bool) $driver->is_available
+            && ($deposit?->status ?? 'paid') === 'paid';
+    }
+
+    private function availabilityBlockReason(?Driver $driver, ?DriverDeposit $deposit = null): ?string
+    {
+        if (! $driver) {
+            return 'Akun driver tidak ditemukan.';
+        }
+
+        if (($deposit?->status ?? 'paid') !== 'paid') {
+            return 'Setoran masih unpaid. Driver otomatis OFF dan hanya bisa request order.';
+        }
+
+        if ($driver->status !== 'active') {
+            return 'Driver tidak aktif/suspend.';
+        }
+
+        if (! $driver->is_available) {
+            return 'Driver sedang OFF.';
+        }
+
+        return null;
     }
 
     private function orderPayload(Order $order): array

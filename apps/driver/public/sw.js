@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jojo-driver-pwa-v1'
+const CACHE_NAME = 'jojo-driver-pwa-v2'
 const APP_ASSETS = ['/logo.png', '/favicon.ico', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
@@ -32,7 +32,35 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, options))
 })
 
+function notificationTarget(data = {}) {
+  if (data.url) return data.url
+
+  const params = new URLSearchParams()
+  const type = data.type || data.notification_type
+  const orderId = data.order_id || data.orderId
+
+  if (type) params.set('notification_type', String(type))
+  if (orderId) params.set('order_id', String(orderId))
+  if (type === 'new_order' || type === 'dispatcher_broadcast_order') params.set('open', 'orders')
+
+  return params.toString() ? `/?${params.toString()}` : '/'
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  event.waitUntil(self.clients.openWindow('/'))
+  const targetUrl = new URL(notificationTarget(event.notification.data || {}), self.location.origin).href
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const client = clients.find((item) => new URL(item.url).origin === self.location.origin)
+
+      if (client && 'navigate' in client) {
+        return client.navigate(targetUrl).then((navigatedClient) => navigatedClient?.focus())
+      }
+
+      if (client) return client.focus()
+
+      return self.clients.openWindow(targetUrl)
+    }),
+  )
 })

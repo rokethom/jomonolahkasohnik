@@ -140,6 +140,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/driver/profile', [DriverController::class, 'profile']);
     Route::get('/driver/finance', [DriverController::class, 'finance']);
     Route::get('/driver/performance', [DriverController::class, 'performance']);
+    Route::post('/driver/availability', [DriverController::class, 'updateAvailability']);
     Route::put('/driver/profile', [DriverController::class, 'updateProfile']);
     Route::post('/driver/profile', [DriverController::class, 'updateProfile']);
     Route::post('/driver/request-order/preview', [DriverController::class, 'previewRequest']);

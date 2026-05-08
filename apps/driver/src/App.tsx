@@ -39,6 +39,10 @@ type Driver = {
   is_ladies_driver?: boolean
   vehicle_type?: 'motor' | 'mobil' | string | null
   vehicle_seat_rows?: number | null
+  is_available?: boolean
+  can_receive_orders?: boolean
+  deposit_status?: 'paid' | 'unpaid' | string | null
+  availability_block_reason?: string | null
   status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
   suspended_until?: string | null
   suspension_reason?: string | null
@@ -134,6 +138,7 @@ type DriverStore = {
   setToken: (token: string) => void
   setBootstrap: (payload: BootstrapResponse) => void
   updateOrder: (order: Partial<ApiOrder> & { id: number }) => void
+  setDriverState: (driver: Driver, finance?: DriverFinance | null) => void
   logout: () => void
   selectOrder: (orderId: number) => void
   setOnline: (online: boolean) => void
@@ -259,6 +264,15 @@ function guardViewForSession(view: View, token?: string | null): View {
   return view === 'login' ? 'dashboard' : view
 }
 
+function viewFromNotificationTarget() {
+  const params = new URLSearchParams(window.location.search)
+  const open = params.get('open')
+  const type = params.get('notification_type') ?? params.get('type')
+
+  if (open === 'orders' || type === 'new_order' || type === 'dispatcher_broadcast_order') return 'orders' as View
+  return null
+}
+
 const useDriverStore = create<DriverStore>((set, get) => ({
   view: localStorage.getItem('driver_token') ? 'dashboard' : 'login',
   token: localStorage.getItem('driver_token') || '',
@@ -287,10 +301,16 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     maxMultiOrder: payload.settings.max_multi_order,
     finance: payload.finance ?? null,
     performance: payload.performance ?? null,
+    isOnline: Boolean(payload.driver.can_receive_orders ?? payload.driver.is_available),
   }),
   updateOrder: (order) => set((state) => ({
     orders: state.orders.map((item) => item.id === order.id ? { ...item, ...mapOrderPatch(order) } : item),
   })),
+  setDriverState: (driver, finance) => set({
+    driver,
+    ...(finance !== undefined ? { finance } : {}),
+    isOnline: Boolean(driver.can_receive_orders ?? driver.is_available),
+  }),
   logout: () => {
     resetDriverEcho()
     localStorage.removeItem('driver_token')
@@ -317,7 +337,7 @@ function App() {
   const api = useMemo(() => makeApi(token), [token])
 
   useEffect(() => {
-    const initialView = guardViewForSession(viewFromHistoryState(window.history.state) ?? view, useDriverStore.getState().token)
+    const initialView = guardViewForSession(viewFromNotificationTarget() ?? viewFromHistoryState(window.history.state) ?? view, useDriverStore.getState().token)
     window.history.replaceState(
       { ...(window.history.state as DriverHistoryState | null), jojoDriverView: initialView },
       document.title,
@@ -371,21 +391,26 @@ function App() {
   }, [setView, token, view])
 
   const load = useCallback(async (silent = false) => {
-    if (!token) return
+    if (!token) return null
     if (!silent) setApiState({ loading: true, error: '' })
+    let loaded = false
     try {
-      setBootstrap(await api<BootstrapResponse>('/driver/bootstrap'))
+      const payload = await api<BootstrapResponse>('/driver/bootstrap')
+      setBootstrap(payload)
+      loaded = true
+      return payload
     } catch (error) {
       const message = getErrorMessage(error, '')
       if (/401|403|unauthenticated|unauthorized/i.test(message)) {
         logout()
         toast('Silakan login sebagai driver', 'warning')
-        return
+        return null
       }
       setApiState({ loading: false, error: getErrorMessage(error, 'Gagal memuat data driver') })
-      return
+      return null
+    } finally {
+      if (!silent && loaded) setApiState({ loading: false, error: '' })
     }
-    if (!silent) setApiState({ loading: false, error: '' })
   }, [api, logout, setBootstrap, toast, token])
 
   useEffect(() => {
@@ -442,10 +467,12 @@ function App() {
     })
     channel.listen('.order.created', (event: { order?: ApiOrder }) => {
       if (!event.order?.id) return
-      const currentDriver = useDriverStore.getState().driver
-      if (event.order.driver_preference === 'ladies' && !currentDriver?.is_ladies_driver) return
-      void load()
-      toast(`Order baru ${event.order.code ?? event.order.order_code ?? ''} masuk`, 'success')
+      const state = useDriverStore.getState()
+      if (!canReceiveRealtimeOrder(state.driver, state.finance, state.isOnline)) return
+      void load(true).then((payload) => {
+        const visibleOrder = payload?.orders.some((order) => order.id === event.order?.id)
+        if (visibleOrder) toast(`Order baru ${event.order?.code ?? event.order?.order_code ?? ''} masuk`, 'success')
+      })
     })
     channel.listen('.driver.accepted', () => {
       void load(true)
@@ -487,8 +514,8 @@ function App() {
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} />}
       {view === 'history' && <History orders={orders} loading={apiState.loading} />}
-      {view === 'request' && <RequestOrder onCreated={load} />}
-      {view === 'profile' && <Profile driver={driver} api={api} onSaved={load} />}
+      {view === 'request' && <RequestOrder onCreated={async () => { await load() }} />}
+      {view === 'profile' && <Profile driver={driver} api={api} onSaved={async () => { await load() }} />}
       {view === 'performance' && <PerformancePage />}
       <BottomNav active={view} onNavigate={setView} />
     </Shell>
@@ -584,11 +611,32 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
 }
 
 function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
-  const { isOnline, setOnline, setView, maxMultiOrder, finance } = useDriverStore()
+  const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const activeOrders = orders.filter(isActiveOrder)
-  const pendingOrders = orders.filter((order) => order.status === 'pending')
+  const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
+  const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending') : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
+  const availabilityCopy = driver.availability_block_reason
+    ?? (canReceiveOrders ? 'Order baru akan masuk saat tersedia.' : 'OFF: hanya bisa request order.')
+
+  const updateAvailability = async (online: boolean) => {
+    if (availabilitySaving) return
+    setAvailabilitySaving(true)
+    try {
+      const payload = await api<{ message: string; driver: Driver; finance?: DriverFinance }>('/driver/availability', {
+        method: 'POST',
+        body: JSON.stringify({ online }),
+      })
+      setDriverState(payload.driver, payload.finance ?? finance)
+      toast(payload.message, online ? 'success' : 'warning')
+    } catch (error) {
+      toast(getErrorMessage(error, 'Gagal mengubah status driver'), 'danger')
+    } finally {
+      setAvailabilitySaving(false)
+    }
+  }
 
   return (
     <section className="page dashboard">
@@ -610,9 +658,10 @@ function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onActio
       <section className="online-card panel">
         <div>
           <strong>{isOnline ? 'Online' : 'Offline'}</strong>
-          <span>{activeOrders.length}/{maxMultiOrder} order aktif</span>
+          <span>{activeOrders.length}/{maxMultiOrder} order aktif · {finance?.status ?? driver.deposit_status ?? 'sync'}</span>
+          <small>{availabilityCopy}</small>
         </div>
-        <label className="switch"><input checked={isOnline} onChange={(event) => setOnline(event.target.checked)} type="checkbox" /><span /></label>
+        <label className="switch"><input checked={isOnline} disabled={availabilitySaving} onChange={(event) => void updateAvailability(event.target.checked)} type="checkbox" /><span /></label>
       </section>
 
       <section className="stats-grid">
@@ -690,11 +739,17 @@ function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: (
 }
 
 function OrderList({ orders, loading, api, onAction }: { orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
-  const visibleOrders = useMemo(() => orders.filter(isOrderListVisible).sort(sortNewestOrderFirst), [orders])
+  const { driver, finance, isOnline } = useDriverStore()
+  const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
+  const visibleOrders = useMemo(
+    () => orders.filter((order) => isActiveOrder(order) || (canReceiveOrders && order.status === 'pending')).sort(sortNewestOrderFirst),
+    [canReceiveOrders, orders],
+  )
 
   return (
     <section className="page">
       <PageTitle title="Order List" subtitle="Order aktif dan terbaru untuk driver." />
+      {!canReceiveOrders && <div className="notice-card warning">Status OFF atau setoran unpaid. Order baru disembunyikan, tetapi request order tetap bisa digunakan.</div>}
       {loading && <SkeletonCards />}
       {!loading && visibleOrders.length === 0 && <EmptyState title="Kosong" copy="Belum ada order aktif atau order baru." />}
       {visibleOrders.map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
@@ -1828,7 +1883,10 @@ function parseRequestPrices(text: string) {
 }
 function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
-function isOrderListVisible(order: Order) { return order.status === 'pending' || isActiveOrder(order) }
+function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
+  if (!isOnline) return false
+  return Boolean(driver?.can_receive_orders ?? (driver?.status === 'active' && (finance?.status ?? driver?.deposit_status ?? 'paid') === 'paid'))
+}
 function sortNewestOrderFirst(a: Order, b: Order) {
   const timeA = new Date(a.updatedAt ?? a.acceptedAt ?? 0).getTime()
   const timeB = new Date(b.updatedAt ?? b.acceptedAt ?? 0).getTime()
@@ -1910,6 +1968,8 @@ function eligibilityReason(reason?: string | null) {
     'layanan tidak aktif untuk driver': 'Layanan ini belum aktif untuk akun driver Anda.',
     'multi order nonaktif': 'Multi order sedang nonaktif.',
     'maksimal order aktif tercapai': 'Batas order aktif sudah tercapai.',
+    'driver off': 'Status driver OFF. Aktifkan ON jika setoran sudah paid.',
+    'driver tidak aktif': 'Akun driver sedang tidak aktif/suspend.',
   }[String(reason ?? '')] ?? 'Order belum bisa diterima saat ini.'
 }
 function formatCoordinate(lat: number, lng: number) {

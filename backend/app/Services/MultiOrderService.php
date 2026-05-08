@@ -26,6 +26,28 @@ class MultiOrderService
         $vehicleMatch = $this->canServeVehicle($driver, $newOrder);
         $ladiesMatch = $this->canServeLadiesOrder($driver, $newOrder);
 
+        if ($driver->status !== 'active') {
+            return [
+                'can_accept' => false,
+                'reason' => 'driver tidak aktif',
+                'direction_match' => false,
+                'area_match' => $areaMatch,
+                'active_order_count' => $activeCount,
+                'max_order' => $maxOrders,
+            ];
+        }
+
+        if (! $driver->is_available) {
+            return [
+                'can_accept' => false,
+                'reason' => 'driver off',
+                'direction_match' => false,
+                'area_match' => $areaMatch,
+                'active_order_count' => $activeCount,
+                'max_order' => $maxOrders,
+            ];
+        }
+
         if (! $vehicleMatch) {
             return [
                 'can_accept' => false,
