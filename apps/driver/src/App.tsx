@@ -87,6 +87,10 @@ type Order = {
   preferredVehicleType?: string | null
   requiredVehicleSeatRows?: number | null
   driverPreference?: string | null
+  operHandleStatus?: string | null
+  operHandleDriver?: string | null
+  operHandleReason?: string | null
+  operHandleUpdatedAt?: string | null
   acceptedAt?: string | null
   updatedAt?: string | null
   eligibility?: Eligibility
@@ -127,6 +131,7 @@ type DriverStore = {
   orders: Order[]
   branchAcceptedOrders: Order[]
   branchRequestOrders: Order[]
+  branchOperHandleOrders: Order[]
   selectedOrderId: number | null
   isOnline: boolean
   multiOrderEnabled: boolean
@@ -154,6 +159,7 @@ type BootstrapResponse = {
   orders: ApiOrder[]
   branch_accepted_orders?: ApiOrder[]
   branch_request_orders?: ApiOrder[]
+  branch_oper_handle_orders?: ApiOrder[]
 }
 
 type DriverFinance = {
@@ -210,6 +216,10 @@ type ApiOrder = {
   preferred_vehicle_type?: string | null
   required_vehicle_seat_rows?: number | null
   driver_preference?: string | null
+  oper_handle_status?: string | null
+  oper_handle_driver?: string | null
+  oper_handle_reason?: string | null
+  oper_handle_updated_at?: string | null
   payment_meta?: Record<string, unknown> | null
   accepted_at?: string | null
   updated_at?: string | null
@@ -280,6 +290,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   orders: [],
   branchAcceptedOrders: [],
   branchRequestOrders: [],
+  branchOperHandleOrders: [],
   selectedOrderId: null,
   isOnline: true,
   multiOrderEnabled: false,
@@ -297,6 +308,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     orders: payload.orders.map(mapOrder),
     branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
     branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
+    branchOperHandleOrders: (payload.branch_oper_handle_orders ?? []).map(mapOrder),
     multiOrderEnabled: payload.settings.multi_order_enabled,
     maxMultiOrder: payload.settings.max_multi_order,
     finance: payload.finance ?? null,
@@ -314,7 +326,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   logout: () => {
     resetDriverEcho()
     localStorage.removeItem('driver_token')
-    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], selectedOrderId: null, view: 'login' })
+    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], branchOperHandleOrders: [], selectedOrderId: null, view: 'login' })
   },
   selectOrder: (orderId) => set({ selectedOrderId: orderId, view: 'order-detail' }),
   setOnline: (online) => set({ isOnline: online }),
@@ -327,7 +339,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
 }))
 
 function App() {
-  const { view, token, driver, orders, branchAcceptedOrders, selectedOrderId, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
+  const { view, token, driver, orders, branchAcceptedOrders, branchOperHandleOrders, selectedOrderId, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
   const [apiState, setApiState] = useState<ApiState>({ loading: false, error: '' })
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
@@ -479,8 +491,17 @@ function App() {
     })
     channel.listen('.order.status.updated', (event: { order?: Partial<ApiOrder> & { id: number; code?: string }; new_status?: string }) => {
       if (!event.order?.id) return
-      const knownOrder = useDriverStore.getState().orders.some((order) => order.id === event.order?.id)
+      const currentState = useDriverStore.getState()
+      const knownOrder = currentState.orders.some((order) => order.id === event.order?.id)
+      const newStatus = normalizeStatus(event.new_status ?? event.order.status ?? '')
       updateOrder(event.order)
+      if (!knownOrder && newStatus === 'pending' && canReceiveRealtimeOrder(currentState.driver, currentState.finance, currentState.isOnline)) {
+        void load(true).then((payload) => {
+          const visibleOrder = payload?.orders.some((order) => order.id === event.order?.id)
+          if (visibleOrder) toast(`Order ${event.order?.code ?? event.order?.order_code ?? ''} kembali terbuka untuk driver`, 'warning')
+        })
+        return
+      }
       if (knownOrder && isDoneStatus(event.new_status ?? event.order.status)) {
         toast(`Order ${event.order.code ?? event.order.order_code ?? ''} selesai`, 'success')
       }
@@ -509,7 +530,7 @@ function App() {
   return (
     <Shell>
       <ToastStack toasts={toasts} />
-      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} loading={apiState.loading} api={api} onAction={action} />}
+      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchOperHandleOrders={branchOperHandleOrders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} />}
@@ -610,7 +631,7 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
   )
 }
 
-function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
+function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrders, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchOperHandleOrders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
   const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
@@ -687,14 +708,15 @@ function Dashboard({ driver, orders, branchAcceptedOrders, loading, api, onActio
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
-      <BranchAcceptedFeed orders={branchAcceptedOrders} />
+      <BranchAcceptedFeed orders={branchAcceptedOrders} operHandleOrders={branchOperHandleOrders} />
       {financeOpen && finance && <SetoranModal finance={finance} onClose={() => setFinanceOpen(false)} />}
     </section>
   )
 }
 
-function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
+function BranchAcceptedFeed({ orders, operHandleOrders }: { orders: Order[]; operHandleOrders: Order[] }) {
   const visible = orders.filter((order) => order.driver && order.source !== 'driver_request').slice(0, 6)
+  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 6)
   const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
 
   return (
@@ -704,9 +726,9 @@ function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
           <span>Monitor area</span>
           <h2>Order diterima area</h2>
         </div>
-        <strong>{visible.length} terbaru{ladiesCount > 0 ? ` - ${ladiesCount} Ladies` : ''}</strong>
+        <strong>{visible.length} terbaru{ladiesCount > 0 ? ` - ${ladiesCount} Ladies` : ''}{operVisible.length > 0 ? ` - ${operVisible.length} oper` : ''}</strong>
       </div>
-      {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
+      {visible.length === 0 && operVisible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
       {visible.map((order) => (
         <article className="branch-accepted-card" key={order.id}>
           <div className="branch-accepted-icon">{driverInitial(order.driver)}</div>
@@ -721,6 +743,25 @@ function BranchAcceptedFeed({ orders }: { orders: Order[] }) {
           <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
         </article>
       ))}
+      {operVisible.length > 0 && (
+        <div className="oper-handle-area">
+          <span className="oper-handle-title">Oper handle area</span>
+          {operVisible.map((order) => (
+            <article className={`branch-accepted-card oper-handle ${order.operHandleStatus === 'approved' ? 'approved' : ''}`} key={`oper-${order.id}-${order.operHandleStatus}`}>
+              <div className="branch-accepted-icon oper">{driverInitial(order.operHandleDriver ?? order.driver)}</div>
+              <div className="branch-accepted-main">
+                <strong>{order.code}</strong>
+                <span>
+                  {operHandleStatusText(order)}
+                  <em className="oper-handle-chip">{operHandleStatusLabel(order.operHandleStatus)}</em>
+                </span>
+                {order.operHandleReason && <small>Alasan: {order.operHandleReason}</small>}
+              </div>
+              <time>{formatHistoryTime(order.operHandleUpdatedAt ?? order.updatedAt)}</time>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -1730,6 +1771,10 @@ function mapOrder(order: ApiOrder): Order {
     preferredVehicleType: order.preferred_vehicle_type ?? null,
     requiredVehicleSeatRows: order.required_vehicle_seat_rows ?? null,
     driverPreference: order.driver_preference ?? null,
+    operHandleStatus: order.oper_handle_status ?? null,
+    operHandleDriver: order.oper_handle_driver ?? null,
+    operHandleReason: order.oper_handle_reason ?? null,
+    operHandleUpdatedAt: order.oper_handle_updated_at ?? null,
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     updatedAt: order.updated_at ?? null,
     eligibility: order.eligibility,
@@ -1750,6 +1795,10 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.preferred_vehicle_type !== undefined ? { preferredVehicleType: order.preferred_vehicle_type } : {}),
     ...(order.required_vehicle_seat_rows !== undefined ? { requiredVehicleSeatRows: order.required_vehicle_seat_rows } : {}),
     ...(order.driver_preference !== undefined ? { driverPreference: order.driver_preference } : {}),
+    ...(order.oper_handle_status !== undefined ? { operHandleStatus: order.oper_handle_status } : {}),
+    ...(order.oper_handle_driver !== undefined ? { operHandleDriver: order.oper_handle_driver } : {}),
+    ...(order.oper_handle_reason !== undefined ? { operHandleReason: order.oper_handle_reason } : {}),
+    ...(order.oper_handle_updated_at !== undefined ? { operHandleUpdatedAt: order.oper_handle_updated_at } : {}),
   }
 }
 
@@ -1886,6 +1935,19 @@ function parseRequestPrices(text: string) {
 }
 function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
+function operHandleStatusLabel(status?: string | null) {
+  const key = String(status ?? '').toLowerCase()
+  if (key === 'approved') return 'Approved'
+  if (key === 'rejected') return 'Rejected'
+  if (key === 'pending') return 'Menunggu'
+  return key || 'Oper handle'
+}
+function operHandleStatusText(order: Order) {
+  const driver = order.operHandleDriver ?? order.driver ?? 'Driver'
+  if (order.operHandleStatus === 'approved') return `${driver} oper handle, order dibuka lagi`
+  if (order.operHandleStatus === 'rejected') return `${driver} oper handle ditolak`
+  return `${driver} mengajukan oper handle`
+}
 function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
   if (!isOnline) return false
   return Boolean(driver?.can_receive_orders ?? (driver?.status === 'active' && (finance?.status ?? driver?.deposit_status ?? 'paid') === 'paid'))

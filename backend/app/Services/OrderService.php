@@ -7,6 +7,7 @@ use App\Events\OrderStatusUpdated;
 use App\Exceptions\OrderLimitExceededException;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -17,6 +18,7 @@ class OrderService
         private readonly SettingService $settings,
         private readonly OrderLimitService $limits,
         private readonly OrderOperationService $operations,
+        private readonly NotificationService $notifications,
     )
     {
     }
@@ -70,7 +72,19 @@ class OrderService
             ]);
 
             try {
-                OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::Cancelled);
+                $freshOrder = $order->fresh(['user', 'driver.user']);
+                $feedback = app(OrderFeedbackService::class)->statusUpdated($freshOrder, $oldStatus, OrderStatus::Cancelled);
+                OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::Cancelled);
+                $this->notifications->sendToUser(
+                    $freshOrder->user,
+                    'Order dibatalkan otomatis',
+                    $feedback['message'] ?? 'Maaf, order dibatalkan otomatis karena tidak ada driver yang menerima.',
+                    [
+                        'type' => 'order_auto_cancelled',
+                        'order_id' => $freshOrder->id,
+                        'order_code' => $freshOrder->order_code,
+                    ],
+                );
             } catch (\Throwable $exception) {
                 Log::warning('broadcast.expired_order_status_failed', [
                     'order_id' => $order->id,

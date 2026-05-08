@@ -762,6 +762,11 @@ function App() {
       if (isCompletedStatus(event.new_status ?? updatedOrder.status)) {
         const message = event.feedback?.message ?? `Order ${updatedOrder.order_code ?? updatedOrder.code ?? `#${updatedOrder.id}`} selesai.`
         store.showToast('success', message)
+        return
+      }
+      if (event.feedback?.message) {
+        store.showToast(event.feedback.tone === 'error' ? 'error' : 'info', event.feedback.message)
+        pushMessage({ from: 'bot', text: event.feedback.message, order: orderWithFeedback })
       }
     })
     channel.listen('.driver.accepted', (event: { order?: Order; feedback?: OrderFeedback | null }) => {

@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
+use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Services\DriverSuspendService;
 use App\Services\DriverFinanceService;
@@ -89,6 +90,14 @@ class DriverController extends Controller
                 ->limit(30)
                 ->get()
             : collect();
+        $branchOperHandleOrders = $branchId
+            ? OperHandleRequest::query()
+                ->with(['order.user', 'order.driver.user', 'driver.user'])
+                ->whereHas('order', fn ($query) => $query->where('branch_id', $branchId))
+                ->latest('updated_at')
+                ->limit(12)
+                ->get()
+            : collect();
 
         return response()->json([
             'driver' => $this->driverPayload($request, $deposit),
@@ -104,6 +113,13 @@ class DriverController extends Controller
             ]),
             'branch_accepted_orders' => $branchAcceptedOrders->map(fn (Order $order): array => $this->orderPayload($order)),
             'branch_request_orders' => $branchRequestOrders->map(fn (Order $order): array => $this->orderPayload($order)),
+            'branch_oper_handle_orders' => $branchOperHandleOrders->map(fn (OperHandleRequest $request): array => [
+                ...$this->orderPayload($request->order),
+                'oper_handle_status' => $request->status,
+                'oper_handle_driver' => $request->driver?->user?->name,
+                'oper_handle_reason' => $request->reason,
+                'oper_handle_updated_at' => $request->updated_at?->toIso8601String(),
+            ]),
         ]);
     }
 

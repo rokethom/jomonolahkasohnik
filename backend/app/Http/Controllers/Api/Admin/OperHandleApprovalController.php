@@ -8,6 +8,8 @@ use App\Events\OrderStatusUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\OperHandleRequest;
 use App\Services\DriverSuspendService;
+use App\Services\NotificationService;
+use App\Services\OrderFeedbackService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 class OperHandleApprovalController extends Controller
 {
-    public function approve(Request $request, OperHandleRequest $operHandle, DriverSuspendService $suspensions): JsonResponse
+    public function approve(Request $request, OperHandleRequest $operHandle, DriverSuspendService $suspensions, NotificationService $notifications): JsonResponse
     {
         $role = $request->user()->role instanceof UserRole
             ? $request->user()->role
@@ -23,7 +25,7 @@ class OperHandleApprovalController extends Controller
 
         abort_unless(in_array($role, [UserRole::Operator, UserRole::Eksekutor, UserRole::SPV, UserRole::Admin, UserRole::GM], true), 403);
 
-        $operHandle = DB::transaction(function () use ($request, $operHandle, $suspensions, $role): OperHandleRequest {
+        $operHandle = DB::transaction(function () use ($request, $operHandle, $suspensions, $notifications, $role): OperHandleRequest {
             $operHandle = OperHandleRequest::query()
                 ->with(['order', 'driver.user'])
                 ->lockForUpdate()
@@ -55,11 +57,25 @@ class OperHandleApprovalController extends Controller
                     'status' => OrderStatus::SearchingDriver,
                     'direction_bearing' => null,
                     'is_multi_order' => false,
+                    'expired_at' => now()->addMinutes(10),
+                    'notes' => trim(((string) $order->notes)."\nOper handle approved: {$operHandle->reason}"),
                 ]);
 
                 if ($oldStatus && $order) {
                     try {
-                        OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::SearchingDriver);
+                        $freshOrder = $order->fresh(['user', 'driver.user']);
+                        OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                        $feedback = app(OrderFeedbackService::class)->statusUpdated($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                        $notifications->sendToUser(
+                            $freshOrder->user,
+                            $feedback['title'] ?? 'Order dialihkan ke driver lain',
+                            $feedback['message'] ?? 'Order sedang dicari ulang karena driver sebelumnya melakukan oper handle.',
+                            [
+                                'type' => 'order_oper_handle_approved',
+                                'order_id' => $freshOrder->id,
+                                'order_code' => $freshOrder->order_code,
+                            ],
+                        );
                     } catch (\Throwable $exception) {
                         Log::warning('broadcast.oper_handle_order_status_failed', [
                             'order_id' => $order->id,
