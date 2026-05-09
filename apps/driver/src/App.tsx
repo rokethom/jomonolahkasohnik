@@ -671,7 +671,7 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
 }
 
 function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrders, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchOperHandleOrders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
-  const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
+  const { isOnline, setDriverState, setView, maxMultiOrder, finance, performance, toast } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const activeOrders = orders.filter(isActiveOrder)
@@ -727,6 +727,12 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
         <label className="switch"><input checked={isOnline} disabled={availabilitySaving} onChange={(event) => void updateAvailability(event.target.checked)} type="checkbox" /><span /></label>
       </section>
 
+      <button className="month-income-card panel" type="button" onClick={() => setView('performance')}>
+        <span>Total pendapatan bulan ini</span>
+        <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
+        <small>{performance?.period_label ?? 'Performa driver bulan ini'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+      </button>
+
       <section className="stats-grid">
         <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
           <span>SETORAN BULAN LALU</span>
@@ -755,44 +761,79 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
-      <BranchAcceptedFeed orders={branchAcceptedOrders} operHandleOrders={branchOperHandleOrders} />
+      <BranchAcceptedFeed orders={branchAcceptedOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={performance?.suspend_history ?? []} />
       {financeOpen && finance && <SetoranModal finance={finance} onClose={() => setFinanceOpen(false)} />}
     </section>
   )
 }
 
-function BranchAcceptedFeed({ orders, operHandleOrders }: { orders: Order[]; operHandleOrders: Order[] }) {
+function BranchAcceptedFeed({
+  orders,
+  operHandleOrders,
+  suspendHistory,
+}: {
+  orders: Order[]
+  operHandleOrders: Order[]
+  suspendHistory: NonNullable<DriverPerformance['suspend_history']>
+}) {
+  const [openPanel, setOpenPanel] = useState<'accepted' | 'oper' | 'suspend' | null>(null)
   const visible = orders.filter((order) => order.driver && order.source !== 'driver_request').slice(0, 6)
   const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 6)
+  const suspendVisible = suspendHistory.slice(0, 6)
   const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
+  const togglePanel = (panel: 'accepted' | 'oper' | 'suspend') => setOpenPanel((current) => current === panel ? null : panel)
 
   return (
     <section className="branch-feed panel">
       <div className="branch-feed-head">
         <div>
           <span>Monitor area</span>
-          <h2>Order diterima area</h2>
+          <h2>Ringkasan cabang</h2>
         </div>
-        <strong>{visible.length} terbaru{ladiesCount > 0 ? ` - ${ladiesCount} Ladies` : ''}{operVisible.length > 0 ? ` - ${operVisible.length} oper` : ''}</strong>
+        <strong>{visible.length + operVisible.length + suspendVisible.length} catatan</strong>
       </div>
-      {visible.length === 0 && operVisible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
-      {visible.map((order) => (
-        <article className="branch-accepted-card" key={order.id}>
-          <div className="branch-accepted-icon">{driverInitial(order.driver)}</div>
-          <div className="branch-accepted-main">
-            <strong>{order.code}</strong>
-            <span>
-              {order.driver} menerima order {order.service}
-              {order.driverPreference === 'ladies' && <em className="ladies-chip">Ladies</em>}
-            </span>
-            <small>{shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
-          </div>
-          <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
-        </article>
-      ))}
-      {operVisible.length > 0 && (
-        <div className="oper-handle-area">
-          <span className="oper-handle-title">Oper handle area</span>
+
+      <div className="branch-monitor-grid">
+        <button className={`branch-monitor-card ${openPanel === 'accepted' ? 'active' : ''}`} type="button" onClick={() => togglePanel('accepted')}>
+          <span>Order diterima area</span>
+          <strong>{visible.length}</strong>
+          <small>{ladiesCount > 0 ? `${ladiesCount} Ladies` : 'Sesuai cabang'}</small>
+        </button>
+        <button className={`branch-monitor-card oper ${openPanel === 'oper' ? 'active' : ''}`} type="button" onClick={() => togglePanel('oper')}>
+          <span>Oper handle</span>
+          <strong>{operVisible.length}</strong>
+          <small>Area cabang</small>
+        </button>
+        <button className={`branch-monitor-card suspend ${openPanel === 'suspend' ? 'active' : ''}`} type="button" onClick={() => togglePanel('suspend')}>
+          <span>History suspend</span>
+          <strong>{suspendVisible.length}</strong>
+          <small>Profile driver</small>
+        </button>
+      </div>
+
+      {openPanel === 'accepted' && (
+        <div className="branch-detail-list">
+          {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
+          {visible.map((order) => (
+            <article className="branch-accepted-card" key={order.id}>
+              <div className="branch-accepted-icon">{driverInitial(order.driver)}</div>
+              <div className="branch-accepted-main">
+                <strong>{order.code}</strong>
+                <span>
+                  {order.driver} menerima order {order.service}
+                  {order.driverPreference === 'ladies' && <em className="ladies-chip">Ladies</em>}
+                </span>
+                <small>{shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
+              </div>
+              <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {openPanel === 'oper' && (
+        <div className="branch-detail-list">
+          {operVisible.length === 0 && <p className="note">Belum ada oper handle area.</p>}
           {operVisible.map((order) => (
             <article className={`branch-accepted-card oper-handle ${order.operHandleStatus === 'approved' ? 'approved' : ''}`} key={`oper-${order.id}-${order.operHandleStatus}`}>
               <div className="branch-accepted-icon oper">{driverInitial(order.operHandleDriver ?? order.driver)}</div>
@@ -805,6 +846,23 @@ function BranchAcceptedFeed({ orders, operHandleOrders }: { orders: Order[]; ope
                 {order.operHandleReason && <small>Alasan: {order.operHandleReason}</small>}
               </div>
               <time>{formatHistoryTime(order.operHandleUpdatedAt ?? order.updatedAt)}</time>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {openPanel === 'suspend' && (
+        <div className="branch-detail-list">
+          {suspendVisible.length === 0 && <p className="note">Belum ada history suspend.</p>}
+          {suspendVisible.map((item) => (
+            <article className="branch-accepted-card suspend-history-card" key={`suspend-${item.id}`}>
+              <div className="branch-accepted-icon suspend">{driverInitial(item.type ?? 'S')}</div>
+              <div className="branch-accepted-main">
+                <strong>{item.type ?? 'Suspend'}</strong>
+                <span>{item.reason || 'Tidak ada alasan suspend.'}</span>
+                <small>Status: {item.status}</small>
+              </div>
+              <time>{formatHistoryTime(item.end_at ?? item.start_at)}</time>
             </article>
           ))}
         </div>
