@@ -125,7 +125,10 @@ class DriverFinanceService
             ->whereDate('due_date', '<', now()->toDateString())
             ->chunkById(100, function ($deposits) use (&$count, $suspensions): void {
                 foreach ($deposits as $deposit) {
-                    if ($deposit->driver) {
+                    if (
+                        $deposit->driver
+                        && ! in_array($deposit->driver->status, ['suspended_unpaid', 'permanent'], true)
+                    ) {
                         $suspensions->suspendUnpaid($deposit->driver, 'Belum bayar setoran lewat tanggal 20');
                         $count++;
                     }

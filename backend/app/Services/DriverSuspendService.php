@@ -106,6 +106,27 @@ class DriverSuspendService
         return true;
     }
 
+    public function syncExpiredUserSuspension(Driver $driver): bool
+    {
+        if (
+            $driver->status !== 'active'
+            || ! $driver->user
+            || ! $driver->user->is_suspended
+            || ! $driver->user->suspended_until
+            || $driver->user->suspended_until->isFuture()
+        ) {
+            return false;
+        }
+
+        $driver->user->update([
+            'is_suspended' => false,
+            'suspension_reason' => null,
+            'suspended_until' => null,
+        ]);
+
+        return true;
+    }
+
     public function releaseExpiredSuspensions(): int
     {
         $released = 0;
@@ -120,6 +141,19 @@ class DriverSuspendService
                     if ($this->releaseIfExpired($driver)) {
                         $released++;
                     }
+                }
+            });
+
+        Driver::query()
+            ->with('user')
+            ->where('status', 'active')
+            ->whereHas('user', fn ($query) => $query
+                ->where('is_suspended', true)
+                ->whereNotNull('suspended_until')
+                ->where('suspended_until', '<=', now()))
+            ->chunkById(50, function ($drivers): void {
+                foreach ($drivers as $driver) {
+                    $this->syncExpiredUserSuspension($driver);
                 }
             });
 
