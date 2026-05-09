@@ -694,6 +694,7 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
 function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
   const { isOnline, setDriverState, setView, maxMultiOrder, finance, performance, toast } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [financeMode, setFinanceMode] = useState<'billing' | 'running'>('billing')
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const activeOrders = orders.filter(isActiveOrder)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
@@ -703,6 +704,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
   const previousTotal = Number(previousDeposit?.total ?? 0)
   const previousRemaining = Number(previousDeposit?.remaining ?? 0)
   const currentPeriodDeposit = Number(finance?.current_period_deposit ?? finance?.breakdown?.setoran_hingga_hari_ini ?? 0)
+  const currentRunningTotal = Number(finance?.total ?? 0)
   const previousPeriodLabel = previousDeposit?.period_label ?? 'bulan lalu'
   const currentPeriodLabel = finance?.period_label ?? 'bulan ini'
   const availabilityCopy = driver.availability_block_reason
@@ -758,15 +760,15 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       </button>
 
       <section className="stats-grid">
-        <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
+        <button className="metric setoran-card" onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
           <span>TAGIHAN BULAN {previousPeriodLabel.toUpperCase()}</span>
           <strong>Rp {formatMoney(previousTotal)}</strong>
           <small>{previousDeposit?.status ?? 'paid'}{previousRemaining > 0 ? ` - sisa Rp ${formatMoney(previousRemaining)}` : previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
         </button>
-        <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
+        <button className="metric setoran-card" onClick={() => { setFinanceMode('running'); setFinanceOpen(true) }}>
           <span>TOTAL BULAN INI BERJALAN</span>
-          <strong>Rp {formatMoney(currentPeriodDeposit)}</strong>
-          <small>{currentPeriodLabel}{previousRemaining > 0 ? ` - tagihan ${previousPeriodLabel} masuk detail` : ''}</small>
+          <strong>Rp {formatMoney(currentRunningTotal)}</strong>
+          <small>{currentPeriodLabel} - dasar Rp {formatMoney(currentPeriodDeposit)}{previousRemaining > 0 ? ` + sisa ${previousPeriodLabel}` : ''}</small>
         </button>
         <Metric label="Order diterima" value={acceptedTotal} />
         <Metric label="Order aktif" value={activeOrders.length} />
@@ -786,7 +788,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
       <BranchAcceptedFeed orders={branchAcceptedOrders} requestOrders={branchRequestOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={branchSuspendHistory} />
-      {financeOpen && finance && <SetoranModal finance={finance} onClose={() => setFinanceOpen(false)} />}
+      {financeOpen && finance && <SetoranModal finance={finance} mode={financeMode} onClose={() => setFinanceOpen(false)} />}
     </section>
   )
 }
@@ -920,12 +922,12 @@ function BranchAcceptedFeed({
   )
 }
 
-function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: () => void }) {
-  const billing = billingDepositFor(finance)
-  const rows = setoranBreakdownRows(billing.breakdown, billing.period_label)
+function SetoranModal({ finance, mode, onClose }: { finance: DriverFinance; mode: 'billing' | 'running'; onClose: () => void }) {
+  const billing = mode === 'billing' ? billingDepositFor(finance) : finance
+  const rows = setoranBreakdownRows(billing.breakdown, billing.period_label, mode)
   const remaining = Math.max(0, billing.total - billing.paid_amount)
   return (
-    <Modal title="Detail Setoran" onClose={onClose}>
+    <Modal title={mode === 'billing' ? 'Detail Setoran' : 'Detail Tagihan Berjalan'} onClose={onClose}>
       <div className="deposit-summary">
         <span>
           <small>Jatuh tempo</small>
@@ -938,7 +940,7 @@ function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: (
       </div>
       <div className="setoran-breakdown">
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
-        <div className="total-row"><span>Total tagihan {billing.period_label ?? 'bulan sebelumnya'}</span><strong>Rp {formatMoney(billing.total)}</strong></div>
+        <div className="total-row"><span>{mode === 'billing' ? `Total tagihan ${billing.period_label ?? 'bulan sebelumnya'}` : 'Total tagihan berjalan'}</span><strong>Rp {formatMoney(billing.total)}</strong></div>
         <PaidAmountRow value={billing.paid_amount} paidAt={billing.paid_at} />
         <div className="total-row"><span>Sisa tagihan</span><strong>Rp {formatMoney(remaining)}</strong></div>
       </div>
@@ -2187,16 +2189,16 @@ function formatRemaining(ms: number) {
 }
 function shortAddress(address: string) { return address.length > 28 ? `${address.slice(0, 28)}...` : address }
 function statusLabel(status: OrderStatus) { return { pending: 'Menunggu', accepted: 'Accepted', on_delivery: 'Antar', pending_cancel: 'Menunggu Cancel', done: 'Selesai', cancelled: 'Batal' }[status] }
-function setoranBreakdownRows(breakdown?: Record<string, number>, periodLabel = 'bulan sebelumnya') {
+function setoranBreakdownRows(breakdown?: Record<string, number>, periodLabel = 'bulan sebelumnya', mode: 'billing' | 'running' = 'billing') {
   if (!breakdown) return []
 
   const setoranHinggaHariIni = breakdown.setoran_hingga_hari_ini ?? ((breakdown.handle_hari_15 ?? 0) + (breakdown.handle_hari_30 ?? 0))
   const cashbackBulanSebelumnya = breakdown.cashback_bulan_sebelumnya ?? 0
   const tagihanBulanSebelumnya = breakdown.tagihan_bulan_sebelumnya ?? 0
-  const rows: Array<[string, number]> = [[`Tagihan pada bulan ${periodLabel}`, setoranHinggaHariIni]]
+  const rows: Array<[string, number]> = [[mode === 'running' ? `Pendapatan sampai hari ini (${periodLabel})` : `Tagihan pada bulan ${periodLabel}`, setoranHinggaHariIni]]
 
   rows.push(['Cashback bulan sebelumnya', cashbackBulanSebelumnya > 0 ? -cashbackBulanSebelumnya : 0])
-  if (tagihanBulanSebelumnya > 0) rows.push(['Tagihan bulan sebelumnya', tagihanBulanSebelumnya])
+  if (tagihanBulanSebelumnya > 0) rows.push(['Sisa tagihan bulan sebelumnya', tagihanBulanSebelumnya])
   if (breakdown.bansos !== undefined) rows.push(['Bansos', breakdown.bansos])
   if (breakdown.bpjs !== undefined) rows.push(['Premi BPJS Ketenagakerjaan', breakdown.bpjs])
   if (breakdown.bpjs_jht !== undefined) rows.push(['JHT BPJS Ketenagakerjaan', breakdown.bpjs_jht])
