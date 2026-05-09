@@ -72,7 +72,11 @@ class AdminController extends Controller
             'operator_performance' => $this->operatorPerformanceRows($user),
             'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)),
             'oper_handles' => $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)),
-            'branches' => Branch::query()->withCount('geofenceAreas')->orderBy('name')->get(),
+            'branches' => Branch::query()
+                ->with('geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active')
+                ->withCount('geofenceAreas')
+                ->orderBy('name')
+                ->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
             'ring_pricing_rules' => RingPricingRule::query()->with('branch')->latest()->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
@@ -1143,7 +1147,11 @@ class AdminController extends Controller
     public function branches(): JsonResponse
     {
         return response()->json([
-            'data' => Branch::query()->withCount('geofenceAreas')->orderBy('name')->get(),
+            'data' => Branch::query()
+                ->with('geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active')
+                ->withCount('geofenceAreas')
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -1167,21 +1175,11 @@ class AdminController extends Controller
         $payload['radius_km'] ??= 5;
 
         $branch = Branch::query()->create($payload);
-        GeofenceArea::query()->create([
-            'branch_id' => $branch->id,
-            'name' => trim($branch->name.' '.($branch->area ? '- '.$branch->area : 'Area')),
-            'description' => 'Default geofence dari titik cabang.',
-            'center_latitude' => $branch->latitude,
-            'center_longitude' => $branch->longitude,
-            'radius_meters' => (int) round(((float) $branch->radius_km) * 1000),
-            'is_active' => true,
-            'priority' => 10,
-        ]);
         $this->recordAudit($request->user(), 'created_branch', $branch, ['area' => $branch->area]);
 
         return response()->json([
             'message' => 'Branch created',
-            'data' => $branch->loadCount('geofenceAreas'),
+            'data' => $branch->load(['geofenceAreas'])->loadCount('geofenceAreas'),
         ], 201);
     }
 

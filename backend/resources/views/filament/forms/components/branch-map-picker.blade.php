@@ -1,7 +1,7 @@
 @php
     $mapId = 'branch-map-'.\Illuminate\Support\Str::uuid();
-    $lat = -6.20000000;
-    $lng = 106.81666600;
+    $lat = -7.70630000;
+    $lng = 114.00980000;
 @endphp
 
 @once
@@ -83,14 +83,25 @@
 
             map.on('click', (event) => syncInputs(event.latlng.lat, event.latlng.lng));
 
+            const refreshFromInputs = () => {
+                const lat = parseFloat(latInput?.value);
+                const lng = parseFloat(lngInput?.value);
+
+                if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                    marker.setLatLng([lat, lng]);
+                    map.setView([lat, lng], map.getZoom());
+                }
+            };
+
             [latInput, lngInput].forEach((input) => {
-                input?.addEventListener('change', () => {
+                input?.addEventListener('input', refreshFromInputs);
+                input?.addEventListener('change', refreshFromInputs);
+                input?.addEventListener('blur', () => {
                     const lat = parseFloat(latInput?.value);
                     const lng = parseFloat(lngInput?.value);
 
                     if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                        marker.setLatLng([lat, lng]);
-                        map.setView([lat, lng], map.getZoom());
+                        map.setView([lat, lng], Math.max(map.getZoom(), 15));
                     }
                 });
             });

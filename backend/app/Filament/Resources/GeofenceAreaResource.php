@@ -36,20 +36,41 @@ class GeofenceAreaResource extends Resource
                             ->options(fn (): array => self::branchOptions())
                             ->searchable()
                             ->native(false)
+                            ->live()
+                            ->afterStateUpdated(function (?int $state, Forms\Set $set): void {
+                                if (! $state) {
+                                    return;
+                                }
+
+                                $branch = Branch::query()->find($state);
+
+                                if (! $branch) {
+                                    return;
+                                }
+
+                                $set('name', $branch->default_geofence_name);
+                                $set('center_latitude', $branch->latitude);
+                                $set('center_longitude', $branch->longitude);
+                                $set('radius_meters', max(100, (int) round(((float) ($branch->radius_km ?: 5)) * 1000)));
+                            })
+                            ->helperText('Pilih cabang untuk mengisi titik pusat dan radius geofence otomatis dari data cabang.')
                             ->required(),
                         Forms\Components\Textarea::make('description')
                             ->columnSpanFull(),
                         Forms\Components\TextInput::make('center_latitude')
+                            ->label('Latitude pusat')
                             ->numeric()
                             ->required()
                             ->live(onBlur: true)
                             ->extraInputAttributes(['id' => 'geofence_center_latitude']),
                         Forms\Components\TextInput::make('center_longitude')
+                            ->label('Longitude pusat')
                             ->numeric()
                             ->required()
                             ->live(onBlur: true)
                             ->extraInputAttributes(['id' => 'geofence_center_longitude']),
                         Forms\Components\TextInput::make('radius_meters')
+                            ->label('Radius')
                             ->numeric()
                             ->minValue(1)
                             ->suffix('meters')

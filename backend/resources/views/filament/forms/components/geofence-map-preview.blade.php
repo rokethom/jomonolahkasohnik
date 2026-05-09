@@ -1,8 +1,8 @@
 @php
     $mapId = 'geofence-map-'.\Illuminate\Support\Str::uuid();
-    $lat = -6.20000000;
-    $lng = 106.81666600;
-    $radius = 500;
+    $lat = -7.70630000;
+    $lng = 114.00980000;
+    $radius = 5000;
 @endphp
 
 @once
@@ -91,15 +91,26 @@
 
             map.on('click', (event) => sync(event.latlng.lat, event.latlng.lng));
 
+            const refreshFromInputs = (center = false) => {
+                const lat = parseFloat(latInput?.value);
+                const lng = parseFloat(lngInput?.value);
+
+                if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                    marker.setLatLng([lat, lng]);
+                    circle.setLatLng([lat, lng]);
+                    map.setView([lat, lng], center ? Math.max(map.getZoom(), 15) : map.getZoom());
+                }
+            };
+
             [latInput, lngInput].forEach((input) => {
-                input?.addEventListener('change', () => {
+                input?.addEventListener('input', () => refreshFromInputs(false));
+                input?.addEventListener('change', () => refreshFromInputs(false));
+                input?.addEventListener('blur', () => {
                     const lat = parseFloat(latInput?.value);
                     const lng = parseFloat(lngInput?.value);
 
                     if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                        marker.setLatLng([lat, lng]);
-                        circle.setLatLng([lat, lng]);
-                        map.setView([lat, lng], map.getZoom());
+                        refreshFromInputs(true);
                     }
                 });
             });

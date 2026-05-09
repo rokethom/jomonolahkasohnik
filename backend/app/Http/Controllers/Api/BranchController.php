@@ -12,6 +12,7 @@ class BranchController extends Controller
     {
         return response()->json([
             'data' => Branch::query()
+                ->with('geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active')
                 ->withCount('geofenceAreas')
                 ->orderBy('name')
                 ->get(),

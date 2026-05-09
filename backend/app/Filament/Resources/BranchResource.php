@@ -9,6 +9,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BranchResource extends Resource
 {
@@ -73,9 +74,12 @@ class BranchResource extends Resource
                     ->suffix(' KM')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('geofence_areas_count')
-                    ->counts('geofenceAreas')
+                    ->state(fn (Branch $record): string => $record->geofenceAreas
+                        ->pluck('name')
+                        ->filter()
+                        ->join(', ') ?: '-')
                     ->label('Geofences')
-                    ->sortable(),
+                    ->wrap(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -100,5 +104,10 @@ class BranchResource extends Resource
             'create' => Pages\CreateBranch::route('/create'),
             'edit' => Pages\EditBranch::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with('geofenceAreas');
     }
 }

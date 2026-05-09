@@ -204,7 +204,7 @@ type ManualOrderPreview = {
   parsed?: Record<string, unknown> | null
 }
 
-type Branch = { id: number; name: string; area: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number }
+type Branch = { id: number; name: string; area: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number; geofence_areas?: Array<{ id: number; name: string }> }
 type ServiceRow = { id: number; name: string; code: string }
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
 type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; name: string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; ring: string; price: number; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
@@ -3456,7 +3456,7 @@ function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; m
     setShowForm(false)
     await onChanged()
   }
-  return <section className="panel branches-panel"><div className="section-head"><div><h2>Branches</h2><p>Kelola cabang operasional, area, dan titik koordinat utama.</p></div>{canCreate && <button className="primary-button compact" onClick={() => setShowForm((value) => !value)} type="button"><Icon name="plus" />Add Cabang</button>}</div>{showForm && <form className="admin-inline-form branch-create-form" onSubmit={submit}><label>Nama cabang<input name="name" required placeholder="Situbondo" /></label><label>Area<input name="area" placeholder="Kota / wilayah" /></label><label>Latitude<input name="latitude" required type="number" step="0.00000001" placeholder="-7.706" /></label><label>Longitude<input name="longitude" required type="number" step="0.00000001" placeholder="114.009" /></label><label>Radius KM<input name="radius_km" required type="number" step="0.1" min="0.1" defaultValue="5" /></label><button className="primary-button" type="submit">Save Cabang</button></form>}<div className="branch-grid">{branches.map((branch) => <article className="branch-card" key={branch.id}><div className="branch-map"><span>{branch.name.slice(0, 2).toUpperCase()}</span></div><div className="branch-card-body"><strong>{branch.name}</strong><span className="branch-area-name">{branch.area || 'Area belum diisi'}</span><p>Titik cabang disembunyikan di frontend</p><b>{branch.radius_km ?? 5} km radius Â· {branch.geofence_areas_count ?? 0} geofence areas</b></div></article>)}</div></section>
+  return <section className="panel branches-panel"><div className="section-head"><div><h2>Branches</h2><p>Kelola cabang operasional, area, dan titik koordinat utama.</p></div>{canCreate && <button className="primary-button compact" onClick={() => setShowForm((value) => !value)} type="button"><Icon name="plus" />Add Cabang</button>}</div>{showForm && <form className="admin-inline-form branch-create-form" onSubmit={submit}><label>Nama cabang<input name="name" required placeholder="Situbondo" /></label><label>Area<input name="area" placeholder="Kota / wilayah" /></label><label>Latitude<input name="latitude" required type="number" step="0.00000001" placeholder="-7.706" /></label><label>Longitude<input name="longitude" required type="number" step="0.00000001" placeholder="114.009" /></label><label>Radius KM<input name="radius_km" required type="number" step="0.1" min="0.1" defaultValue="5" /></label><button className="primary-button" type="submit">Save Cabang</button></form>}<div className="branch-grid">{branches.map((branch) => <article className="branch-card" key={branch.id}><div className="branch-map"><span>{branch.name.slice(0, 2).toUpperCase()}</span></div><div className="branch-card-body"><strong>{branch.name}</strong><span className="branch-area-name">{branch.area || 'Area belum diisi'}</span><p>Titik cabang disembunyikan di frontend</p><b>{branch.radius_km ?? 5} km radius - {branchGeofenceNames(branch)}</b></div></article>)}</div></section>
 }
 
 function GeofencePanel({ geofences }: { geofences: Geofence[] }) {
@@ -3829,6 +3829,11 @@ function formatShortDateTime(value?: string | null) {
 
 function branchLabel(branch: Branch) {
   return [branch.name, branch.area].filter(Boolean).join(' - ')
+}
+
+function branchGeofenceNames(branch: Branch) {
+  const names = branch.geofence_areas?.map((area) => area.name).filter(Boolean) ?? []
+  return names.length > 0 ? names.join(', ') : 'Geofence belum diset'
 }
 
 function branchLocationKey(value?: string | null) {
