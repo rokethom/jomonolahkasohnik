@@ -4546,6 +4546,15 @@ textarea::placeholder {
     border-bottom: 1px solid rgba(226, 232, 240, 0.84);
     background: rgba(247, 248, 251, 0.92);
     backdrop-filter: blur(18px);
+    transform: translateY(0);
+    transition: transform 220ms ease, opacity 180ms ease, background 180ms ease, border-color 180ms ease;
+    will-change: transform;
+  }
+
+  .topbar.topbar-hidden {
+    opacity: 0.96;
+    pointer-events: none;
+    transform: translateY(calc(-100% - 6px));
   }
 
   .admin-shell.dark .topbar {

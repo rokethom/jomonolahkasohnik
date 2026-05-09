@@ -466,6 +466,7 @@ function App() {
   const [error, setError] = useState('')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('admin_theme') === 'dark')
   const [isMobileNavOpen, setMobileNavOpen] = useState(false)
+  const [isMobileTopbarHidden, setMobileTopbarHidden] = useState(false)
   const [openMenuGroups, setOpenMenuGroups] = useState<Record<string, boolean>>({
     overview: true,
     operations: true,
@@ -477,6 +478,7 @@ function App() {
   const isRefreshingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
   const lastOperHandlePendingRef = useRef<number | null>(null)
+  const lastScrollYRef = useRef(0)
 
   const clearAuthSession = useCallback(() => {
     localStorage.removeItem('admin_token')
@@ -640,6 +642,34 @@ function App() {
     return () => document.removeEventListener('mousedown', closeBackdropModal)
   }, [])
 
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentY = window.scrollY
+      const isMobile = window.matchMedia('(max-width: 760px)').matches
+
+      if (!isMobile || isMobileNavOpen) {
+        setMobileTopbarHidden(false)
+        lastScrollYRef.current = currentY
+        return
+      }
+
+      const delta = currentY - lastScrollYRef.current
+      if (Math.abs(delta) < 8) return
+
+      setMobileTopbarHidden(currentY > 96 && delta > 0)
+      lastScrollYRef.current = currentY
+    }
+
+    handleScroll()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    window.addEventListener('resize', handleScroll)
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('resize', handleScroll)
+    }
+  }, [isMobileNavOpen])
+
   if (!token) {
     return <LoginScreen onLogin={(nextToken) => {
       localStorage.setItem('admin_token', nextToken)
@@ -733,7 +763,7 @@ function App() {
       </aside>
 
         <main className="main">
-          <header className="topbar">
+          <header className={isMobileTopbarHidden ? 'topbar topbar-hidden' : 'topbar'}>
             <button className="mobile-menu-button" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Icon name="grid" />Menu</button>
             <div className="topbar-title"><h1>{titleFor(safeView)}</h1><p>{subtitleFor(data)}</p>{error && <p className="error-text">{error}</p>}</div>
             <div className="topbar-actions">
