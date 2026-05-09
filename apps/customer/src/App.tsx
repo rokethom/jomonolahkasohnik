@@ -400,6 +400,12 @@ function isOjekService(service?: string | null) {
   return value === 'ojek' || value === 'oj' || value.includes('ojek')
 }
 
+function isJokerMobilService(service?: string | null) {
+  const value = String(service ?? '').toLowerCase().replace(/[\s-]+/g, '_')
+
+  return value === 'jm' || value === 'joker_mobil' || value.includes('joker_mobil') || value.includes('mobil')
+}
+
 function renderServiceWhatsappMessage(
   service: Pick<DynamicService, 'name' | 'code' | 'service_type' | 'whatsapp_message_template'>,
   user: ReturnType<typeof useCustomerStore.getState>['user'],
@@ -1896,6 +1902,7 @@ function ChatOrderActions({
   const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? defaultVehicle
   const selectedSeatRows = pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2
   const isOjekOrder = isOjekService(pendingOrder?.service_type)
+  const isJokerMobilOrder = isJokerMobilService(pendingOrder?.service_type)
   const passengerCount = passengerCountFromPayload(pendingOrder)
   const doubleOrderConfirmed = pendingOrder?.service_payload?.confirm_double_order === true
   const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
@@ -1971,6 +1978,31 @@ function ChatOrderActions({
       {points.map((point, index) => (
         <input key={index} value={point} onChange={(event) => updatePoint(index, event.target.value)} placeholder={`Titik tambahan ${index + 1}`} />
       ))}
+      {isOjekOrder && (
+        <div className="ladies-choice">
+          <span>Pilihan driver</span>
+          <div>
+            <button type="button" className={selectedDriverPreference !== 'ladies' ? 'active' : ''} onClick={() => updateDriverPreference('general')}>Umum</button>
+            <button type="button" className={selectedDriverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => updateDriverPreference('ladies')}>Ladies</button>
+          </div>
+          <small>{selectedDriverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
+        </div>
+      )}
+      {isJokerMobilOrder && (
+        <div className="vehicle-seat-choice">
+          <span>Tempat duduk Joker Mobil</span>
+          <div>
+            <button type="button" className={selectedSeatRows === 2 ? 'active' : ''} onClick={() => updateSeatRows(2)}>
+              <b>2 baris</b>
+              <small>Citycar / umum</small>
+            </button>
+            <button type="button" className={selectedSeatRows === 3 ? 'active' : ''} onClick={() => updateSeatRows(3)}>
+              <b>3 baris</b>
+              <small>MPV / keluarga</small>
+            </button>
+          </div>
+        </div>
+      )}
       <div className="chat-action-row">
         <button type="button" disabled={points.length >= 5} onClick={addPoint}>+ Tambah Titik</button>
         {!showSummary && <button type="button" onClick={() => setShowSummary(true)}>Preview Order</button>}
@@ -2001,25 +2033,19 @@ function ChatOrderActions({
                 <span>Buat 2 order ojek dengan detail yang sama untuk 2 penumpang.</span>
               </label>
             )}
-            {isOjekOrder && (
-              <div className="ladies-choice">
-                <span>Pilihan driver</span>
-                <div>
-                  <button type="button" className={selectedDriverPreference !== 'ladies' ? 'active' : ''} onClick={() => updateDriverPreference('general')}>Umum</button>
-                  <button type="button" className={selectedDriverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => updateDriverPreference('ladies')}>Ladies</button>
-                </div>
-                <small>{selectedDriverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
-              </div>
+            {!isJokerMobilOrder && (
+              <>
+                <label>
+                  <span>Pilih kendaraan</span>
+                  <select value={selectedVehicle} onChange={(event) => updateVehicle(event.target.value as 'motor' | 'mobil')}>
+                    <option value="motor">Motor</option>
+                    <option value="mobil">Mobil</option>
+                  </select>
+                </label>
+                <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
+              </>
             )}
-            <label>
-              <span>Pilih kendaraan</span>
-              <select value={selectedVehicle} onChange={(event) => updateVehicle(event.target.value as 'motor' | 'mobil')}>
-                <option value="motor">Motor</option>
-                <option value="mobil">Mobil</option>
-              </select>
-            </label>
-            <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
-            {selectedVehicle === 'mobil' && (
+            {selectedVehicle === 'mobil' && !isJokerMobilOrder && (
               <div className="vehicle-seat-choice">
                 <span>Tempat duduk</span>
                 <div>

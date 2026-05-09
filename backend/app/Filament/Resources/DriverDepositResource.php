@@ -181,7 +181,7 @@ class DriverDepositResource extends Resource
 
                         Notification::make()
                             ->title('Setoran driver unpaid')
-                            ->body('Driver otomatis OFF dan hanya bisa request order.')
+                            ->body('Driver otomatis OFF dan tidak bisa menerima/request order.')
                             ->warning()
                             ->send();
                     }),

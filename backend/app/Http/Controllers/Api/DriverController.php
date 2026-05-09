@@ -170,7 +170,7 @@ class DriverController extends Controller
             $driver->update(['is_available' => false]);
 
             return response()->json([
-                'message' => 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan hanya bisa request order.',
+                'message' => 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan tidak bisa menerima/request order.',
                 'driver' => $this->driverPayload($request, $deposit),
                 'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
             ], $request->boolean('online') ? 422 : 200);
@@ -189,7 +189,7 @@ class DriverController extends Controller
         $driver->update(['is_available' => $request->boolean('online')]);
 
         return response()->json([
-            'message' => $request->boolean('online') ? 'Driver ON dan bisa menerima order.' : 'Driver OFF. Anda tetap bisa request order.',
+            'message' => $request->boolean('online') ? 'Driver ON dan bisa menerima/request order.' : 'Driver OFF. Order baru dan request order nonaktif.',
             'driver' => $this->driverPayload($request, $deposit),
             'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
         ]);
@@ -267,6 +267,7 @@ class DriverController extends Controller
     public function requestOrder(Request $request, DriverRequestOrderService $driverRequestOrder, SuspendService $suspensions): JsonResponse
     {
         $driver = $this->ensureDriver($request);
+        abort_if(! $driver->is_available, 422, 'Status driver OFF. Aktifkan ON terlebih dahulu untuk membuat request order.');
         abort_unless($suspensions->canRequestOrder($driver), 422, 'Driver tidak bisa request order karena suspend setoran/permanent.');
 
         $data = $request->validate([
@@ -500,7 +501,7 @@ class DriverController extends Controller
         }
 
         if ($this->depositBlocksOrders($deposit)) {
-            return 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan hanya bisa request order.';
+            return 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan tidak bisa menerima/request order.';
         }
 
         if ($driver->status !== 'active') {

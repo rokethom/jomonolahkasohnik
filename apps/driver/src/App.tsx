@@ -708,7 +708,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
   const previousPeriodLabel = previousDeposit?.period_label ?? 'bulan lalu'
   const currentPeriodLabel = finance?.period_label ?? 'bulan ini'
   const availabilityCopy = driver.availability_block_reason
-    ?? (canReceiveOrders ? 'Order baru akan masuk saat tersedia.' : 'OFF: hanya bisa request order.')
+    ?? (canReceiveOrders ? 'Order baru dan request order aktif saat tersedia.' : 'OFF: order baru dan request order nonaktif.')
 
   const updateAvailability = async (online: boolean) => {
     if (availabilitySaving) return
@@ -775,7 +775,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       </section>
 
       <section className="quick-grid">
-        <button className="primary-button" onClick={() => setView('request')}>Request Order</button>
+        <button className="primary-button" disabled={!isOnline || driver.status !== 'active'} onClick={() => setView('request')}>Request Order</button>
         <button className="secondary-button" onClick={() => setView('history')}>Riwayat</button>
       </section>
 
@@ -988,7 +988,7 @@ function OrderList({ orders, loading, api, onAction }: { orders: Order[]; loadin
   return (
     <section className="page">
       <PageTitle title="Order List" subtitle="Order aktif dan terbaru untuk driver." />
-      {!canReceiveOrders && <div className="notice-card warning">Status OFF atau setoran unpaid. Order baru disembunyikan, tetapi request order tetap bisa digunakan.</div>}
+      {!canReceiveOrders && <div className="notice-card warning">Status OFF atau rule setoran/suspend aktif. Order baru tidak ditampilkan.</div>}
       {loading && <SkeletonCards />}
       {!loading && visibleOrders.length === 0 && <EmptyState title="Kosong" copy="Belum ada order aktif atau order baru." />}
       {visibleOrders.map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
@@ -1606,7 +1606,8 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
 function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
   const [request, setRequest] = useState('')
   const [loading, setLoading] = useState(false)
-  const { token, toast, driver, branchRequestOrders } = useDriverStore()
+  const { token, toast, driver, isOnline, branchRequestOrders } = useDriverStore()
+  const canCreateRequest = Boolean(isOnline && driver?.is_available && driver?.status === 'active')
   const parsedPrices = parseRequestPrices(request)
   const ownRequestOrders = branchRequestOrders
     .filter((order) => order.driver === driver?.name || order.customer === driver?.name)
@@ -1615,6 +1616,10 @@ function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
     .filter((order) => order.driver !== driver?.name && order.customer !== driver?.name)
     .slice(0, 12)
   const submit = async () => {
+    if (!canCreateRequest) {
+      toast('Status driver OFF atau tidak aktif. Aktifkan ON terlebih dahulu untuk request order.', 'warning')
+      return
+    }
     setLoading(true)
     try {
       await makeApi(token)('/driver/request-order', { method: 'POST', body: JSON.stringify({ raw_text: request }) })
@@ -1631,12 +1636,13 @@ function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
     <section className="page request-page">
       <PageTitle title="Request Order" subtitle="Paste format request, history area tampil seperti grup driver cabang." />
       <div className="panel request-compose-panel">
+        {!canCreateRequest && <div className="notice-card warning">Status OFF atau akun tidak aktif. Request order tidak bisa dikirim.</div>}
         <textarea className="request-box" placeholder={"DO\npiscok dawuhan\nke Ayani\njasa 10k D 7k"} value={request} onChange={(event) => setRequest(event.target.value)} />
         <div className="preview-price request-price-preview">
           <span>Jasa diterima: <strong>{parsedPrices.acceptedPrice ? `Rp ${formatMoney(parsedPrices.acceptedPrice)}` : 'Belum terdeteksi'}</strong></span>
           <span>Dasar setoran: <strong>{parsedPrices.depositBase ? `Rp ${formatMoney(parsedPrices.depositBase)}` : 'Belum terdeteksi'}</strong></span>
         </div>
-        <button className="primary-button full" disabled={loading || !parsedPrices.acceptedPrice} onClick={submit}>{loading ? 'Mengirim...' : 'Kirim Request'}</button>
+        <button className="primary-button full" disabled={loading || !canCreateRequest || !parsedPrices.acceptedPrice} onClick={submit}>{loading ? 'Mengirim...' : 'Kirim Request'}</button>
       </div>
 
       <section className="panel request-history-panel">
@@ -1806,7 +1812,7 @@ function ActiveOrderRoute({ orders, max }: { orders: Order[]; max: number }) {
 
 function SuspendBanner({ driver }: { driver: Driver }) {
   const remaining = useCountdown(driver.suspended_until)
-  return <section className="suspend-banner"><strong>{driver.status === 'suspended_unpaid' ? 'Suspend belum bayar setoran' : 'Akun disuspend'}</strong><span>{remaining ? `Sisa waktu ${remaining}` : 'Menunggu release admin'}</span><p>{suspendReasonText(driver)}</p><small>Anda hanya bisa request order dan chat operator.</small></section>
+  return <section className="suspend-banner"><strong>{driver.status === 'suspended_unpaid' ? 'Suspend belum bayar setoran' : 'Akun disuspend'}</strong><span>{remaining ? `Sisa waktu ${remaining}` : 'Menunggu release admin'}</span><p>{suspendReasonText(driver)}</p><small>Anda masih bisa chat operator untuk bantuan.</small></section>
 }
 
 function BottomNav({ active, onNavigate }: { active: View; onNavigate: (view: View) => void }) {

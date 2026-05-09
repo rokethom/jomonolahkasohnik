@@ -531,7 +531,7 @@ class AdminController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Setoran driver ditandai unpaid. Driver otomatis OFF dan hanya bisa request order.',
+            'message' => 'Setoran driver ditandai unpaid. Driver otomatis OFF dan tidak bisa menerima/request order.',
             'deposit' => $deposit->fresh(),
             'driver' => $driver->fresh(['user.branch']),
         ]);

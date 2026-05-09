@@ -70,7 +70,7 @@ class AcceptOrder
             $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());
             if (($deposit->status ?? 'unpaid') !== 'paid' && Carbon::parse($deposit->due_date)->endOfDay()->isPast()) {
                 $driver->update(['is_available' => false]);
-                throw new RuntimeException('Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan hanya bisa request order.');
+                throw new RuntimeException('Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan tidak bisa menerima/request order.');
             }
 
             if (! $driver->is_available) {
