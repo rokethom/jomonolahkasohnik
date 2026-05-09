@@ -52,7 +52,7 @@ class DriverFinanceService
             ->first();
         $paidAmount = (int) ($existing?->paid_amount ?? 0);
         $paidAt = $existing?->paid_at;
-        $dueDate = $month->copy()->day(min(20, $end->day));
+        $dueDate = $month->copy()->addMonthNoOverflow()->day(20);
         $status = $this->depositStatus($total, $paidAmount, $dueDate, $existing?->status);
 
         return DriverDeposit::query()->updateOrCreate(
@@ -141,11 +141,15 @@ class DriverFinanceService
 
     private function depositStatus(int $total, int $paidAmount, Carbon $dueDate, ?string $currentStatus = null): string
     {
-        if ($total <= 0 || $paidAmount >= $total) {
+        if ($total <= 0) {
             return 'paid';
         }
 
-        if ($paidAmount > 0) {
+        if ($paidAmount <= 0) {
+            return 'unpaid';
+        }
+
+        if ($paidAmount >= $total) {
             return 'paid';
         }
 

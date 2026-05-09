@@ -166,6 +166,7 @@ type DriverFinance = {
   status: string
   due_date?: string | null
   paid_amount: number
+  paid_at?: string | null
   remaining?: number
   period_label?: string
   current_period_deposit?: number
@@ -175,6 +176,7 @@ type DriverFinance = {
     remaining: number
     status: string
     due_date?: string | null
+    paid_at?: string | null
     period_label?: string
   }
   breakdown?: Record<string, number>
@@ -917,7 +919,6 @@ function BranchAcceptedFeed({
 function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: () => void }) {
   const rows = setoranBreakdownRows(finance.breakdown)
   const remaining = Math.max(0, finance.total - finance.paid_amount)
-  const previousRemaining = Number(finance.previous_deposit?.remaining ?? 0)
   return (
     <Modal title="Detail Setoran" onClose={onClose}>
       <div className="deposit-summary">
@@ -931,13 +932,24 @@ function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: (
         </span>
       </div>
       <div className="setoran-breakdown">
-        <div className="total-row"><span>Sisa bulan lalu</span><strong>Rp {formatMoney(previousRemaining)}</strong></div>
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
         <div className="total-row"><span>Total bulan ini</span><strong>Rp {formatMoney(finance.total)}</strong></div>
-        <PriceRow label="Sudah dibayar" value={finance.paid_amount} />
+        <PaidAmountRow value={finance.paid_amount} paidAt={finance.paid_at} />
         <div className="total-row"><span>Sisa tagihan</span><strong>Rp {formatMoney(remaining)}</strong></div>
       </div>
     </Modal>
+  )
+}
+
+function PaidAmountRow({ value, paidAt }: { value: number; paidAt?: string | null }) {
+  return (
+    <div className="price-row paid-amount-row">
+      <span>
+        Sudah dibayar
+        <small>{paidAt ? `Tanggal bayar: ${formatDepositPaidAt(paidAt)}` : 'Belum ada tanggal pembayaran'}</small>
+      </span>
+      <strong>Rp {formatMoney(value)}</strong>
+    </div>
   )
 }
 
@@ -2210,6 +2222,18 @@ function formatHistoryTime(value?: string | null) {
 }
 
 function formatDepositDueDate(value?: string | null) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.split('T')[0] || value
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
+function formatDepositPaidAt(value?: string | null) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value.split('T')[0] || value

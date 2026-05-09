@@ -455,6 +455,7 @@ class DriverController extends Controller
                 'period_label' => $previousPeriod->translatedFormat('F Y'),
                 'total' => $previousTotal,
                 'paid_amount' => $previousPaid,
+                'paid_at' => $previous?->paid_at?->toISOString(),
                 'remaining' => $previousRemaining,
                 'status' => $previousRemaining > 0 ? 'unpaid' : 'paid',
                 'due_date' => $previous?->due_date?->toDateString(),
