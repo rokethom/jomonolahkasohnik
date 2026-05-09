@@ -99,12 +99,6 @@ type RegistrationLocation = {
   gps_timestamp: string
 }
 
-type SharedLocation = {
-  lat: number
-  lng: number
-  url: string
-  label: string
-}
 
 type ReplyTarget = {
   id: string
@@ -2108,13 +2102,12 @@ function ChatOrderActions({
 function MessageBubble({ message, onCs, onOrderDetail, onImageClick, onReply }: { message: LocalMessage; onCs?: () => void; onOrderDetail?: (order: Order) => void; onImageClick?: (imageUrl: string) => void; onReply?: (reply: ReplyTarget) => void }) {
   const side = message.from === 'user' ? 'out' : 'in'
   const total = message.preview?.quote?.total_price ?? message.preview?.quote?.final_price
-  const sharedLocation = parseSharedLocation(message.text)
   const replyText = message.text || (message.imageUrl ? 'Foto' : 'Pesan')
 
   return (
     <article className={`message-bubble ${side}`}>
       {message.imageUrl && <button className="chat-image-button" type="button" onClick={() => onImageClick?.(message.imageUrl!)}><img src={message.imageUrl} alt="Lampiran customer" /></button>}
-      {sharedLocation ? <SharedLocationBubble location={sharedLocation} from={message.from} /> : message.text && <p>{message.text}</p>}
+      {message.text && <p>{redactMapText(message.text)}</p>}
       {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi Operator</button>}
       {message.order && <button className="bubble-link order-detail-link" onClick={() => onOrderDetail?.(message.order!)}>Detail {message.order.order_code ?? `#${message.order.id}`}</button>}
       {total && <strong className="bubble-total">Total {formatRupiah(total)}</strong>}
@@ -2124,28 +2117,7 @@ function MessageBubble({ message, onCs, onOrderDetail, onImageClick, onReply }: 
   )
 }
 
-function SharedLocationBubble({ location, from }: { location: SharedLocation; from: LocalMessage['from'] }) {
-  const title = from === 'driver'
-    ? 'Lokasi driver'
-    : from === 'user'
-      ? 'Lokasi customer'
-      : 'Lokasi dibagikan'
-
-  return (
-    <div className="shared-location-card">
-      <div className="shared-location-icon"><MapPin size={20} /></div>
-      <div>
-        <strong>{title}</strong>
-        <p>{location.label}</p>
-        <a href={location.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
-          Buka Google Maps
-        </a>
-      </div>
-    </div>
-  )
-}
-
-function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { onSend: (text: string) => void | Promise<void>; onImage: (file: File, caption?: string) => void | Promise<void>; onLocation?: () => void | Promise<void>; replyTarget?: ReplyTarget | null; onClearReply?: () => void }) {
+function InputBar({ onSend, onImage, replyTarget, onClearReply }: { onSend: (text: string) => void | Promise<void>; onImage: (file: File, caption?: string) => void | Promise<void>; replyTarget?: ReplyTarget | null; onClearReply?: () => void }) {
   const store = useCustomerStore()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -2167,37 +2139,6 @@ function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { 
       onClearReply?.()
       setAttachmentOpen(false)
       requestAnimationFrame(() => textareaRef.current && autoResizeTextarea(textareaRef.current))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const sendLocation = async () => {
-    if (sending) return
-    setAttachmentOpen(false)
-    if (onLocation) {
-      await onLocation()
-      return
-    }
-    if (!navigator.geolocation) {
-      store.showToast('error', 'GPS tidak tersedia di perangkat ini.')
-      return
-    }
-
-    setSending(true)
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        })
-      })
-      await onSend(withReplyPrefix(`Lokasi customer saat ini:\nhttps://www.google.com/maps?q=${position.coords.latitude},${position.coords.longitude}`, replyTarget))
-      onClearReply?.()
-      store.showToast('success', 'Lokasi terkirim.')
-    } catch (error) {
-      store.showToast('error', getApiErrorMessage(error, 'Gagal mengambil lokasi. Pastikan GPS aktif.'))
     } finally {
       setSending(false)
     }
@@ -2234,7 +2175,6 @@ function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { 
         <AttachmentPanel
           onGallery={() => galleryInputRef.current?.click()}
           onCamera={() => cameraInputRef.current?.click()}
-          onLocation={() => void sendLocation()}
           onContact={() => void sendContact()}
         />
       )}
@@ -2326,12 +2266,11 @@ function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { 
   )
 }
 
-function AttachmentPanel({ onGallery, onCamera, onLocation, onContact }: { onGallery: () => void; onCamera: () => void; onLocation: () => void; onContact: () => void }) {
+function AttachmentPanel({ onGallery, onCamera, onContact }: { onGallery: () => void; onCamera: () => void; onContact: () => void }) {
   return (
     <div className="attachment-panel">
       <button type="button" onClick={onGallery}><span className="gallery"><ImageIcon size={27} /></span><b>Galeri</b></button>
       <button type="button" onClick={onCamera}><span className="camera"><Camera size={27} /></span><b>Kamera</b></button>
-      <button type="button" onClick={onLocation}><span className="location"><MapPin size={27} /></span><b>Lokasi</b></button>
       <button type="button" onClick={onContact}><span className="contact"><UserRound size={27} /></span><b>Kontak</b></button>
     </div>
   )
@@ -2705,28 +2644,6 @@ function DriverChatScreen({ order }: { order: Order | null }) {
     }
   }
 
-  const shareCustomerLocation = async () => {
-    if (!navigator.geolocation) {
-      store.showToast('error', 'GPS tidak tersedia di perangkat ini.')
-      return
-    }
-
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        })
-      })
-      const { latitude, longitude } = position.coords
-      await sendDriverChat(`Lokasi customer saat ini:\nhttps://www.google.com/maps?q=${latitude},${longitude}`)
-      store.showToast('success', 'Lokasi terkirim ke driver.')
-    } catch (error) {
-      store.showToast('error', getApiErrorMessage(error, 'Gagal mengambil lokasi. Pastikan GPS aktif.'))
-    }
-  }
-
   return (
     <div className="driver-chat">
       <div className="chat-date">{todayLabel()}</div>
@@ -2762,7 +2679,7 @@ function DriverChatScreen({ order }: { order: Order | null }) {
           )
         })}
       </div>
-      <InputBar onSend={(text) => void sendDriverChat(text)} onImage={(file, caption) => void sendDriverChat(caption || file.name, file)} onLocation={shareCustomerLocation} replyTarget={replyTarget} onClearReply={() => setReplyTarget(null)} />
+      <InputBar onSend={(text) => void sendDriverChat(text)} onImage={(file, caption) => void sendDriverChat(caption || file.name, file)} replyTarget={replyTarget} onClearReply={() => setReplyTarget(null)} />
       {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
     </div>
   )
@@ -3786,23 +3703,12 @@ function withReplyPrefix(text: string, reply?: ReplyTarget | null) {
   return `Membalas:\n> ${plainText(reply.text).slice(0, 90)}\n\n${text}`
 }
 
-function parseSharedLocation(message?: string | null): SharedLocation | null {
-  if (!message) return null
+function redactMapText(message?: string | null) {
+  if (!message) return ''
 
-  const mapsMatch = message.match(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com)[^\s]*[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i)
-  const coordMatch = mapsMatch ?? message.match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/)
-  if (!coordMatch) return null
-
-  const lat = Number(coordMatch[1])
-  const lng = Number(coordMatch[2])
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
-
-  return {
-    lat,
-    lng,
-    url: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-    label: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-  }
+  return message
+    .replace(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com|maps\.app\.goo\.gl)\S*/giu, '[lokasi disembunyikan]')
+    .replace(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/g, '[koordinat disembunyikan]')
 }
 
 declare global {

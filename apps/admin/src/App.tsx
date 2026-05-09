@@ -782,7 +782,7 @@ function App() {
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
-        {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} branches={data.branches} />}
+        {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} branches={data.branches} canViewMaps={data.me.role === 'admin'} />}
       </main>
 
       {isUserFormOpen && <UserFormModal permissions={data.permissions} branches={data.branches} services={data.services} api={api} onClose={() => setUserFormOpen(false)} onCreated={async (password) => { alert(`Password sementara: ${password}`); await refresh(); setUserFormOpen(false) }} />}
@@ -1365,13 +1365,13 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
     <section className="panel">
       <PanelHeader title="User management" action={`${users.length} records`} />
       <div className="table-toolbar"><select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><span className="toolbar-hint">Admin/GM only can edit Admin & GM accounts.</span></div>
-      <div className="table-wrap user-table-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.username}</strong><span>{user.email}</span></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><UserLocationSummary user={user} /></td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
+      <div className="table-wrap user-table-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.username}</strong><span>{user.email}</span></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><UserLocationSummary user={user} canViewMaps={me.role === 'admin'} /></td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
       {editingUser && <UserEditModal user={editingUser} branches={branches} permissions={permissions} api={api} onClose={() => setEditingUser(null)} onSaved={async () => { await onChanged(); setEditingUser(null) }} />}
     </section>
   )
 }
 
-function UserLocationSummary({ user }: { user: User }) {
+function UserLocationSummary({ user, canViewMaps }: { user: User; canViewMaps: boolean }) {
   const registration = user.registration_location
   const latest = user.latest_gps ?? user.current_location
   const risk = user.location_risk ?? 'normal'
@@ -1382,10 +1382,12 @@ function UserLocationSummary({ user }: { user: User }) {
 
   return (
     <div className="user-location-summary">
-      <div className="user-location-links">
-        {registration?.maps_url && <a href={registration.maps_url} target="_blank" rel="noreferrer">Daftar</a>}
-        {latest?.maps_url && <a href={latest.maps_url} target="_blank" rel="noreferrer">GPS terbaru</a>}
-      </div>
+      {canViewMaps && (
+        <div className="user-location-links">
+          {registration?.maps_url && <a href={registration.maps_url} target="_blank" rel="noreferrer">Daftar</a>}
+          {latest?.maps_url && <a href={latest.maps_url} target="_blank" rel="noreferrer">GPS terbaru</a>}
+        </div>
+      )}
       <span className={`location-risk ${locationRiskTone(risk)}`}>{locationRiskLabel(risk)}</span>
       <small>{formatLocationDistance(user.location_distance_meters)}{latest?.branch ? ` - ${latest.branch}` : ''}</small>
       {user.latest_gps?.reason && <em>{user.latest_gps.reason}</em>}
@@ -3454,14 +3456,14 @@ function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; m
     setShowForm(false)
     await onChanged()
   }
-  return <section className="panel branches-panel"><div className="section-head"><div><h2>Branches</h2><p>Kelola cabang operasional, area, dan titik koordinat utama.</p></div>{canCreate && <button className="primary-button compact" onClick={() => setShowForm((value) => !value)} type="button"><Icon name="plus" />Add Cabang</button>}</div>{showForm && <form className="admin-inline-form branch-create-form" onSubmit={submit}><label>Nama cabang<input name="name" required placeholder="Situbondo" /></label><label>Area<input name="area" placeholder="Kota / wilayah" /></label><label>Latitude<input name="latitude" required type="number" step="0.00000001" placeholder="-7.706" /></label><label>Longitude<input name="longitude" required type="number" step="0.00000001" placeholder="114.009" /></label><label>Radius KM<input name="radius_km" required type="number" step="0.1" min="0.1" defaultValue="5" /></label><button className="primary-button" type="submit">Save Cabang</button></form>}<div className="branch-grid">{branches.map((branch) => <article className="branch-card" key={branch.id}><div className="branch-map"><span>{branch.name.slice(0, 2).toUpperCase()}</span></div><div className="branch-card-body"><strong>{branch.name}</strong><span className="branch-area-name">{branch.area || 'Area belum diisi'}</span><p>{branch.latitude}, {branch.longitude}</p><b>{branch.radius_km ?? 5} km radius Â· {branch.geofence_areas_count ?? 0} geofence areas</b></div></article>)}</div></section>
+  return <section className="panel branches-panel"><div className="section-head"><div><h2>Branches</h2><p>Kelola cabang operasional, area, dan titik koordinat utama.</p></div>{canCreate && <button className="primary-button compact" onClick={() => setShowForm((value) => !value)} type="button"><Icon name="plus" />Add Cabang</button>}</div>{showForm && <form className="admin-inline-form branch-create-form" onSubmit={submit}><label>Nama cabang<input name="name" required placeholder="Situbondo" /></label><label>Area<input name="area" placeholder="Kota / wilayah" /></label><label>Latitude<input name="latitude" required type="number" step="0.00000001" placeholder="-7.706" /></label><label>Longitude<input name="longitude" required type="number" step="0.00000001" placeholder="114.009" /></label><label>Radius KM<input name="radius_km" required type="number" step="0.1" min="0.1" defaultValue="5" /></label><button className="primary-button" type="submit">Save Cabang</button></form>}<div className="branch-grid">{branches.map((branch) => <article className="branch-card" key={branch.id}><div className="branch-map"><span>{branch.name.slice(0, 2).toUpperCase()}</span></div><div className="branch-card-body"><strong>{branch.name}</strong><span className="branch-area-name">{branch.area || 'Area belum diisi'}</span><p>Titik cabang disembunyikan di frontend</p><b>{branch.radius_km ?? 5} km radius Â· {branch.geofence_areas_count ?? 0} geofence areas</b></div></article>)}</div></section>
 }
 
 function GeofencePanel({ geofences }: { geofences: Geofence[] }) {
   return <section className="panel"><PanelHeader title="Geofence areas" action={`${geofences.length} areas`} /><div className="activity-list">{geofences.map((area) => <AreaRow key={area.id} name={area.name} branch={area.branch ? branchLabel(area.branch) : '-'} radius={`${area.radius_meters} m`} active={area.is_active} />)}</div></section>
 }
 
-function LocationLogsPanel({ logs, branches }: { logs: LocationLog[]; branches: Branch[] }) {
+function LocationLogsPanel({ logs, branches, canViewMaps }: { logs: LocationLog[]; branches: Branch[]; canViewMaps: boolean }) {
   const [branchFilter, setBranchFilter] = useState('all')
   const branchOptions = useMemo(() => {
     const values = new Map<string, string>()
@@ -3474,7 +3476,7 @@ function LocationLogsPanel({ logs, branches }: { logs: LocationLog[]; branches: 
   }, [branches, logs])
   const filteredLogs = logs.filter((log) => branchFilter === 'all' || branchLocationKey(log.branch || '') === branchFilter)
 
-  return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{log.branch || '-'} - {log.latitude}, {log.longitude}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'Mock GPS' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
+  return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{canViewMaps ? `${log.branch || '-'} - ${log.latitude}, ${log.longitude}` : `${log.branch || '-'} - titik GPS disembunyikan`}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{canViewMaps && log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'Mock GPS' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
 }
 
 function UserEditModal({ user, branches, permissions, api, onClose, onSaved }: { user: User; branches: Branch[]; permissions: Permissions; api: ApiClient; onClose: () => void; onSaved: () => void }) {

@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import axios from 'axios'
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
-import { BarChart3, BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MapPin, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
+import { BarChart3, BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
 import { setupDriverPush } from './push'
 
 declare global {
@@ -98,12 +98,6 @@ type Order = {
 }
 
 type Toast = { id: number; message: string; tone: 'success' | 'warning' | 'danger' }
-type SharedLocation = {
-  lat: number
-  lng: number
-  url: string
-  label: string
-}
 type ReplyTarget = {
   id: string
   text: string
@@ -1171,40 +1165,6 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
     }
   }
 
-  const shareLocation = async () => {
-    if (!conversation || sending) return
-    if (!navigator.geolocation) {
-      toast('GPS tidak tersedia di perangkat ini', 'warning')
-      return
-    }
-
-    setSending(true)
-    setAttachmentOpen(false)
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        })
-      })
-      const { latitude, longitude } = position.coords
-      const mapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`
-      const locationMessage = withReplyPrefix(`Lokasi driver saat ini:\n${mapsUrl}`, replyTarget)
-      const response = await api<{ data: ChatMessage }>(`/chats/${conversation.id}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ message: locationMessage }),
-      })
-      setMessages((current) => current.some((message) => String(message.id) === String(response.data.id)) ? current : [...current, response.data])
-      setReplyTarget(null)
-      toast(`Lokasi terkirim ke ${mode === 'operator' ? 'operator' : 'customer'}`, 'success')
-    } catch (err) {
-      toast(getErrorMessage(err, 'Gagal mengirim lokasi. Pastikan GPS aktif.'), 'danger')
-    } finally {
-      setSending(false)
-    }
-  }
-
   return (
     <section className="page chat-page">
       <button className="back-button" aria-label="Kembali" onClick={() => setView(mode === 'operator' ? 'profile' : order ? 'order-detail' : 'dashboard')}><ChevronLeft size={22} /></button>
@@ -1220,14 +1180,9 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
                 {messages.length === 0 && <div className="chat-loading">Belum ada pesan. Mulai percakapan dengan {mode === 'operator' ? 'operator' : 'customer'}.</div>}
                 {messages.map((message) => {
                   const mine = message.sender_id === driver?.id || message.sender_type === 'driver'
-                  const location = parseSharedLocation(message.message)
                   return (
                     <article key={message.id} className={`bubble ${mine ? 'mine' : ''}`}>
-                      {location ? (
-                        <SharedLocationBubble location={location} mine={mine} />
-                      ) : (
-                        <p>{message.message || (message.image_url ? 'Foto terkirim' : 'Pesan media')}</p>
-                      )}
+                      <p>{redactMapText(message.message) || (message.image_url ? 'Foto terkirim' : 'Pesan media')}</p>
                       {message.image_url && <button className="chat-image-button" type="button" onClick={() => setPreviewImage(assetUrl(message.image_url!))}><img className="chat-media" src={assetUrl(message.image_url)} alt="Lampiran chat" /></button>}
                       {message.audio_url && <audio controls src={assetUrl(message.audio_url)} />}
                       <button className="bubble-reply" type="button" onClick={() => setReplyTarget({ id: String(message.id), text: message.message || (message.image_url ? 'Foto' : 'Pesan') })}>Balas</button>
@@ -1241,7 +1196,6 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
                   <AttachmentPanel
                     onGallery={() => galleryInputRef.current?.click()}
                     onCamera={() => cameraInputRef.current?.click()}
-                    onLocation={() => void shareLocation()}
                     onContact={() => void shareContact()}
                   />
                 )}
@@ -1302,12 +1256,11 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
   )
 }
 
-function AttachmentPanel({ onGallery, onCamera, onLocation, onContact }: { onGallery: () => void; onCamera: () => void; onLocation: () => void; onContact: () => void }) {
+function AttachmentPanel({ onGallery, onCamera, onContact }: { onGallery: () => void; onCamera: () => void; onContact: () => void }) {
   return (
     <div className="attachment-panel">
       <button type="button" onClick={onGallery}><span className="gallery"><ImageIcon size={26} /></span><b>Galeri</b></button>
       <button type="button" onClick={onCamera}><span className="camera"><Camera size={26} /></span><b>Kamera</b></button>
-      <button type="button" onClick={onLocation}><span className="location"><MapPin size={26} /></span><b>Lokasi</b></button>
       <button type="button" onClick={onContact}><span className="contact"><UserRound size={26} /></span><b>Kontak</b></button>
     </div>
   )
@@ -1385,21 +1338,6 @@ function ImagePreviewModal({ imageUrl, onClose }: { imageUrl: string; onClose: (
       <div className="image-preview" onClick={(event) => event.stopPropagation()}>
         <button type="button" onClick={onClose}>x</button>
         <img src={imageUrl} alt="Preview lampiran" />
-      </div>
-    </div>
-  )
-}
-
-function SharedLocationBubble({ location, mine }: { location: SharedLocation; mine: boolean }) {
-  return (
-    <div className="shared-location-card">
-      <div className="shared-location-icon"><MapPin size={20} /></div>
-      <div>
-        <strong>{mine ? 'Lokasi driver' : 'Lokasi customer'}</strong>
-        <p>{location.label}</p>
-        <a href={location.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
-          Buka Google Maps
-        </a>
       </div>
     </div>
   )
@@ -1768,16 +1706,11 @@ function Metric({ label, value }: { label: string; value: string }) { return <ar
 function SectionTitle({ title, action }: { title: string; action?: string }) { return <div className="section-title"><h2>{title}</h2>{action && <span>{action}</span>}</div> }
 function PageTitle({ title, subtitle }: { title: string; subtitle: string }) { return <header className="page-title"><h1>{title}</h1><p>{subtitle}</p></header> }
 function StatusPill({ driver }: { driver: Driver }) { return <span className={`status-pill ${driver.status}`}>{driver.status.replace('_', ' ')}</span> }
-function MapRow({ label, address, lat, lng }: { label: string; address: string; lat: number; lng: number }) {
-  const mapsUrl = Number.isFinite(lat) && Number.isFinite(lng)
-    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
-    : null
-
+function MapRow({ label, address }: { label: string; address: string; lat: number; lng: number }) {
   return (
     <div className="map-row">
       <span>{label}</span>
       <strong>{address}</strong>
-      {mapsUrl && <a href={mapsUrl} target="_blank" rel="noreferrer"><MapPin size={14} /> Buka Maps</a>}
     </div>
   )
 }
@@ -2196,23 +2129,12 @@ function assetUrl(path: string) {
   return `${APP_BASE}${cleanPath}`
 }
 function formatChatTime(value?: string) { return value ? new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '' }
-function parseSharedLocation(message?: string | null): SharedLocation | null {
-  if (!message) return null
+function redactMapText(message?: string | null) {
+  if (!message) return ''
 
-  const mapsMatch = message.match(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com)[^\s]*[?&]q=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i)
-  const coordMatch = mapsMatch ?? message.match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/)
-  if (!coordMatch) return null
-
-  const lat = Number(coordMatch[1])
-  const lng = Number(coordMatch[2])
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
-
-  return {
-    lat,
-    lng,
-    url: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-    label: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
-  }
+  return message
+    .replace(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com|maps\.app\.goo\.gl)\S*/giu, '[lokasi disembunyikan]')
+    .replace(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/g, '[koordinat disembunyikan]')
 }
 
 function autoResizeTextarea(textarea: HTMLTextAreaElement) {
