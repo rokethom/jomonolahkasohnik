@@ -762,8 +762,8 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       <section className="stats-grid">
         <button className="metric setoran-card" onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
           <span>TAGIHAN BULAN {previousPeriodLabel.toUpperCase()}</span>
-          <strong>Rp {formatMoney(previousTotal)}</strong>
-          <small>{previousDeposit?.status ?? 'paid'}{previousRemaining > 0 ? ` - sisa Rp ${formatMoney(previousRemaining)}` : previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
+          <strong>Rp {formatMoney(previousRemaining)}</strong>
+          <small>{previousDeposit?.status ?? 'paid'} - total Rp {formatMoney(previousTotal)}{previousRemaining <= 0 && previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
         </button>
         <button className="metric setoran-card" onClick={() => { setFinanceMode('running'); setFinanceOpen(true) }}>
           <span>TOTAL BULAN INI BERJALAN</span>
