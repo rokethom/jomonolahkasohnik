@@ -38,7 +38,7 @@ class DriverController extends Controller
         $canReceiveOrders = $this->canReceiveOrders($driver, $deposit);
 
         $orders = Order::query()
-            ->with(['user', 'driver.user', 'adjustments'])
+            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user'])
             ->where(function ($query) use ($driver, $canReceiveOrders): void {
                 $query->where('driver_id', $driver->id);
 
@@ -74,7 +74,7 @@ class DriverController extends Controller
         $branchId = $driver->user?->branch_id;
         $branchAcceptedOrders = $branchId
             ? Order::query()
-                ->with(['user', 'driver.user'])
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
                 ->where('branch_id', $branchId)
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
@@ -83,7 +83,7 @@ class DriverController extends Controller
             : collect();
         $branchRequestOrders = $branchId
             ? Order::query()
-                ->with(['user', 'driver.user'])
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
                 ->where('branch_id', $branchId)
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
@@ -431,6 +431,10 @@ class DriverController extends Controller
 
     private function orderPayload(Order $order): array
     {
+        $operHandle = $order->relationLoaded('operHandleRequests')
+            ? $order->operHandleRequests->sortByDesc('updated_at')->first()
+            : $order->operHandleRequests()->latest('updated_at')->first();
+
         return [
             'id' => $order->id,
             'code' => $order->order_code,
@@ -460,6 +464,10 @@ class DriverController extends Controller
             'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
             'required_vehicle_seat_rows' => data_get($order->pricing_breakdown, 'required_vehicle_seat_rows'),
             'driver_preference' => data_get($order->pricing_breakdown, 'driver_preference', 'general'),
+            'oper_handle_status' => $operHandle?->status,
+            'oper_handle_driver' => $operHandle?->driver?->user?->name,
+            'oper_handle_reason' => $operHandle?->reason,
+            'oper_handle_updated_at' => $operHandle?->updated_at?->toIso8601String(),
             'detail' => $order->raw_text,
             'accepted_at' => in_array($order->status->value, ['DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING'], true)
                 ? $order->updated_at?->toIso8601String()

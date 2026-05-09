@@ -846,9 +846,11 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
   const [now, setNow] = useState(() => Date.now())
   const isAccepted = order.status === 'accepted'
   const canFinish = order.status === 'accepted' || order.status === 'on_delivery'
+  const isOperHandlePending = order.operHandleStatus === 'pending'
   const acceptedAt = order.acceptedAt ? new Date(order.acceptedAt).getTime() : now
   const finishAt = acceptedAt + 5 * 60_000
   const finishWait = Math.max(0, finishAt - now)
+  const finishDisabled = finishWait > 0 || isOperHandlePending
   const directionMatch = order.eligibility?.direction_match ?? true
   const route = routeInfoFor(order)
 
@@ -915,17 +917,17 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
           <>
             <button className="secondary-button" onClick={() => setView('chat')}>Chat Customer</button>
             <button className="secondary-button" onClick={() => setAdjustOpen(true)}>Tambah Service Charge</button>
-            <button className="danger-button" onClick={() => setOperOpen(true)}>Oper Handle</button>
+            <button className="danger-button" disabled={isOperHandlePending} onClick={() => setOperOpen(true)}>Oper Handle</button>
             <button className="ghost-button" onClick={() => setCancelOpen(true)}>Request Cancel ke CS</button>
           </>
         )}
         {canFinish && (
           <button
             className="finish-button"
-            disabled={finishWait > 0}
+            disabled={finishDisabled}
             onClick={() => onAction(() => api(`/orders/${order.id}/complete`, { method: 'POST' }), 'Order selesai')}
           >
-            {finishWait > 0 ? `Selesai aktif dalam ${formatRemaining(finishWait)}` : 'Selesai'}
+            {isOperHandlePending ? 'Menunggu approval oper handle' : finishWait > 0 ? `Selesai aktif dalam ${formatRemaining(finishWait)}` : 'Selesai'}
           </button>
         )}
       </div>

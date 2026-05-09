@@ -130,4 +130,9 @@ class Order extends Model
     {
         return $this->hasOne(Rating::class);
     }
+
+    public function operHandleRequests(): HasMany
+    {
+        return $this->hasMany(OperHandleRequest::class);
+    }
 }

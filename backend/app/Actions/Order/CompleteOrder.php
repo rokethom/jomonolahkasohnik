@@ -4,8 +4,9 @@ namespace App\Actions\Order;
 
 use App\Enums\OrderStatus;
 use App\Events\OrderStatusUpdated;
-use App\Models\Order;
 use App\Models\ChatConversation;
+use App\Models\OperHandleRequest;
+use App\Models\Order;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -19,6 +20,15 @@ class CompleteOrder
 
             if ($order->status->isTerminal()) {
                 throw new RuntimeException('Order already finished.');
+            }
+
+            $hasPendingOperHandle = OperHandleRequest::query()
+                ->where('order_id', $order->id)
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($hasPendingOperHandle) {
+                throw new RuntimeException('Order sedang menunggu approval oper handle.');
             }
 
             if (in_array($order->status, [OrderStatus::DriverAccepted, OrderStatus::DriverOnTheWay, OrderStatus::ArrivedPickup, OrderStatus::OnGoing], true)
