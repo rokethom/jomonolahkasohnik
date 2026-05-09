@@ -12,6 +12,18 @@ class ChatService
 {
     public function startCustomerOperator(User $customer): ChatConversation
     {
+        $role = $customer->role->value ?? $customer->role;
+        if ($role === 'driver') {
+            return ChatConversation::firstOrCreate(
+                [
+                    'driver_id' => $customer->id,
+                    'type' => 'driver_operator',
+                    'status' => 'active',
+                ],
+                ['branch_id' => $customer->branch_id ?? null],
+            );
+        }
+
         return ChatConversation::firstOrCreate(
             [
                 'customer_id' => $customer->id,

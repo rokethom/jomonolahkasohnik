@@ -20,7 +20,7 @@ class ChatController extends Controller
     {
         $conversation = $chatService->startCustomerOperator($request->user());
 
-        if ($conversation->messages()->doesntExist()) {
+        if ($conversation->type === 'customer_operator' && $conversation->messages()->doesntExist()) {
             $message = $conversation->messages()->create([
                 'sender_type' => 'bot',
                 'message' => $botService->welcome(),

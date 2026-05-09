@@ -319,6 +319,7 @@ input:focus, textarea:focus, select:focus {
 }
 .suspend-banner span { color: #ffd8d4; font-weight: 900; }
 .suspend-banner p { margin: 0; color: rgba(255, 255, 255, 0.72); }
+.suspend-banner small { color: rgba(255, 255, 255, 0.62); font-size: 12px; }
 
 .online-card {
   display: flex;
@@ -459,6 +460,28 @@ input:focus, textarea:focus, select:focus {
   margin-top: 3px;
   color: var(--muted);
   font-size: 12px;
+}
+.operator-chat-button {
+  border-color: rgba(24, 212, 255, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(24, 212, 255, 0.14), transparent 36%),
+    var(--panel);
+}
+.profile-suspend-card {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 14px;
+  border-color: rgba(219, 58, 52, 0.22);
+  background: rgba(219, 58, 52, 0.08);
+}
+.profile-suspend-card strong {
+  color: #ffd8d4;
+}
+.profile-suspend-card span,
+.profile-suspend-card small {
+  color: rgba(226, 239, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .driver-profile-photo {

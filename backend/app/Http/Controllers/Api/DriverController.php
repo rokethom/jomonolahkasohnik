@@ -365,6 +365,11 @@ class DriverController extends Controller
         $user = $request->user()->load('driver.suspensions');
         $driver = $user->driver;
         $canReceiveOrders = $driver ? $this->canReceiveOrders($driver, $deposit) : false;
+        $activeSuspension = $driver?->suspensions
+            ?->filter(fn ($suspension) => in_array($suspension->status, ['active', 'suspended', 'suspended_unpaid'], true))
+            ->sortByDesc('start_at')
+            ->first();
+        $suspensionReason = $user->suspension_reason ?: $activeSuspension?->reason;
 
         return [
             'id' => $user->id,
@@ -383,7 +388,8 @@ class DriverController extends Controller
             'availability_block_reason' => $this->availabilityBlockReason($driver, $deposit),
             'status' => $driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
             'suspended_until' => $driver?->suspended_until?->toIso8601String() ?? $user->suspended_until?->toIso8601String(),
-            'suspension_reason' => $user->suspension_reason,
+            'suspension_reason' => $suspensionReason,
+            'suspension_type' => $activeSuspension?->type,
             'oper_handle_count' => $driver?->oper_handle_count ?? 0,
         ];
     }

@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import axios from 'axios'
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
-import { BarChart3, BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MapPin, MessageCircle, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
+import { BarChart3, BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MapPin, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
 import { setupDriverPush } from './push'
 
 declare global {
@@ -46,6 +46,7 @@ type Driver = {
   status: 'active' | 'inactive' | 'suspended' | 'suspended_unpaid'
   suspended_until?: string | null
   suspension_reason?: string | null
+  suspension_type?: string | null
   oper_handle_count: number
 }
 
@@ -133,6 +134,7 @@ type DriverStore = {
   branchRequestOrders: Order[]
   branchOperHandleOrders: Order[]
   selectedOrderId: number | null
+  chatTarget: 'order' | 'operator'
   isOnline: boolean
   multiOrderEnabled: boolean
   maxMultiOrder: number
@@ -140,6 +142,7 @@ type DriverStore = {
   performance: DriverPerformance | null
   toasts: Toast[]
   setView: (view: View) => void
+  openOperatorChat: () => void
   setToken: (token: string) => void
   setBootstrap: (payload: BootstrapResponse) => void
   updateOrder: (order: Partial<ApiOrder> & { id: number }) => void
@@ -292,13 +295,15 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   branchRequestOrders: [],
   branchOperHandleOrders: [],
   selectedOrderId: null,
+  chatTarget: 'order',
   isOnline: true,
   multiOrderEnabled: false,
   maxMultiOrder: 1,
   finance: null,
   performance: null,
   toasts: [],
-  setView: (view) => set({ view }),
+  setView: (view) => set({ view, ...(view === 'chat' ? { chatTarget: 'order' as const } : {}) }),
+  openOperatorChat: () => set({ selectedOrderId: null, chatTarget: 'operator', view: 'chat' }),
   setToken: (token) => {
     localStorage.setItem('driver_token', token)
     set({ token, view: 'dashboard' })
@@ -326,9 +331,9 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   logout: () => {
     resetDriverEcho()
     localStorage.removeItem('driver_token')
-    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], branchOperHandleOrders: [], selectedOrderId: null, view: 'login' })
+    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], branchOperHandleOrders: [], selectedOrderId: null, chatTarget: 'order', view: 'login' })
   },
-  selectOrder: (orderId) => set({ selectedOrderId: orderId, view: 'order-detail' }),
+  selectOrder: (orderId) => set({ selectedOrderId: orderId, chatTarget: 'order', view: 'order-detail' }),
   setOnline: (online) => set({ isOnline: online }),
   toast: (message, tone = 'success') => {
     const id = Date.now()
@@ -339,12 +344,12 @@ const useDriverStore = create<DriverStore>((set, get) => ({
 }))
 
 function App() {
-  const { view, token, driver, orders, branchAcceptedOrders, branchOperHandleOrders, selectedOrderId, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
+  const { view, token, driver, orders, branchAcceptedOrders, branchOperHandleOrders, selectedOrderId, chatTarget, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
   const [apiState, setApiState] = useState<ApiState>({ loading: false, error: '' })
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null
-  const chatOrder = selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
+  const chatOrder = chatTarget === 'operator' ? null : selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
 
   const api = useMemo(() => makeApi(token), [token])
 
@@ -533,7 +538,7 @@ function App() {
       {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchOperHandleOrders={branchOperHandleOrders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
-      {view === 'chat' && <ChatScreen order={chatOrder} api={api} />}
+      {view === 'chat' && <ChatScreen order={chatOrder} api={api} mode={chatTarget} />}
       {view === 'history' && <History orders={orders} loading={apiState.loading} />}
       {view === 'request' && <RequestOrder onCreated={async () => { await load() }} />}
       {view === 'profile' && <Profile driver={driver} api={api} onSaved={async () => { await load() }} />}
@@ -665,7 +670,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
         <div>
           <span className="eyebrow">Driver Dashboard</span>
           <h1>Halo, {driver.name}</h1>
-          <p>{driver.status === 'active' ? 'Siap ambil order hari ini' : driver.suspension_reason}</p>
+          <p>{driver.status === 'active' ? 'Siap ambil order hari ini' : suspendReasonText(driver)}</p>
           <PwaInstallButton />
         </div>
         <div className="top-card-brand">
@@ -974,7 +979,7 @@ function InfoTile({ label, value }: { label: string; value: string }) {
   )
 }
 
-function ChatScreen({ order, api }: { order: Order | null; api: ApiClient }) {
+function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient; mode: 'order' | 'operator' }) {
   const { setView, driver, toast } = useDriverStore()
   const orderId = order?.id ?? null
   const [conversation, setConversation] = useState<ChatConversation | null>(null)
@@ -993,42 +998,45 @@ function ChatScreen({ order, api }: { order: Order | null; api: ApiClient }) {
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
 
   const loadChat = useCallback(async (silent = false) => {
-    if (!orderId) return
+    if (mode === 'order' && !orderId) return
     if (!silent) setLoading(true)
     if (!silent) setError('')
     try {
-      const started = await api<{ data: ChatConversation }>(`/orders/${orderId}/chat`, {
-        method: 'POST',
-        body: JSON.stringify({ type: 'customer_driver' }),
-      })
+      const started = mode === 'operator'
+        ? await api<{ data: ChatConversation }>('/chats/operator', { method: 'POST' })
+        : await api<{ data: ChatConversation }>(`/orders/${orderId}/chat`, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'customer_driver' }),
+          })
       setConversation(started.data)
       const response = await api<{ data: { data: ChatMessage[] } }>(`/chats/${started.data.id}/messages?per_page=50`)
       setMessages((current) => mergeChatMessages(current, [...response.data.data].reverse()))
     } catch (err) {
-      if (!silent) setError(getErrorMessage(err, 'Chat belum tersedia untuk order ini'))
+      if (!silent) setError(getErrorMessage(err, mode === 'operator' ? 'Chat operator belum tersedia' : 'Chat belum tersedia untuk order ini'))
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [api, orderId])
+  }, [api, mode, orderId])
 
   useEffect(() => {
     setConversation(null)
     setMessages([])
     setError('')
-    if (!orderId) return
+    if (mode === 'order' && !orderId) return
 
     void loadChat()
-  }, [loadChat, orderId])
+  }, [loadChat, mode, orderId])
 
   useEffect(() => {
-    if (!orderId) return
+    if (mode === 'order' && !orderId) return
     const interval = window.setInterval(() => void loadChat(true), 8000)
     return () => window.clearInterval(interval)
-  }, [loadChat, orderId])
+  }, [loadChat, mode, orderId])
 
   useEffect(() => {
-    if (!orderId) return
-    const channel = makeEcho(useDriverStore.getState().token).private(`chat.order.${orderId}`)
+    const channelName = mode === 'operator' && driver?.id ? `chat.operator.${driver.id}` : orderId ? `chat.order.${orderId}` : null
+    if (!channelName) return
+    const channel = makeEcho(useDriverStore.getState().token).private(channelName)
     channel.listen('.message.sent', (event: { message?: ChatMessage }) => {
       const incoming = event.message
       if (!incoming) return
@@ -1036,9 +1044,9 @@ function ChatScreen({ order, api }: { order: Order | null; api: ApiClient }) {
     })
 
     return () => {
-      makeEcho(useDriverStore.getState().token).leave(`chat.order.${orderId}`)
+      makeEcho(useDriverStore.getState().token).leave(channelName)
     }
-  }, [orderId])
+  }, [driver?.id, mode, orderId])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -1132,7 +1140,7 @@ function ChatScreen({ order, api }: { order: Order | null; api: ApiClient }) {
       })
       setMessages((current) => current.some((message) => String(message.id) === String(response.data.id)) ? current : [...current, response.data])
       setReplyTarget(null)
-      toast('Lokasi terkirim ke customer', 'success')
+      toast(`Lokasi terkirim ke ${mode === 'operator' ? 'operator' : 'customer'}`, 'success')
     } catch (err) {
       toast(getErrorMessage(err, 'Gagal mengirim lokasi. Pastikan GPS aktif.'), 'danger')
     } finally {
@@ -1142,17 +1150,17 @@ function ChatScreen({ order, api }: { order: Order | null; api: ApiClient }) {
 
   return (
     <section className="page chat-page">
-      <button className="back-button" aria-label="Kembali" onClick={() => setView(order ? 'order-detail' : 'dashboard')}><ChevronLeft size={22} /></button>
-      <PageTitle title="Chat" subtitle={order?.customer ?? 'Customer'} />
-      {!order && <EmptyState title="Belum ada order aktif" copy="Chat customer muncul setelah order diterima." />}
-      {order && (
+      <button className="back-button" aria-label="Kembali" onClick={() => setView(mode === 'operator' ? 'profile' : order ? 'order-detail' : 'dashboard')}><ChevronLeft size={22} /></button>
+      <PageTitle title={mode === 'operator' ? 'Chat Operator' : 'Chat'} subtitle={mode === 'operator' ? 'CS / Operator' : order?.customer ?? 'Customer'} />
+      {mode === 'order' && !order && <EmptyState title="Belum ada order aktif" copy="Chat customer muncul setelah order diterima." />}
+      {(mode === 'operator' || order) && (
         <div className="driver-chat panel">
           {loading && messages.length === 0 && <div className="chat-loading">Memuat chat...</div>}
           {!loading && error && <EmptyState title="Chat belum bisa dibuka" copy={error} />}
           {(!loading || messages.length > 0) && !error && (
             <>
               <div className="chat-list driver-chat-list" ref={listRef}>
-                {messages.length === 0 && <div className="chat-loading">Belum ada pesan. Mulai percakapan dengan customer.</div>}
+                {messages.length === 0 && <div className="chat-loading">Belum ada pesan. Mulai percakapan dengan {mode === 'operator' ? 'operator' : 'customer'}.</div>}
                 {messages.map((message) => {
                   const mine = message.sender_id === driver?.id || message.sender_type === 'driver'
                   const location = parseSharedLocation(message.message)
@@ -1208,7 +1216,7 @@ function ChatScreen({ order, api }: { order: Order | null; api: ApiClient }) {
                       void sendMessage()
                     }
                   }}
-                  placeholder="Tulis pesan ke customer"
+                  placeholder={`Tulis pesan ke ${mode === 'operator' ? 'operator' : 'customer'}`}
                 />
                 <button className="primary-button send-button" disabled={sending || !text.trim()} type="submit" aria-label="Kirim pesan">
                   <SendHorizontal size={21} />
@@ -1343,6 +1351,7 @@ function SharedLocationBubble({ location, mine }: { location: SharedLocation; mi
 function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onSaved: () => Promise<void> }) {
   const toast = useDriverStore((state) => state.toast)
   const setView = useDriverStore((state) => state.setView)
+  const openOperatorChat = useDriverStore((state) => state.openOperatorChat)
   const logout = useDriverStore((state) => state.logout)
   const [form, setForm] = useState({ name: driver.name, username: driver.username, password: '' })
   const [photo, setPhoto] = useState<File | null>(null)
@@ -1393,6 +1402,17 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
         <BarChart3 size={20} />
         <div><strong>Performa</strong><span>Rating, setoran, suspend history, dan oper handle</span></div>
       </button>
+      <button className="panel profile-menu-button operator-chat-button" type="button" onClick={openOperatorChat}>
+        <MessageCircleMore size={20} />
+        <div><strong>Chat CS / Operator</strong><span>Hubungi operator untuk bantuan akun, suspend, atau order.</span></div>
+      </button>
+      {driver.status !== 'active' && (
+        <section className="panel profile-suspend-card">
+          <strong>{driver.status === 'suspended_unpaid' ? 'Suspend setoran' : 'Status suspend'}</strong>
+          <span>{suspendReasonText(driver)}</span>
+          <small>{driver.suspended_until ? `Sampai ${formatHistoryTime(driver.suspended_until)}` : 'Menunggu release admin'}</small>
+        </section>
+      )}
       <form className="panel profile-form" onSubmit={submit}>
         <div className="driver-profile-photo">
           {photoPreview || driver.profile_photo_url ? <img src={photoPreview ?? cmsAssetUrl(driver.profile_photo_url ?? '')} alt="Foto driver" /> : <UserRound size={36} />}
@@ -1624,7 +1644,7 @@ function ActiveOrderRoute({ orders, max }: { orders: Order[]; max: number }) {
 
 function SuspendBanner({ driver }: { driver: Driver }) {
   const remaining = useCountdown(driver.suspended_until)
-  return <section className="suspend-banner"><strong>{driver.status === 'suspended_unpaid' ? 'Suspend belum bayar setoran' : 'Akun disuspend'}</strong><span>{remaining ? `Sisa waktu ${remaining}` : 'Menunggu release admin'}</span><p>Anda hanya bisa request order dan chat operator.</p></section>
+  return <section className="suspend-banner"><strong>{driver.status === 'suspended_unpaid' ? 'Suspend belum bayar setoran' : 'Akun disuspend'}</strong><span>{remaining ? `Sisa waktu ${remaining}` : 'Menunggu release admin'}</span><p>{suspendReasonText(driver)}</p><small>Anda hanya bisa request order dan chat operator.</small></section>
 }
 
 function BottomNav({ active, onNavigate }: { active: View; onNavigate: (view: View) => void }) {
@@ -1967,6 +1987,21 @@ function sortNewestOrderFirst(a: Order, b: Order) {
 }
 function historyOrderTime(order: Order) {
   return order.operHandleUpdatedAt ?? order.updatedAt ?? order.acceptedAt
+}
+function suspendReasonText(driver: Driver) {
+  if (driver.status === 'suspended_unpaid') {
+    return driver.suspension_reason || 'Reason: setoran driver belum lunas.'
+  }
+
+  if (driver.suspension_reason) {
+    return `Reason: ${driver.suspension_reason}`
+  }
+
+  if (driver.suspension_type) {
+    return `Reason: ${driver.suspension_type.replaceAll('_', ' ')}`
+  }
+
+  return 'Reason: belum ada alasan suspend dari admin.'
 }
 function formatMoney(value: number) { return value.toLocaleString('id-ID') }
 function driverPaymentLabel(method?: string | null) {
