@@ -743,7 +743,7 @@ function App() {
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
-        {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} />}
+        {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} branches={data.branches} />}
       </main>
 
       {isUserFormOpen && <UserFormModal permissions={data.permissions} branches={data.branches} services={data.services} api={api} onClose={() => setUserFormOpen(false)} onCreated={async (password) => { alert(`Password sementara: ${password}`); await refresh(); setUserFormOpen(false) }} />}
@@ -3153,8 +3153,20 @@ function GeofencePanel({ geofences }: { geofences: Geofence[] }) {
   return <section className="panel"><PanelHeader title="Geofence areas" action={`${geofences.length} areas`} /><div className="activity-list">{geofences.map((area) => <AreaRow key={area.id} name={area.name} branch={area.branch ? branchLabel(area.branch) : '-'} radius={`${area.radius_meters} m`} active={area.is_active} />)}</div></section>
 }
 
-function LocationLogsPanel({ logs }: { logs: LocationLog[] }) {
-  return <section className="panel"><PanelHeader title="Location logs" action={`${logs.length} logs`} /><div className="activity-list">{logs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{log.branch || '-'} - {log.latitude}, {log.longitude}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'Mock GPS' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}</div></section>
+function LocationLogsPanel({ logs, branches }: { logs: LocationLog[]; branches: Branch[] }) {
+  const [branchFilter, setBranchFilter] = useState('all')
+  const branchOptions = useMemo(() => {
+    const values = new Map<string, string>()
+    branches.forEach((branch) => values.set(branchLocationKey(branchLabel(branch)), branchLabel(branch)))
+    logs.forEach((log) => {
+      if (log.branch) values.set(branchLocationKey(log.branch), log.branch)
+    })
+
+    return [...values.entries()].sort((first, second) => first[1].localeCompare(second[1]))
+  }, [branches, logs])
+  const filteredLogs = logs.filter((log) => branchFilter === 'all' || branchLocationKey(log.branch || '') === branchFilter)
+
+  return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{log.branch || '-'} - {log.latitude}, {log.longitude}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'Mock GPS' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
 }
 
 function UserEditModal({ user, branches, permissions, api, onClose, onSaved }: { user: User; branches: Branch[]; permissions: Permissions; api: ApiClient; onClose: () => void; onSaved: () => void }) {
@@ -3511,6 +3523,10 @@ function formatShortDateTime(value?: string | null) {
 
 function branchLabel(branch: Branch) {
   return [branch.name, branch.area].filter(Boolean).join(' - ')
+}
+
+function branchLocationKey(value?: string | null) {
+  return (value || 'tanpa-branch').trim().toLowerCase()
 }
 
 function userBranchLabel(user: User) {
