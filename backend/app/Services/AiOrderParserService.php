@@ -331,7 +331,10 @@ class AiOrderParserService
             }
 
             $pickupAddress = $storeLocation ?: $profileAddress;
-            $destinationAddress = $destinationAddress ?: $profileAddress;
+            $destinationAddress = $destinationAddress ?: $customerAddress;
+            if (! $destinationAddress) {
+                return null;
+            }
         } else {
             $pickupAddress = $pickupAddress ?: $profileAddress;
             if (! $destinationAddress) {
@@ -413,7 +416,7 @@ Return JSON object saja dengan schema:
 Definisi field:
 - pickup_address = alamat jemput customer / titik awal driver untuk ojek/kurir/travel saja.
 - store_location atau purchase_address = alamat pembelian, toko, resto, warung, pasar, area pembelian.
-- destination_address = alamat antar/tujuan akhir. Untuk DO/belanja jika user bilang alamat saya/rumah/profile, isi dari profile.address.
+- destination_address = alamat antar/tujuan akhir dari input customer. Untuk DO/belanja jika user eksplisit bilang alamat saya/rumah/profile, isi dari profile.address; jika tidak ada alamat antar, null.
 - customer_name/customer_phone/customer_address = data pemesan jika ada pada teks. Jika tidak ada, null.
 - Untuk DO/belanja/gift_order, JANGAN masukkan alamat pembelian ke pickup_address. Masukkan ke store_location/purchase_address.
 - Untuk ojek/joker_mobil, frasa "dari/jemput di/alamat jemput" adalah pickup_address dan "ke/tujuan/alamat antar" adalah destination_address. Jangan tertukar.

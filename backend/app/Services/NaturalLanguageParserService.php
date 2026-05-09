@@ -30,6 +30,10 @@ class NaturalLanguageParserService
             return null;
         }
 
+        if ($serviceType === 'DO' && ! $destination) {
+            return null;
+        }
+
         if ($serviceType === 'kurir' && (! $storeLocation || ! $destination)) {
             return null;
         }
@@ -48,7 +52,7 @@ class NaturalLanguageParserService
         $pickupLat = $serviceType === 'DO' ? $userLat + 0.01 : $userLat;
         $pickupLng = $serviceType === 'DO' ? $userLng + 0.01 : $userLng;
         $pickupAddress = $serviceType === 'DO' ? $storeLocation : ($pickup ?: $this->addresses->profileAddress($user));
-        $destinationAddress = $destination ?: $this->addresses->profileAddress($user);
+        $destinationAddress = $destination ?: ($serviceType === 'DO' ? null : $this->addresses->profileAddress($user));
         $servicePayload = [
             'source' => 'smart_parser',
             'raw_text' => $text,

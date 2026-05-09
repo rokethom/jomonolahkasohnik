@@ -62,6 +62,11 @@ class OrderParserService
             return null;
         }
 
+        $destinationAddress = $this->destinationAddress($normalizedText, $profileAddress);
+        if (! $destinationAddress) {
+            return null;
+        }
+
         return [
             'service_type' => $serviceType,
             'customer_id' => $user->id,
@@ -77,16 +82,16 @@ class OrderParserService
                 'pickup_address' => $storeLocation,
                 'pickup_lat' => $pickupLat,
                 'pickup_lng' => $pickupLng,
-                'destination_address' => $profileAddress,
+                'destination_address' => $destinationAddress,
                 'destination_lat' => $pickupLat + 0.018,
                 'destination_lng' => $pickupLng + 0.018,
                 'branch_id' => $branch?->id,
                 'stops' => 1,
-                'destination_text' => $profileAddress,
+                'destination_text' => $destinationAddress,
                 'notes' => $text,
                 'service_payload' => [
                     'store_location' => $storeLocation,
-                    'location_flow_note' => 'Alamat pembelian dipakai sebagai titik ambil barang; alamat profile customer dipakai sebagai tujuan antar.',
+                    'location_flow_note' => 'Alamat pembelian dipakai sebagai titik ambil barang; alamat antar wajib mengikuti input customer. Alamat profile hanya untuk validasi pendaftaran.',
                     'source' => 'smart_parser',
                     'normalized_text' => $normalizedText,
                 ],
@@ -360,6 +365,29 @@ class OrderParserService
         }
 
         return null;
+    }
+
+    private function destinationAddress(string $text, string $profileAddress): ?string
+    {
+        if (preg_match('/(?:alamat\s+antar|alamat\s+tujuan|tujuan|antar\s+ke|kirim\s+ke|ke)\s*:\s*(.+)$/imu', $text, $match) === 1) {
+            return $this->normalizeDestination($match[1], $profileAddress);
+        }
+
+        if (preg_match('/\b(?:alamat\s+antar|alamat\s+tujuan|tujuan|antar\s+ke|kirim\s+ke)\s+(.+)$/iu', $text, $match) === 1) {
+            return $this->normalizeDestination($match[1], $profileAddress);
+        }
+
+        return null;
+    }
+
+    private function normalizeDestination(string $value, string $profileAddress): string
+    {
+        $destination = $this->cleanAddress($value);
+        $normalized = mb_strtolower($destination);
+
+        return in_array($normalized, ['alamat saya', 'rumah saya', 'rumah', 'profile'], true)
+            ? $profileAddress
+            : $destination;
     }
 
     private function profileAddress(User $user, ?Branch $branch): string

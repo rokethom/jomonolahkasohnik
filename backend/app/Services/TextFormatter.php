@@ -83,7 +83,7 @@ class TextFormatter
         return match ($serviceType) {
             'ojek' => 'Alamat antar:',
             'kurir' => 'Alamat tujuan:',
-            default => 'Alamat antar/customer:',
+            default => 'Alamat antar:',
         };
     }
 

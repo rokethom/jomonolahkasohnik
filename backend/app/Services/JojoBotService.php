@@ -29,11 +29,18 @@ class JojoBotService
         $keywordMatch = $this->keywordParsers->detect($rawText);
 
         if ($keywordMatch !== null) {
+            $parsed = $this->parseOrderText($rawText);
+            $serviceType = $parsed['service_type'] ?: $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
             $smartParsed = $this->shouldTrySmartParserForKeyword($rawText, $keywordMatch)
                 ? $this->orderParser->parse($user, $rawText)
                 : null;
 
             if ($smartParsed) {
+                if ($parsed['service_type']) {
+                    $smartParsed['service_type'] = $parsed['service_type'];
+                    $smartParsed['payload']['service_type'] = $parsed['service_type'];
+                }
+
                 $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
                 $quote = $this->pricing->calculate($payload);
                 $reply = $this->formatter->smartParserReply($smartParsed, $quote);
@@ -68,12 +75,13 @@ class JojoBotService
                 ];
             }
 
-            $parsed = $this->parseOrderText($rawText);
-            $serviceType = $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
             $isStructuredFormInput = $this->isStructuredFormInput($rawText);
             if (($parsed['pickup_address'] ?? null) && ($parsed['destination_address'] ?? null) || $isStructuredFormInput) {
                 if ($this->isPurchaseService($serviceType) && blank($parsed['store_location'] ?? null)) {
                     return $this->missingPurchaseLocationResponse($services, $serviceType, $parsed, $keywordMatch['form_schema'] ?? null);
+                }
+                if (blank($parsed['destination_address'] ?? null)) {
+                    return $this->missingDestinationResponse($services, $serviceType, $parsed, $keywordMatch['form_schema'] ?? null);
                 }
 
                 $parsed = $this->completeParsedForPreview($user, $parsed, $serviceType);
@@ -102,14 +110,14 @@ class JojoBotService
             return [
                 'intent' => 'service_selected',
                 'services' => $services->values(),
-                'selected_service' => $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']),
+                'selected_service' => $serviceType,
                 'parsed' => [
                     'keyword_parser' => $keywordMatch,
                     'parser_mode' => $keywordMatch['parser_mode'],
                 ],
                 'message' => $keywordMatch['response'],
                 'form_schema' => $keywordMatch['form_schema'] ?? null,
-                'service_type' => $keywordMatch['service_type'],
+                'service_type' => $serviceType,
                 'quote' => null,
                 'order_payload' => null,
                 'reply' => $keywordMatch['response'],
@@ -117,7 +125,12 @@ class JojoBotService
         }
 
         $selectedService = $this->detectService($normalized, $services);
-        $smartParsed = $this->orderParser->parse($user, $rawText);
+        $parsed = $this->parseOrderText($rawText);
+        if ($parsed['service_type']) {
+            $selectedService = $parsed['service_type'];
+        }
+
+        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parse($user, $rawText);
 
         if ($smartParsed) {
             $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
@@ -153,7 +166,6 @@ class JojoBotService
             $selectedService = 'belanja';
         }
 
-        $parsed = $this->parseOrderText($rawText);
         $hasOrderShape = $parsed['pickup_address'] && $parsed['destination_address'];
 
         if ($selectedService && $this->isOutsideRegisteredArea($user) && ! $this->isGiftOrder($selectedService)) {
@@ -164,6 +176,9 @@ class JojoBotService
             $serviceType = $parsed['service_type'] ?: $selectedService ?: 'delivery';
             if ($this->isPurchaseService($serviceType) && blank($parsed['store_location'] ?? null)) {
                 return $this->missingPurchaseLocationResponse($services, $serviceType, $parsed);
+            }
+            if (blank($parsed['destination_address'] ?? null)) {
+                return $this->missingDestinationResponse($services, $serviceType, $parsed);
             }
 
             $parsed = $this->completeParsedForPreview($user, $parsed, $serviceType);
@@ -272,14 +287,20 @@ class JojoBotService
             'used_fallback_location' => false,
             'service_type' => null,
         ];
+        $activeMultilineField = null;
 
         foreach (preg_split('/\R/u', $rawText) ?: [] as $line) {
             if (! str_contains($line, ':')) {
+                if ($activeMultilineField === 'notes' && trim($line) !== '') {
+                    $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], trim($line)])));
+                }
+
                 continue;
             }
 
             [$label, $value] = array_map('trim', explode(':', $line, 2));
             $key = mb_strtolower($label);
+            $activeMultilineField = null;
 
             if (preg_match('/layanan|service/u', $key)) {
                 $fields['service_type'] = $this->normalizeRequestedService($value);
@@ -287,7 +308,7 @@ class JojoBotService
                 $fields['name'] = $value;
             } elseif (preg_match('/no|hp|wa|telepon|phone/u', $key)) {
                 $fields['phone'] = $value;
-            } elseif (preg_match('/pembelian|toko|store|warung|resto|restaurant|pasar|lokasi\s+(?:beli|pembelian)/u', $key)) {
+            } elseif (preg_match('/alamat\s+pembelian|lokasi\s+(?:beli|pembelian)|toko|store|warung|resto|restaurant|pasar/u', $key)) {
                 $fields['store_location'] = $value;
             } elseif (preg_match('/jemput|pickup|asal/u', $key)) {
                 $fields['pickup_address'] = $value;
@@ -295,12 +316,14 @@ class JojoBotService
                 $fields['destination_address'] = $value;
             } elseif (preg_match('/\balamat\b|address/u', $key)) {
                 $fields['destination_address'] = $value;
-            } elseif (preg_match('/barang|item|produk|list|belanja/u', $key)) {
+            } elseif (preg_match('/barang|item|produk|list|belanja|pembelian|belikan/u', $key)) {
                 $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], $value])));
+                $activeMultilineField = 'notes';
             } elseif (preg_match('/rute|route/u', $key)) {
                 $fields['route'] = $value;
             } elseif (preg_match('/catatan|notes|barang|pesanan/u', $key)) {
                 $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], $value])));
+                $activeMultilineField = 'notes';
             } elseif (preg_match('/titik|stop|mampir/u', $key)) {
                 $fields['points'][] = ['address' => $value, 'label' => $label];
             }
@@ -316,11 +339,6 @@ class JojoBotService
     private function completeParsedForPreview(User $user, array $parsed, string $serviceType): array
     {
         if ($this->isPurchaseService($serviceType)) {
-            if (blank($parsed['destination_address'] ?? null)) {
-                $parsed['destination_address'] = $user->address ?: 'Alamat customer';
-                $parsed['used_fallback_location'] = true;
-            }
-
             if (blank($parsed['pickup_address'] ?? null)) {
                 $parsed['pickup_address'] = $parsed['store_location'] ?: ($this->branch($user)?->name ?? 'Lokasi pembelian');
                 $parsed['used_fallback_location'] = true;
@@ -355,12 +373,12 @@ class JojoBotService
     private function shouldTrySmartParserForKeyword(string $rawText, array $keywordMatch): bool
     {
         if (($keywordMatch['parser_mode'] ?? null) === 'advanced') {
-            return true;
+            return ! $this->isStructuredFormInput($rawText);
         }
 
         $normalized = mb_strtolower(trim($rawText));
         if ($this->isStructuredFormInput($rawText)) {
-            return true;
+            return false;
         }
 
         $wordCount = str_word_count(str_replace(['/', '-'], ' ', $normalized));
@@ -403,7 +421,7 @@ class JojoBotService
                 'source' => 'jojobot_form_parser',
                 'store_location' => $parsed['store_location'] ?? null,
                 'location_flow_note' => $this->isPurchaseService($serviceType)
-                    ? 'Alamat pembelian dipakai sebagai titik ambil barang; alamat customer/profile dipakai sebagai tujuan antar.'
+                    ? 'Alamat pembelian dipakai sebagai titik ambil barang; alamat antar wajib mengikuti input customer. Alamat profile hanya untuk validasi pendaftaran.'
                     : 'Alamat jemput dipakai sebagai titik awal; alamat tujuan dipakai sebagai tujuan akhir.',
             ],
         ];
@@ -672,6 +690,27 @@ class JojoBotService
         ];
     }
 
+    private function missingDestinationResponse(Collection $services, string $serviceType, array $parsed, ?array $formSchema = null): array
+    {
+        $label = $this->isPurchaseService($serviceType) ? 'Alamat Antar' : 'Alamat Tujuan';
+
+        return [
+            'intent' => 'service_selected',
+            'services' => $services->values(),
+            'selected_service' => $serviceType,
+            'parsed' => [
+                ...$parsed,
+                'missing_fields' => [$label],
+            ],
+            'message' => $label." belum terbaca.\nIsi alamat sesuai tujuan order customer. Alamat profile hanya dipakai untuk validasi akun, bukan pengganti alamat order.",
+            'form_schema' => $formSchema,
+            'service_type' => $serviceType,
+            'quote' => null,
+            'order_payload' => null,
+            'reply' => $label." belum terbaca.\nIsi alamat sesuai tujuan order customer. Alamat profile hanya dipakai untuk validasi akun, bukan pengganti alamat order.",
+        ];
+    }
+
     private function serviceMenuReply(Collection $services): string
     {
         return "Pilih layanan:\n".$services->values()->map(fn ($service, $index): string => ($index + 1).'. '.$service['name'])->implode("\n");
@@ -682,7 +721,7 @@ class JojoBotService
         $money = fn (int|float|null $value): string => 'Rp '.number_format((int) $value, 0, ',', '.');
         $serviceType = (string) ($parsed['service_type'] ?? '');
         $pickupLabel = $this->isPurchaseService($serviceType) ? 'Lokasi pembelian' : 'Alamat jemput';
-        $destinationLabel = $this->isPurchaseService($serviceType) ? 'Alamat antar/customer' : 'Tujuan';
+        $destinationLabel = $this->isPurchaseService($serviceType) ? 'Alamat antar' : 'Tujuan';
         $pickupText = $this->isPurchaseService($serviceType)
             ? ($parsed['store_location'] ?? $parsed['pickup_address'] ?? '-')
             : ($parsed['pickup_address'] ?? '-');

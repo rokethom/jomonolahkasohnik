@@ -263,16 +263,17 @@ function validateOrderPayload(payload: OrderPayload) {
 
 function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPreview) {
   const quote = preview?.quote
+  const purchase = isPurchasePayload(payload, preview)
   const lines = [
     'Pesanan Anda:',
     '',
     `Layanan: ${serviceDisplayLabel(payload?.service_type ?? preview?.service_type)}`,
     passengerCountFromPayload(payload) > 1 ? `Jumlah penumpang: ${passengerCountFromPayload(payload)}` : null,
     '',
-    'Alamat jemput:',
+    purchase ? 'Lokasi pembelian:' : 'Alamat jemput:',
     payload?.pickup_address ?? preview?.parsed?.pickup_address ?? '-',
     '',
-    'Alamat antar:',
+    purchase ? 'Alamat antar:' : 'Alamat tujuan:',
     payload?.destination_address ?? preview?.parsed?.destination_address ?? '-',
     '',
     quote ? 'Breakdown harga:' : null,
@@ -283,6 +284,12 @@ function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPrevie
   ]
 
   return lines.filter((line) => line !== null).join('\n')
+}
+
+function isPurchasePayload(payload?: OrderPayload | null, preview?: JojoBotPreview) {
+  const service = String(payload?.service_type ?? preview?.service_type ?? preview?.selected_service ?? '').toLowerCase()
+
+  return ['do', 'delivery', 'belanja', 'gift_order', 'gift'].includes(service)
 }
 
 function serviceDisplayLabel(service?: string | null) {
