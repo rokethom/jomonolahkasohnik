@@ -364,7 +364,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
 }))
 
 function App() {
-  const { view, token, driver, orders, branchAcceptedOrders, branchOperHandleOrders, branchSuspendHistory, selectedOrderId, chatTarget, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
+  const { view, token, driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, selectedOrderId, chatTarget, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
   const [apiState, setApiState] = useState<ApiState>({ loading: false, error: '' })
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
@@ -584,7 +584,7 @@ function App() {
   return (
     <Shell>
       <ToastStack toasts={toasts} />
-      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} loading={apiState.loading} api={api} onAction={action} />}
+      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchRequestOrders={branchRequestOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} mode={chatTarget} />}
@@ -685,7 +685,7 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
   )
 }
 
-function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
+function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
   const { isOnline, setDriverState, setView, maxMultiOrder, finance, performance, toast } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
@@ -779,7 +779,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
-      <BranchAcceptedFeed orders={branchAcceptedOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={branchSuspendHistory} />
+      <BranchAcceptedFeed orders={branchAcceptedOrders} requestOrders={branchRequestOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={branchSuspendHistory} />
       {financeOpen && finance && <SetoranModal finance={finance} onClose={() => setFinanceOpen(false)} />}
     </section>
   )
@@ -787,19 +787,22 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
 
 function BranchAcceptedFeed({
   orders,
+  requestOrders,
   operHandleOrders,
   suspendHistory,
 }: {
   orders: Order[]
+  requestOrders: Order[]
   operHandleOrders: Order[]
   suspendHistory: BranchSuspendHistory[]
 }) {
-  const [openPanel, setOpenPanel] = useState<'accepted' | 'oper' | 'suspend' | null>(null)
+  const [openPanel, setOpenPanel] = useState<'accepted' | 'request' | 'oper' | 'suspend' | null>(null)
   const visible = orders.filter((order) => order.driver && order.source !== 'driver_request').slice(0, 6)
+  const requestVisible = requestOrders.slice(0, 8)
   const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 6)
   const suspendVisible = suspendHistory.slice(0, 6)
   const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
-  const togglePanel = (panel: 'accepted' | 'oper' | 'suspend') => setOpenPanel((current) => current === panel ? null : panel)
+  const togglePanel = (panel: 'accepted' | 'request' | 'oper' | 'suspend') => setOpenPanel((current) => current === panel ? null : panel)
 
   return (
     <section className="branch-feed panel">
@@ -808,14 +811,19 @@ function BranchAcceptedFeed({
           <span>Monitor area</span>
           <h2>Order diterima area</h2>
         </div>
-        <strong>{visible.length + operVisible.length + suspendVisible.length} catatan</strong>
+        <strong>{visible.length + requestVisible.length + operVisible.length + suspendVisible.length} catatan</strong>
       </div>
 
       <div className="branch-monitor-grid">
         <button className={`branch-monitor-card ${openPanel === 'accepted' ? 'active' : ''}`} type="button" onClick={() => togglePanel('accepted')}>
-          <span>Order diterima area</span>
+          <span>Order diterima</span>
           <strong>{visible.length}</strong>
-          <small>{ladiesCount > 0 ? `${ladiesCount} Ladies` : 'Sesuai cabang'}</small>
+          <small>{ladiesCount > 0 ? `${ladiesCount} Ladies` : 'Area cabang'}</small>
+        </button>
+        <button className={`branch-monitor-card request ${openPanel === 'request' ? 'active' : ''}`} type="button" onClick={() => togglePanel('request')}>
+          <span>Request order</span>
+          <strong>{requestVisible.length}</strong>
+          <small>Driver cabang</small>
         </button>
         <button className={`branch-monitor-card oper ${openPanel === 'oper' ? 'active' : ''}`} type="button" onClick={() => togglePanel('oper')}>
           <span>Oper handle</span>
@@ -842,6 +850,23 @@ function BranchAcceptedFeed({
                   {order.driverPreference === 'ladies' && <em className="ladies-chip">Ladies</em>}
                 </span>
                 <small>{shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
+              </div>
+              <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {openPanel === 'request' && (
+        <div className="branch-detail-list">
+          {requestVisible.length === 0 && <p className="note">Belum ada request order driver di cabang kamu.</p>}
+          {requestVisible.map((order) => (
+            <article className="branch-accepted-card request-order-card" key={`request-${order.id}`}>
+              <div className="branch-accepted-icon request">{driverInitial(order.driver ?? order.customer)}</div>
+              <div className="branch-accepted-main">
+                <strong>{order.code}</strong>
+                <span>{order.driver || order.customer || 'Driver'} request order {order.service}</span>
+                <small>Rp {formatMoney(order.total)} - {shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
               </div>
               <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
             </article>
