@@ -34,6 +34,22 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const requestUrl = String(error instanceof AxiosError ? error.config?.url ?? '' : '')
+    const isAuthRequest = /\/auth\/(login|register|google)/.test(requestUrl)
+    const hadToken = Boolean(localStorage.getItem('customer_token') || localStorage.getItem('token'))
+    if (error instanceof AxiosError && !isAuthRequest && hadToken && [401, 419].includes(error.response?.status ?? 0)) {
+      localStorage.removeItem('customer_token')
+      localStorage.removeItem('token')
+      window.dispatchEvent(new CustomEvent('jojo:auth-expired'))
+    }
+
+    return Promise.reject(error)
+  },
+)
+
 export type LoginPayload = {
   email: string
   password: string
@@ -101,6 +117,8 @@ export function getApiErrorMessage(error: unknown, fallback = 'Request gagal') {
     return firstError ?? response?.message ?? fallback
   }
 
+  if (error instanceof Error) return error.message || fallback
+
   return fallback
 }
 
@@ -130,6 +148,7 @@ export async function updateUserLocation(payload: { lat: number; lng: number; ac
 
 export async function updateProfile(payload: { name: string; phone: string; address: string; branch_id?: number | null; profile_photo?: File | null }) {
   if (payload.profile_photo) {
+    assertImageFile(payload.profile_photo, 'Foto profil')
     const profilePhoto = await resizeImageFile(payload.profile_photo, {
       maxWidth: 640,
       maxHeight: 640,
@@ -339,6 +358,8 @@ export async function fetchOrderMessages(orderId: number) {
 }
 
 export async function sendChatMessage(conversationId: number, payload: { message?: string; image?: File | null; audio?: Blob | null; audio_duration?: number | null }) {
+  if (payload.image) assertImageFile(payload.image)
+  if (payload.audio) assertAudioBlob(payload.audio)
   const form = new FormData()
   if (payload.message) form.append('message', payload.message)
   if (payload.image) form.append('image', payload.image)
@@ -351,6 +372,8 @@ export async function sendChatMessage(conversationId: number, payload: { message
 }
 
 export async function sendOrderMessage(orderId: number, payload: { message?: string; image?: File | null; audio?: Blob | null; audio_duration?: number | null }) {
+  if (payload.image) assertImageFile(payload.image)
+  if (payload.audio) assertAudioBlob(payload.audio)
   const form = new FormData()
   form.append('order_id', String(orderId))
   if (payload.message) form.append('message', payload.message)
@@ -368,6 +391,7 @@ export async function markChatRead(conversationId: number) {
 }
 
 export async function requestCancelOrder(orderId: number, payload: { reason: string; chat_conversation_id?: number | null; image?: File | null }) {
+  if (payload.image) assertImageFile(payload.image)
   const form = new FormData()
   form.append('reason', payload.reason)
   if (payload.chat_conversation_id) form.append('chat_conversation_id', String(payload.chat_conversation_id))
@@ -376,6 +400,29 @@ export async function requestCancelOrder(orderId: number, payload: { reason: str
     headers: { 'Content-Type': 'multipart/form-data' },
   })
   return data.data
+}
+
+const MAX_IMAGE_UPLOAD_BYTES = 4 * 1024 * 1024
+const MAX_AUDIO_UPLOAD_BYTES = 8 * 1024 * 1024
+
+function formatMb(bytes: number) {
+  return `${Math.round(bytes / 1024 / 1024)}MB`
+}
+
+function assertImageFile(file: File, label = 'Gambar') {
+  if (!file.type.startsWith('image/')) {
+    throw new Error(`${label} harus berupa file gambar.`)
+  }
+
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    throw new Error(`${label} maksimal ${formatMb(MAX_IMAGE_UPLOAD_BYTES)}.`)
+  }
+}
+
+function assertAudioBlob(blob: Blob) {
+  if (blob.size > MAX_AUDIO_UPLOAD_BYTES) {
+    throw new Error(`Voice note maksimal ${formatMb(MAX_AUDIO_UPLOAD_BYTES)}.`)
+  }
 }
 
 export async function logout() {

@@ -2170,6 +2170,43 @@
   font-size: 14px;
 }
 
+.wa-profile-status-grid {
+  width: min(100%, 340px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wa-profile-status-grid span {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid #e5edf0;
+  border-radius: 14px;
+  background: #f8fbfa;
+  color: #52616b;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.wa-profile-status-grid span.ok {
+  border-color: rgba(0, 168, 132, 0.22);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.wa-profile-status-grid span.warn {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: #fff7ed;
+  color: #b45309;
+}
+
 .wa-photo-selected {
   max-width: min(82vw, 320px);
   overflow: hidden;

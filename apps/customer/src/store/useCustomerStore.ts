@@ -36,8 +36,18 @@ type CustomerState = {
   dismissToast: (id: string) => void
 }
 
-const savedToken = localStorage.getItem('customer_token') ?? ''
-const savedFavorites = JSON.parse(localStorage.getItem('favorite_addresses') ?? '[]') as FavoriteAddress[]
+function safeJsonArray<T>(key: string): T[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? '[]')
+    return Array.isArray(parsed) ? parsed as T[] : []
+  } catch {
+    localStorage.removeItem(key)
+    return []
+  }
+}
+
+const savedToken = localStorage.getItem('customer_token') || localStorage.getItem('token') || ''
+const savedFavorites = safeJsonArray<FavoriteAddress>('favorite_addresses')
 
 export const useCustomerStore = create<CustomerState>((set, get) => ({
   view: savedToken ? 'home' : 'login',
@@ -57,15 +67,18 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   setView: (view) => set({ view }),
   setAuthToken: (token) => {
     localStorage.setItem('customer_token', token)
+    localStorage.removeItem('token')
     set({ token, view: 'home' })
   },
   setUserSession: (user, token) => {
     localStorage.setItem('customer_token', token)
+    localStorage.removeItem('token')
     set({ user, token, view: 'home' })
   },
   clearSession: () => {
     localStorage.removeItem('customer_token')
-    set({ user: null, token: '', view: 'login', orders: [], quote: null })
+    localStorage.removeItem('token')
+    set({ user: null, token: '', view: 'login', orders: [], messages: [], quote: null })
   },
   setService: (service) => set({ service }),
   setPickup: (pickup) => set({ pickup }),

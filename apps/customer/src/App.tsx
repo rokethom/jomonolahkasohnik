@@ -13,7 +13,6 @@ import {
   Home,
   Image as ImageIcon,
   Info,
-  Link as LinkIcon,
   Mic,
   MessageCircle,
   MoreVertical,
@@ -178,6 +177,33 @@ function readOAuthCallback() {
   return { token, error }
 }
 
+function isLikelyAuthToken(token: string) {
+  return /^[A-Za-z0-9._|:-]{20,}$/.test(token)
+}
+
+function safeWhatsappUrl(value?: string | null) {
+  const fallback = 'https://wa.me/6281299232918'
+  const raw = value?.trim() || fallback
+
+  try {
+    const url = new URL(raw)
+    const host = url.hostname.toLowerCase()
+    const allowedHosts = new Set(['wa.me', 'api.whatsapp.com', 'www.api.whatsapp.com', 'wa.link'])
+
+    return url.protocol === 'https:' && allowedHosts.has(host) ? url.toString() : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const MAX_CUSTOMER_IMAGE_BYTES = 4 * 1024 * 1024
+
+function imageFileError(file: File, label = 'Gambar') {
+  if (!file.type.startsWith('image/')) return `${label} harus berupa file gambar.`
+  if (file.size > MAX_CUSTOMER_IMAGE_BYTES) return `${label} maksimal 4MB.`
+  return ''
+}
+
 function todayLabel() {
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date())
 }
@@ -217,6 +243,29 @@ function passengerCountFromPayload(payload?: OrderPayload | null) {
   const raw = payload?.service_payload?.passengers ?? payload?.service_payload?.jumlah_penumpang ?? payload?.service_payload?.passenger_count
   const value = Number(String(raw ?? 1).replace(/\D+/g, ''))
   return Number.isFinite(value) && value > 0 ? value : 1
+}
+
+function validCoordinate(value: unknown, limit: number) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && Math.abs(numberValue) <= limit
+}
+
+function validateOrderPayload(payload: OrderPayload) {
+  const missingFields = [
+    payload.service_type ? '' : 'layanan',
+    payload.pickup_address?.trim() ? '' : 'alamat jemput',
+    payload.destination_address?.trim() ? '' : 'alamat tujuan',
+    validCoordinate(payload.pickup_lat, 90) && validCoordinate(payload.pickup_lng, 180) ? '' : 'titik jemput',
+    validCoordinate(payload.destination_lat, 90) && validCoordinate(payload.destination_lng, 180) ? '' : 'titik tujuan',
+  ].filter(Boolean)
+
+  if (missingFields.length > 0) {
+    throw new Error(`Data order belum lengkap: ${missingFields.join(', ')}.`)
+  }
+
+  if ((payload.points?.length ?? 0) > 5 || Number(payload.stops ?? 1) > 6) {
+    throw new Error('Titik tambahan maksimal 5.')
+  }
 }
 
 function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPreview) {
@@ -397,6 +446,8 @@ function App() {
   const [orderClosedMessage, setOrderClosedMessage] = useState('')
   const locationSyncTokenRef = useRef<string | null>(null)
   const [orderSubmitBlocked, setOrderSubmitBlocked] = useState(false)
+  const [orderSubmitting, setOrderSubmitting] = useState(false)
+  const orderSubmittingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
 
   useEffect(() => {
@@ -437,6 +488,7 @@ function App() {
     ?? null
 
   const submitOrderPayload = async (payload: OrderPayload) => {
+    validateOrderPayload(payload)
     const preferredVehicle = payload.preferred_vehicle_type ?? defaultVehicleForService(payload.service_type)
     const vehicleSeatRows = preferredVehicle === 'mobil' ? (payload.vehicle_seat_rows === 3 ? 3 : 2) : undefined
     const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
@@ -494,11 +546,29 @@ function App() {
     }
 
     if (!oauthToken) return
+    if (!isLikelyAuthToken(oauthToken)) {
+      showToast('error', 'Token login Google tidak valid. Silakan login ulang.')
+      setScreen('login')
+      window.history.replaceState({ jojoScreen: 'login' }, document.title, '/')
+      return
+    }
 
     setAuthToken(oauthToken)
     setScreen('home')
     window.history.replaceState({ jojoScreen: 'home' }, document.title, '/')
   }, [setAuthToken, showToast])
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      resetEcho()
+      clearSession()
+      setScreen('login')
+      showToast('error', 'Sesi login berakhir. Silakan login ulang.')
+    }
+
+    window.addEventListener('jojo:auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('jojo:auth-expired', handleAuthExpired)
+  }, [clearSession, showToast])
 
   useEffect(() => {
     const initialScreen = guardScreenForSession(
@@ -852,6 +922,12 @@ function App() {
         pushMessage({ from: 'bot', text: 'Anda melebihi batas order aktif.\nSilakan selesaikan salah satu pesanan terlebih dahulu.' })
         return
       }
+      if (orderSubmittingRef.current) {
+        pushMessage({ from: 'bot', text: 'Order sedang dikirim. Tunggu sebentar ya.' })
+        return
+      }
+      orderSubmittingRef.current = true
+      setOrderSubmitting(true)
       setTyping(true)
       try {
         await submitOrderPayload(pendingOrder)
@@ -870,6 +946,8 @@ function App() {
           if (/melebihi batas order aktif|maksimal .*order aktif/i.test(message)) setOrderSubmitBlocked(true)
         }
       } finally {
+        orderSubmittingRef.current = false
+        setOrderSubmitting(false)
         setTyping(false)
       }
       return
@@ -983,6 +1061,12 @@ function App() {
   }
 
   const sendImage = (file: File) => {
+    const error = imageFileError(file)
+    if (error) {
+      showToast('error', error)
+      return
+    }
+
     pushMessage({ from: 'user', imageUrl: URL.createObjectURL(file), text: file.name })
     pushMessage({ from: 'bot', text: 'Foto diterima. Tambahkan catatan bila foto ini bagian dari order.' })
   }
@@ -1064,6 +1148,7 @@ function App() {
           onPendingOrderChange={setPendingOrder}
           publicSettings={publicSettings}
           submitBlocked={orderSubmitBlocked}
+          submitting={orderSubmitting}
         />
       )}
       {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
@@ -1175,7 +1260,7 @@ function HomeScreen({
   const announcement = homeData?.announcements[0]
   const customerName = useCustomerStore((state) => state.user?.name?.trim() || 'Customer')
   const greeting = greetingByTime()
-  const complaintUrl = publicSettings?.support?.complaint_whatsapp_url ?? 'https://wa.me/6281299232918'
+  const complaintUrl = safeWhatsappUrl(publicSettings?.support?.complaint_whatsapp_url)
 
   return (
     <div className="home-screen">
@@ -1322,6 +1407,7 @@ function ChatOrderScreen({
   onPendingOrderChange,
   publicSettings,
   submitBlocked,
+  submitting,
 }: {
   messages: LocalMessage[]
   typing: boolean
@@ -1343,6 +1429,7 @@ function ChatOrderScreen({
   onPendingOrderChange: (payload: OrderPayload | null) => void
   publicSettings: PublicSettings | null
   submitBlocked: boolean
+  submitting: boolean
 }) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
@@ -1391,6 +1478,7 @@ function ChatOrderScreen({
             publicSettings={publicSettings}
             onConfirm={() => onSend('ya')}
             submitBlocked={submitBlocked}
+            submitting={submitting}
           />
         )}
       </div>
@@ -1784,6 +1872,7 @@ function ChatOrderActions({
   publicSettings,
   onConfirm,
   submitBlocked,
+  submitting,
 }: {
   preview?: JojoBotPreview
   pendingOrder: OrderPayload | null
@@ -1791,6 +1880,7 @@ function ChatOrderActions({
   publicSettings: PublicSettings | null
   onConfirm: () => void
   submitBlocked: boolean
+  submitting: boolean
 }) {
   const [points, setPoints] = useState<string[]>([])
   const [showSummary, setShowSummary] = useState(preview?.intent === 'order_preview')
@@ -1860,6 +1950,7 @@ function ChatOrderActions({
   }
 
   const addPoint = () => {
+    if (points.length >= 5) return
     const nextPoints = [...points, '']
     setPoints(nextPoints)
     syncPendingPoints(nextPoints)
@@ -1881,7 +1972,7 @@ function ChatOrderActions({
         <input key={index} value={point} onChange={(event) => updatePoint(index, event.target.value)} placeholder={`Titik tambahan ${index + 1}`} />
       ))}
       <div className="chat-action-row">
-        <button type="button" onClick={addPoint}>+ Tambah Titik</button>
+        <button type="button" disabled={points.length >= 5} onClick={addPoint}>+ Tambah Titik</button>
         {!showSummary && <button type="button" onClick={() => setShowSummary(true)}>Preview Order</button>}
       </div>
       {showSummary && (
@@ -2005,7 +2096,7 @@ function ChatOrderActions({
           {submitBlocked && <p>Anda melebihi batas order aktif. Silakan selesaikan salah satu pesanan terlebih dahulu.</p>}
           {points.filter(Boolean).length > 0 && <p>{points.filter(Boolean).map((point, index) => `Titik ${index + 1}: ${point}`).join('\n')}</p>}
           <div>
-            <button type="button" disabled={submitBlocked || (isOjekOrder && passengerCount > 2) || (isOjekOrder && passengerCount === 2 && !doubleOrderConfirmed)} onClick={onConfirm}>YA KIRIM</button>
+            <button type="button" disabled={submitting || submitBlocked || (isOjekOrder && passengerCount > 2) || (isOjekOrder && passengerCount === 2 && !doubleOrderConfirmed)} onClick={onConfirm}>{submitting ? 'MENGIRIM...' : 'YA KIRIM'}</button>
             <button type="button" onClick={() => setShowSummary(false)}>EDIT</button>
           </div>
         </div>
@@ -2125,6 +2216,18 @@ function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { 
     }
   }
 
+  const chooseDraftImage = (file?: File | null) => {
+    if (!file) return
+    const error = imageFileError(file)
+    if (error) {
+      store.showToast('error', error)
+      return
+    }
+
+    if (draftImage) URL.revokeObjectURL(draftImage.url)
+    setDraftImage({ file, url: URL.createObjectURL(file) })
+  }
+
   return (
     <form className={`input-bar ${hasText ? 'is-typing' : ''}`} onSubmit={submit}>
       {attachmentOpen && (
@@ -2137,12 +2240,12 @@ function InputBar({ onSend, onImage, onLocation, replyTarget, onClearReply }: { 
       )}
       <input ref={galleryInputRef} type="file" accept="image/*" hidden onChange={(event) => {
         const file = event.target.files?.[0]
-        if (file) setDraftImage({ file, url: URL.createObjectURL(file) })
+        chooseDraftImage(file)
         event.currentTarget.value = ''
       }} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => {
         const file = event.target.files?.[0]
-        if (file) setDraftImage({ file, url: URL.createObjectURL(file) })
+        chooseDraftImage(file)
         event.currentTarget.value = ''
       }} />
       {replyTarget && (
@@ -3081,6 +3184,13 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   const [photoVersion, setPhotoVersion] = useState(() => Date.now())
   const [imageFailed, setImageFailed] = useState(false)
   const [saving, setSaving] = useState(false)
+  const branchLabel = user?.branch_display_name || user?.branch_name || user?.branch || 'Cabang belum diset'
+  const areaStatus = user?.area_status === 'inside_branch'
+    ? 'Di area cabang'
+    : user?.area_status === 'outside_branch'
+      ? 'Di luar area cabang'
+      : 'Area belum tervalidasi'
+  const locationUpdatedAt = user?.location_updated_at ? formatDateTime(user.location_updated_at) : 'Belum ada update GPS'
   const photoUrl = useMemo(() => {
     if (profilePhotoPreview) return profilePhotoPreview
     if (!user?.profile_photo_url) return ''
@@ -3105,6 +3215,14 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   }, [profilePhotoPreview])
 
   const choosePhoto = (file: File | null) => {
+    if (file) {
+      const error = imageFileError(file, 'Foto profil')
+      if (error) {
+        store.showToast('error', error)
+        return
+      }
+    }
+
     if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
     formDirtyRef.current = true
     setImageFailed(false)
@@ -3128,6 +3246,16 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         <div className="wa-profile-summary">
           <strong>{name.trim() || user?.name || 'Customer JojoApp'}</strong>
           <span>{phone.trim() || user?.phone || 'Nomor belum diisi'}</span>
+        </div>
+        <div className="wa-profile-status-grid">
+          <span className={user?.area_status === 'inside_branch' ? 'ok' : user?.area_status === 'outside_branch' ? 'warn' : ''}>
+            <MapPin size={15} />
+            {areaStatus}
+          </span>
+          <span>
+            <Store size={15} />
+            {branchLabel}
+          </span>
         </div>
         {profilePhoto && <small className="wa-photo-selected">{profilePhoto.name}</small>}
         <input ref={fileInputRef} className="sr-only-file" type="file" accept="image/*" onChange={(event) => choosePhoto(event.target.files?.[0] ?? null)} />
@@ -3170,11 +3298,14 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         <ProfileField icon={<Phone size={25} />} label="Telepon" hint="Nomor aktif untuk konfirmasi order.">
           <input value={phone} onChange={(event) => updateField(setPhone)(event.target.value)} placeholder="+62..." inputMode="tel" autoComplete="tel" />
         </ProfileField>
+        <ProfileField icon={<MessageCircle size={25} />} label="Email" hint="Dipakai untuk login dan notifikasi akun.">
+          <input value={user?.email ?? '-'} readOnly />
+        </ProfileField>
         <ProfileField icon={<MapPin size={25} />} label="Alamat" hint="Alamat profil, alamat order tetap bisa diisi manual.">
           <textarea value={address} onChange={(event) => updateField(setAddress)(event.target.value)} placeholder="Alamat utama" autoComplete="street-address" />
         </ProfileField>
-        <ProfileField icon={<LinkIcon size={25} />} label="Tautan" hint="Fitur tautan profil akan disiapkan bertahap.">
-          <input value="Tambah tautan" readOnly />
+        <ProfileField icon={<Clock size={25} />} label="GPS Terakhir" hint="Dipakai sistem untuk validasi area dan antisipasi fake order.">
+          <input value={locationUpdatedAt} readOnly />
         </ProfileField>
         <details className="profile-address-note">
           <summary>
@@ -3475,6 +3606,14 @@ function formatOrderTime(value?: string) {
 function formatOrderDate(value?: string) {
   if (!value) return todayLabel()
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return `${formatOrderDate(value)} ${formatOrderTime(value)}`
 }
 
 function monthKey(value?: string | null) {
