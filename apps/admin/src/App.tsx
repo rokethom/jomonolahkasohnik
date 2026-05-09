@@ -2136,17 +2136,27 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
   }
   const formulaCount = settings.filter((rule) => rule.is_formula).length
   const canManageRing = Boolean(permissions.can_manage_ring_pricing)
+  const activeRingCount = ringRules.filter((rule) => rule.is_active).length
+  const learnedRingCount = ringRules.filter((rule) => rule.source === 'learned').length
   return (
-    <section className="panel pricing-panel">
-      <div className="section-head">
-        <div><h2>{mode === 'ring' ? 'Master Ring Pricing' : 'Pricing & Policy'}</h2><p>{settings.length} aturan jarak, {ringRules.length} master ring, {ringSuggestions.length} suggestion koreksi.</p></div>
+    <section className={`panel pricing-panel ${mode === 'ring' ? 'master-ring-panel' : ''}`}>
+      <div className="section-head master-ring-head">
+        <div><h2>{mode === 'ring' ? 'Master Ring Pricing' : 'Pricing & Policy'}</h2><p>Terhubung ke pricing order customer, manual order, dan AI parser melalui payload pickup/tujuan.</p></div>
         <div className="section-actions">
-          {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />Master Ring</button>}
+          {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />{showRingForm ? 'Tutup Form' : 'Master Ring'}</button>}
           {mode === 'all' && permissions.can_manage_policy && <button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />Policy</button>}
         </div>
       </div>
+      {mode === 'ring' && (
+        <div className="master-ring-summary">
+          <article><span>Total route</span><strong>{ringRules.length}</strong><small>{activeRingCount} aktif</small></article>
+          <article><span>Suggestion</span><strong>{ringSuggestions.length}</strong><small>Dari koreksi harga</small></article>
+          <article><span>Learned</span><strong>{learnedRingCount}</strong><small>Sudah jadi rule</small></article>
+        </div>
+      )}
       {showRingForm && canManageRing && (
         <form className="admin-inline-form pricing-create-form ring-create-form" onSubmit={createRing}>
+          <div className="ring-form-title"><strong>Tambah Master Ring</strong><span>Simpan akan menutup form dan kembali ke list.</span></div>
           <label>Nama master<input name="name" required placeholder="Asembagus - Jangkar Ring 1" /></label>
           <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
           <label>Layanan<select name="service_type"><option value="">Semua layanan</option>{services.map((service) => <option key={service.id} value={service.code}>{service.name}</option>)}</select></label>
@@ -2158,7 +2168,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
           <label>Harga jasa<input name="price" type="number" min="0" step="1000" defaultValue="6000" required /></label>
           <label className="toggle-row inline-toggle"><input name="is_bidirectional" type="checkbox" defaultChecked />Dua arah</label>
           <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
-          <button className="primary-button" type="submit">Save Master Ring</button>
+          <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowRingForm(false)}>Batal</button><button className="primary-button" type="submit">Simpan Master Ring</button></div>
         </form>
       )}
       {mode === 'all' && showForm && (
@@ -2176,13 +2186,13 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
       )}
       <div className="pricing-subsection">
         <PanelHeader title="Master Ring Route" action={`${ringRules.length} rules`} />
-        <div className="pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><strong>{rule.name}</strong><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)}</span><small>{rule.pickup_area} → {rule.destination_area}{rule.is_bidirectional ? ' · dua arah' : ''}</small></div><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.source}</span><em>Rp {rule.price.toLocaleString('id-ID')}</em>{canManageRing && <button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button>}</article>)}</div>
+        <div className="pricing-list ring-pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)} · {rule.source}</span><small>{rule.pickup_area} → {rule.destination_area}{rule.is_bidirectional ? ' · dua arah' : ''}</small>{((rule.pickup_aliases?.length ?? 0) > 0 || (rule.destination_aliases?.length ?? 0) > 0) && <small className="ring-aliases">Alias: {[...(rule.pickup_aliases ?? []), ...(rule.destination_aliases ?? [])].slice(0, 5).join(', ')}</small>}</div><em>Rp {rule.price.toLocaleString('id-ID')}</em>{canManageRing && <button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button>}</article>)}</div>
         {ringRules.length === 0 && <EmptyPanel title="Master ring kosong" copy="Tambahkan route ring resmi agar harga tidak hanya mengandalkan jarak maps." />}
       </div>
       {canManageRing && ringSuggestions.length > 0 && (
         <div className="pricing-subsection">
           <PanelHeader title="Suggestion dari edit harga" action={`${ringSuggestions.length} pending`} />
-          <div className="pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><strong>{suggestion.pickup_area} → {suggestion.destination_area}</strong><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><span className="status warning">Learn</span><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></article>)}</div>
+          <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} → {suggestion.destination_area}</strong><span className="status warning">Learn</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
         </div>
       )}
       {mode === 'all' && <div className="pricing-subsection">

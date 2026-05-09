@@ -122,6 +122,24 @@
     linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(17, 24, 39, 0.96));
 }
 
+.admin-shell.dark .master-ring-summary article {
+  border-color: rgba(148, 163, 184, 0.22);
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, .14), transparent 58%),
+    rgba(15, 23, 42, 0.76);
+}
+
+.admin-shell.dark .master-ring-summary strong,
+.admin-shell.dark .ring-form-title strong {
+  color: #f8fbff;
+}
+
+.admin-shell.dark .master-ring-summary span,
+.admin-shell.dark .master-ring-summary small,
+.admin-shell.dark .ring-form-title span {
+  color: #9fb0c6;
+}
+
 .admin-shell.dark .manual-card-title strong,
 .admin-shell.dark .manual-preview-detail b {
   color: #e5edf8;
@@ -2408,6 +2426,48 @@ td {
   margin-top: 18px;
 }
 
+.master-ring-panel {
+  overflow: hidden;
+}
+
+.master-ring-head {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.master-ring-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+.master-ring-summary article {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 14px;
+  padding: 13px 14px;
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, .10), transparent 58%),
+    rgba(255, 255, 255, .76);
+}
+
+.master-ring-summary span,
+.master-ring-summary small {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.master-ring-summary strong {
+  display: block;
+  margin: 4px 0 2px;
+  color: #101828;
+  font-size: 28px;
+  line-height: 1;
+}
+
 .section-actions {
   display: flex;
   align-items: center;
@@ -2424,6 +2484,49 @@ td {
   border-radius: 18px;
   padding: 14px;
   background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.ring-create-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: end;
+  border-radius: 16px;
+}
+
+.ring-create-form label {
+  grid-column: span 2;
+}
+
+.ring-create-form .inline-toggle {
+  grid-column: span 1;
+}
+
+.ring-form-title,
+.ring-form-actions {
+  grid-column: 1 / -1;
+}
+
+.ring-form-title {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 2px;
+}
+
+.ring-form-title strong {
+  color: #101828;
+  font-size: 17px;
+}
+
+.ring-form-title span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ring-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .admin-inline-form label {
@@ -2483,7 +2586,32 @@ td {
 }
 
 .pricing-card.ring-card {
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  border: 1px solid rgba(148, 163, 184, .22);
+}
+
+.ring-pricing-list {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.ring-card-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.ring-aliases {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ring-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .pricing-card.suggestion {
@@ -4590,6 +4718,17 @@ textarea::placeholder {
   .pricing-card {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .master-ring-summary,
+  .ring-pricing-list {
+    grid-template-columns: 1fr;
+  }
+
+  .ring-create-form,
+  .ring-create-form label,
+  .ring-create-form .inline-toggle {
+    grid-column: 1 / -1;
   }
 
   .admin-inline-form {

@@ -13,8 +13,8 @@ class RingPricingService
     public function match(array $payload, string $serviceType): ?RingPricingRule
     {
         $branchId = isset($payload['branch_id']) ? (int) $payload['branch_id'] : null;
-        $pickupText = $this->normalize($payload['pickup_address'] ?? $payload['pickup_text'] ?? '');
-        $destinationText = $this->normalize($payload['destination_address'] ?? $payload['destination_text'] ?? '');
+        $pickupText = $this->normalize($this->pickupText($payload));
+        $destinationText = $this->normalize($this->destinationText($payload));
 
         if ($pickupText === '' || $destinationText === '') {
             return null;
@@ -129,6 +129,56 @@ class RingPricingService
         }
 
         return $this->containsAny($pickupText, $destinationTerms) && $this->containsAny($destinationText, $pickupTerms);
+    }
+
+    private function pickupText(array $payload): string
+    {
+        return collect([
+            $payload['pickup_address'] ?? null,
+            $payload['pickup_text'] ?? null,
+            $payload['origin_address'] ?? null,
+            $payload['service_payload']['pickup_address'] ?? null,
+            $payload['service_payload']['pickup'] ?? null,
+            $payload['service_payload']['origin'] ?? null,
+            $payload['service_payload']['purchase_location'] ?? null,
+            $payload['service_payload']['lokasi_pembelian'] ?? null,
+            $payload['service_payload']['alamat_pembelian'] ?? null,
+            $this->pointsText($payload, 0),
+        ])->filter()->implode(' ');
+    }
+
+    private function destinationText(array $payload): string
+    {
+        return collect([
+            $payload['destination_address'] ?? null,
+            $payload['destination_text'] ?? null,
+            $payload['dropoff_address'] ?? null,
+            $payload['service_payload']['destination_address'] ?? null,
+            $payload['service_payload']['destination'] ?? null,
+            $payload['service_payload']['dropoff'] ?? null,
+            $payload['service_payload']['alamat_antar'] ?? null,
+            $payload['service_payload']['tujuan'] ?? null,
+            $this->pointsText($payload, -1),
+        ])->filter()->implode(' ');
+    }
+
+    private function pointsText(array $payload, int $index): string
+    {
+        $points = $payload['points'] ?? $payload['service_payload']['points'] ?? [];
+        if (! is_array($points) || $points === []) {
+            return '';
+        }
+
+        $point = $index < 0 ? end($points) : ($points[$index] ?? null);
+        if (is_array($point)) {
+            return implode(' ', array_filter([
+                $point['label'] ?? null,
+                $point['address'] ?? null,
+                $point['name'] ?? null,
+            ]));
+        }
+
+        return is_string($point) ? $point : '';
     }
 
     private function terms(string $area, array $aliases): array
