@@ -33,6 +33,7 @@ use App\Services\OrderOperationService;
 use App\Services\OrderService;
 use App\Services\RatingService;
 use App\Services\SettingService;
+use App\Services\SLAService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,11 +50,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminController extends Controller
 {
-    public function bootstrap(Request $request, SettingService $settings, OrderService $orders): JsonResponse
+    public function bootstrap(Request $request, SettingService $settings, OrderService $orders, SLAService $slaService): JsonResponse
     {
         $orders->cancelExpiredCreatedOrders();
 
         $user = $request->user()->load('branch');
+        $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($user)));
 
         return response()->json([
             'me' => $this->userPayload($user),
@@ -1057,8 +1059,10 @@ class AdminController extends Controller
         ]);
     }
 
-    public function chats(Request $request): JsonResponse
+    public function chats(Request $request, SLAService $slaService): JsonResponse
     {
+        $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($request->user())));
+
         return response()->json([
             'data' => $this->chatsQuery($request->user())
                 ->paginate($request->integer('per_page', 25))
@@ -1862,7 +1866,7 @@ class AdminController extends Controller
                     'rating_score' => app(RatingService::class)->weightedScore($ratingAverage, $ratingCount, 4.2, 8),
                     'rating_confidence' => app(RatingService::class)->ratingConfidence($ratingCount, 8),
                     'ratings_count' => $ratingCount,
-                    'late_response_count' => (clone $query)->where('sla_status', 'breached')->count(),
+                    'late_response_count' => (clone $query)->whereIn('sla_status', ['late', 'breached'])->count(),
                 ];
             })
             ->all();
@@ -1959,6 +1963,8 @@ class AdminController extends Controller
             'latest_message' => $chat->latestMessage?->message,
             'last_customer_message_at' => $chat->last_customer_message_at?->toDateTimeString(),
             'first_operator_response_at' => $chat->first_operator_response_at?->toDateTimeString(),
+            'rating_requested_at' => $chat->rating_requested_at?->toDateTimeString(),
+            'closed_at' => $chat->closed_at?->toDateTimeString(),
             'unread_count' => $chat->messages()
                 ->where('sender_id', '!=', request()->user()?->id)
                 ->whereNull('read_at')

@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Services\BotService;
 use App\Services\ChatService;
 use App\Services\MessageService;
+use App\Services\SLAService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -64,10 +65,10 @@ class ChatController extends Controller
         ]);
     }
 
-    public function messages(ChatConversation $conversation, Request $request): JsonResponse
+    public function messages(ChatConversation $conversation, Request $request, SLAService $slaService): JsonResponse
     {
         $this->authorizeParticipant($conversation, $request);
-        $conversation->refresh();
+        $conversation = $slaService->enforceUnansweredOperatorChat($conversation->refresh());
 
         return response()->json([
             'data' => $conversation->messages()
@@ -78,9 +79,10 @@ class ChatController extends Controller
         ]);
     }
 
-    public function send(ChatConversation $conversation, Request $request, ChatService $chatService, MessageService $messageService, BotService $botService): JsonResponse
+    public function send(ChatConversation $conversation, Request $request, ChatService $chatService, MessageService $messageService, BotService $botService, SLAService $slaService): JsonResponse
     {
         $this->authorizeParticipant($conversation, $request);
+        $conversation = $slaService->enforceUnansweredOperatorChat($conversation->refresh());
 
         try {
             $chatService->assertWritable($conversation);
@@ -217,11 +219,14 @@ class ChatController extends Controller
 
     private function conversationPayload(ChatConversation $conversation): array
     {
+        $slaService = app(SLAService::class);
+        $conversation = $slaService->enforceUnansweredOperatorChat($conversation);
+
         $ratingDue = $conversation->type === 'customer_operator'
             && ! $conversation->operator_rating
             && (
                 $conversation->status === 'closed'
-                || ($conversation->last_customer_message_at && ! $conversation->first_operator_response_at && $conversation->last_customer_message_at->lte(now()->subMinutes(5)))
+                || ($conversation->last_customer_message_at && ! $conversation->first_operator_response_at && $conversation->last_customer_message_at->lte(now()->subSeconds($slaService->feedbackSeconds())))
             );
 
         if ($ratingDue && ! $conversation->rating_requested_at) {

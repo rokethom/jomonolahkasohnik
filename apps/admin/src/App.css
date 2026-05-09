@@ -3748,6 +3748,20 @@ textarea::placeholder {
   font-weight: 950;
 }
 
+.feedback-badge {
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #3b0764;
+  background: #f3e8ff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.feedback-badge.closed {
+  color: #7f1d1d;
+  background: #fee2e2;
+}
+
 .cancel-approval {
   border: 1px solid rgba(255, 176, 32, 0.34);
   border-radius: 18px;

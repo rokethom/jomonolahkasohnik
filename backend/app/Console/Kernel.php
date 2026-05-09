@@ -3,6 +3,7 @@
 namespace App\Console;
 
 use App\Jobs\CancelExpiredOrdersJob;
+use App\Jobs\EnforceChatSlaJob;
 use App\Jobs\EnforceDriverSuspensionsJob;
 use App\Jobs\PruneExpiredHomeItemsJob;
 use Illuminate\Console\Scheduling\Schedule;
@@ -16,6 +17,7 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         $schedule->job(new CancelExpiredOrdersJob())->everyMinute()->withoutOverlapping();
+        $schedule->job(new EnforceChatSlaJob())->everyMinute()->withoutOverlapping();
         $schedule->job(new EnforceDriverSuspensionsJob())->dailyAt('00:10')->withoutOverlapping();
         $schedule->job(new PruneExpiredHomeItemsJob())->dailyAt('00:20')->withoutOverlapping();
     }

@@ -11,14 +11,17 @@ use App\Models\User;
 use App\Services\CancelService;
 use App\Services\ChatService;
 use App\Services\MessageService;
+use App\Services\SLAService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AdminChatController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, SLAService $slaService): JsonResponse
     {
+        $slaService->enforceUnansweredOperatorChats((clone $this->query($request->user())));
+
         return response()->json([
             'data' => $this->query($request->user())
                 ->with(['customer', 'driver', 'operator', 'order', 'latestMessage'])
@@ -27,9 +30,10 @@ class AdminChatController extends Controller
         ]);
     }
 
-    public function show(ChatConversation $conversation, Request $request): JsonResponse
+    public function show(ChatConversation $conversation, Request $request, SLAService $slaService): JsonResponse
     {
         $this->authorizeChat($conversation, $request->user());
+        $conversation = $slaService->enforceUnansweredOperatorChat($conversation->refresh());
 
         return response()->json([
             'data' => [
@@ -48,7 +52,7 @@ class AdminChatController extends Controller
         ]);
     }
 
-    public function sendMessage(Request $request, MessageService $messageService, ChatService $chatService): JsonResponse
+    public function sendMessage(Request $request, MessageService $messageService, ChatService $chatService, SLAService $slaService): JsonResponse
     {
         $payload = $request->validate([
             'chat_id' => ['required', 'exists:chat_conversations,id'],
@@ -61,6 +65,7 @@ class AdminChatController extends Controller
 
         $conversation = ChatConversation::query()->findOrFail($payload['chat_id']);
         $this->authorizeChat($conversation, $request->user());
+        $conversation = $slaService->enforceUnansweredOperatorChat($conversation);
         $chatService->assertWritable($conversation);
 
         if (in_array($request->user()->role, [UserRole::Operator, UserRole::Eksekutor], true) && ! $conversation->operator_id) {
@@ -173,6 +178,8 @@ class AdminChatController extends Controller
             'driver' => $chat->driver?->name,
             'operator' => $chat->operator?->name,
             'operator_rating' => $chat->operator_rating,
+            'rating_requested_at' => $chat->rating_requested_at?->toISOString(),
+            'closed_at' => $chat->closed_at?->toISOString(),
             'status' => $chat->status,
             'sla_status' => $chat->sla_status,
             'last_message' => $chat->latestMessage?->message,

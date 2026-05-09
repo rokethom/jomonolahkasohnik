@@ -208,7 +208,7 @@ type ServiceRow = { id: number; name: string; code: string }
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; is_active: boolean }
 type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; accuracy?: number | null; provider?: string | null; is_mock_location?: boolean; is_valid: boolean; is_suspicious: boolean; reason: string | null; maps_url?: string | null; created_at: string | null }
-type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; updated_at: string | null }
+type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; first_operator_response_at?: string | null; rating_requested_at?: string | null; closed_at?: string | null; updated_at: string | null }
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
 type InternalChatRoom = { id: number; name: string; type: 'global' | 'branch' | 'private' | string; branch_id?: number | null; branch?: string | null; branch_area?: string | null; participants_count?: number; participants?: Array<{ id: number; name: string; role: Role | string }>; last_message?: string | null; last_sender?: string | null; unread_count?: number; updated_at?: string | null }
@@ -2352,7 +2352,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
           <button key={chat.id} className={activeId === chat.id ? 'admin-chat-item active' : 'admin-chat-item'} onClick={() => setActiveId(chat.id)}>
             <div><strong>{chat.customer || chat.driver || 'Unknown user'}</strong><span>{chat.type?.replace('_', ' ') ?? 'chat'}</span></div>
             <p>{chat.last_message ?? chat.latest_message ?? 'Belum ada pesan'}</p>
-            <footer><QueueBadge chat={chat} queue={waitingQueue} /><SlaBadge chat={chat} />{Boolean(chat.unread_count) && <b>{chat.unread_count}</b>}<small>{formatShortTime(chat.updated_at)}</small></footer>
+            <footer><QueueBadge chat={chat} queue={waitingQueue} /><SlaBadge chat={chat} /><ChatFeedbackBadge chat={chat} />{Boolean(chat.unread_count) && <b>{chat.unread_count}</b>}<small>{formatShortTime(chat.updated_at)}</small></footer>
           </button>
         ))}
         {filteredChats.length === 0 && <EmptyPanel title="Chat kosong" copy="Tidak ada percakapan sesuai filter." />}
@@ -2365,7 +2365,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
           <>
             <header className="admin-chat-room-head">
               <div><h2>{activeChat.customer || activeChat.driver || 'Chat'}</h2><p>{activeChat.order_code ?? activeChat.type} Â· Operator: {activeChat.operator ?? me.name}</p></div>
-              <div className="admin-chat-actions"><QueueBadge chat={activeChat} queue={waitingQueue} /><SlaBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={closeChat}>Close Chat</button></div>
+              <div className="admin-chat-actions"><QueueBadge chat={activeChat} queue={waitingQueue} /><SlaBadge chat={activeChat} /><ChatFeedbackBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={closeChat}>Close Chat</button></div>
             </header>
             {activeChat.order_code && <button className="order-code-link order-code-row" onClick={() => onOpenOrder(activeChat.order_code!)}>Buka order {activeChat.order_code}</button>}
             {chatError && <div className="chat-error">{chatError}</div>}
@@ -2412,6 +2412,16 @@ function QueueBadge({ chat, queue }: { chat: Chat; queue: Chat[] }) {
   const index = queue.findIndex((item) => item.id === chat.id)
 
   return <span className="queue-badge">Antrian #{index >= 0 ? index + 1 : '-'}</span>
+}
+
+function ChatFeedbackBadge({ chat }: { chat: Chat }) {
+  if (!chat.rating_requested_at) return null
+  const autoClosed = chat.status === 'closed' && !chat.first_operator_response_at
+  return (
+    <span className={autoClosed ? 'feedback-badge closed' : 'feedback-badge'}>
+      {autoClosed ? 'Auto closed 15m' : 'Feedback 10m'}
+    </span>
+  )
 }
 
 function ChatStatusBadge({ status }: { status: string }) {
