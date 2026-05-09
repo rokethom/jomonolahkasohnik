@@ -1976,38 +1976,44 @@ function ChatOrderActions({
 
   return (
     <div className="chat-action-panel">
-      {points.map((point, index) => (
-        <input key={index} value={point} onChange={(event) => updatePoint(index, event.target.value)} placeholder={`Titik tambahan ${index + 1}`} />
-      ))}
-      {isOjekOrder && (
-        <div className="ladies-choice">
-          <span>Pilihan driver</span>
-          <div>
-            <button type="button" className={selectedDriverPreference !== 'ladies' ? 'active' : ''} onClick={() => updateDriverPreference('general')}>Umum</button>
-            <button type="button" className={selectedDriverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => updateDriverPreference('ladies')}>Ladies</button>
+      {!showSummary && (
+        <>
+          {points.map((point, index) => (
+            <input key={index} value={point} onChange={(event) => updatePoint(index, event.target.value)} placeholder={`Titik tambahan ${index + 1}`} />
+          ))}
+          {isOjekOrder && (
+            <div className="ladies-choice">
+              <span>Pilihan driver</span>
+              <div>
+                <button type="button" className={selectedDriverPreference !== 'ladies' ? 'active' : ''} onClick={() => updateDriverPreference('general')}>Umum</button>
+                <button type="button" className={selectedDriverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => updateDriverPreference('ladies')}>Ladies</button>
+              </div>
+              <small>{selectedDriverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
+            </div>
+          )}
+          {isJokerMobilOrder && (
+            <div className="vehicle-seat-choice">
+              <span>Tempat duduk Joker Mobil</span>
+              <div>
+                <button type="button" className={selectedSeatRows === 2 ? 'active' : ''} onClick={() => updateSeatRows(2)}>
+                  <b>2 baris</b>
+                  <small>Citycar / umum</small>
+                </button>
+                <button type="button" className={selectedSeatRows === 3 ? 'active' : ''} onClick={() => updateSeatRows(3)}>
+                  <b>3 baris</b>
+                  <small>MPV / keluarga</small>
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="chat-action-row">
+            <button type="button" disabled={points.length >= 5} onClick={addPoint}>+ Tambah Titik</button>
           </div>
-          <small>{selectedDriverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
-        </div>
-      )}
-      {isJokerMobilOrder && (
-        <div className="vehicle-seat-choice">
-          <span>Tempat duduk Joker Mobil</span>
-          <div>
-            <button type="button" className={selectedSeatRows === 2 ? 'active' : ''} onClick={() => updateSeatRows(2)}>
-              <b>2 baris</b>
-              <small>Citycar / umum</small>
-            </button>
-            <button type="button" className={selectedSeatRows === 3 ? 'active' : ''} onClick={() => updateSeatRows(3)}>
-              <b>3 baris</b>
-              <small>MPV / keluarga</small>
-            </button>
+          <div className="chat-action-row">
+            <button type="button" onClick={() => setShowSummary(true)}>Preview Order</button>
           </div>
-        </div>
+        </>
       )}
-      <div className="chat-action-row">
-        <button type="button" disabled={points.length >= 5} onClick={addPoint}>+ Tambah Titik</button>
-        {!showSummary && <button type="button" onClick={() => setShowSummary(true)}>Preview Order</button>}
-      </div>
       {showSummary && (
         <div className="final-preview-card">
           <strong>Summary final</strong>
