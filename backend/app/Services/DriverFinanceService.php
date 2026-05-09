@@ -145,19 +145,11 @@ class DriverFinanceService
             return 'paid';
         }
 
-        if ($paidAmount <= 0) {
-            return 'unpaid';
-        }
-
         if ($paidAmount >= $total) {
             return 'paid';
         }
 
-        if ($currentStatus === 'unpaid' && now()->greaterThan($dueDate->copy()->endOfDay())) {
-            return 'unpaid';
-        }
-
-        return now()->greaterThan($dueDate->copy()->endOfDay()) ? 'unpaid' : 'paid';
+        return 'unpaid';
     }
 
     private function handleTotal(Driver $driver, Carbon $start, Carbon $end): int

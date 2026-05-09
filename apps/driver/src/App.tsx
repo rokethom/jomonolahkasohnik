@@ -171,6 +171,8 @@ type DriverFinance = {
   period_label?: string
   current_period_deposit?: number
   previous_deposit?: {
+    month?: number
+    year?: number
     total: number
     paid_amount: number
     remaining: number
@@ -178,6 +180,8 @@ type DriverFinance = {
     due_date?: string | null
     paid_at?: string | null
     period_label?: string
+    current_period_deposit?: number
+    breakdown?: Record<string, number>
   }
   breakdown?: Record<string, number>
 }
@@ -696,8 +700,8 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
   const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending') : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
   const previousDeposit = finance?.previous_deposit
+  const previousTotal = Number(previousDeposit?.total ?? 0)
   const previousRemaining = Number(previousDeposit?.remaining ?? 0)
-  const previousPaid = Number(previousDeposit?.paid_amount ?? 0)
   const currentPeriodDeposit = Number(finance?.current_period_deposit ?? finance?.breakdown?.setoran_hingga_hari_ini ?? 0)
   const previousPeriodLabel = previousDeposit?.period_label ?? 'bulan lalu'
   const currentPeriodLabel = finance?.period_label ?? 'bulan ini'
@@ -741,7 +745,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       <section className="online-card panel">
         <div>
           <strong>{isOnline ? 'Online' : 'Offline'}</strong>
-          <span>{activeOrders.length}/{maxMultiOrder} order aktif · {finance?.status ?? driver.deposit_status ?? 'sync'}</span>
+          <span>{activeOrders.length}/{maxMultiOrder} order aktif · {driver.deposit_status ?? 'sync'}</span>
           <small>{availabilityCopy}</small>
         </div>
         <label className="switch"><input checked={isOnline} disabled={availabilitySaving} onChange={(event) => void updateAvailability(event.target.checked)} type="checkbox" /><span /></label>
@@ -756,8 +760,8 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       <section className="stats-grid">
         <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
           <span>TAGIHAN BULAN {previousPeriodLabel.toUpperCase()}</span>
-          <strong>Rp {formatMoney(previousPaid)}</strong>
-          <small>Terbayar{previousRemaining > 0 ? ` - sisa Rp ${formatMoney(previousRemaining)}` : ''}</small>
+          <strong>Rp {formatMoney(previousTotal)}</strong>
+          <small>{previousDeposit?.status ?? 'paid'}{previousRemaining > 0 ? ` - sisa Rp ${formatMoney(previousRemaining)}` : previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
         </button>
         <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
           <span>TOTAL BULAN INI BERJALAN</span>
@@ -917,28 +921,46 @@ function BranchAcceptedFeed({
 }
 
 function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: () => void }) {
-  const rows = setoranBreakdownRows(finance.breakdown)
-  const remaining = Math.max(0, finance.total - finance.paid_amount)
+  const billing = billingDepositFor(finance)
+  const rows = setoranBreakdownRows(billing.breakdown, billing.period_label)
+  const remaining = Math.max(0, billing.total - billing.paid_amount)
   return (
     <Modal title="Detail Setoran" onClose={onClose}>
       <div className="deposit-summary">
         <span>
           <small>Jatuh tempo</small>
-          <strong>{formatDepositDueDate(finance.due_date)}</strong>
+          <strong>{formatDepositDueDate(billing.due_date)}</strong>
         </span>
-        <span className={`deposit-status ${String(finance.status ?? '').toLowerCase()}`}>
+        <span className={`deposit-status ${String(billing.status ?? '').toLowerCase()}`}>
           <small>Status</small>
-          <strong>{finance.status ?? '-'}</strong>
+          <strong>{billing.status ?? '-'}</strong>
         </span>
       </div>
       <div className="setoran-breakdown">
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
-        <div className="total-row"><span>Total bulan ini</span><strong>Rp {formatMoney(finance.total)}</strong></div>
-        <PaidAmountRow value={finance.paid_amount} paidAt={finance.paid_at} />
+        <div className="total-row"><span>Total tagihan {billing.period_label ?? 'bulan sebelumnya'}</span><strong>Rp {formatMoney(billing.total)}</strong></div>
+        <PaidAmountRow value={billing.paid_amount} paidAt={billing.paid_at} />
         <div className="total-row"><span>Sisa tagihan</span><strong>Rp {formatMoney(remaining)}</strong></div>
       </div>
     </Modal>
   )
+}
+
+function billingDepositFor(finance: DriverFinance): DriverFinance {
+  if (!finance.previous_deposit) return finance
+
+  return {
+    ...finance,
+    total: finance.previous_deposit.total,
+    status: finance.previous_deposit.status,
+    due_date: finance.previous_deposit.due_date,
+    paid_amount: finance.previous_deposit.paid_amount,
+    paid_at: finance.previous_deposit.paid_at,
+    remaining: finance.previous_deposit.remaining,
+    period_label: finance.previous_deposit.period_label,
+    current_period_deposit: finance.previous_deposit.current_period_deposit,
+    breakdown: finance.previous_deposit.breakdown,
+  }
 }
 
 function PaidAmountRow({ value, paidAt }: { value: number; paidAt?: string | null }) {
@@ -2112,7 +2134,7 @@ function operHandleStatusText(order: Order) {
 }
 function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
   if (!isOnline) return false
-  return Boolean(driver?.can_receive_orders ?? (driver?.status === 'active' && (finance?.status ?? driver?.deposit_status ?? 'paid') === 'paid'))
+  return Boolean(driver?.can_receive_orders ?? (driver?.status === 'active' && (driver?.deposit_status ?? finance?.status ?? 'paid') === 'paid'))
 }
 function sortNewestOrderFirst(a: Order, b: Order) {
   const timeA = new Date(a.updatedAt ?? a.acceptedAt ?? 0).getTime()
@@ -2165,13 +2187,13 @@ function formatRemaining(ms: number) {
 }
 function shortAddress(address: string) { return address.length > 28 ? `${address.slice(0, 28)}...` : address }
 function statusLabel(status: OrderStatus) { return { pending: 'Menunggu', accepted: 'Accepted', on_delivery: 'Antar', pending_cancel: 'Menunggu Cancel', done: 'Selesai', cancelled: 'Batal' }[status] }
-function setoranBreakdownRows(breakdown?: Record<string, number>) {
+function setoranBreakdownRows(breakdown?: Record<string, number>, periodLabel = 'bulan sebelumnya') {
   if (!breakdown) return []
 
   const setoranHinggaHariIni = breakdown.setoran_hingga_hari_ini ?? ((breakdown.handle_hari_15 ?? 0) + (breakdown.handle_hari_30 ?? 0))
   const cashbackBulanSebelumnya = breakdown.cashback_bulan_sebelumnya ?? 0
   const tagihanBulanSebelumnya = breakdown.tagihan_bulan_sebelumnya ?? 0
-  const rows: Array<[string, number]> = [['Setoran hingga hari ini', setoranHinggaHariIni]]
+  const rows: Array<[string, number]> = [[`Tagihan pada bulan ${periodLabel}`, setoranHinggaHariIni]]
 
   rows.push(['Cashback bulan sebelumnya', cashbackBulanSebelumnya > 0 ? -cashbackBulanSebelumnya : 0])
   if (tagihanBulanSebelumnya > 0) rows.push(['Tagihan bulan sebelumnya', tagihanBulanSebelumnya])

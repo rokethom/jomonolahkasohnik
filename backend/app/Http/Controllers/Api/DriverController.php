@@ -36,8 +36,9 @@ class DriverController extends Controller
 
         $driver = $this->ensureDriver($request)->load('user.branch');
         $deposit = $finance->monthlyDeposit($driver);
-        $driver = $this->syncAvailabilityForFinance($driver, $deposit);
-        $canReceiveOrders = $this->canReceiveOrders($driver, $deposit);
+        $billingDeposit = $finance->monthlyDeposit($driver, now()->subMonth());
+        $driver = $this->syncAvailabilityForFinance($driver, $billingDeposit);
+        $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
 
         $orders = Order::query()
             ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user'])
@@ -111,7 +112,7 @@ class DriverController extends Controller
             : collect();
 
         return response()->json([
-            'driver' => $this->driverPayload($request, $deposit),
+            'driver' => $this->driverPayload($request, $billingDeposit),
             'settings' => [
                 'multi_order_enabled' => $settings->bool('multi_order_enabled', true),
                 'max_multi_order' => max(1, min(3, $settings->int('max_multi_order', 3))),
@@ -163,15 +164,15 @@ class DriverController extends Controller
             'online' => ['required', 'boolean'],
         ]);
 
-        $deposit = $finance->monthlyDeposit($driver);
+        $deposit = $finance->monthlyDeposit($driver, now()->subMonth());
 
-        if (($deposit->status ?? 'unpaid') !== 'paid') {
+        if ($this->depositBlocksOrders($deposit)) {
             $driver->update(['is_available' => false]);
 
             return response()->json([
-                'message' => 'Setoran masih unpaid. Driver otomatis OFF dan hanya bisa request order.',
+                'message' => 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan hanya bisa request order.',
                 'driver' => $this->driverPayload($request, $deposit),
-                'finance' => $this->financePayload($deposit->fresh()),
+                'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
             ], $request->boolean('online') ? 422 : 200);
         }
 
@@ -181,7 +182,7 @@ class DriverController extends Controller
             return response()->json([
                 'message' => 'Driver tidak aktif/suspend sehingga tidak bisa ON.',
                 'driver' => $this->driverPayload($request, $deposit),
-                'finance' => $this->financePayload($deposit),
+                'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
             ], 422);
         }
 
@@ -190,7 +191,7 @@ class DriverController extends Controller
         return response()->json([
             'message' => $request->boolean('online') ? 'Driver ON dan bisa menerima order.' : 'Driver OFF. Anda tetap bisa request order.',
             'driver' => $this->driverPayload($request, $deposit),
-            'finance' => $this->financePayload($deposit),
+            'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
         ]);
     }
 
@@ -423,7 +424,7 @@ class DriverController extends Controller
 
     private function syncAvailabilityForFinance(Driver $driver, DriverDeposit $deposit): Driver
     {
-        if (($deposit->status ?? 'unpaid') !== 'paid' && $driver->is_available) {
+        if ($this->depositBlocksOrders($deposit) && $driver->is_available) {
             $driver->forceFill(['is_available' => false])->save();
             $driver->refresh();
         }
@@ -431,15 +432,31 @@ class DriverController extends Controller
         return $driver;
     }
 
+    private function depositBlocksOrders(?DriverDeposit $deposit): bool
+    {
+        if (! $deposit || ($deposit->status ?? 'paid') === 'paid') {
+            return false;
+        }
+
+        if (! $deposit->due_date) {
+            return true;
+        }
+
+        return Carbon::parse($deposit->due_date)->endOfDay()->isPast();
+    }
+
     private function financePayload(DriverDeposit $deposit): array
     {
         $period = Carbon::create((int) $deposit->year, (int) $deposit->month, 1);
         $previousPeriod = $period->copy()->subMonth();
-        $previous = DriverDeposit::query()
-            ->where('driver_id', $deposit->driver_id)
-            ->where('year', $previousPeriod->year)
-            ->where('month', $previousPeriod->month)
-            ->first();
+        $driver = Driver::query()->find($deposit->driver_id);
+        $previous = $driver
+            ? app(DriverFinanceService::class)->monthlyDeposit($driver, $previousPeriod)
+            : DriverDeposit::query()
+                ->where('driver_id', $deposit->driver_id)
+                ->where('year', $previousPeriod->year)
+                ->where('month', $previousPeriod->month)
+                ->first();
         $previousTotal = (int) ($previous?->total ?? 0);
         $previousPaid = (int) ($previous?->paid_amount ?? 0);
         $previousRemaining = max(0, $previousTotal - $previousPaid);
@@ -459,6 +476,8 @@ class DriverController extends Controller
                 'remaining' => $previousRemaining,
                 'status' => $previousRemaining > 0 ? 'unpaid' : 'paid',
                 'due_date' => $previous?->due_date?->toDateString(),
+                'current_period_deposit' => (int) data_get($previous?->breakdown, 'setoran_hingga_hari_ini', ((int) ($previous?->handle_day_15 ?? 0) + (int) ($previous?->handle_day_30 ?? 0))),
+                'breakdown' => $previous?->breakdown ?? [],
             ],
         ];
     }
@@ -471,7 +490,7 @@ class DriverController extends Controller
 
         return $driver->status === 'active'
             && (bool) $driver->is_available
-            && ($deposit?->status ?? 'paid') === 'paid';
+            && ! $this->depositBlocksOrders($deposit);
     }
 
     private function availabilityBlockReason(?Driver $driver, ?DriverDeposit $deposit = null): ?string
@@ -480,8 +499,8 @@ class DriverController extends Controller
             return 'Akun driver tidak ditemukan.';
         }
 
-        if (($deposit?->status ?? 'paid') !== 'paid') {
-            return 'Setoran masih unpaid. Driver otomatis OFF dan hanya bisa request order.';
+        if ($this->depositBlocksOrders($deposit)) {
+            return 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan hanya bisa request order.';
         }
 
         if ($driver->status !== 'active') {
