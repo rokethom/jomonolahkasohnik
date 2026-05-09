@@ -3541,8 +3541,9 @@ textarea::placeholder {
 }
 
 .admin-chat-list {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .admin-chat-filters {
@@ -3671,6 +3672,15 @@ textarea::placeholder {
 .sla-badge.late {
   color: #fff;
   background: #ff4d6d;
+}
+
+.queue-badge {
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #7c2d12;
+  background: #ffedd5;
+  font-size: 11px;
+  font-weight: 950;
 }
 
 .cancel-approval {
@@ -3849,6 +3859,26 @@ textarea::placeholder {
   color: #121826;
   padding: 0 11px;
   outline: none;
+}
+
+.chat-waiting-queue {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  background: #fff7ed;
+  padding: 10px 12px;
+}
+
+.chat-waiting-queue strong {
+  color: #9a3412;
+  font-size: 13px;
+}
+
+.chat-waiting-queue span {
+  color: #9a3412;
+  font-size: 12px;
 }
 
 .internal-room-form .mini-button {

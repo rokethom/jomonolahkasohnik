@@ -30,7 +30,7 @@ class MessageService
         ]);
 
         $role = $sender->role->value ?? $sender->role;
-        if ($role === 'customer') {
+        if (in_array($role, ['customer', 'driver'], true)) {
             $this->slaService->start($conversation, $message);
         }
 

@@ -15,11 +15,12 @@ class SLAService
 
     public function start(ChatConversation $conversation, ChatMessage $message): void
     {
-        if ($conversation->type !== 'customer_operator') {
+        if (! in_array($conversation->type, ['customer_operator', 'driver_operator'], true)) {
             return;
         }
 
         $conversation->forceFill([
+            'status' => 'waiting',
             'last_customer_message_at' => now(),
             'first_operator_response_at' => null,
             'sla_status' => 'waiting',
@@ -43,6 +44,7 @@ class SLAService
         $status = $seconds <= $this->thresholdSeconds() ? 'on_time' : 'late';
 
         $conversation->forceFill([
+            'status' => $conversation->status === 'waiting' ? 'active' : $conversation->status,
             'first_operator_response_at' => now(),
             'sla_status' => $status,
         ])->save();

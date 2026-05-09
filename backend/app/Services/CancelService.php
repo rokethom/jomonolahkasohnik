@@ -51,6 +51,8 @@ class CancelService
             'cancelled_at' => now(),
             'notes' => trim(((string) $cancelRequest->order->notes)."\nCancel approved: {$cancelRequest->reason}"),
         ])->save();
+        $cancelRequest->order->driver?->update(['is_available' => true]);
+        $this->chatService->closeForOrder($cancelRequest->order);
 
         $cancelRequest->update([
             'status' => 'approved',

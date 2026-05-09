@@ -5,12 +5,17 @@ namespace App\Actions\Order;
 use App\Enums\OrderStatus;
 use App\Events\OrderStatusUpdated;
 use App\Models\Order;
+use App\Services\ChatService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class CancelOrder
 {
+    public function __construct(private readonly ChatService $chatService)
+    {
+    }
+
     public function handle(Order $order): Order
     {
         return DB::transaction(function () use ($order): Order {
@@ -23,6 +28,7 @@ class CancelOrder
             $oldStatus = $order->status;
             $order->update(['status' => OrderStatus::Cancelled]);
             $order->driver?->update(['is_available' => true]);
+            $this->chatService->closeForOrder($order);
 
             try {
                 OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::Cancelled);

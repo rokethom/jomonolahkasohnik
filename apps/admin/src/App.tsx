@@ -2153,10 +2153,13 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
   const messagesRef = useRef<HTMLDivElement | null>(null)
 
   const activeChat = detail?.chat ?? chats.find((chat) => chat.id === activeId) ?? null
+  const waitingQueue = useMemo(() => chats
+    .filter((chat) => chat.status === 'waiting')
+    .sort((first, second) => chatQueueTime(first) - chatQueueTime(second)), [chats])
   const filteredChats = chats.filter((chat) => {
     const haystack = `${chat.customer ?? ''} ${chat.driver ?? ''} ${chat.operator ?? ''} ${chat.order_code ?? ''} ${chat.last_message ?? chat.latest_message ?? ''}`.toLowerCase()
     return haystack.includes(chatQuery.toLowerCase()) && (statusFilter === 'all' || chat.status === statusFilter)
-  })
+  }).sort((first, second) => chatSortScore(first, waitingQueue) - chatSortScore(second, waitingQueue))
 
   const loadChats = useCallback(async () => {
     try {
@@ -2265,12 +2268,18 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
             <option value="closed">Closed</option>
           </select>
         </div>
+        {waitingQueue.length > 0 && (
+          <div className="chat-waiting-queue">
+            <strong>{waitingQueue.length} antrian waiting</strong>
+            <span>Balas dari nomor #1 agar SLA aman.</span>
+          </div>
+        )}
         <div className="admin-chat-scroll">
         {filteredChats.map((chat) => (
           <button key={chat.id} className={activeId === chat.id ? 'admin-chat-item active' : 'admin-chat-item'} onClick={() => setActiveId(chat.id)}>
             <div><strong>{chat.customer || chat.driver || 'Unknown user'}</strong><span>{chat.type?.replace('_', ' ') ?? 'chat'}</span></div>
             <p>{chat.last_message ?? chat.latest_message ?? 'Belum ada pesan'}</p>
-            <footer><SlaBadge chat={chat} />{Boolean(chat.unread_count) && <b>{chat.unread_count}</b>}<small>{formatShortTime(chat.updated_at)}</small></footer>
+            <footer><QueueBadge chat={chat} queue={waitingQueue} /><SlaBadge chat={chat} />{Boolean(chat.unread_count) && <b>{chat.unread_count}</b>}<small>{formatShortTime(chat.updated_at)}</small></footer>
           </button>
         ))}
         {filteredChats.length === 0 && <EmptyPanel title="Chat kosong" copy="Tidak ada percakapan sesuai filter." />}
@@ -2283,7 +2292,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
           <>
             <header className="admin-chat-room-head">
               <div><h2>{activeChat.customer || activeChat.driver || 'Chat'}</h2><p>{activeChat.order_code ?? activeChat.type} Â· Operator: {activeChat.operator ?? me.name}</p></div>
-              <div className="admin-chat-actions"><SlaBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={closeChat}>Close Chat</button></div>
+              <div className="admin-chat-actions"><QueueBadge chat={activeChat} queue={waitingQueue} /><SlaBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={closeChat}>Close Chat</button></div>
             </header>
             {activeChat.order_code && <button className="order-code-link order-code-row" onClick={() => onOpenOrder(activeChat.order_code!)}>Buka order {activeChat.order_code}</button>}
             {chatError && <div className="chat-error">{chatError}</div>}
@@ -2321,8 +2330,15 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
 function SlaBadge({ chat }: { chat: Chat }) {
   const late = chat.sla_status === 'late'
   const waiting = chat.sla_status === 'waiting'
-  const label = late ? 'LATE' : waiting ? 'COUNTDOWN' : 'ON TIME'
+  const label = late ? 'SLA LATE' : waiting ? 'SLA WAITING' : 'SLA OK'
   return <span className={late ? 'sla-badge late' : waiting ? 'sla-badge waiting' : 'sla-badge ok'}>{label}</span>
+}
+
+function QueueBadge({ chat, queue }: { chat: Chat; queue: Chat[] }) {
+  if (chat.status !== 'waiting') return null
+  const index = queue.findIndex((item) => item.id === chat.id)
+
+  return <span className="queue-badge">Antrian #{index >= 0 ? index + 1 : '-'}</span>
 }
 
 function ChatStatusBadge({ status }: { status: string }) {
@@ -3341,6 +3357,22 @@ function operHandleStatusLabel(item: OperHandle) {
   if (!item.operator_approved_at && item.spv_approved_at) return 'Menunggu Operator'
   if (item.status === 'pending') return 'Menunggu approval'
   return item.status
+}
+
+function chatQueueTime(chat: Chat) {
+  return new Date(chat.last_customer_message_at ?? chat.updated_at ?? 0).getTime() || 0
+}
+
+function chatSortScore(chat: Chat, queue: Chat[]) {
+  if (chat.status === 'waiting') {
+    const index = queue.findIndex((item) => item.id === chat.id)
+    return index >= 0 ? index : 0
+  }
+
+  if (chat.status === 'active') return 10_000 + (Date.now() - new Date(chat.updated_at ?? 0).getTime())
+  if (chat.status === 'closed') return 20_000 + (Date.now() - new Date(chat.updated_at ?? 0).getTime())
+
+  return 30_000
 }
 
 function paymentLabel(method?: string | null) {

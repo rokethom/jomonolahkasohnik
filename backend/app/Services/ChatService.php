@@ -14,24 +14,30 @@ class ChatService
     {
         $role = $customer->role->value ?? $customer->role;
         if ($role === 'driver') {
-            return ChatConversation::firstOrCreate(
-                [
+            return ChatConversation::query()
+                ->where('driver_id', $customer->id)
+                ->where('type', 'driver_operator')
+                ->where('status', '!=', 'closed')
+                ->first()
+                ?? ChatConversation::create([
                     'driver_id' => $customer->id,
                     'type' => 'driver_operator',
                     'status' => 'active',
-                ],
-                ['branch_id' => $customer->branch_id ?? null],
-            );
+                    'branch_id' => $customer->branch_id ?? null,
+                ]);
         }
 
-        return ChatConversation::firstOrCreate(
-            [
+        return ChatConversation::query()
+            ->where('customer_id', $customer->id)
+            ->where('type', 'customer_operator')
+            ->where('status', '!=', 'closed')
+            ->first()
+            ?? ChatConversation::create([
                 'customer_id' => $customer->id,
                 'type' => 'customer_operator',
                 'status' => 'active',
-            ],
-            ['branch_id' => $customer->branch_id ?? null],
-        );
+                'branch_id' => $customer->branch_id ?? null,
+            ]);
     }
 
     public function forOrder(Order $order, string $type): ChatConversation
@@ -75,5 +81,19 @@ class ChatService
                 throw new RuntimeException('Chat customer-driver belum aktif atau sudah selesai.');
             }
         }
+    }
+
+    public function closeForOrder(Order $order): void
+    {
+        ChatConversation::query()
+            ->where('order_id', $order->id)
+            ->whereIn('type', ['customer_driver', 'customer_operator', 'driver_operator'])
+            ->where(function ($query): void {
+                $query->where('status', '!=', 'closed')->orWhereNull('closed_at');
+            })
+            ->update([
+                'status' => 'closed',
+                'closed_at' => now(),
+            ]);
     }
 }

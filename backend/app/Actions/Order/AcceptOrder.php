@@ -12,6 +12,7 @@ use App\Models\Order;
 use App\Services\MultiOrderService;
 use App\Services\NotificationService;
 use App\Services\DriverFinanceService;
+use App\Services\ChatService;
 use App\Services\SuspendService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +25,7 @@ class AcceptOrder
         private readonly SuspendService $suspensions,
         private readonly NotificationService $notifications,
         private readonly DriverFinanceService $finance,
+        private readonly ChatService $chatService,
     )
     {
     }
@@ -45,6 +47,7 @@ class AcceptOrder
                     'cancelled_at' => now(),
                     'notes' => trim(((string) $order->notes)."\nAuto-cancel: driver timeout 10 menit."),
                 ]);
+                $this->chatService->closeForOrder($order);
 
                 try {
                     OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::Cancelled);

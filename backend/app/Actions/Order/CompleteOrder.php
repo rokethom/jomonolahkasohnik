@@ -4,15 +4,19 @@ namespace App\Actions\Order;
 
 use App\Enums\OrderStatus;
 use App\Events\OrderStatusUpdated;
-use App\Models\ChatConversation;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
+use App\Services\ChatService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class CompleteOrder
 {
+    public function __construct(private readonly ChatService $chatService)
+    {
+    }
+
     public function handle(Order $order): Order
     {
         return DB::transaction(function () use ($order): Order {
@@ -39,13 +43,7 @@ class CompleteOrder
             $oldStatus = $order->status;
             $order->update(['status' => OrderStatus::Completed]);
             $order->driver?->update(['is_available' => true]);
-            ChatConversation::query()
-                ->where('order_id', $order->id)
-                ->where('type', 'customer_driver')
-                ->update([
-                    'status' => 'closed',
-                    'closed_at' => now(),
-                ]);
+            $this->chatService->closeForOrder($order);
 
             try {
                 OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::Completed);

@@ -19,6 +19,7 @@ class OrderService
         private readonly OrderLimitService $limits,
         private readonly OrderOperationService $operations,
         private readonly NotificationService $notifications,
+        private readonly ChatService $chatService,
     )
     {
     }
@@ -70,6 +71,7 @@ class OrderService
                 'cancelled_at' => now(),
                 'notes' => DB::raw("CONCAT(COALESCE(notes, ''), '\nAuto-cancel: driver timeout 10 menit.')"),
             ]);
+            $this->chatService->closeForOrder($order);
 
             try {
                 $freshOrder = $order->fresh(['user', 'driver.user']);

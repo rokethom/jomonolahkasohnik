@@ -1881,8 +1881,16 @@ class AdminController extends Controller
             'driver' => $chat->driver?->name,
             'operator' => $chat->operator?->name,
             'branch' => $chat->branch?->name,
+            'type' => $chat->type,
             'status' => $chat->status,
+            'sla_status' => $chat->sla_status,
             'latest_message' => $chat->latestMessage?->message,
+            'last_customer_message_at' => $chat->last_customer_message_at?->toDateTimeString(),
+            'first_operator_response_at' => $chat->first_operator_response_at?->toDateTimeString(),
+            'unread_count' => $chat->messages()
+                ->where('sender_id', '!=', request()->user()?->id)
+                ->whereNull('read_at')
+                ->count(),
             'updated_at' => $chat->updated_at?->toDateTimeString(),
         ];
     }
