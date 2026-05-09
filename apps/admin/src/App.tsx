@@ -2732,11 +2732,11 @@ function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { 
               {detail?.messages.map((item) => (
                 <article key={item.id} className={item.sender_id === me.id ? 'admin-bubble mine' : 'admin-bubble'}>
                   <span>{item.sender_name} <small>{roleLabels[(item.sender_role as Role) || 'operator'] ?? item.sender_role} · {formatShortTime(item.created_at)}</small></span>
-                  <p>{renderOrderCodeLinks(item.message, onOpenOrder)}</p>
+                  {visibleInternalMessageText(item).trim() && <p>{renderOrderCodeLinks(visibleInternalMessageText(item), onOpenOrder)}</p>}
                   <InternalAttachmentPreview attachment={item.metadata?.attachment} />
                   {Boolean(item.metadata?.order_codes?.length) && (
                     <div className="internal-message-tags">
-                      {item.metadata?.order_codes?.map((code) => <button key={code} type="button" onClick={() => onOpenOrder(code)}>@order:{code}</button>)}
+                      {item.metadata?.order_codes?.map((code) => <button key={code} type="button" onClick={() => onOpenOrder(code)}>Order {code}</button>)}
                     </div>
                   )}
                 </article>
@@ -2790,6 +2790,21 @@ function InternalAttachmentPreview({ attachment }: { attachment?: InternalChatAt
       </span>
     </a>
   )
+}
+
+function visibleInternalMessageText(message: InternalChatMessage) {
+  let text = message.message
+  for (const code of message.metadata?.order_codes ?? []) {
+    text = text
+      .replaceAll(`@order:${code}`, '')
+      .replaceAll(`@${code}`, '')
+  }
+
+  if (message.metadata?.attachment && text === `Lampiran ${attachmentLabel(message.metadata.attachment.source)}: ${message.metadata.attachment.name}`) {
+    return ''
+  }
+
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 function attachmentLabel(source?: string | null) {

@@ -3723,7 +3723,7 @@ textarea::placeholder {
 .admin-chat-room {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: 12px;
+  gap: 10px;
 }
 
 .admin-chat-room-head {
@@ -3800,30 +3800,27 @@ textarea::placeholder {
 .admin-chat-messages {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow: auto;
-  border-radius: 18px;
-  padding: 16px;
-  background:
-    radial-gradient(circle at 18px 18px, rgba(15, 23, 42, 0.04) 2px, transparent 2px),
-    linear-gradient(135deg, #f8fafc, #eef6f3);
-  background-size: 62px 62px, auto;
+  border-radius: 16px;
+  padding: 14px;
+  background: #f8fafc;
 }
 
 .admin-bubble {
-  max-width: 74%;
-  border-radius: 20px 20px 20px 7px;
-  padding: 11px 13px 9px;
+  max-width: min(74%, 420px);
+  border-radius: 14px 14px 14px 5px;
+  padding: 9px 11px;
   background: #fff;
   border: 1px solid rgba(226, 232, 240, 0.75);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
 }
 
 .admin-bubble.mine {
   align-self: flex-end;
-  border-radius: 20px 20px 7px 20px;
-  border-color: #bbf7d0;
-  background: #dcfce7;
+  border-radius: 14px 14px 5px 14px;
+  border-color: rgba(34, 197, 94, 0.28);
+  background: #e8f8ef;
 }
 
 .admin-bubble.bot {
@@ -3847,10 +3844,10 @@ textarea::placeholder {
 }
 
 .admin-bubble p {
-  margin: 5px 0 0;
+  margin: 6px 0 0;
   color: #1f2937;
   white-space: pre-wrap;
-  line-height: 1.45;
+  line-height: 1.42;
 }
 
 .admin-bubble img {
@@ -3883,9 +3880,9 @@ textarea::placeholder {
 }
 
 .order-code-link {
-  border: 0;
-  border-radius: 999px;
-  background: #e0f2fe;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
   color: #0369a1;
   font-weight: 900;
   cursor: pointer;
@@ -3898,7 +3895,7 @@ textarea::placeholder {
 .order-code-link.inline {
   display: inline-flex;
   margin: 0 2px;
-  padding: 2px 7px;
+  padding: 1px 6px;
   vertical-align: baseline;
 }
 
@@ -3910,21 +3907,28 @@ textarea::placeholder {
 
 .admin-chat-composer {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
+  grid-template-columns: 42px 1fr 78px;
+  gap: 8px;
   position: relative;
+  align-items: end;
 }
 
 .admin-chat-composer textarea {
-  min-height: 50px;
-  max-height: 120px;
+  min-height: 44px;
+  max-height: 96px;
   resize: vertical;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 13px 14px;
+  border: 1px solid #d8e0eb;
+  border-radius: 14px;
+  padding: 11px 12px;
   color: #121826;
   background: #fff;
   outline: none;
+}
+
+.admin-chat-composer .primary-button {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
 }
 
 .admin-chat-composer textarea:disabled {
@@ -3940,8 +3944,8 @@ textarea::placeholder {
 
 .internal-context-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) 1.2fr;
-  gap: 10px;
+  grid-template-columns: minmax(220px, 0.9fr) 1.1fr;
+  gap: 8px;
   align-items: end;
 }
 
@@ -3954,12 +3958,13 @@ textarea::placeholder {
 }
 
 .internal-context-bar select {
-  min-height: 42px;
+  min-height: 38px;
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
   color: #121826;
   padding: 0 12px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -3975,13 +3980,22 @@ textarea::placeholder {
 .internal-composer-hints button,
 .internal-message-tags button,
 .attachment-chip {
-  border: 1px solid #dbeafe;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  padding: 7px 10px;
+  border: 1px solid #d7e3f4;
+  border-radius: 11px;
+  background: #f4f8ff;
+  color: #1e40af;
+  padding: 6px 9px;
   font-size: 12px;
   font-weight: 900;
+}
+
+.internal-message-tags {
+  margin-top: 8px;
+}
+
+.internal-message-tags button {
+  background: #f8fafc;
+  color: #0369a1;
 }
 
 .internal-attachment-wrap {
@@ -3990,10 +4004,10 @@ textarea::placeholder {
 }
 
 .chat-clip-button {
-  width: 48px;
-  min-height: 50px;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
+  width: 42px;
+  min-height: 44px;
+  border: 1px solid #d8e0eb;
+  border-radius: 14px;
   background: #fff;
   color: #475467;
   display: grid;
@@ -4177,7 +4191,11 @@ textarea::placeholder {
 
 .admin-shell.dark .admin-bubble.mine {
   border-color: rgba(74, 222, 128, 0.34);
-  background: rgba(22, 101, 52, 0.48);
+  background: rgba(20, 83, 45, 0.58);
+}
+
+.admin-shell.dark .admin-chat-messages {
+  background: rgba(15, 23, 42, 0.72);
 }
 
 .admin-shell.dark .admin-bubble.bot {
