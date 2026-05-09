@@ -3089,19 +3089,22 @@ function HistoryRating({
 
 function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onDone?: () => void }) {
   const store = useCustomerStore()
+  const token = useCustomerStore((state) => state.token)
+  const setUserSession = useCustomerStore((state) => state.setUserSession)
   const user = store.user
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const formDirtyRef = useRef(false)
   const syncedUserIdRef = useRef<number | null>(user?.id ?? null)
-  const [name, setName] = useState(user?.name ?? '')
-  const [phone, setPhone] = useState(user?.phone ?? '')
-  const [address, setAddress] = useState(user?.address ?? '')
+  const [name, setName] = useState(profileText(user?.name))
+  const [phone, setPhone] = useState(profileText(user?.phone))
+  const [address, setAddress] = useState(profileText(user?.address))
   const [profilePhoto, setProfilePhoto] = useState<File | null>(null)
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null)
   const [photoVersion, setPhotoVersion] = useState(() => Date.now())
   const [imageFailed, setImageFailed] = useState(false)
   const [saving, setSaving] = useState(false)
-  const branchLabel = user?.branch_display_name || user?.branch_name || user?.branch || 'Cabang belum diset'
+  const [loadError, setLoadError] = useState('')
+  const branchLabel = firstProfileText([user?.branch_display_name, user?.branch_name, user?.branch], 'Cabang belum diset')
   const areaStatus = user?.area_status === 'inside_branch'
     ? 'Di area cabang'
     : user?.area_status === 'outside_branch'
@@ -3118,12 +3121,33 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   }, [photoVersion, profilePhotoPreview, user?.profile_photo_url])
 
   useEffect(() => {
+    if (!token || user) return
+
+    let active = true
+    setLoadError('')
+
+    void fetchMe()
+      .then((freshUser) => {
+        if (!active) return
+        setUserSession(freshUser, token)
+      })
+      .catch((error) => {
+        if (!active) return
+        setLoadError(getApiErrorMessage(error, 'Profile gagal dimuat. Silakan buka ulang halaman.'))
+      })
+
+    return () => {
+      active = false
+    }
+  }, [setUserSession, token, user])
+
+  useEffect(() => {
     if (syncedUserIdRef.current === user?.id && formDirtyRef.current) return
 
     syncedUserIdRef.current = user?.id ?? null
-    setName(user?.name ?? '')
-    setPhone(user?.phone ?? '')
-    setAddress(user?.address ?? '')
+    setName(profileText(user?.name))
+    setPhone(profileText(user?.phone))
+    setAddress(profileText(user?.address))
     setImageFailed(false)
   }, [user?.id, user?.address, user?.name, user?.phone, user?.profile_photo_url])
 
@@ -3152,6 +3176,18 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
     setter(value)
   }
 
+  if (!user) {
+    return (
+      <div className="profile-page">
+        <section className="wa-profile-empty">
+          <span><UserRound size={34} /></span>
+          <strong>{loadError ? 'Profile belum bisa dimuat' : 'Memuat profile'}</strong>
+          <p>{loadError || 'Data akun sedang disinkronkan. Tunggu sebentar.'}</p>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="profile-page">
       <section className="wa-profile-hero">
@@ -3161,8 +3197,8 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         </button>
         <button type="button" className="wa-edit-link" onClick={() => fileInputRef.current?.click()}>Edit</button>
         <div className="wa-profile-summary">
-          <strong>{name.trim() || user?.name || 'Customer JojoApp'}</strong>
-          <span>{phone.trim() || user?.phone || 'Nomor belum diisi'}</span>
+          <strong>{name.trim() || profileText(user.name) || 'Customer JojoApp'}</strong>
+          <span>{phone.trim() || profileText(user.phone) || 'Nomor belum diisi'}</span>
         </div>
         <div className="wa-profile-status-grid">
           <span className={user?.area_status === 'inside_branch' ? 'ok' : user?.area_status === 'outside_branch' ? 'warn' : ''}>
@@ -3188,9 +3224,9 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
             formDirtyRef.current = false
             syncedUserIdRef.current = updated.id
             store.setUserSession(updated, store.token)
-            setName(updated.name ?? '')
-            setPhone(updated.phone ?? '')
-            setAddress(updated.address ?? '')
+            setName(profileText(updated.name))
+            setPhone(profileText(updated.phone))
+            setAddress(profileText(updated.address))
             setPhotoVersion(Date.now())
             setImageFailed(false)
             setProfilePhoto(null)
@@ -3216,7 +3252,7 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
           <input value={phone} onChange={(event) => updateField(setPhone)(event.target.value)} placeholder="+62..." inputMode="tel" autoComplete="tel" />
         </ProfileField>
         <ProfileField icon={<MessageCircle size={25} />} label="Email" hint="Dipakai untuk login dan notifikasi akun.">
-          <input value={user?.email ?? '-'} readOnly />
+          <input value={profileText(user.email, '-')} readOnly />
         </ProfileField>
         <ProfileField icon={<MapPin size={25} />} label="Alamat" hint="Alamat profil, alamat order tetap bisa diisi manual.">
           <textarea value={address} onChange={(event) => updateField(setAddress)(event.target.value)} placeholder="Alamat utama" autoComplete="street-address" />
@@ -3531,6 +3567,22 @@ function formatDateTime(value?: string) {
   if (Number.isNaN(date.getTime())) return '-'
 
   return `${formatOrderDate(value)} ${formatOrderTime(value)}`
+}
+
+function profileText(value: unknown, fallback = '') {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+
+  return fallback
+}
+
+function firstProfileText(values: unknown[], fallback = '') {
+  for (const value of values) {
+    const text = profileText(value).trim()
+    if (text) return text
+  }
+
+  return fallback
 }
 
 function monthKey(value?: string | null) {

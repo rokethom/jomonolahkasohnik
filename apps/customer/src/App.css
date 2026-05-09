@@ -2108,6 +2108,38 @@
     #fff;
 }
 
+.wa-profile-empty {
+  min-height: calc(var(--jojo-viewport-height, 100dvh) - 140px);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.wa-profile-empty span {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e7f7f3;
+  color: #008069;
+}
+
+.wa-profile-empty strong {
+  color: #111b21;
+  font-size: 20px;
+}
+
+.wa-profile-empty p {
+  max-width: 300px;
+  margin: 0;
+  color: #667781;
+  line-height: 1.45;
+}
+
 .profile-photo-button {
   position: relative;
   width: 138px;
