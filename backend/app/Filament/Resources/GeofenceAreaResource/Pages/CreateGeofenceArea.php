@@ -8,4 +8,9 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateGeofenceArea extends CreateRecord
 {
     protected static string $resource = GeofenceAreaResource::class;
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }

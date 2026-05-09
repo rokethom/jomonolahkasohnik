@@ -8,4 +8,9 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateHomeItem extends CreateRecord
 {
     protected static string $resource = HomeItemResource::class;
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }

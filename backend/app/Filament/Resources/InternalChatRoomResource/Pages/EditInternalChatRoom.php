@@ -16,4 +16,9 @@ class EditInternalChatRoom extends EditRecord
             Actions\ViewAction::make(),
         ];
     }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }
