@@ -30,7 +30,13 @@ class OrderParserService
             return $natural;
         }
 
+        $items = $this->items->extract($normalizedText);
+        $storeLocation = $this->storeLocation($normalizedText);
         $serviceType = $this->detectService($normalizedText);
+        if (! $serviceType && $items !== [] && $storeLocation) {
+            $serviceType = 'DO';
+        }
+
         if (! $serviceType) {
             return null;
         }
@@ -51,9 +57,6 @@ class OrderParserService
         if ($serviceType === 'gift_order') {
             return $this->parseGiftOrder($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
-
-        $items = $this->items->extract($normalizedText);
-        $storeLocation = $this->storeLocation($normalizedText);
 
         if ($items === [] || ! $storeLocation) {
             return null;
@@ -338,6 +341,22 @@ class OrderParserService
 
         if (preg_match('/alamat\s+pembelian\s*:\s*(.+?)(?:\R\s*\R|$)/isu', $text, $match) === 1) {
             return trim($match[1]);
+        }
+
+        if (preg_match_all('/(?:^|\R)\s*alamat\s*:\s*(.+)$/imu', $text, $matches) > 0) {
+            $addresses = collect($matches[1])
+                ->map(fn (string $value): string => trim($value))
+                ->filter()
+                ->values();
+
+            $store = $addresses->reverse()->first(fn (string $value): bool => preg_match('/\b(?:warung|toko|resto|restaurant|rumah\s*makan|rm|depot|cafe|kafe|kedai|pasar|swalayan|mart|padang)\b/iu', $value) === 1);
+            if ($store) {
+                return $store;
+            }
+
+            if ($addresses->count() > 1) {
+                return $addresses->last();
+            }
         }
 
         return null;

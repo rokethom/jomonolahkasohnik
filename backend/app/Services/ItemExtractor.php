@@ -22,7 +22,7 @@ class ItemExtractor
 
     private function belikanBlock(string $text): string
     {
-        if (preg_match('/(?:belikan|pembelian)\s*:\s*(.*?)(?:\R\s*(?:alamat\s+pembelian|area)\s*:|$)/isu', $text, $match) !== 1) {
+        if (preg_match('/(?:belikan|pembelian|pesanan|order)\s*:\s*(.*?)(?:\R\s*(?:alamat\s+pembelian|alamat|area)\s*:|$)/isu', $text, $match) !== 1) {
             return '';
         }
 
@@ -39,6 +39,11 @@ class ItemExtractor
         }
 
         $quantity = 1;
+        if (preg_match('/^(\d+)\s*(?:x|pcs?|porsi|bungkus|buah)?\s+(.+)$/iu', $line, $match) === 1) {
+            $quantity = max(1, (int) $match[1]);
+            $line = trim($match[2]);
+        }
+
         if (preg_match('/\s+(\d+)\s*$/u', $line, $match) === 1) {
             $quantity = max(1, (int) $match[1]);
             $line = trim(substr($line, 0, -strlen($match[0])));

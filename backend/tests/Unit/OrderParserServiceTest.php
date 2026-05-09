@@ -81,6 +81,30 @@ class OrderParserServiceTest extends TestCase
         ], $parsed['items']);
     }
 
+    public function test_manual_order_with_pesanan_and_repeated_alamat_is_parsed_as_purchase(): void
+    {
+        $user = new User([
+            'id' => 92,
+            'name' => 'Manual Customer',
+            'phone' => '081252461537',
+            'address' => 'Perum Panji Permai MM19',
+            'branch_id' => null,
+        ]);
+
+        $text = "Nama : Vira\nNo hp : 081252461537\nAlamat : Perum Panji Permai MM19\n\nPesanan :\na. 2 porsi rendang tanpa nasi\nb.\nc.\n\nAlamat : warung padang pagi sore timur alun2 situbondo";
+
+        $parsed = app(OrderParserService::class)->parse($user, $text);
+
+        $this->assertNotNull($parsed);
+        $this->assertSame('DO', $parsed['service_type']);
+        $this->assertSame('warung padang pagi sore timur alun2 situbondo', $parsed['store_location']);
+        $this->assertSame('warung padang pagi sore timur alun2 situbondo', $parsed['payload']['pickup_address']);
+        $this->assertSame('Perum Panji Permai MM19', $parsed['payload']['destination_address']);
+        $this->assertSame([
+            ['name' => 'Rendang tanpa nasi', 'quantity' => 2],
+        ], $parsed['items']);
+    }
+
     public function test_courier_plain_text_is_parsed_with_profile_sender(): void
     {
         $user = new User([
