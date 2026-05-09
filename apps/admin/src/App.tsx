@@ -1442,11 +1442,16 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
     if (status === 'paid' && !full && (!Number.isFinite(paymentAmount) || paymentAmount <= 0)) return
     if (!confirm(`Tandai setoran ${driver.name} sebagai ${label}?`)) return
 
-    await api(`/admin/drivers/${driver.driver_id}/deposit/${status}`, {
-      method: 'POST',
-      body: JSON.stringify(status === 'unpaid' ? { reason } : { full, amount: paymentAmount }),
-    })
-    await onChanged()
+    try {
+      const response = await api<{ message?: string }>(`/admin/drivers/${driver.driver_id}/deposit/${status}`, {
+        method: 'POST',
+        body: JSON.stringify(status === 'unpaid' ? { reason } : full ? { full: true } : { full: false, amount: paymentAmount }),
+      })
+      alert(response.message ?? `Setoran ${driver.name} berhasil diperbarui.`)
+      await onChanged()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : `Setoran ${driver.name} gagal diperbarui.`)
+    }
   }
 
   return (

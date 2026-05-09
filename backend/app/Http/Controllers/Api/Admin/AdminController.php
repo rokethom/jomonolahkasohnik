@@ -464,8 +464,8 @@ class AdminController extends Controller
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true), 403);
 
         $payload = $request->validate([
-            'amount' => ['nullable', 'integer', 'min:1'],
             'full' => ['nullable', 'boolean'],
+            'amount' => ['nullable', 'integer', 'min:1', 'required_if:full,false'],
         ]);
 
         $deposit = $finance->monthlyDeposit($driver->load('user.branch'), now()->subMonth());
