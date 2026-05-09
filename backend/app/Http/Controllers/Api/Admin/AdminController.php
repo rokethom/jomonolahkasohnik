@@ -1232,7 +1232,7 @@ class AdminController extends Controller
 
     private function usersQuery(User $actor): Builder
     {
-        $query = User::query()->with(['branch', 'driver']);
+        $query = User::query()->with(['branch', 'driver', 'currentLocation.branch', 'latestLocationLog.branch']);
 
         return match ($actor->role) {
             UserRole::Admin, UserRole::GM => $query,
@@ -1364,6 +1364,52 @@ class AdminController extends Controller
 
     private function userPayload(User $user): array
     {
+        $user->loadMissing(['currentLocation.branch', 'latestLocationLog.branch']);
+        $registrationLocation = $user->lat !== null && $user->lng !== null
+            ? [
+                'lat' => (float) $user->lat,
+                'lng' => (float) $user->lng,
+                'address' => $user->address,
+                'maps_url' => $this->mapsUrl((float) $user->lat, (float) $user->lng),
+            ]
+            : null;
+        $currentLocation = $user->currentLocation
+            ? [
+                'lat' => (float) $user->currentLocation->lat,
+                'lng' => (float) $user->currentLocation->lng,
+                'accuracy' => $user->currentLocation->accuracy !== null ? (float) $user->currentLocation->accuracy : null,
+                'branch' => $user->currentLocation->branch?->name,
+                'status' => $user->currentLocation->status,
+                'updated_at' => $user->currentLocation->updated_at?->toDateTimeString(),
+                'maps_url' => $this->mapsUrl((float) $user->currentLocation->lat, (float) $user->currentLocation->lng),
+            ]
+            : null;
+        $latestLog = $user->latestLocationLog
+            ? [
+                'lat' => (float) $user->latestLocationLog->latitude,
+                'lng' => (float) $user->latestLocationLog->longitude,
+                'accuracy' => $user->latestLocationLog->accuracy !== null ? (float) $user->latestLocationLog->accuracy : null,
+                'branch' => $user->latestLocationLog->branch?->name,
+                'is_suspicious' => (bool) $user->latestLocationLog->is_suspicious,
+                'is_mock_location' => (bool) $user->latestLocationLog->is_mock_location,
+                'reason' => $user->latestLocationLog->suspicion_reason,
+                'created_at' => $user->latestLocationLog->created_at?->toDateTimeString(),
+                'maps_url' => $this->mapsUrl((float) $user->latestLocationLog->latitude, (float) $user->latestLocationLog->longitude),
+            ]
+            : null;
+        $latestPoint = $latestLog ?? $currentLocation;
+        $movementMeters = $registrationLocation && $latestPoint
+            ? $this->distanceMeters($registrationLocation['lat'], $registrationLocation['lng'], $latestPoint['lat'], $latestPoint['lng'])
+            : null;
+        $locationChanged = $movementMeters !== null && $movementMeters >= 250;
+        $locationRisk = match (true) {
+            (bool) data_get($latestLog, 'is_mock_location') => 'mock_location',
+            (bool) data_get($latestLog, 'is_suspicious') => 'suspicious',
+            $movementMeters !== null && $movementMeters >= 5000 => 'moved_far',
+            $locationChanged => 'changed',
+            default => 'normal',
+        };
+
         return [
             'id' => $user->id,
             'username' => $user->username,
@@ -1379,6 +1425,12 @@ class AdminController extends Controller
             'driver_state' => $user->driver?->is_available ? 'online' : 'offline',
             'driver_bansos_amount' => $user->driver?->bansos_amount,
             'driver_bpjs_jht_enabled' => $user->driver?->bpjs_jht_enabled ?? false,
+            'registration_location' => $registrationLocation,
+            'current_location' => $currentLocation,
+            'latest_gps' => $latestLog,
+            'location_changed' => $locationChanged,
+            'location_distance_meters' => $movementMeters,
+            'location_risk' => $locationRisk,
         ];
     }
 
@@ -1850,11 +1902,31 @@ class AdminController extends Controller
             'geofence_area' => $log->geofenceArea?->name,
             'latitude' => (float) $log->latitude,
             'longitude' => (float) $log->longitude,
+            'accuracy' => $log->accuracy !== null ? (float) $log->accuracy : null,
+            'provider' => $log->provider,
+            'is_mock_location' => (bool) $log->is_mock_location,
             'is_valid' => $log->is_valid,
             'is_suspicious' => $log->is_suspicious,
             'reason' => $log->suspicion_reason,
+            'maps_url' => $this->mapsUrl((float) $log->latitude, (float) $log->longitude),
             'created_at' => $log->created_at?->toDateTimeString(),
         ];
+    }
+
+    private function mapsUrl(float $lat, float $lng): string
+    {
+        return "https://www.google.com/maps?q={$lat},{$lng}";
+    }
+
+    private function distanceMeters(float $latA, float $lngA, float $latB, float $lngB): int
+    {
+        $earthRadius = 6371000;
+        $latDelta = deg2rad($latB - $latA);
+        $lngDelta = deg2rad($lngB - $lngA);
+        $a = sin($latDelta / 2) ** 2
+            + cos(deg2rad($latA)) * cos(deg2rad($latB)) * sin($lngDelta / 2) ** 2;
+
+        return (int) round($earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a)));
     }
 
     private function auditLogPayload(AuditLog $log): array

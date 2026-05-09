@@ -37,6 +37,28 @@ type User = {
   driver_bpjs_jht_enabled?: boolean
   is_ladies_driver?: boolean
   vehicle_seat_rows?: number | null
+  registration_location?: UserLocationPoint | null
+  current_location?: UserLocationPoint | null
+  latest_gps?: UserGpsPoint | null
+  location_changed?: boolean
+  location_distance_meters?: number | null
+  location_risk?: 'normal' | 'changed' | 'moved_far' | 'suspicious' | 'mock_location' | string
+}
+type UserLocationPoint = {
+  lat: number
+  lng: number
+  address?: string | null
+  accuracy?: number | null
+  branch?: string | null
+  status?: string | null
+  updated_at?: string | null
+  maps_url?: string | null
+}
+type UserGpsPoint = UserLocationPoint & {
+  is_suspicious?: boolean
+  is_mock_location?: boolean
+  reason?: string | null
+  created_at?: string | null
 }
 type DriverRow = User & {
   driver_id: number | null
@@ -185,7 +207,7 @@ type Branch = { id: number; name: string; area: string | null; latitude: string;
 type ServiceRow = { id: number; name: string; code: string }
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; is_active: boolean }
-type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; is_valid: boolean; is_suspicious: boolean; reason: string | null; created_at: string | null }
+type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; accuracy?: number | null; provider?: string | null; is_mock_location?: boolean; is_valid: boolean; is_suspicious: boolean; reason: string | null; maps_url?: string | null; created_at: string | null }
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; updated_at: string | null }
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
@@ -1304,9 +1326,31 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
     <section className="panel">
       <PanelHeader title="User management" action={`${users.length} records`} />
       <div className="table-toolbar"><select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><span className="toolbar-hint">Admin/GM only can edit Admin & GM accounts.</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Branch</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.username}</strong><span>{user.email}</span></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
+      <div className="table-wrap user-table-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.username}</strong><span>{user.email}</span></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><UserLocationSummary user={user} /></td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
       {editingUser && <UserEditModal user={editingUser} branches={branches} permissions={permissions} api={api} onClose={() => setEditingUser(null)} onSaved={async () => { await onChanged(); setEditingUser(null) }} />}
     </section>
+  )
+}
+
+function UserLocationSummary({ user }: { user: User }) {
+  const registration = user.registration_location
+  const latest = user.latest_gps ?? user.current_location
+  const risk = user.location_risk ?? 'normal'
+
+  if (!registration && !latest) {
+    return <span className="status muted">No GPS</span>
+  }
+
+  return (
+    <div className="user-location-summary">
+      <div className="user-location-links">
+        {registration?.maps_url && <a href={registration.maps_url} target="_blank" rel="noreferrer">Daftar</a>}
+        {latest?.maps_url && <a href={latest.maps_url} target="_blank" rel="noreferrer">GPS terbaru</a>}
+      </div>
+      <span className={`location-risk ${locationRiskTone(risk)}`}>{locationRiskLabel(risk)}</span>
+      <small>{formatLocationDistance(user.location_distance_meters)}{latest?.branch ? ` - ${latest.branch}` : ''}</small>
+      {user.latest_gps?.reason && <em>{user.latest_gps.reason}</em>}
+    </div>
   )
 }
 
@@ -3110,7 +3154,7 @@ function GeofencePanel({ geofences }: { geofences: Geofence[] }) {
 }
 
 function LocationLogsPanel({ logs }: { logs: LocationLog[] }) {
-  return <section className="panel"><PanelHeader title="Location logs" action={`${logs.length} logs`} /><div className="activity-list">{logs.map((log) => <div className="activity-item" key={log.id}><div className={log.is_suspicious ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{log.branch || '-'} - {log.latitude}, {log.longitude}</span></div><span className={log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div>)}</div></section>
+  return <section className="panel"><PanelHeader title="Location logs" action={`${logs.length} logs`} /><div className="activity-list">{logs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{log.branch || '-'} - {log.latitude}, {log.longitude}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'Mock GPS' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}</div></section>
 }
 
 function UserEditModal({ user, branches, permissions, api, onClose, onSaved }: { user: User; branches: Branch[]; permissions: Permissions; api: ApiClient; onClose: () => void; onSaved: () => void }) {
@@ -3472,6 +3516,27 @@ function branchLabel(branch: Branch) {
 function userBranchLabel(user: User) {
   if (!user.branch) return '-'
   return [user.branch, user.branch_area].filter(Boolean).join(' - ')
+}
+
+function formatLocationDistance(value?: number | null) {
+  if (value === null || value === undefined) return 'Belum ada pembanding'
+  if (value < 250) return 'Tidak berubah signifikan'
+  if (value < 1000) return `Berubah ${Math.round(value)} m`
+  return `Berubah ${(value / 1000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} km`
+}
+
+function locationRiskLabel(risk?: string | null) {
+  if (risk === 'mock_location') return 'Mock GPS'
+  if (risk === 'suspicious') return 'Suspicious'
+  if (risk === 'moved_far') return 'Pindah jauh'
+  if (risk === 'changed') return 'Lokasi berubah'
+  return 'Normal'
+}
+
+function locationRiskTone(risk?: string | null) {
+  if (risk === 'mock_location' || risk === 'suspicious' || risk === 'moved_far') return 'danger'
+  if (risk === 'changed') return 'warning'
+  return 'success'
 }
 
 function assetUrl(path: string) {
