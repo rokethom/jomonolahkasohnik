@@ -41,6 +41,7 @@ class DriverController extends Controller
             ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user'])
             ->where(function ($query) use ($driver, $canReceiveOrders): void {
                 $query->where('driver_id', $driver->id);
+                $query->orWhereHas('operHandleRequests', fn ($query) => $query->where('driver_id', $driver->id));
 
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
@@ -108,7 +109,7 @@ class DriverController extends Controller
             'finance' => $deposit,
             'performance' => $finance->performance($driver),
             'orders' => $orders->map(fn (Order $order): array => [
-                ...$this->orderPayload($order),
+                ...$this->orderPayload($order, $driver),
                 'eligibility' => $multiOrder->canAcceptOrder($driver, $order),
             ]),
             'branch_accepted_orders' => $branchAcceptedOrders->map(fn (Order $order): array => $this->orderPayload($order)),
@@ -429,11 +430,21 @@ class DriverController extends Controller
         return null;
     }
 
-    private function orderPayload(Order $order): array
+    private function orderPayload(Order $order, ?Driver $forDriver = null): array
     {
-        $operHandle = $order->relationLoaded('operHandleRequests')
-            ? $order->operHandleRequests->sortByDesc('updated_at')->first()
-            : $order->operHandleRequests()->latest('updated_at')->first();
+        if ($order->relationLoaded('operHandleRequests')) {
+            $operHandles = $order->operHandleRequests;
+            if ($forDriver) {
+                $operHandles = $operHandles->where('driver_id', $forDriver->id);
+            }
+            $operHandle = $operHandles->sortByDesc('updated_at')->first();
+        } else {
+            $operHandleQuery = $order->operHandleRequests()->latest('updated_at');
+            if ($forDriver) {
+                $operHandleQuery->where('driver_id', $forDriver->id);
+            }
+            $operHandle = $operHandleQuery->first();
+        }
 
         return [
             'id' => $order->id,

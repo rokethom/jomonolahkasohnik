@@ -1477,14 +1477,14 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
   const driver = useDriverStore((state) => state.driver)
   const branchRequestOrders = useDriverStore((state) => state.branchRequestOrders)
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date().toISOString()))
-  const doneOrders = orders.filter((order) => order.status === 'done' || order.status === 'cancelled')
+  const historyOrders = orders.filter((order) => order.status === 'done' || order.status === 'cancelled' || Boolean(order.operHandleStatus))
   const monthOptions = useMemo(() => {
-    const keys = new Set(doneOrders.map((order) => monthKey(order.updatedAt ?? order.acceptedAt)).filter(Boolean))
+    const keys = new Set(historyOrders.map((order) => monthKey(historyOrderTime(order))).filter(Boolean))
     recentMonthKeys(12).forEach((key) => keys.add(key))
 
     return [...keys].sort().reverse()
-  }, [doneOrders])
-  const visibleOrders = doneOrders.filter((order) => monthKey(order.updatedAt ?? order.acceptedAt) === selectedMonth)
+  }, [historyOrders])
+  const visibleOrders = historyOrders.filter((order) => monthKey(historyOrderTime(order)) === selectedMonth)
   const driverIncome = visibleOrders
     .filter((order) => order.status === 'done')
     .reduce((sum, order) => sum + Math.max(order.total ?? 0, 0), 0)
@@ -1508,11 +1508,12 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
         </div>
       </section>
       {loading && <SkeletonCards />}
-      {!loading && doneOrders.length === 0 && <EmptyState title="Belum ada riwayat" copy="Order selesai akan tampil di sini." />}
-      {!loading && doneOrders.length > 0 && visibleOrders.length === 0 && <EmptyState title="Tidak ada order" copy="Tidak ada riwayat pada bulan ini." />}
+      {!loading && historyOrders.length === 0 && <EmptyState title="Belum ada riwayat" copy="Order selesai, batal, dan oper handle akan tampil di sini." />}
+      {!loading && historyOrders.length > 0 && visibleOrders.length === 0 && <EmptyState title="Tidak ada order" copy="Tidak ada riwayat pada bulan ini." />}
       <div className="history-list">
         {visibleOrders.map((order) => {
           const route = routeInfoFor(order)
+          const isOperHandleHistory = Boolean(order.operHandleStatus)
 
           return (
           <button className="history-row panel" key={order.id} onClick={() => selectOrder(order.id)} type="button">
@@ -1520,13 +1521,15 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
               <div>
                 <strong>{order.code}</strong>
                 <span className={`history-status ${order.status}`}>{statusLabel(order.status)}</span>
+                {isOperHandleHistory && <span className={`history-status oper-handle ${order.operHandleStatus}`}>Oper {operHandleStatusLabel(order.operHandleStatus)}</span>}
               </div>
               <p>{shortAddress(route.pickupAddress)} <span>→</span> {shortAddress(route.destinationAddress)}</p>
-              <small>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</small>
+              {order.operHandleReason && <em className="history-oper-reason">Alasan: {order.operHandleReason}</em>}
+              <small>{formatHistoryTime(historyOrderTime(order))}</small>
             </div>
             <div className="history-total">
               <b>Rp {formatMoney(order.total)}</b>
-              <span>{order.distanceKm} km</span>
+              <span>{isOperHandleHistory ? 'Riwayat oper handle' : `${order.distanceKm} km`}</span>
             </div>
           </button>
         )})}
@@ -1961,6 +1964,9 @@ function sortNewestOrderFirst(a: Order, b: Order) {
   if (timeA !== timeB) return timeB - timeA
 
   return b.id - a.id
+}
+function historyOrderTime(order: Order) {
+  return order.operHandleUpdatedAt ?? order.updatedAt ?? order.acceptedAt
 }
 function formatMoney(value: number) { return value.toLocaleString('id-ID') }
 function driverPaymentLabel(method?: string | null) {

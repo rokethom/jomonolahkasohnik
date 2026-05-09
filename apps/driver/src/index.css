@@ -1321,6 +1321,29 @@ input:focus, textarea:focus, select:focus {
   color: var(--red);
   background: rgba(219, 58, 52, 0.12);
 }
+.history-status.oper-handle {
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.14);
+}
+.history-status.oper-handle.pending {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.16);
+}
+.history-status.oper-handle.approved {
+  color: var(--green-dark);
+  background: rgba(15, 159, 110, 0.14);
+}
+.history-status.oper-handle.rejected {
+  color: var(--red);
+  background: rgba(219, 58, 52, 0.12);
+}
+.history-oper-reason {
+  color: rgba(226, 239, 255, 0.72);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .history-total {
   display: grid;
   justify-items: end;
