@@ -2091,7 +2091,7 @@
 
 .profile-page {
   min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
-  padding: 0 0 calc(34px + env(safe-area-inset-bottom));
+  padding: 0 0 calc(90px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f7fbfa 0%, #fff 32%);
   color: #111b21;
   overflow-x: hidden;
@@ -2100,8 +2100,8 @@
 .wa-profile-hero {
   display: grid;
   place-items: center;
-  gap: 14px;
-  padding: 28px 18px 30px;
+  gap: 12px;
+  padding: 24px 18px 26px;
   border-bottom: 1px solid #edf1f3;
   background:
     radial-gradient(circle at 50% 0%, rgba(0, 168, 132, 0.12), transparent 34%),
@@ -2142,9 +2142,9 @@
 
 .profile-photo-button {
   position: relative;
-  width: 138px;
-  height: 138px;
-  flex: 0 0 138px;
+  width: 126px;
+  height: 126px;
+  flex: 0 0 126px;
   border: 0;
   border-radius: 50%;
   background: #d9f1ff;
@@ -2192,7 +2192,7 @@
 
 .wa-profile-summary strong {
   color: #111b21;
-  font-size: 22px;
+  font-size: 21px;
   line-height: 1.15;
 }
 
@@ -2203,7 +2203,7 @@
 }
 
 .wa-profile-status-grid {
-  width: min(100%, 340px);
+  width: min(100%, 352px);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -2266,15 +2266,15 @@
 .wa-profile-form {
   display: grid;
   gap: 0;
-  padding: 8px 0 18px;
+  padding: 10px 0 18px;
 }
 
 .wa-profile-field {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 64px 1fr;
   align-items: start;
   gap: 0;
-  padding: 18px 22px 16px 0;
+  padding: 16px 22px 12px 0;
 }
 
 .wa-profile-icon {
@@ -2286,16 +2286,16 @@
 
 .wa-profile-control {
   display: grid;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
-  padding-bottom: 14px;
+  padding-bottom: 13px;
   border-bottom: 1px solid #edf1f3;
 }
 
 .wa-profile-control strong {
   color: #111b21;
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 800;
 }
 
 .wa-profile-control input,
@@ -2318,7 +2318,7 @@
 }
 
 .wa-profile-control textarea {
-  min-height: 74px;
+  min-height: 66px;
   max-height: 180px;
   resize: vertical;
 }

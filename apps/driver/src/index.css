@@ -405,6 +405,46 @@ input:focus, textarea:focus, select:focus {
 .setoran-breakdown {
   display: grid;
   gap: 8px;
+  min-width: 0;
+}
+.deposit-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.deposit-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(191, 219, 254, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 12px;
+}
+.deposit-summary small {
+  color: rgba(226, 239, 255, 0.68);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.deposit-summary strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.deposit-status {
+  min-width: 104px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.deposit-status.paid {
+  border-color: rgba(69, 230, 167, 0.26);
+  background: rgba(69, 230, 167, 0.12);
+}
+.deposit-status.unpaid {
+  border-color: rgba(248, 196, 113, 0.28);
+  background: rgba(248, 196, 113, 0.12);
 }
 .performance-panel {
   display: grid;
@@ -1611,6 +1651,7 @@ input:focus, textarea:focus, select:focus {
 
 .bottom-nav {
   position: fixed;
+  z-index: 30;
   right: 0;
   bottom: 0;
   left: 0;
@@ -1645,10 +1686,11 @@ input:focus, textarea:focus, select:focus {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 90;
   display: grid;
-  place-items: center;
-  padding: 18px;
+  align-items: end;
+  justify-items: center;
+  padding: 18px 18px calc(116px + env(safe-area-inset-bottom));
   background: rgba(1, 8, 18, 0.62);
   backdrop-filter: blur(14px);
 }
@@ -1656,7 +1698,7 @@ input:focus, textarea:focus, select:focus {
   display: grid;
   gap: 14px;
   width: min(100%, 390px);
-  max-height: min(82vh, 620px);
+  max-height: min(calc(100dvh - 150px), 620px);
   overflow: auto;
   border: 1px solid rgba(191, 219, 254, 0.22);
   border-radius: 28px;
@@ -1673,7 +1715,11 @@ input:focus, textarea:focus, select:focus {
   justify-content: space-between;
   gap: 12px;
 }
-.modal-card h2 { margin: 0; }
+.modal-card h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+}
 .modal-card header button {
   display: grid;
   width: 38px;

@@ -12,7 +12,6 @@ import {
   Headphones,
   Home,
   Image as ImageIcon,
-  Info,
   Mic,
   MessageCircle,
   MoreVertical,
@@ -3244,9 +3243,6 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
       >
         <ProfileField icon={<UserRound size={25} />} label="Nama" hint="Nama ini terlihat oleh operator dan driver.">
           <input value={name} onChange={(event) => updateField(setName)(event.target.value)} placeholder="Nama customer" autoComplete="name" />
-        </ProfileField>
-        <ProfileField icon={<Info size={25} />} label="Tentang" hint="Status singkat untuk akun JojoApp.">
-          <input value="Pengguna JojoApp" readOnly />
         </ProfileField>
         <ProfileField icon={<Phone size={25} />} label="Telepon" hint="Nomor aktif untuk konfirmasi order.">
           <input value={phone} onChange={(event) => updateField(setPhone)(event.target.value)} placeholder="+62..." inputMode="tel" autoComplete="tel" />

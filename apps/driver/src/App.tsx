@@ -818,7 +818,16 @@ function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: (
   const previousRemaining = Number(finance.previous_deposit?.remaining ?? 0)
   return (
     <Modal title="Detail Setoran" onClose={onClose}>
-      <p className="modal-copy">Due date: {finance.due_date ?? '-'} · Status: {finance.status}</p>
+      <div className="deposit-summary">
+        <span>
+          <small>Jatuh tempo</small>
+          <strong>{formatDepositDueDate(finance.due_date)}</strong>
+        </span>
+        <span className={`deposit-status ${String(finance.status ?? '').toLowerCase()}`}>
+          <small>Status</small>
+          <strong>{finance.status ?? '-'}</strong>
+        </span>
+      </div>
       <div className="setoran-breakdown">
         <div className="total-row"><span>Sisa bulan lalu</span><strong>Rp {formatMoney(previousRemaining)}</strong></div>
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
@@ -2097,6 +2106,21 @@ function eligibilityReason(reason?: string | null) {
 function formatHistoryTime(value?: string | null) {
   return value ? new Date(value).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Waktu belum tersedia'
 }
+
+function formatDepositDueDate(value?: string | null) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.split('T')[0] || value
+
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 function monthKey(value?: string | null) {
   if (!value) return ''
   const date = new Date(value)
