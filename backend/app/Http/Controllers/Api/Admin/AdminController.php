@@ -53,9 +53,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminController extends Controller
 {
-    public function bootstrap(Request $request, SettingService $settings, OrderService $orders, SLAService $slaService): JsonResponse
+    public function bootstrap(Request $request, SettingService $settings, OrderService $orders, SLAService $slaService, DriverSuspendService $driverSuspensions): JsonResponse
     {
         $orders->cancelExpiredCreatedOrders();
+        $driverSuspensions->releaseExpiredSuspensions();
 
         $user = $request->user()->load('branch');
         $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($user)));

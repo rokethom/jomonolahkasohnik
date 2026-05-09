@@ -126,7 +126,8 @@ class DriverController extends Controller
 
     public function profile(Request $request): JsonResponse
     {
-        $this->ensureDriver($request);
+        $driver = $this->ensureDriver($request);
+        app(DriverSuspendService::class)->releaseIfExpired($driver);
 
         return response()->json([
             'data' => $this->driverPayload($request),
@@ -136,6 +137,8 @@ class DriverController extends Controller
     public function updateAvailability(Request $request, DriverFinanceService $finance): JsonResponse
     {
         $driver = $this->ensureDriver($request)->load('user.branch');
+        app(DriverSuspendService::class)->releaseIfExpired($driver);
+        $driver->refresh();
         $payload = $request->validate([
             'online' => ['required', 'boolean'],
         ]);
@@ -364,6 +367,10 @@ class DriverController extends Controller
     {
         $user = $request->user()->load('driver.suspensions');
         $driver = $user->driver;
+        if ($driver && app(DriverSuspendService::class)->releaseIfExpired($driver)) {
+            $user->load('driver.suspensions');
+            $driver = $user->driver;
+        }
         $canReceiveOrders = $driver ? $this->canReceiveOrders($driver, $deposit) : false;
         $activeSuspension = $driver?->suspensions
             ?->filter(fn ($suspension) => in_array($suspension->status, ['active', 'suspended', 'suspended_unpaid'], true))

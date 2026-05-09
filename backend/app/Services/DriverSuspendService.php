@@ -90,4 +90,39 @@ class DriverSuspendService
             ]);
         });
     }
+
+    public function releaseIfExpired(Driver $driver): bool
+    {
+        if (
+            $driver->status !== 'suspended'
+            || ! $driver->suspended_until
+            || $driver->suspended_until->isFuture()
+        ) {
+            return false;
+        }
+
+        $this->release($driver->loadMissing('user'));
+
+        return true;
+    }
+
+    public function releaseExpiredSuspensions(): int
+    {
+        $released = 0;
+
+        Driver::query()
+            ->with('user')
+            ->where('status', 'suspended')
+            ->whereNotNull('suspended_until')
+            ->where('suspended_until', '<=', now())
+            ->chunkById(50, function ($drivers) use (&$released): void {
+                foreach ($drivers as $driver) {
+                    if ($this->releaseIfExpired($driver)) {
+                        $released++;
+                    }
+                }
+            });
+
+        return $released;
+    }
 }
