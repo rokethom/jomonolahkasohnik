@@ -3,65 +3,95 @@
     $lat = -7.70630000;
     $lng = 114.00980000;
     $radius = 5000;
+    $googleMapsKey = app(\App\Services\SettingService::class)->get('google_maps_api_key');
 @endphp
-
-@once
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-@endonce
 
 <div class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-sm text-gray-600 dark:text-gray-300">
-            Klik map untuk mengambil titik pusat geofence. Radius mengikuti input meter.
+            Ambil titik pusat geofence hanya dari Google Maps. Radius mengikuti input meter.
         </div>
-        <button
-            type="button"
-            id="{{ $mapId }}-current-location"
-            class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-700"
-        >
-            Gunakan lokasi saya
-        </button>
+        <div class="flex flex-wrap gap-2">
+            <a
+                id="{{ $mapId }}-open-google"
+                href="https://www.google.com/maps?q={{ $lat }},{{ $lng }}"
+                target="_blank"
+                rel="noreferrer"
+                class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
+            >
+                Buka Google Maps
+            </a>
+            <button
+                type="button"
+                id="{{ $mapId }}-current-location"
+                class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-700"
+            >
+                Gunakan lokasi saya
+            </button>
+        </div>
     </div>
 
-    <div
-        id="{{ $mapId }}"
-        style="height: 380px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35);"
-    ></div>
+    @if ($googleMapsKey)
+        <div
+            id="{{ $mapId }}"
+            style="height: 380px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35);"
+        ></div>
+    @else
+        <div
+            id="{{ $mapId }}"
+            style="min-height: 170px; border-radius: 8px; border: 1px dashed rgba(148, 163, 184, .55); padding: 20px; display: grid; place-items: center; text-align: center; color: rgb(100, 116, 139);"
+        >
+            Google Maps API key belum aktif. Isi API key di System Settings untuk picker interaktif, atau ambil koordinat dari tombol Buka Google Maps.
+        </div>
+    @endif
 </div>
 
 <script>
     (() => {
-        const init = () => {
+        const googleMapsKey = @json($googleMapsKey);
+        const fallbackLat = @json($lat);
+        const fallbackLng = @json($lng);
+        const fallbackRadius = @json($radius);
+
+        window.jojoLoadGoogleMaps = window.jojoLoadGoogleMaps || ((apiKey) => {
+            if (window.google?.maps) {
+                return Promise.resolve(window.google.maps);
+            }
+
+            if (window.jojoGoogleMapsPromise) {
+                return window.jojoGoogleMapsPromise;
+            }
+
+            window.jojoGoogleMapsPromise = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+                script.async = true;
+                script.defer = true;
+                script.onload = () => resolve(window.google.maps);
+                script.onerror = () => reject(new Error('Google Maps gagal dimuat'));
+                document.head.appendChild(script);
+            });
+
+            return window.jojoGoogleMapsPromise;
+        });
+
+        const init = async () => {
             const mapElement = document.getElementById(@json($mapId));
 
-            if (!mapElement || mapElement.dataset.loaded === '1' || typeof L === 'undefined') {
+            if (!mapElement || mapElement.dataset.loaded) {
                 return;
             }
 
-            mapElement.dataset.loaded = '1';
+            mapElement.dataset.loaded = 'loading';
 
             const latInput = document.getElementById('geofence_center_latitude') || document.querySelector('input[name="data[center_latitude]"]');
             const lngInput = document.getElementById('geofence_center_longitude') || document.querySelector('input[name="data[center_longitude]"]');
             const radiusInput = document.getElementById('geofence_radius_meters') || document.querySelector('input[name="data[radius_meters]"]');
             const locationButton = document.getElementById(@json($mapId.'-current-location'));
-            const initialLat = parseFloat(latInput?.value || @json($lat));
-            const initialLng = parseFloat(lngInput?.value || @json($lng));
-            const initialRadius = parseInt(radiusInput?.value || @json($radius), 10);
-            const map = L.map(mapElement).setView([initialLat, initialLng], 14);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '&copy; OpenStreetMap',
-            }).addTo(map);
-
-            const marker = L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
-            const circle = L.circle([initialLat, initialLng], {
-                radius: initialRadius,
-                color: '#16a34a',
-                fillColor: '#22c55e',
-                fillOpacity: 0.18,
-            }).addTo(map);
+            const googleLink = document.getElementById(@json($mapId.'-open-google'));
+            const initialLat = parseFloat(latInput?.value || fallbackLat);
+            const initialLng = parseFloat(lngInput?.value || fallbackLng);
+            const initialRadius = parseInt(radiusInput?.value || fallbackRadius, 10);
 
             const setInputValue = (input, value) => {
                 if (!input) return;
@@ -72,52 +102,36 @@
                 input.dispatchEvent(new Event('blur', { bubbles: true }));
             };
 
-            const sync = (lat, lng, center = false) => {
-                marker.setLatLng([lat, lng]);
-                circle.setLatLng([lat, lng]);
+            const updateGoogleLink = (lat, lng) => {
+                if (!googleLink) return;
 
+                googleLink.href = `https://www.google.com/maps?q=${lat.toFixed(8)},${lng.toFixed(8)}`;
+            };
+
+            let map = null;
+            let marker = null;
+            let circle = null;
+
+            const sync = (lat, lng, center = false) => {
                 setInputValue(latInput, lat.toFixed(8));
                 setInputValue(lngInput, lng.toFixed(8));
+                updateGoogleLink(lat, lng);
 
-                if (center) {
-                    map.setView([lat, lng], Math.max(map.getZoom(), 15));
+                if (marker) {
+                    marker.setPosition({ lat, lng });
+                }
+
+                if (circle) {
+                    circle.setCenter({ lat, lng });
+                }
+
+                if (map && center) {
+                    map.setCenter({ lat, lng });
+                    map.setZoom(Math.max(map.getZoom() || 14, 15));
                 }
             };
 
-            marker.on('dragend', () => {
-                const point = marker.getLatLng();
-                sync(point.lat, point.lng);
-            });
-
-            map.on('click', (event) => sync(event.latlng.lat, event.latlng.lng));
-
-            const refreshFromInputs = (center = false) => {
-                const lat = parseFloat(latInput?.value);
-                const lng = parseFloat(lngInput?.value);
-
-                if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                    marker.setLatLng([lat, lng]);
-                    circle.setLatLng([lat, lng]);
-                    map.setView([lat, lng], center ? Math.max(map.getZoom(), 15) : map.getZoom());
-                }
-            };
-
-            [latInput, lngInput].forEach((input) => {
-                input?.addEventListener('input', () => refreshFromInputs(false));
-                input?.addEventListener('change', () => refreshFromInputs(false));
-                input?.addEventListener('blur', () => {
-                    const lat = parseFloat(latInput?.value);
-                    const lng = parseFloat(lngInput?.value);
-
-                    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-                        refreshFromInputs(true);
-                    }
-                });
-            });
-
-            radiusInput?.addEventListener('input', () => {
-                circle.setRadius(parseInt(radiusInput.value || '1', 10));
-            });
+            updateGoogleLink(initialLat, initialLng);
 
             locationButton?.addEventListener('click', () => {
                 if (!navigator.geolocation) return;
@@ -127,10 +141,83 @@
                 });
             });
 
-            setTimeout(() => {
-                map.invalidateSize();
-                map.fitBounds(circle.getBounds(), { padding: [24, 24], maxZoom: 16 });
-            }, 250);
+            [latInput, lngInput].forEach((input) => {
+                input?.addEventListener('input', () => {
+                    const lat = parseFloat(latInput?.value);
+                    const lng = parseFloat(lngInput?.value);
+
+                    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+                    updateGoogleLink(lat, lng);
+                    marker?.setPosition({ lat, lng });
+                    circle?.setCenter({ lat, lng });
+                    map?.setCenter({ lat, lng });
+                });
+            });
+
+            radiusInput?.addEventListener('input', () => {
+                const value = parseInt(radiusInput.value || '1', 10);
+
+                if (circle && Number.isFinite(value)) {
+                    circle.setRadius(Math.max(1, value));
+                }
+            });
+
+            if (!googleMapsKey) {
+                mapElement.dataset.loaded = '1';
+                return;
+            }
+
+            try {
+                await window.jojoLoadGoogleMaps(googleMapsKey);
+            } catch (error) {
+                mapElement.textContent = 'Google Maps gagal dimuat. Gunakan tombol Buka Google Maps untuk mengambil koordinat.';
+                return;
+            }
+
+            if (!window.google?.maps) {
+                return;
+            }
+
+            mapElement.dataset.loaded = '1';
+            map = new window.google.maps.Map(mapElement, {
+                center: { lat: initialLat, lng: initialLng },
+                zoom: 14,
+                mapTypeControl: false,
+                streetViewControl: false,
+                fullscreenControl: true,
+            });
+            marker = new window.google.maps.Marker({
+                position: { lat: initialLat, lng: initialLng },
+                map,
+                draggable: true,
+                title: 'Titik pusat geofence',
+            });
+            circle = new window.google.maps.Circle({
+                map,
+                center: { lat: initialLat, lng: initialLng },
+                radius: initialRadius,
+                strokeColor: '#16a34a',
+                strokeOpacity: 0.9,
+                strokeWeight: 2,
+                fillColor: '#22c55e',
+                fillOpacity: 0.18,
+            });
+
+            map.fitBounds(circle.getBounds());
+
+            map.addListener('click', (event) => {
+                if (!event.latLng) return;
+
+                sync(event.latLng.lat(), event.latLng.lng());
+            });
+
+            marker.addListener('dragend', () => {
+                const position = marker.getPosition();
+                if (!position) return;
+
+                sync(position.lat(), position.lng());
+            });
         };
 
         document.addEventListener('livewire:navigated', init);
