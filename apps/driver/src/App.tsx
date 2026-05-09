@@ -738,7 +738,8 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
           <strong>Rp {formatMoney(currentPeriodDeposit)}</strong>
           <small>{finance?.period_label ?? 'bulan ini'}</small>
         </button>
-        <Metric label="Order diterima / berjalan" value={`${acceptedTotal} / ${activeOrders.length}`} />
+        <Metric label="Order diterima" value={acceptedTotal} />
+        <Metric label="Order aktif" value={activeOrders.length} />
       </section>
 
       <section className="quick-grid">
@@ -1731,7 +1732,7 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
   return <div className="toast-stack">{toasts.map((toast) => <div key={toast.id} className={`toast ${toast.tone}`}>{toast.message}</div>)}</div>
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <article className="metric panel"><span>{label}</span><strong>{value}</strong></article> }
+function Metric({ label, value }: { label: string; value: string | number }) { return <article className="metric panel"><span>{label}</span><strong>{value}</strong></article> }
 function SectionTitle({ title, action }: { title: string; action?: string }) { return <div className="section-title"><h2>{title}</h2>{action && <span>{action}</span>}</div> }
 function PageTitle({ title, subtitle }: { title: string; subtitle: string }) { return <header className="page-title"><h1>{title}</h1><p>{subtitle}</p></header> }
 function StatusPill({ driver }: { driver: Driver }) { return <span className={`status-pill ${driver.status}`}>{driver.status.replace('_', ' ')}</span> }

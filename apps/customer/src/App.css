@@ -2091,10 +2091,11 @@
 
 .profile-page {
   min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
-  padding: 0 0 calc(90px + env(safe-area-inset-bottom));
+  padding: 0 0 calc(40px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f7fbfa 0%, #fff 32%);
   color: #111b21;
   overflow-x: hidden;
+  scroll-padding-bottom: 28px;
 }
 
 .wa-profile-hero {
@@ -2282,6 +2283,11 @@
   place-items: start center;
   padding-top: 5px;
   color: #5f6b71;
+  transition: color 0.18s ease;
+}
+
+.wa-profile-field:focus-within .wa-profile-icon {
+  color: #008069;
 }
 
 .wa-profile-control {
@@ -2312,6 +2318,11 @@
   line-height: 1.4;
 }
 
+.wa-profile-control input:focus,
+.wa-profile-control textarea:focus {
+  box-shadow: none;
+}
+
 .wa-profile-control input:read-only {
   color: #008069;
   font-weight: 800;
@@ -2330,9 +2341,6 @@
 }
 
 .wa-save-button {
-  position: sticky;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  z-index: 5;
   min-height: 52px;
   margin: 18px 22px 0;
   border: 0;
@@ -2341,12 +2349,36 @@
   color: #fff;
   font-weight: 900;
   box-shadow: 0 10px 24px rgba(0, 168, 132, 0.2);
-  transform: translateZ(0);
 }
 
 .wa-save-button:disabled {
   opacity: 0.58;
   box-shadow: none;
+}
+
+@media (max-height: 760px) {
+  .wa-profile-hero {
+    gap: 8px;
+    padding: 18px 18px 20px;
+  }
+
+  .profile-photo-button {
+    width: 102px;
+    height: 102px;
+    flex-basis: 102px;
+  }
+
+  .profile-photo-button span {
+    right: 6px;
+    bottom: 6px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .wa-profile-field {
+    grid-template-columns: 56px 1fr;
+    padding: 13px 20px 10px 0;
+  }
 }
 
 .payment-choice,
@@ -2800,51 +2832,6 @@
   border-color: #bbf7d0;
   background: #f0fdf4;
   color: #15803d;
-}
-
-.profile-address-note {
-  border: 1px solid #dce8e4;
-  border-radius: 12px;
-  background: #f8fbfa;
-  color: #52616b;
-  font-size: 12px;
-  line-height: 1.45;
-  overflow: hidden;
-}
-
-.profile-address-note summary {
-  min-height: 40px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #0574d8;
-  cursor: pointer;
-  font-weight: 900;
-  list-style: none;
-}
-
-.profile-address-note summary::-webkit-details-marker {
-  display: none;
-}
-
-.profile-address-note summary::after {
-  content: '+';
-  margin-left: auto;
-  color: #8aa0ae;
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.profile-address-note[open] summary::after {
-  content: '-';
-}
-
-.profile-address-note p {
-  margin: 0;
-  padding: 0 12px 12px 36px;
-  color: #667078;
-  font-weight: 800;
 }
 
 .profile-edit-form .google-login-button {

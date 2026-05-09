@@ -3109,7 +3109,6 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
     : user?.area_status === 'outside_branch'
       ? 'Di luar area cabang'
       : 'Area belum tervalidasi'
-  const locationUpdatedAt = user?.location_updated_at ? formatDateTime(user.location_updated_at) : 'Belum ada update GPS'
   const photoUrl = useMemo(() => {
     if (profilePhotoPreview) return profilePhotoPreview
     if (!user?.profile_photo_url) return ''
@@ -3253,16 +3252,6 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         <ProfileField icon={<MapPin size={25} />} label="Alamat" hint="Alamat profil, alamat order tetap bisa diisi manual.">
           <textarea value={address} onChange={(event) => updateField(setAddress)(event.target.value)} placeholder="Alamat utama" autoComplete="street-address" />
         </ProfileField>
-        <ProfileField icon={<Clock size={25} />} label="GPS Terakhir" hint="Dipakai sistem untuk validasi area dan antisipasi fake order.">
-          <input value={locationUpdatedAt} readOnly />
-        </ProfileField>
-        <details className="profile-address-note">
-          <summary>
-            <ShieldCheck size={16} />
-            <span>Info alamat & GPS</span>
-          </summary>
-          <p>Alamat ini hanya untuk display dan tujuan. Lokasi validasi tetap memakai GPS yang tersimpan.</p>
-        </details>
         <button className="wa-save-button" disabled={saving || !name.trim() || !phone.trim() || !address.trim()}>{saving ? 'Menyimpan...' : 'Simpan Profile'}</button>
       </form>
     </div>
@@ -3555,14 +3544,6 @@ function formatOrderTime(value?: string) {
 function formatOrderDate(value?: string) {
   if (!value) return todayLabel()
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
-}
-
-function formatDateTime(value?: string) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-
-  return `${formatOrderDate(value)} ${formatOrderTime(value)}`
 }
 
 function profileText(value: unknown, fallback = '') {
