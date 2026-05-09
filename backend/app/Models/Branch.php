@@ -49,40 +49,30 @@ class Branch extends Model
     protected static function booted(): void
     {
         static::saved(function (Branch $branch): void {
-            $branch->syncPrimaryGeofenceArea();
+            $branch->createPrimaryGeofenceAreaIfMissing();
         });
     }
 
-    public function syncPrimaryGeofenceArea(): ?GeofenceArea
+    public function createPrimaryGeofenceAreaIfMissing(): ?GeofenceArea
     {
         if (! is_numeric($this->latitude) || ! is_numeric($this->longitude)) {
             return null;
         }
 
-        $radiusMeters = max(100, (int) round(((float) ($this->radius_km ?: 5)) * 1000));
-        $name = $this->default_geofence_name;
         $area = $this->geofenceAreas()->oldest('id')->first();
-        $payload = [
-            'name' => $area?->name ?: $name,
-            'description' => $area?->description ?: 'Default geofence dari titik cabang.',
-            'center_latitude' => $this->latitude,
-            'center_longitude' => $this->longitude,
-            'radius_meters' => $radiusMeters,
-            'is_active' => true,
-            'priority' => max(10, (int) ($area?->priority ?? 10)),
-        ];
-
         if ($area) {
-            $area->forceFill($payload);
-
-            if ($area->isDirty()) {
-                $area->save();
-            }
-
             return $area;
         }
 
-        return $this->geofenceAreas()->create($payload);
+        return $this->geofenceAreas()->create([
+            'name' => $this->default_geofence_name,
+            'description' => 'Default geofence dari titik cabang. Radius utama tetap diatur dari menu Geofence Area.',
+            'center_latitude' => $this->latitude,
+            'center_longitude' => $this->longitude,
+            'radius_meters' => 5000,
+            'is_active' => true,
+            'priority' => 10,
+        ]);
     }
 
     public function getDefaultGeofenceNameAttribute(): string

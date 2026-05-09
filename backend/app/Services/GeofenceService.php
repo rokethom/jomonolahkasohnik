@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\Branch;
 use App\Models\GeofenceArea;
 
 class GeofenceService
@@ -28,10 +27,6 @@ class GeofenceService
 
     public function findValidGeofence(?int $branchId, float $lat, float $lng): ?GeofenceArea
     {
-        if ($branchId) {
-            Branch::query()->find($branchId)?->syncPrimaryGeofenceArea();
-        }
-
         return GeofenceArea::query()
             ->with('branch')
             ->where('is_active', true)

@@ -51,9 +51,8 @@ class GeofenceAreaResource extends Resource
                                 $set('name', $branch->default_geofence_name);
                                 $set('center_latitude', $branch->latitude);
                                 $set('center_longitude', $branch->longitude);
-                                $set('radius_meters', max(100, (int) round(((float) ($branch->radius_km ?: 5)) * 1000)));
                             })
-                            ->helperText('Pilih cabang untuk mengisi titik pusat dan radius geofence otomatis dari data cabang.')
+                            ->helperText('Pilih cabang hanya untuk mengambil nama dan titik awal. Radius utama diatur dari field Radius pada Geofence Area.')
                             ->required(),
                         Forms\Components\Textarea::make('description')
                             ->columnSpanFull(),

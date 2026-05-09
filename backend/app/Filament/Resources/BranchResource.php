@@ -44,11 +44,12 @@ class BranchResource extends Resource
                             ->live(onBlur: true)
                             ->extraInputAttributes(['id' => 'branch_longitude']),
                         Forms\Components\TextInput::make('radius_km')
-                            ->label('Radius cabang')
+                            ->label('Radius default awal')
                             ->numeric()
                             ->minValue(0.1)
                             ->default(5)
                             ->suffix('KM')
+                            ->helperText('Bukan radius validasi utama. Radius operasional aktif diambil dari Geofence Area.')
                             ->required(),
                         Forms\Components\View::make('filament.forms.components.branch-map-picker')
                             ->columnSpanFull(),
@@ -71,8 +72,10 @@ class BranchResource extends Resource
                 Tables\Columns\TextColumn::make('longitude')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('radius_km')
+                    ->label('Default KM')
                     ->suffix(' KM')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('geofence_areas_count')
                     ->state(fn (Branch $record): string => $record->geofenceAreas
                         ->pluck('name')

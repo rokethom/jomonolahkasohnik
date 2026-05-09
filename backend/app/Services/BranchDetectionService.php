@@ -13,13 +13,7 @@ class BranchDetectionService
 
     public function detect(float $lat, float $lng): array
     {
-        $geofenceMatch = $this->detectByGeofence($lat, $lng);
-
-        if ($geofenceMatch['branch']) {
-            return $geofenceMatch;
-        }
-
-        return $this->detectByBranchRadius($lat, $lng);
+        return $this->detectByGeofence($lat, $lng);
     }
 
     public function distanceToBranch(float $lat, float $lng, Branch $branch): float
@@ -56,30 +50,4 @@ class BranchDetectionService
         return $match ?? ['branch' => null, 'area' => null, 'distance_meters' => null, 'source' => 'geofence'];
     }
 
-    private function detectByBranchRadius(float $lat, float $lng): array
-    {
-        $nearest = Branch::query()
-            ->get()
-            ->map(fn (Branch $branch): array => [
-                'branch' => $branch,
-                'area' => null,
-                'distance_meters' => $this->distanceToBranch($lat, $lng, $branch),
-                'radius_meters' => ((float) ($branch->radius_km ?? 5)) * 1000,
-                'source' => 'branch_radius',
-            ])
-            ->sortBy('distance_meters')
-            ->first();
-
-        if (! $nearest || $nearest['distance_meters'] > $nearest['radius_meters']) {
-            return [
-                'branch' => null,
-                'area' => null,
-                'distance_meters' => $nearest['distance_meters'] ?? null,
-                'nearest_branch' => $nearest['branch'] ?? null,
-                'source' => 'branch_radius',
-            ];
-        }
-
-        return $nearest;
-    }
 }

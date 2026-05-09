@@ -1,7 +1,9 @@
 @php
     $mapId = 'branch-map-'.\Illuminate\Support\Str::uuid();
-    $lat = -7.70630000;
-    $lng = 114.00980000;
+    $stateLat = is_callable($get ?? null) ? $get('latitude') : null;
+    $stateLng = is_callable($get ?? null) ? $get('longitude') : null;
+    $lat = is_numeric($stateLat) ? (float) $stateLat : -7.70630000;
+    $lng = is_numeric($stateLng) ? (float) $stateLng : 114.00980000;
     $googleMapsKey = app(\App\Services\SettingService::class)->get('google_maps_api_key');
 @endphp
 
