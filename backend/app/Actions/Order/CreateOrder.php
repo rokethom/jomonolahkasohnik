@@ -43,6 +43,13 @@ class CreateOrder
             $payload = $this->hydrateHiddenLocations($user, $payload);
             $payload['branch_id'] ??= $user->branch_id;
             $pricing = $this->pricingService->calculate($payload);
+            if ($this->isTartHelperOrder($payload)) {
+                $pricing['service_fee'] = 0;
+                $pricing['service_charge'] = 0;
+                $pricing['service_fee_breakdown'] = [];
+                $pricing['final_price'] = (int) ($pricing['tarif'] ?? 0) + (int) ($pricing['extra_charge'] ?? 0);
+                $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nFlag: helper kue tart tanpa service charge.");
+            }
             $service = $this->resolveService((string) ($payload['service_type'] ?? 'ojek'));
             $branch = $user->branch;
             $payload['pickup_address'] = str($payload['pickup_address'])->limit(250, '')->toString();
@@ -268,6 +275,12 @@ class CreateOrder
         };
 
         return Service::query()->where('code', $code)->first();
+    }
+
+    private function isTartHelperOrder(array $payload): bool
+    {
+        return (bool) data_get($payload, 'service_payload.tart_helper')
+            || data_get($payload, 'service_payload.helper_role') === 'tart_helper';
     }
 
     private function hydrateHiddenLocations(User $user, array $payload): array

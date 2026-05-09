@@ -286,6 +286,7 @@ class JojoBotService
             'points' => [],
             'used_fallback_location' => false,
             'service_type' => null,
+            'driver_preference' => 'general',
         ];
         $activeMultilineField = null;
 
@@ -321,6 +322,8 @@ class JojoBotService
                 $activeMultilineField = 'notes';
             } elseif (preg_match('/rute|route/u', $key)) {
                 $fields['route'] = $value;
+            } elseif (preg_match('/preferensi\s+driver|pilihan\s+driver|driver/u', $key)) {
+                $fields['driver_preference'] = str_contains(mb_strtolower($value), 'ladies') ? 'ladies' : 'general';
             } elseif (preg_match('/catatan|notes|barang|pesanan/u', $key)) {
                 $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], $value])));
                 $activeMultilineField = 'notes';
@@ -417,8 +420,10 @@ class JojoBotService
             ]))),
             'points' => array_slice($parsed['points'] ?? [], 0, 5),
             'items' => $serviceType === 'belanja' ? $this->shoppingItems((string) ($parsed['notes'] ?? '')) : [],
+            'driver_preference' => $serviceType === 'ojek' ? ($parsed['driver_preference'] ?? 'general') : 'general',
             'service_payload' => [
                 'source' => 'jojobot_form_parser',
+                'driver_preference' => $serviceType === 'ojek' ? ($parsed['driver_preference'] ?? 'general') : 'general',
                 'store_location' => $parsed['store_location'] ?? null,
                 'location_flow_note' => $this->isPurchaseService($serviceType)
                     ? 'Alamat pembelian dipakai sebagai titik ambil barang; alamat antar wajib mengikuti input customer. Alamat profile hanya untuk validasi pendaftaran.'

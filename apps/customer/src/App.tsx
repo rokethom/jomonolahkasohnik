@@ -238,6 +238,19 @@ function passengerCountFromPayload(payload?: OrderPayload | null) {
   return Number.isFinite(value) && value > 0 ? value : 1
 }
 
+function containsTartKeyword(payload?: OrderPayload | null) {
+  const source = [
+    payload?.notes,
+    payload?.pickup_address,
+    payload?.destination_address,
+    payload?.destination_text,
+    JSON.stringify(payload?.service_payload ?? {}),
+    ...(payload?.items ?? []).map((item) => `${item.name} ${item.notes ?? ''}`),
+  ].join(' ').toLowerCase()
+
+  return /\b(?:kue\s*)?tart\b/u.test(source)
+}
+
 function validCoordinate(value: unknown, limit: number) {
   const numberValue = Number(value)
   return Number.isFinite(numberValue) && Math.abs(numberValue) <= limit
@@ -499,19 +512,31 @@ function App() {
     const vehicleSeatRows = preferredVehicle === 'mobil' ? (payload.vehicle_seat_rows === 3 ? 3 : 2) : undefined
     const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const passengers = passengerCountFromPayload(payload)
-    const orderCount = isOjekService(payload.service_type) && passengers === 2 && payload.service_payload?.confirm_double_order === true ? 2 : 1
+    const ojekDoubleOrderCount = isOjekService(payload.service_type) && passengers === 2 && payload.service_payload?.confirm_double_order === true ? 2 : 1
+    const tartOrderCount = containsTartKeyword(payload) ? 2 : 1
+    const orderCount = Math.max(ojekDoubleOrderCount, tartOrderCount)
     const createdOrders: Order[] = []
 
     for (let index = 0; index < orderCount; index += 1) {
+      const isTartHelper = tartOrderCount > 1 && index === 1
+      const tartOrderNote = tartOrderCount > 1
+        ? (isTartHelper ? 'Helper kue tart - tanpa service charge' : 'Driver utama kue tart')
+        : null
       const order = await createOrder({
         ...payload,
-        notes: [payload.notes, orderCount > 1 ? `Order penumpang ${index + 1} dari ${orderCount}` : null].filter(Boolean).join('\n'),
+        service_type: tartOrderCount > 1 ? 'delivery' : payload.service_type,
+        notes: [
+          payload.notes,
+          ojekDoubleOrderCount > 1 ? `Order penumpang ${index + 1} dari ${ojekDoubleOrderCount}` : null,
+          tartOrderNote,
+        ].filter(Boolean).join('\n'),
         preferred_vehicle_type: preferredVehicle,
         ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
         driver_preference: driverPreference,
         service_payload: {
           ...(payload.service_payload ?? {}),
-          ...(orderCount > 1 ? { passenger_order_index: index + 1, passenger_order_count: orderCount } : {}),
+          ...(ojekDoubleOrderCount > 1 ? { passenger_order_index: index + 1, passenger_order_count: ojekDoubleOrderCount } : {}),
+          ...(tartOrderCount > 1 ? { tart_order_index: index + 1, tart_order_count: tartOrderCount, tart_helper: isTartHelper, helper_role: isTartHelper ? 'tart_helper' : 'tart_driver' } : {}),
           preferred_vehicle_type: preferredVehicle,
           ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
           driver_preference: driverPreference,
@@ -1646,6 +1671,13 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
   const [destination, setDestination] = useState('')
   const [passengers, setPassengers] = useState('1')
   const [notes, setNotes] = useState('')
+  const [driverPreference, setDriverPreference] = useState<'general' | 'ladies'>('general')
+  const [points, setPoints] = useState<string[]>([])
+  const pointText = points
+    .map((point, index) => ({ label: `Titik ${index + 1}`, address: point.trim() }))
+    .filter((point) => point.address)
+    .map((point) => `${point.label}: ${point.address}`)
+    .join('\n')
 
   const previewText = [
     'Ada pesanan Ojek untuk Aplikasi Joker',
@@ -1656,8 +1688,10 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
     '',
     `Alamat Antar: ${destination}`,
     `Jumlah penumpang: ${passengers}`,
+    `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
     '',
     `Catatan: ${notes}`,
+    pointText,
   ].join('\n')
 
   return (
@@ -1677,6 +1711,28 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
       <div className="ojek-section">
         <label>Alamat Antar<textarea value={destination} onChange={(event) => setDestination(event.target.value)} /></label>
         <label>Jumlah penumpang<input value={passengers} onChange={(event) => setPassengers(event.target.value)} inputMode="numeric" /></label>
+        <div className="ladies-choice">
+          <span>Pilihan driver</span>
+          <div>
+            <button type="button" className={driverPreference === 'general' ? 'active' : ''} onClick={() => setDriverPreference('general')}>Umum</button>
+            <button type="button" className={driverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => setDriverPreference('ladies')}>Ladies</button>
+          </div>
+          <small>{driverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
+        </div>
+        <div className="belanja-points">
+          <strong>Tambah titik</strong>
+          {points.map((point, index) => (
+            <input
+              key={index}
+              value={point}
+              onChange={(event) => setPoints(points.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+              placeholder={`Titik tambahan ${index + 1}`}
+            />
+          ))}
+          <button type="button" className="add-point-button" disabled={points.length >= 5} onClick={() => setPoints([...points, ''])}>
+            + Tambah titik
+          </button>
+        </div>
         <label>Catatan<textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
       </div>
       <div className="ojek-preview">
@@ -2040,7 +2096,7 @@ function ChatOrderActions({
                 <span>Buat 2 order ojek dengan detail yang sama untuk 2 penumpang.</span>
               </label>
             )}
-            {!isJokerMobilOrder && (
+            {!isJokerMobilOrder && !isOjekOrder && (
               <>
                 <label>
                   <span>Pilih kendaraan</span>
@@ -2052,7 +2108,7 @@ function ChatOrderActions({
                 <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
               </>
             )}
-            {selectedVehicle === 'mobil' && !isJokerMobilOrder && (
+            {selectedVehicle === 'mobil' && !isJokerMobilOrder && !isOjekOrder && (
               <div className="vehicle-seat-choice">
                 <span>Tempat duduk</span>
                 <div>
