@@ -23,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Carbon;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -106,7 +107,7 @@ class DriverController extends Controller
                 'multi_order_enabled' => $settings->bool('multi_order_enabled', true),
                 'max_multi_order' => max(1, min(3, $settings->int('max_multi_order', 3))),
             ],
-            'finance' => $deposit,
+            'finance' => $this->financePayload($deposit),
             'performance' => $finance->performance($driver),
             'orders' => $orders->map(fn (Order $order): array => [
                 ...$this->orderPayload($order, $driver),
@@ -151,7 +152,7 @@ class DriverController extends Controller
             return response()->json([
                 'message' => 'Setoran masih unpaid. Driver otomatis OFF dan hanya bisa request order.',
                 'driver' => $this->driverPayload($request, $deposit),
-                'finance' => $deposit->fresh(),
+                'finance' => $this->financePayload($deposit->fresh()),
             ], $request->boolean('online') ? 422 : 200);
         }
 
@@ -161,7 +162,7 @@ class DriverController extends Controller
             return response()->json([
                 'message' => 'Driver tidak aktif/suspend sehingga tidak bisa ON.',
                 'driver' => $this->driverPayload($request, $deposit),
-                'finance' => $deposit,
+                'finance' => $this->financePayload($deposit),
             ], 422);
         }
 
@@ -170,7 +171,7 @@ class DriverController extends Controller
         return response()->json([
             'message' => $request->boolean('online') ? 'Driver ON dan bisa menerima order.' : 'Driver OFF. Anda tetap bisa request order.',
             'driver' => $this->driverPayload($request, $deposit),
-            'finance' => $deposit,
+            'finance' => $this->financePayload($deposit),
         ]);
     }
 
@@ -309,7 +310,7 @@ class DriverController extends Controller
     {
         $driver = $this->ensureDriver($request)->load('user.branch');
 
-        return response()->json(['data' => $finance->monthlyDeposit($driver)]);
+        return response()->json(['data' => $this->financePayload($finance->monthlyDeposit($driver))]);
     }
 
     public function performance(Request $request, DriverFinanceService $finance): JsonResponse
@@ -409,6 +410,37 @@ class DriverController extends Controller
         }
 
         return $driver;
+    }
+
+    private function financePayload(DriverDeposit $deposit): array
+    {
+        $period = Carbon::create((int) $deposit->year, (int) $deposit->month, 1);
+        $previousPeriod = $period->copy()->subMonth();
+        $previous = DriverDeposit::query()
+            ->where('driver_id', $deposit->driver_id)
+            ->where('year', $previousPeriod->year)
+            ->where('month', $previousPeriod->month)
+            ->first();
+        $previousTotal = (int) ($previous?->total ?? 0);
+        $previousPaid = (int) ($previous?->paid_amount ?? 0);
+        $previousRemaining = max(0, $previousTotal - $previousPaid);
+
+        return [
+            ...$deposit->toArray(),
+            'period_label' => $period->translatedFormat('F Y'),
+            'current_period_deposit' => (int) data_get($deposit->breakdown, 'setoran_hingga_hari_ini', ((int) $deposit->handle_day_15 + (int) $deposit->handle_day_30)),
+            'remaining' => max(0, (int) $deposit->total - (int) $deposit->paid_amount),
+            'previous_deposit' => [
+                'month' => $previousPeriod->month,
+                'year' => $previousPeriod->year,
+                'period_label' => $previousPeriod->translatedFormat('F Y'),
+                'total' => $previousTotal,
+                'paid_amount' => $previousPaid,
+                'remaining' => $previousRemaining,
+                'status' => $previousRemaining > 0 ? 'unpaid' : 'paid',
+                'due_date' => $previous?->due_date?->toDateString(),
+            ],
+        ];
     }
 
     private function canReceiveOrders(?Driver $driver, ?DriverDeposit $deposit = null): bool

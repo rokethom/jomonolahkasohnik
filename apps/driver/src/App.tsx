@@ -164,6 +164,17 @@ type DriverFinance = {
   status: string
   due_date?: string | null
   paid_amount: number
+  remaining?: number
+  period_label?: string
+  current_period_deposit?: number
+  previous_deposit?: {
+    total: number
+    paid_amount: number
+    remaining: number
+    status: string
+    due_date?: string | null
+    period_label?: string
+  }
   breakdown?: Record<string, number>
 }
 
@@ -667,6 +678,9 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending') : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
+  const previousDeposit = finance?.previous_deposit
+  const previousRemaining = Number(previousDeposit?.remaining ?? 0)
+  const currentPeriodDeposit = Number(finance?.current_period_deposit ?? finance?.breakdown?.setoran_hingga_hari_ini ?? 0)
   const availabilityCopy = driver.availability_block_reason
     ?? (canReceiveOrders ? 'Order baru akan masuk saat tersedia.' : 'OFF: hanya bisa request order.')
 
@@ -715,12 +729,16 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchOperHandleOrder
 
       <section className="stats-grid">
         <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
-          <span>SETORAN</span>
-          <strong>Rp {formatMoney(finance?.total ?? 0)}</strong>
-          <small>{finance?.status ?? 'sync'}</small>
+          <span>SETORAN BULAN LALU</span>
+          <strong>Rp {formatMoney(previousRemaining)}</strong>
+          <small>{previousDeposit?.status ?? 'paid'}{previousDeposit?.period_label ? ` · ${previousDeposit.period_label}` : ''}</small>
         </button>
-        <Metric label="Total Order Diterima" value={String(acceptedTotal)} />
-        <Metric label="Order Berjalan" value={String(activeOrders.length)} />
+        <button className="metric setoran-card" onClick={() => setFinanceOpen(true)}>
+          <span>SETORAN BULAN BERJALAN</span>
+          <strong>Rp {formatMoney(currentPeriodDeposit)}</strong>
+          <small>{finance?.period_label ?? 'bulan ini'}</small>
+        </button>
+        <Metric label="Order diterima / berjalan" value={`${acceptedTotal} / ${activeOrders.length}`} />
       </section>
 
       <section className="quick-grid">
@@ -797,10 +815,12 @@ function BranchAcceptedFeed({ orders, operHandleOrders }: { orders: Order[]; ope
 function SetoranModal({ finance, onClose }: { finance: DriverFinance; onClose: () => void }) {
   const rows = setoranBreakdownRows(finance.breakdown)
   const remaining = Math.max(0, finance.total - finance.paid_amount)
+  const previousRemaining = Number(finance.previous_deposit?.remaining ?? 0)
   return (
     <Modal title="Detail Setoran" onClose={onClose}>
       <p className="modal-copy">Due date: {finance.due_date ?? '-'} · Status: {finance.status}</p>
       <div className="setoran-breakdown">
+        <div className="total-row"><span>Sisa bulan lalu</span><strong>Rp {formatMoney(previousRemaining)}</strong></div>
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
         <div className="total-row"><span>Total bulan ini</span><strong>Rp {formatMoney(finance.total)}</strong></div>
         <PriceRow label="Sudah dibayar" value={finance.paid_amount} />
