@@ -1890,6 +1890,7 @@ function ChatOrderActions({
 }) {
   const [points, setPoints] = useState<string[]>([])
   const [showSummary, setShowSummary] = useState(preview?.intent === 'order_preview')
+  const [qrisPreviewOpen, setQrisPreviewOpen] = useState(false)
   const configuredPaymentMethods = publicSettings?.payment?.methods?.length
     ? publicSettings.payment.methods
     : [{ key: 'cash', label: 'Pembayaran Cash', description: 'Bayar manual ke driver.' }]
@@ -2088,7 +2089,10 @@ function ChatOrderActions({
               {qrisImageUrl && (
                 <div className="payment-qris">
                   <span>QRIS Aplikasi</span>
-                  <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
+                  <a href={qrisImageUrl} download target="_blank" rel="noreferrer">Download QRIS</a>
+                  <button type="button" className="payment-qris-image-button" onClick={() => setQrisPreviewOpen(true)}>
+                    <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
+                  </button>
                 </div>
               )}
               {transferAccounts.length === 0 && !qrisImageUrl && <p className="payment-account">Rekening transfer belum disetting admin.</p>}
@@ -2099,8 +2103,10 @@ function ChatOrderActions({
               {qrisImageUrl ? (
                 <div className="payment-qris">
                   <span>QRIS Aplikasi</span>
-                  <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
                   <a href={qrisImageUrl} download target="_blank" rel="noreferrer">Download QRIS</a>
+                  <button type="button" className="payment-qris-image-button" onClick={() => setQrisPreviewOpen(true)}>
+                    <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
+                  </button>
                 </div>
               ) : <p className="payment-account">QRIS belum disetting admin.</p>}
             </div>
@@ -2125,6 +2131,7 @@ function ChatOrderActions({
             <button type="button" disabled={submitting || submitBlocked || (isOjekOrder && passengerCount > 2) || (isOjekOrder && passengerCount === 2 && !doubleOrderConfirmed)} onClick={onConfirm}>{submitting ? 'MENGIRIM...' : 'YA KIRIM'}</button>
             <button type="button" onClick={() => setShowSummary(false)}>EDIT</button>
           </div>
+          {qrisPreviewOpen && qrisImageUrl && <ImagePreviewModal imageUrl={qrisImageUrl} onClose={() => setQrisPreviewOpen(false)} downloadLabel="Download QRIS" />}
         </div>
       )}
     </div>
@@ -2913,11 +2920,12 @@ function OperatorRatingCard({ onRate }: { onRate: (rating: number) => Promise<vo
   )
 }
 
-function ImagePreviewModal({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) {
+function ImagePreviewModal({ imageUrl, onClose, downloadLabel }: { imageUrl: string; onClose: () => void; downloadLabel?: string }) {
   return (
     <div className="image-editor-backdrop" onClick={onClose}>
       <div className="image-preview" onClick={(event) => event.stopPropagation()}>
         <button type="button" onClick={onClose}>x</button>
+        {downloadLabel && <a href={imageUrl} download target="_blank" rel="noreferrer">{downloadLabel}</a>}
         <img src={imageUrl} alt="Preview lampiran" />
       </div>
     </div>
