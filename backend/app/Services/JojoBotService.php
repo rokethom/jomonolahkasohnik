@@ -476,7 +476,7 @@ class JojoBotService
         foreach ($this->geocodeCandidates($address, $branch) as $query) {
             try {
                 return [
-                    ...$this->geocoding->geocode($query),
+                    ...$this->geocoding->geocode($query, $this->geocodingContext($branch)),
                     'query' => $query,
                 ];
             } catch (Throwable) {
@@ -501,6 +501,19 @@ class JojoBotService
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function geocodingContext(?Branch $branch): array
+    {
+        if (! $branch || ! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+            return [];
+        }
+
+        return [
+            'lat' => (float) $branch->latitude,
+            'lng' => (float) $branch->longitude,
+            'radius_km' => is_numeric($branch->radius_km ?? null) ? max(5, (float) $branch->radius_km * 3) : 25,
+        ];
     }
 
     private function shoppingItems(string $text): array
