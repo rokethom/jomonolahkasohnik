@@ -15,6 +15,7 @@ use App\Models\ChatConversation;
 use App\Models\Driver;
 use App\Models\GeofenceArea;
 use App\Models\LocationLog;
+use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Models\PriceSetting;
 use App\Models\Service;
@@ -63,6 +64,7 @@ class AdminController extends Controller
             'drivers' => $this->driverRows($user),
             'operator_performance' => $this->operatorPerformanceRows($user),
             'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)),
+            'oper_handles' => $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)),
             'branches' => Branch::query()->withCount('geofenceAreas')->orderBy('name')->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
@@ -1243,11 +1245,27 @@ class AdminController extends Controller
     private function ordersQuery(User $actor): Builder
     {
         $query = Order::query()
-            ->with(['branch', 'user.branch', 'driver.user.branch']);
+            ->with(['branch', 'user.branch', 'driver.user.branch', 'operHandleRequests.driver.user']);
 
         if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where(function (Builder $query) use ($actor): void {
                 $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id))
+                    ->orWhereHas('driver.user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
+            });
+        }
+
+        return $query;
+    }
+
+    private function operHandlesQuery(User $actor): Builder
+    {
+        $query = OperHandleRequest::query()
+            ->with(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'driver.user.branch', 'requester']);
+
+        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
+            $query->whereHas('order', function (Builder $query) use ($actor): void {
+                $query->where('branch_id', $actor->branch_id)
+                    ->orWhereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id))
                     ->orWhereHas('driver.user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
             });
         }
@@ -1314,6 +1332,7 @@ class AdminController extends Controller
             'can_use_internal_notes' => $user->role instanceof UserRole && $user->role->isStaff(),
             'can_approve_cancel_order' => $user->hasPermission('approve_cancel_order'),
             'can_reject_cancel_order' => $user->hasPermission('reject_cancel_order'),
+            'can_approve_oper_handle' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true),
         ];
 
         return app(AdminRoleMenuOverrideService::class)->applyToPermissions($user, $permissions);
@@ -1365,7 +1384,8 @@ class AdminController extends Controller
 
     private function orderPayload(Order $order, ?User $actor = null): array
     {
-        $order->loadMissing(['user.branch', 'driver.user.branch']);
+        $order->loadMissing(['user.branch', 'driver.user.branch', 'operHandleRequests.driver.user']);
+        $operHandle = $order->operHandleRequests->sortByDesc('updated_at')->first();
 
         return [
             'id' => $order->id,
@@ -1392,6 +1412,7 @@ class AdminController extends Controller
             'preferred_vehicle_type' => data_get($order->pricing_breakdown, 'preferred_vehicle_type'),
             'required_vehicle_seat_rows' => data_get($order->pricing_breakdown, 'required_vehicle_seat_rows'),
             'driver_preference' => data_get($order->pricing_breakdown, 'driver_preference', 'general'),
+            'oper_handle' => $operHandle ? $this->operHandlePayload($operHandle) : null,
             'notes' => $order->notes,
             'raw_text' => $order->raw_text,
             'pricing_breakdown' => $order->pricing_breakdown,
@@ -1403,6 +1424,33 @@ class AdminController extends Controller
             'sla_status' => $this->dispatchSlaStatus($order),
             'suggested_drivers' => $actor ? $this->suggestedDriversForOrder($order, $actor) : [],
             'customer_preferences' => $this->customerPreferencePayload($order),
+        ];
+    }
+
+    private function operHandlePayload(OperHandleRequest $operHandle): array
+    {
+        $operHandle->loadMissing(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'driver.user.branch', 'requester']);
+        $order = $operHandle->order;
+
+        return [
+            'id' => $operHandle->id,
+            'order_id' => $operHandle->order_id,
+            'order_code' => $order?->order_code,
+            'order_status' => $order?->status?->value,
+            'customer' => $order?->user?->name,
+            'driver' => $operHandle->driver?->user?->name,
+            'driver_phone' => $operHandle->driver?->user?->phone,
+            'branch' => $order?->branch?->name ?? $order?->user?->branch?->name ?? $operHandle->driver?->user?->branch?->name,
+            'branch_area' => $order?->branch?->area ?? $order?->user?->branch?->area ?? $operHandle->driver?->user?->branch?->area,
+            'service' => $order?->service_type,
+            'total' => $order?->total_price,
+            'reason' => $operHandle->reason,
+            'status' => $operHandle->status,
+            'requested_by' => $operHandle->requester?->name,
+            'operator_approved_at' => $operHandle->operator_approved_at?->toDateTimeString(),
+            'spv_approved_at' => $operHandle->spv_approved_at?->toDateTimeString(),
+            'created_at' => $operHandle->created_at?->toDateTimeString(),
+            'updated_at' => $operHandle->updated_at?->toDateTimeString(),
         ];
     }
 

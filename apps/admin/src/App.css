@@ -1940,6 +1940,124 @@ td span {
   align-items: start;
 }
 
+.oper-handle-topbar-alert {
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #fecaca;
+  border-radius: 13px;
+  padding: 0 12px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.oper-handle-topbar-alert svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.oper-handle-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 70;
+}
+
+.oper-handle-admin-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d1fae5;
+  border-radius: 18px;
+  background: #f0fdf4;
+  padding: 12px;
+}
+
+.oper-handle-admin-panel.pending {
+  border-color: #fecaca;
+  background: #fff7ed;
+}
+
+.oper-handle-admin-head,
+.oper-handle-admin-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oper-handle-admin-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.oper-handle-admin-head span:first-child {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.oper-handle-admin-head strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.oper-handle-admin-list {
+  display: grid;
+  gap: 8px;
+}
+
+.oper-handle-admin-card {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 10px;
+}
+
+.oper-handle-admin-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.oper-handle-admin-copy strong,
+.oper-handle-admin-copy span,
+.oper-handle-admin-copy p {
+  overflow-wrap: anywhere;
+}
+
+.oper-handle-admin-copy strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.oper-handle-admin-copy span,
+.oper-handle-admin-copy p,
+.order-oper-handle-card small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.oper-handle-admin-copy p {
+  margin: 0;
+  color: #334155;
+}
+
+.oper-handle-approval-steps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .order-table-wrap {
   max-height: calc(100dvh - 240px);
   border: 1px solid #eef2f7;
@@ -2110,6 +2228,48 @@ tr.selected-row td {
   background: #fff7ed;
   border: 1px solid #fed7aa;
   padding: 12px;
+}
+
+.order-oper-handle-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #bae6fd;
+  border-radius: 18px;
+  background: #f0f9ff;
+  padding: 12px;
+}
+
+.order-oper-handle-card.pending {
+  border-color: #fecaca;
+  background: #fff7ed;
+}
+
+.order-oper-handle-card > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.order-oper-handle-card span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.order-oper-handle-card strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.order-oper-handle-card p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .order-detail-actions {
@@ -2321,6 +2481,18 @@ td {
   background: #fffbeb;
   border: 1px solid #fde68a;
   font-weight: 800;
+}
+
+.notice.success {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.notice.danger {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 .mini-button {
@@ -3957,6 +4129,7 @@ textarea::placeholder {
   .logout-button,
   .pwa-install-button,
   .theme-button,
+  .oper-handle-topbar-alert,
   .auto-refresh-pill {
     flex: 1 1 0;
     min-width: 0;
@@ -3964,6 +4137,15 @@ textarea::placeholder {
     border-radius: 13px;
     padding-inline: 12px;
     font-size: 13px;
+  }
+
+  .oper-handle-admin-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .oper-handle-approval-steps {
+    justify-content: flex-start;
   }
 
   .topbar-actions svg {

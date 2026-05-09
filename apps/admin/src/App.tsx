@@ -116,7 +116,28 @@ type Order = {
   sla_status?: 'normal' | 'warning' | 'critical' | 'assigned' | string
   suggested_drivers?: DriverCandidate[]
   customer_preferences?: CustomerPreference
+  oper_handle?: OperHandle | null
   created_at: string | null
+  updated_at?: string | null
+}
+type OperHandle = {
+  id: number
+  order_id: number
+  order_code: string | null
+  order_status?: string | null
+  customer?: string | null
+  driver?: string | null
+  driver_phone?: string | null
+  branch?: string | null
+  branch_area?: string | null
+  service?: string | null
+  total?: number | null
+  reason?: string | null
+  status: string
+  requested_by?: string | null
+  operator_approved_at?: string | null
+  spv_approved_at?: string | null
+  created_at?: string | null
   updated_at?: string | null
 }
 type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
@@ -253,6 +274,7 @@ type Permissions = {
   can_use_internal_notes?: boolean
   can_approve_cancel_order?: boolean
   can_reject_cancel_order?: boolean
+  can_approve_oper_handle?: boolean
   can_assign_driver?: boolean
   allowed_views?: View[]
 }
@@ -265,6 +287,7 @@ type Bootstrap = {
   drivers: DriverRow[]
   operator_performance?: OperatorPerformance[]
   orders: Order[]
+  oper_handles?: OperHandle[]
   branches: Branch[]
   services: ServiceRow[]
   price_settings: PriceSetting[]
@@ -417,9 +440,11 @@ function App() {
     management: true,
     area: false,
   })
+  const [adminNotice, setAdminNotice] = useState('')
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
   const isRefreshingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
+  const lastOperHandlePendingRef = useRef<number | null>(null)
 
   const clearAuthSession = useCallback(() => {
     localStorage.removeItem('admin_token')
@@ -440,7 +465,16 @@ function App() {
     if (!silent) setLoading(true)
     setError('')
     try {
-      setData(await api<Bootstrap>('/admin/bootstrap'))
+      const payload = await api<Bootstrap>('/admin/bootstrap')
+      const pendingOperHandles = (payload.oper_handles ?? []).filter((item) => item.status === 'pending').length
+
+      if (silent && lastOperHandlePendingRef.current !== null && pendingOperHandles > lastOperHandlePendingRef.current) {
+        setAdminNotice(`${pendingOperHandles - lastOperHandlePendingRef.current} pengajuan oper handle baru menunggu approval.`)
+        window.setTimeout(() => setAdminNotice(''), 4200)
+      }
+
+      lastOperHandlePendingRef.current = pendingOperHandles
+      setData(payload)
       setLastSyncedAt(new Date())
     } catch (error) {
       if (isAuthError(error)) return
@@ -568,6 +602,7 @@ function App() {
     const text = `${user.username} ${user.name} ${user.email}`.toLowerCase()
     return text.includes(query.toLowerCase()) && (roleFilter === 'all' || user.role === roleFilter)
   })
+  const pendingOperHandles = (data.oper_handles ?? []).filter((item) => item.status === 'pending')
 
   const logout = async () => {
     try {
@@ -641,6 +676,12 @@ function App() {
             <button className="mobile-menu-button" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Icon name="grid" />Menu</button>
             <div className="topbar-title"><h1>{titleFor(safeView)}</h1><p>{subtitleFor(data)}</p>{error && <p className="error-text">{error}</p>}</div>
             <div className="topbar-actions">
+              {pendingOperHandles.length > 0 && (
+                <button className="oper-handle-topbar-alert" type="button" onClick={() => { setView('orders'); setQuery('') }}>
+                  <Icon name="shield" />
+                  <span>{pendingOperHandles.length} oper handle</span>
+                </button>
+              )}
               <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari data" /></div>
               <div className="auto-refresh-pill" title="Data admin tersinkron otomatis tiap 5 detik">
                 <span />
@@ -665,8 +706,9 @@ function App() {
             </div>
           </header>
 
+        {adminNotice && <div className="dispatch-toast oper-handle-toast">{adminNotice}</div>}
         {safeView === 'dashboard' && <Dashboard data={data} api={api} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
-        {safeView === 'orders' && <OrdersTable orders={data.orders} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -773,6 +815,7 @@ function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bo
   const onlineDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active').length
   const unassignedOrders = data.orders.filter((order) => isWaitingDriverStatus(order.status) && !order.driver).length
   const unansweredChats = data.chats.filter((chat) => Number(chat.unread_count ?? 0) > 0 || ['waiting', 'open'].includes(String(chat.status).toLowerCase())).length
+  const pendingOperHandles = (data.oper_handles ?? []).filter((item) => item.status === 'pending').length
   const nightTariffActive = isNightTariffCurrentlyActive(data.system_settings)
   const topDriver = topDriverToday(data.drivers, data.orders)
 
@@ -782,7 +825,9 @@ function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bo
         { label: 'Active Order Realtime', value: activeOrders, icon: 'bag', tone: 'amber', action: 'Orders', onClick: () => onNavigate('orders') },
         { label: 'Online Driver', value: onlineDrivers, icon: 'truck', tone: 'green', action: 'Drivers', onClick: () => onNavigate('drivers') },
         { label: 'Belum Diambil', value: unassignedOrders, icon: 'receipt', tone: 'violet', action: 'Cari driver', onClick: () => onNavigate('orders') },
-        { label: 'Chat Belum Dibalas', value: unansweredChats, icon: 'chat', tone: 'red', action: 'Buka chat', onClick: () => onNavigate('chats') },
+        pendingOperHandles > 0
+          ? { label: 'Oper Handle Pending', value: pendingOperHandles, icon: 'shield', tone: 'red', action: 'Approval', onClick: () => onNavigate('orders') }
+          : { label: 'Chat Belum Dibalas', value: unansweredChats, icon: 'chat', tone: 'red', action: 'Buka chat', onClick: () => onNavigate('chats') },
       ]} />
       <section className="insight-grid">
         <button className={nightTariffActive ? 'insight-card active' : 'insight-card'} type="button" onClick={() => onNavigate('settings')}>
@@ -1696,7 +1741,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   )
 }
 
-function OrdersTable({ orders, auditLogs, searchQuery, permissions, api, onChanged }: { orders: Order[]; auditLogs: AuditLog[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions, api, onChanged }: { orders: Order[]; operHandles: OperHandle[]; auditLogs: AuditLog[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
   const latestOrders = useMemo(() => sortOrdersNewest(orders), [orders])
@@ -1708,6 +1753,13 @@ function OrdersTable({ orders, auditLogs, searchQuery, permissions, api, onChang
     <section className="panel order-operations-panel">
       <PanelHeader title="Order operations" action={`${filteredOrders.length}/${orders.length} orders`} />
       {permissions.can_edit_order_price && <div className="notice">Edit harga akan dikirim realtime ke customer dan driver.</div>}
+      <OperHandleQueue
+        operHandles={operHandles}
+        api={api}
+        permissions={permissions}
+        onChanged={onChanged}
+        onSelectOrder={(orderId) => setSelectedOrderId(orderId)}
+      />
       <div className="order-operations-layout">
         <div className="table-wrap order-table-wrap">
           <table>
@@ -1733,6 +1785,64 @@ function OrdersTable({ orders, auditLogs, searchQuery, permissions, api, onChang
         <OrderDetailPanel order={selectedOrder} permissions={permissions} onEditPrice={permissions.can_edit_order_price && selectedOrder ? () => setEditingOrder(selectedOrder) : undefined} />
       </div>
       {editingOrder && <OrderPriceModal order={editingOrder} api={api} onClose={() => setEditingOrder(null)} onSaved={async () => { await onChanged(); setEditingOrder(null) }} />}
+    </section>
+  )
+}
+
+function OperHandleQueue({ operHandles, api, permissions, onChanged, onSelectOrder }: { operHandles: OperHandle[]; api: ApiClient; permissions: Permissions; onChanged: () => Promise<void>; onSelectOrder: (orderId: number) => void }) {
+  const [savingId, setSavingId] = useState<number | null>(null)
+  const [message, setMessage] = useState('')
+  const pending = operHandles.filter((item) => item.status === 'pending')
+  const recent = pending.length > 0 ? pending : operHandles.slice(0, 3)
+
+  const approve = async (item: OperHandle) => {
+    setSavingId(item.id)
+    setMessage('')
+    try {
+      const payload = await api<{ message?: string }>(`/admin/oper-handles/${item.id}/approve`, { method: 'POST' })
+      setMessage(payload.message ?? 'Approval oper handle tersimpan.')
+      await onChanged()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Approval oper handle gagal.')
+    } finally {
+      setSavingId(null)
+      window.setTimeout(() => setMessage(''), 3600)
+    }
+  }
+
+  if (operHandles.length === 0) return null
+
+  return (
+    <section className={pending.length > 0 ? 'oper-handle-admin-panel pending' : 'oper-handle-admin-panel'}>
+      <div className="oper-handle-admin-head">
+        <div>
+          <span>Oper handle</span>
+          <strong>{pending.length > 0 ? `${pending.length} menunggu approval` : 'Tidak ada pending'}</strong>
+        </div>
+        <span className={pending.length > 0 ? 'status danger' : 'status success'}>{pending.length > 0 ? 'Action needed' : 'Clear'}</span>
+      </div>
+      <div className="oper-handle-admin-list">
+        {recent.map((item) => (
+          <article className="oper-handle-admin-card" key={item.id}>
+            <button className="order-code-link inline" type="button" onClick={() => onSelectOrder(item.order_id)}>{item.order_code ?? `#${item.order_id}`}</button>
+            <div className="oper-handle-admin-copy">
+              <strong>{item.driver || 'Driver'} mengajukan oper handle</strong>
+              <span>{displayBranchValue(item.branch, item.branch_area)} · {item.service || '-'} · {formatShortDateTime(item.created_at)}</span>
+              <p>{item.reason || 'Tidak ada alasan tertulis.'}</p>
+            </div>
+            <div className="oper-handle-approval-steps">
+              <span className={item.operator_approved_at ? 'status success' : 'status warning'}>Operator {item.operator_approved_at ? 'OK' : 'pending'}</span>
+              <span className={item.spv_approved_at ? 'status success' : 'status warning'}>SPV {item.spv_approved_at ? 'OK' : 'pending'}</span>
+            </div>
+            {permissions.can_approve_oper_handle && item.status === 'pending' && (
+              <button className="mini-button approve" type="button" disabled={savingId === item.id} onClick={() => void approve(item)}>
+                {savingId === item.id ? 'Menyimpan...' : 'Approve'}
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+      {message && <div className={message.toLowerCase().includes('gagal') || message.includes('HTTP') ? 'notice danger' : 'notice success'}>{message}</div>}
     </section>
   )
 }
@@ -1781,6 +1891,16 @@ function OrderDetailPanel({ order, permissions, onEditPrice }: { order: Order | 
         <div><span>Jemput / Pembelian</span><p>{order.pickup_address || '-'}</p></div>
         <div><span>Tujuan / Antar</span><p>{order.destination_address || '-'}</p></div>
       </div>
+      {order.oper_handle && (
+        <div className={order.oper_handle.status === 'pending' ? 'order-oper-handle-card pending' : 'order-oper-handle-card'}>
+          <div>
+            <span>Oper handle</span>
+            <strong>{operHandleStatusLabel(order.oper_handle)}</strong>
+          </div>
+          <p>{order.oper_handle.reason || 'Tidak ada alasan tertulis.'}</p>
+          <small>Driver: {order.oper_handle.driver || order.driver || '-'} · Update {formatShortDateTime(order.oper_handle.updated_at)}</small>
+        </div>
+      )}
       {order.cancel_reason && <div className="notice danger">Cancel reason: {order.cancel_reason}</div>}
       {detailText && <div className="order-raw-note"><span>Catatan / raw order</span><p>{detailText}</p></div>}
       <div className="order-detail-actions">
@@ -3210,9 +3330,17 @@ function sortOrdersNewest(orders: Order[]) {
 }
 
 function orderMatchesSearch(order: Order, searchQuery: string) {
-  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''}`
+  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''} ${order.oper_handle?.status ?? ''} ${order.oper_handle?.reason ?? ''}`
     .toLowerCase()
     .includes(searchQuery.toLowerCase())
+}
+
+function operHandleStatusLabel(item: OperHandle) {
+  if (item.status === 'approved') return 'Approved'
+  if (item.operator_approved_at && !item.spv_approved_at) return 'Menunggu SPV'
+  if (!item.operator_approved_at && item.spv_approved_at) return 'Menunggu Operator'
+  if (item.status === 'pending') return 'Menunggu approval'
+  return item.status
 }
 
 function paymentLabel(method?: string | null) {
