@@ -136,10 +136,21 @@
 
 .admin-shell.dark .manual-preview-card > p,
 .admin-shell.dark .manual-preview-detail div,
+.admin-shell.dark .manual-route-status,
 .admin-shell.dark .manual-inline-editor {
   color: #dbeafe;
   border-color: rgba(148, 163, 184, 0.20);
   background: rgba(30, 41, 59, 0.68);
+}
+
+.admin-shell.dark .manual-route-status.resolved {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(20, 83, 45, 0.26);
+}
+
+.admin-shell.dark .manual-route-status.warning {
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(113, 63, 18, 0.26);
 }
 
 .admin-shell.dark .manual-inline-editor.price-editor {
@@ -3512,6 +3523,16 @@ textarea::placeholder {
   border-radius: 14px;
   background: rgba(255, 255, 255, .72);
   border: 1px solid rgba(148, 163, 184, .22);
+}
+
+.manual-preview-detail .manual-route-status.resolved {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.manual-preview-detail .manual-route-status.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
 }
 
 .manual-preview-detail span,

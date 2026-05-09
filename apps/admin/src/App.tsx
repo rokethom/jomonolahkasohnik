@@ -178,6 +178,7 @@ type ManualOrderPayload = {
   points?: Array<{ label?: string; address: string }>
   items?: Array<{ name: string; quantity?: number; price?: number; notes?: string }>
   payment_method?: 'cash' | 'transfer' | 'qris'
+  service_payload?: Record<string, unknown> | null
 }
 type ManualOrderPreview = {
   intent: 'order_preview' | 'service_selected' | 'fallback_form' | 'service_menu' | string
@@ -3335,6 +3336,11 @@ function ManualOrderPreviewCard({
   const extraCharge = Number(quote?.extra_charge ?? 0)
   const total = price + serviceFee + extraCharge
   const distance = quote?.distance_km ?? quote?.distance
+  const routeMeta = (payload?.service_payload && typeof payload.service_payload === 'object' ? payload.service_payload : {}) as Record<string, unknown>
+  const geocodingStatus = typeof routeMeta.geocoding_status === 'string' ? routeMeta.geocoding_status : null
+  const geocodingWarning = typeof routeMeta.geocoding_warning === 'string' ? routeMeta.geocoding_warning : null
+  const pickupProvider = typeof routeMeta.pickup_geocoded_by === 'string' ? routeMeta.pickup_geocoded_by : null
+  const destinationProvider = typeof routeMeta.destination_geocoded_by === 'string' ? routeMeta.destination_geocoded_by : null
 
   return (
     <aside className={payload ? 'manual-preview-card ready' : 'manual-preview-card warning'}>
@@ -3350,6 +3356,12 @@ function ManualOrderPreviewCard({
             <label className="manual-inline-editor" key={`${point.label}-${index}`}><span>{point.label ?? `Titik ${index + 1}`}</span><input value={point.address} onChange={(event) => onPointChange(index, event.target.value)} placeholder="Alamat titik tambahan" /></label>
           ))}
           <div><span>Jarak</span><b>{distance ? `${Number(distance).toFixed(2)} km` : '-'}</b></div>
+          {geocodingStatus && geocodingStatus !== 'base_fare' && (
+            <div className={geocodingStatus === 'resolved' ? 'manual-route-status resolved' : 'manual-route-status warning'}>
+              <span>Status maps</span>
+              <b>{geocodingStatus === 'resolved' ? `Titik terbaca ${[pickupProvider, destinationProvider].filter(Boolean).join(' / ') || 'maps'}` : geocodingWarning ?? 'Koordinat fallback, cek titik maps sebelum kirim order.'}</b>
+            </div>
+          )}
           <label className="manual-inline-editor"><span>Pembayaran</span><select value={paymentMethod} onChange={(event) => onPaymentChange(event.target.value as 'cash' | 'transfer' | 'qris')}><option value="cash">Pembayaran Cash</option><option value="transfer">Pembayaran Transfer</option><option value="qris">Pembayaran QRIS</option></select></label>
           <div><span>Tarif dasar</span><b>Rp {basePrice.toLocaleString('id-ID')}</b></div>
           {nightCharge > 0 && <div><span>Tarif malam {quote?.night_tariff_percent ? `${quote.night_tariff_percent}%` : ''}</span><b>Rp {nightCharge.toLocaleString('id-ID')}</b></div>}

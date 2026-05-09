@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Service;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Throwable;
 
 class JojoBotService
 {
@@ -15,6 +16,7 @@ class JojoBotService
     public function __construct(
         private readonly PricingService $pricing,
         private readonly OrderParserService $orderParser,
+        private readonly GeocodingService $geocoding,
         private readonly TextFormatter $formatter,
         private readonly KeywordParserService $keywordParsers,
     ) {
@@ -32,7 +34,7 @@ class JojoBotService
                 : null;
 
             if ($smartParsed) {
-                $payload = $smartParsed['payload'];
+                $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
                 $quote = $this->pricing->calculate($payload);
                 $reply = $this->formatter->smartParserReply($smartParsed, $quote);
 
@@ -118,7 +120,7 @@ class JojoBotService
         $smartParsed = $this->orderParser->parse($user, $rawText);
 
         if ($smartParsed) {
-            $payload = $smartParsed['payload'];
+            $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
             $quote = $this->pricing->calculate($payload);
 
             return [
@@ -413,9 +415,92 @@ class JojoBotService
         if ($useBaseFare) {
             $payload['distance'] = 0;
             $payload['distance_km'] = 0;
+            $payload['service_payload']['geocoding_status'] = 'base_fare';
+            $payload['service_payload']['geocoding_warning'] = 'Tarif dasar dipakai karena salah satu alamat memakai fallback customer/cabang.';
+
+            return $payload;
         }
 
+        return $this->hydratePayloadCoordinates($payload, $branch);
+    }
+
+    private function hydratePayloadCoordinates(array $payload, ?Branch $branch = null): array
+    {
+        if (isset($payload['distance']) || isset($payload['distance_km'])) {
+            return $payload;
+        }
+
+        $branch ??= isset($payload['branch_id']) ? Branch::query()->find($payload['branch_id']) : null;
+        $servicePayload = is_array($payload['service_payload'] ?? null) ? $payload['service_payload'] : [];
+
+        $pickupAddress = trim((string) ($payload['pickup_address'] ?? ''));
+        $destinationAddress = trim((string) ($payload['destination_address'] ?? $payload['destination_text'] ?? ''));
+
+        $pickupGeo = $this->geocodeForPricing($pickupAddress, $branch);
+        $destinationGeo = $this->geocodeForPricing($destinationAddress, $branch);
+        $resolved = $pickupGeo !== null && $destinationGeo !== null;
+
+        if ($resolved) {
+            $payload['pickup_lat'] = $pickupGeo['lat'];
+            $payload['pickup_lng'] = $pickupGeo['lng'];
+            $payload['destination_lat'] = $destinationGeo['lat'];
+            $payload['destination_lng'] = $destinationGeo['lng'];
+        }
+
+        $payload['service_payload'] = [
+            ...$servicePayload,
+            'geocoding_status' => $resolved ? 'resolved' : 'fallback',
+            'pickup_geocoded_by' => $pickupGeo['provider'] ?? null,
+            'destination_geocoded_by' => $destinationGeo['provider'] ?? null,
+            'pickup_geocoding_query' => $pickupGeo['query'] ?? null,
+            'destination_geocoding_query' => $destinationGeo['query'] ?? null,
+            'pickup_formatted_address' => $pickupGeo['formatted_address'] ?? null,
+            'destination_formatted_address' => $destinationGeo['formatted_address'] ?? null,
+            'geocoding_warning' => $resolved
+                ? null
+                : 'Sebagian alamat belum ditemukan maps. Sistem masih memakai koordinat fallback, cek titik maps sebelum kirim order.',
+        ];
+
         return $payload;
+    }
+
+    private function geocodeForPricing(string $address, ?Branch $branch): ?array
+    {
+        $address = trim($address);
+        $normalized = mb_strtolower($address);
+
+        if ($address === '' || in_array($normalized, ['alamat tujuan', 'alamat customer', 'lokasi pembelian', 'lokasi jemput'], true)) {
+            return null;
+        }
+
+        foreach ($this->geocodeCandidates($address, $branch) as $query) {
+            try {
+                return [
+                    ...$this->geocoding->geocode($query),
+                    'query' => $query,
+                ];
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    private function geocodeCandidates(string $address, ?Branch $branch): array
+    {
+        $withBranchContext = implode(', ', array_values(array_unique(array_filter([
+            $address,
+            $branch?->area,
+            $branch?->name,
+            'Indonesia',
+        ]))));
+
+        return collect([$withBranchContext, $address])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function shoppingItems(string $text): array
