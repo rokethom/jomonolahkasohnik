@@ -52,7 +52,8 @@ class DriverFinanceService
             ->first();
         $paidAmount = (int) ($existing?->paid_amount ?? 0);
         $paidAt = $existing?->paid_at;
-        $status = $paidAmount >= $total && $total > 0 ? 'paid' : ($total <= 0 ? 'paid' : 'unpaid');
+        $dueDate = $month->copy()->day(min(20, $end->day));
+        $status = $this->depositStatus($total, $paidAmount, $dueDate, $existing?->status);
 
         return DriverDeposit::query()->updateOrCreate(
             ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
@@ -63,7 +64,7 @@ class DriverFinanceService
                 'bpjs' => $bpjs,
                 'bpjs_jht' => $bpjsJht,
                 'total' => $total,
-                'due_date' => $month->copy()->day(min(20, $end->day))->toDateString(),
+                'due_date' => $dueDate->toDateString(),
                 'paid_amount' => $paidAmount,
                 'paid_at' => $paidAt,
                 'status' => $status,
@@ -136,6 +137,23 @@ class DriverFinanceService
             });
 
         return $count;
+    }
+
+    private function depositStatus(int $total, int $paidAmount, Carbon $dueDate, ?string $currentStatus = null): string
+    {
+        if ($total <= 0 || $paidAmount >= $total) {
+            return 'paid';
+        }
+
+        if ($paidAmount > 0) {
+            return 'paid';
+        }
+
+        if ($currentStatus === 'unpaid' && now()->greaterThan($dueDate->copy()->endOfDay())) {
+            return 'unpaid';
+        }
+
+        return now()->greaterThan($dueDate->copy()->endOfDay()) ? 'unpaid' : 'paid';
     }
 
     private function handleTotal(Driver $driver, Carbon $start, Carbon $end): int

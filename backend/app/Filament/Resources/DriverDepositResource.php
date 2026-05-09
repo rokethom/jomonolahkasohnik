@@ -104,7 +104,7 @@ class DriverDepositResource extends Resource
                     ->label('Bayar')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn (DriverDeposit $record): bool => $record->status !== 'paid')
+                    ->visible(fn (DriverDeposit $record): bool => max(0, (int) $record->total - (int) $record->paid_amount) > 0)
                     ->form(fn (DriverDeposit $record): array => [
                         Forms\Components\TextInput::make('amount')
                             ->label('Nominal dibayar')
@@ -123,7 +123,7 @@ class DriverDepositResource extends Resource
                         $record->forceFill([
                             'paid_amount' => $paidAmount,
                             'paid_at' => $paidAmount > 0 ? now() : null,
-                            'status' => $isPaid ? 'paid' : 'unpaid',
+                            'status' => ($isPaid || $paidAmount > 0) ? 'paid' : 'unpaid',
                         ])->save();
 
                         if ($isPaid && $record->driver?->status === 'suspended_unpaid') {
@@ -134,7 +134,7 @@ class DriverDepositResource extends Resource
 
                         $notification = Notification::make()
                             ->title($isPaid ? 'Setoran driver lunas' : 'Pembayaran setoran tersimpan')
-                            ->body($isPaid ? 'Driver bisa ON kembali dari aplikasi driver.' : 'Sisa tagihan akan terbawa ke bulan berikutnya.');
+                            ->body($isPaid ? 'Driver bisa ON kembali dari aplikasi driver.' : 'Sisa tagihan tetap tercatat dan akan dicek pada tanggal 20.');
 
                         ($isPaid ? $notification->success() : $notification->warning())->send();
                     }),
@@ -143,7 +143,7 @@ class DriverDepositResource extends Resource
                     ->icon('heroicon-o-banknotes')
                     ->color('success')
                     ->requiresConfirmation()
-                    ->visible(fn (DriverDeposit $record): bool => $record->status !== 'paid')
+                    ->visible(fn (DriverDeposit $record): bool => max(0, (int) $record->total - (int) $record->paid_amount) > 0)
                     ->action(function (DriverDeposit $record): void {
                         $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver);
                         $record->forceFill([

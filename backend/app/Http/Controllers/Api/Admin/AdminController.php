@@ -472,11 +472,12 @@ class AdminController extends Controller
             : min((int) $payload['amount'], max(0, $targetTotal - $currentPaid));
         $paidAmount = min($targetTotal, $currentPaid + $paymentAmount);
         $isPaid = $targetTotal <= 0 || $paidAmount >= $targetTotal;
+        $canReceiveWithPartial = $paidAmount > 0;
 
         $deposit->forceFill([
             'paid_amount' => $paidAmount,
             'paid_at' => $paidAmount > 0 ? now() : null,
-            'status' => $isPaid ? 'paid' : 'unpaid',
+            'status' => ($isPaid || $canReceiveWithPartial) ? 'paid' : 'unpaid',
         ])->save();
 
         if ($isPaid && $driver->status === 'suspended_unpaid') {
@@ -497,7 +498,7 @@ class AdminController extends Controller
         return response()->json([
             'message' => $isPaid
                 ? 'Setoran driver lunas. Driver bisa ON dari aplikasi driver.'
-                : 'Pembayaran setoran tersimpan. Sisa tagihan akan terbawa ke bulan berikutnya.',
+                : 'Pembayaran parsial tersimpan. Sisa tagihan tetap tercatat dan akan dicek pada tanggal 20.',
             'deposit' => $deposit->fresh(),
             'driver' => $driver->fresh(['user.branch']),
         ]);

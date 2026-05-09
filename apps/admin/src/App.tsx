@@ -1482,7 +1482,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                 <td><span className="driver-phone">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
                 <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
                 <td>
-                  <span className={driver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{driver.deposit_status ?? 'sync'}</span>
+                  <span className={driver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{driver.deposit_status === 'paid' && Number(driver.deposit_remaining ?? 0) > 0 ? 'paid parsial' : driver.deposit_status ?? 'sync'}</span>
                   <span className="driver-phone">Sisa Rp {Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}</span>
                 </td>
                 <td>{driver.suspended_until || '-'}</td>
@@ -1492,8 +1492,8 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                   <div className="row-actions">
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 1, 'suspended')}>1h</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 12, 'suspended')}>12h</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || driver.deposit_status === 'paid'} onClick={() => void markDeposit(driver, 'paid')}>Bayar</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || driver.deposit_status === 'paid'} onClick={() => void markDeposit(driver, 'paid', true)}>Lunas</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || Number(driver.deposit_remaining ?? 0) <= 0} onClick={() => void markDeposit(driver, 'paid')}>Bayar</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || Number(driver.deposit_remaining ?? 0) <= 0} onClick={() => void markDeposit(driver, 'paid', true)}>Lunas</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id || driver.deposit_status === 'unpaid'} onClick={() => void markDeposit(driver, 'unpaid')}>Unpaid</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setConfigDriver(driver)}>Config</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => void resetToken(driver)}>Reset Token</button>}
