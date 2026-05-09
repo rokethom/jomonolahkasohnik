@@ -54,8 +54,36 @@ class UserLocationController extends Controller
                 'nearest_distance_meters' => $result['nearest_distance_meters'],
                 'is_suspicious' => $result['is_suspicious'],
                 'reason' => $result['reason'],
-                'user' => $request->user()->fresh('branch'),
+                'user' => $this->userPayload($request),
             ],
         ]);
+    }
+
+    private function userPayload(Request $request): array
+    {
+        $user = $request->user()->fresh(['branch', 'currentLocation.branch']);
+        $branch = $user->branch ?: $user->currentLocation?->branch;
+
+        return [
+            'id' => $user->id,
+            'username' => $user->username,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'branch_id' => $user->branch_id ?? $branch?->id,
+            'branch' => $branch?->name,
+            'branch_name' => $branch?->name,
+            'branch_area' => $branch?->area,
+            'branch_display_name' => $branch?->display_name,
+            'lat' => $user->lat,
+            'lng' => $user->lng,
+            'address' => $user->address,
+            'profile_photo_url' => $user->profile_photo_path ? $request->getSchemeAndHttpHost().'/api/media/'.ltrim($user->profile_photo_path, '/') : null,
+            'area_status' => $user->currentLocation?->status ?? ($user->branch_id ? 'inside_branch' : 'outside_branch'),
+            'location_updated_at' => $user->currentLocation?->updated_at?->toIso8601String(),
+            'role' => $user->role->value ?? $user->role,
+            'permissions' => $user->permissions(),
+            'profile_completed' => filled($user->name) && filled($user->phone) && filled($user->address),
+        ];
     }
 }

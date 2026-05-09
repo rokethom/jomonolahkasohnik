@@ -36,6 +36,7 @@ class UserLocationService
 
         $inside = $validation['is_valid'] && $validation['branch'] !== null;
         $branch = $inside ? $validation['branch'] : null;
+        $lockedBranch = $branch ?: ($user->branch_id ? Branch::query()->find($user->branch_id) : null);
         $geofence = $inside ? $validation['geofence_area'] : null;
         $distance = $geofence
             ? $this->distanceToGeofence($lat, $lng, $geofence)
@@ -47,7 +48,7 @@ class UserLocationService
                 'lat' => $lat,
                 'lng' => $lng,
                 'accuracy' => $accuracy,
-                'branch_id' => $branch?->id,
+                'branch_id' => $lockedBranch?->id,
                 'geofence_area_id' => $geofence?->id,
                 'distance_meters' => $distance,
                 'status' => $inside ? 'inside_branch' : 'outside_branch',
@@ -58,17 +59,17 @@ class UserLocationService
         $user->forceFill([
             'lat' => $lat,
             'lng' => $lng,
-            'branch_id' => $branch?->id,
+            'branch_id' => $lockedBranch?->id,
         ])->save();
 
         Log::info('user_location.updated', [
             'user_id' => $user->id,
             'user_lat' => $lat,
             'user_lng' => $lng,
-            'branch_id' => $branch?->id,
-            'branch_name' => $branch?->display_name,
-            'branch_lat' => $branch?->latitude,
-            'branch_lng' => $branch?->longitude,
+            'branch_id' => $lockedBranch?->id,
+            'branch_name' => $lockedBranch?->display_name,
+            'branch_lat' => $lockedBranch?->latitude,
+            'branch_lng' => $lockedBranch?->longitude,
             'nearest_branch_id' => $nearest['branch']?->id,
             'nearest_branch_name' => $nearest['branch']?->display_name,
             'nearest_branch_lat' => $nearest['branch']?->latitude,
@@ -81,7 +82,8 @@ class UserLocationService
         return [
             'status' => $location->status,
             'inside_branch' => $inside,
-            'branch' => $branch,
+            'branch' => $lockedBranch,
+            'detected_branch' => $branch,
             'geofence_area' => $geofence,
             'distance_meters' => $distance,
             'nearest_branch' => $nearest['branch'],

@@ -61,6 +61,7 @@ class ListUsers extends ListRecords
             'Driver Active',
             'Email',
             'Phone',
+            'Address',
             'Created At',
         ];
 
@@ -85,6 +86,7 @@ class ListUsers extends ListRecords
                             $user->driver?->is_available ? 'yes' : 'no',
                             $user->email,
                             $user->phone,
+                            $user->address,
                             $user->created_at?->toDateTimeString(),
                         ]);
                     }

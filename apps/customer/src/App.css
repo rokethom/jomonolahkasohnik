@@ -2091,10 +2091,12 @@
 
 .profile-page {
   min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
+  height: 100%;
   padding: 0 0 calc(40px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #f7fbfa 0%, #fff 32%);
   color: #111b21;
   overflow-x: hidden;
+  overflow-y: auto;
   scroll-padding-bottom: 28px;
 }
 

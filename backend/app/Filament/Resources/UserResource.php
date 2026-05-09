@@ -67,6 +67,12 @@ class UserResource extends Resource
                                         Forms\Components\TextInput::make('phone')
                                             ->tel()
                                             ->maxLength(30),
+                                        Forms\Components\Textarea::make('address')
+                                            ->label('Alamat')
+                                            ->maxLength(500)
+                                            ->rows(3)
+                                            ->columnSpanFull()
+                                            ->helperText('Alamat profil customer/driver. Dipakai untuk auto-fill order dan referensi operator.'),
                                         Forms\Components\TextInput::make('password')
                                             ->label('Password')
                                             ->password()
@@ -182,6 +188,12 @@ class UserResource extends Resource
                     ->falseColor('gray'),
                 Tables\Columns\TextColumn::make('email')
                     ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('address')
+                    ->label('Alamat')
+                    ->searchable()
+                    ->limit(36)
+                    ->tooltip(fn (User $record): ?string => $record->address)
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()

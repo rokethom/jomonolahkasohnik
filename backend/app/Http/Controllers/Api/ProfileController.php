@@ -42,6 +42,7 @@ class ProfileController extends Controller
     private function payload(Request $request): array
     {
         $user = $request->user()->loadMissing(['branch', 'currentLocation.branch']);
+        $branch = $user->branch ?: $user->currentLocation?->branch;
 
         $role = $user->role instanceof UserRole ? $user->role->value : $user->role;
 
@@ -51,11 +52,11 @@ class ProfileController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'phone' => $user->phone,
-            'branch_id' => $user->branch_id,
-            'branch' => $user->branch?->name,
-            'branch_name' => $user->branch?->name,
-            'branch_area' => $user->branch?->area,
-            'branch_display_name' => $user->branch?->display_name,
+            'branch_id' => $user->branch_id ?? $branch?->id,
+            'branch' => $branch?->name,
+            'branch_name' => $branch?->name,
+            'branch_area' => $branch?->area,
+            'branch_display_name' => $branch?->display_name,
             'lat' => $user->lat,
             'lng' => $user->lng,
             'address' => $user->address,
