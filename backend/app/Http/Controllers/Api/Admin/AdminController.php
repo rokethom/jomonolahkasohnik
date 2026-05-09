@@ -24,6 +24,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminDashboardMetricsService;
 use App\Services\AdminRoleMenuOverrideService;
+use App\Services\AiParserRuleService;
 use App\Services\DriverFinanceService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
@@ -671,7 +672,7 @@ class AdminController extends Controller
         ]);
     }
 
-    public function manualOrder(Request $request, MultiOrderService $multiOrder, CreateOrder $createOrder): JsonResponse
+    public function manualOrder(Request $request, MultiOrderService $multiOrder, CreateOrder $createOrder, AiParserRuleService $parserRules): JsonResponse
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
 
@@ -686,6 +687,7 @@ class AdminController extends Controller
                 'parsed_customer.phone' => ['nullable', 'string', 'max:30'],
                 'parsed_customer.address' => ['nullable', 'string', 'max:500'],
                 'branch_id' => ['nullable', 'exists:branches,id'],
+                'raw_text' => ['nullable', 'string', 'max:4000'],
                 'order_payload' => ['required', 'array'],
                 'order_payload.branch_id' => ['nullable', 'exists:branches,id'],
                 'order_payload.service_type' => ['required', 'string', 'max:50'],
@@ -740,6 +742,8 @@ class AdminController extends Controller
                     'total_price' => $price + $serviceCharge + $order->extra_charge,
                 ])->save();
             }
+
+            $this->rememberManualOrderParserRule($parserRules, $payload, $order->fresh());
 
             $this->recordAudit($request->user(), 'created_dashboard_text_order', $order, [
                 'order_code' => $order->order_code,
@@ -846,6 +850,30 @@ class AdminController extends Controller
         ];
 
         return $preview;
+    }
+
+    private function rememberManualOrderParserRule(AiParserRuleService $parserRules, array $payload, Order $order): void
+    {
+        $rawText = trim((string) ($payload['raw_text'] ?? ''));
+        if ($rawText === '') {
+            return;
+        }
+
+        $orderPayload = is_array($payload['order_payload'] ?? null) ? $payload['order_payload'] : [];
+        $parsedCustomer = is_array($payload['parsed_customer'] ?? null) ? $payload['parsed_customer'] : [];
+        $items = is_array($orderPayload['items'] ?? null) ? $orderPayload['items'] : [];
+
+        $parserRules->remember($rawText, [
+            'service_type' => $orderPayload['service_type'] ?? $order->service_type,
+            'pickup_address' => $orderPayload['pickup_address'] ?? $order->pickup_address,
+            'destination_address' => $orderPayload['destination_address'] ?? $order->destination_address,
+            'store_location' => data_get($orderPayload, 'service_payload.store_location'),
+            'customer_name' => $parsedCustomer['name'] ?? null,
+            'customer_phone' => $parsedCustomer['phone'] ?? null,
+            'customer_address' => $parsedCustomer['address'] ?? null,
+            'items' => $items,
+            'notes' => $orderPayload['notes'] ?? null,
+        ], 'manual_order', 'dashboard');
     }
 
     private function manualPreviewCustomer(Request $request, array $payload): User

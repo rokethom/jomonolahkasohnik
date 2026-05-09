@@ -1966,7 +1966,6 @@ function OrderDetailPanel({ order, permissions, onEditPrice }: { order: Order | 
         <DetailItem label="Kendaraan" value={vehicleLabel(order.preferred_vehicle_type)} />
         {order.preferred_vehicle_type === 'mobil' && <DetailItem label="Seat Mobil" value={`${order.required_vehicle_seat_rows ?? 2} baris`} />}
         <DetailItem label="Preferensi" value={driverPreferenceLabel(order.driver_preference)} />
-        <DetailItem label="Jarak" value={formatDistance(order.distance_km)} />
         <DetailItem label="SLA" value={`${order.sla_status ?? 'normal'} · ${formatWaitingTime(order.waiting_seconds)}`} />
         <DetailItem label="Source" value={order.source || 'app'} />
       </div>
@@ -3090,6 +3089,7 @@ function EmptyPanel({ title, copy }: { title: string; copy: string }) {
 function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches: Branch[]; api: ApiClient; onChanged: () => Promise<void> }) {
   const ownBranch = branches.find((branch) => branch.id === me.branch_id) ?? null
   const [branchId, setBranchId] = useState(() => String(ownBranch?.id ?? branches[0]?.id ?? ''))
+  const [branchTouched, setBranchTouched] = useState(false)
   const selectedBranch = branches.find((branch) => String(branch.id) === branchId) ?? null
   const branchHint = selectedBranch ? branchLabel(selectedBranch) : 'Pilih cabang'
   const [rawText, setRawText] = useState('')
@@ -3103,6 +3103,14 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
 
   const parsedCustomer = previewCustomer(preview)
 
+  useEffect(() => {
+    if (branchTouched || !me.branch_id) return
+    const userBranch = branches.find((branch) => branch.id === me.branch_id)
+    if (userBranch && branchId !== String(userBranch.id)) {
+      setBranchId(String(userBranch.id))
+    }
+  }, [branchId, branchTouched, branches, me.branch_id])
+
   const previewTextOrder = async () => {
     if (!rawText.trim()) return
     setLoading(true)
@@ -3114,7 +3122,7 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
       })
       setPreview(response.data)
       const parsedBranchId = branchIdFromManualPreview(response.data, branches)
-      if (parsedBranchId) setBranchId(String(parsedBranchId))
+      if (!branchId && parsedBranchId) setBranchId(String(parsedBranchId))
       const quote = response.data.quote
       setPriceOverride(String(quote?.price ?? quote?.tarif ?? ''))
       setServiceFeeOverride(String(quote?.service_fee ?? quote?.service_charge ?? ''))
@@ -3135,6 +3143,7 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
         method: 'POST',
         body: JSON.stringify({
           parsed_customer: parsedCustomer,
+          raw_text: rawText.trim(),
           order_payload: {
             ...preview.order_payload,
             branch_id: Number(branchId) || preview.order_payload.branch_id || null,
@@ -3197,7 +3206,7 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
           </div>
           <label className="manual-branch-selector">
             Cabang / Area
-            <select value={branchId} onChange={(event) => { setBranchId(event.target.value); setPreview(null) }}>
+            <select value={branchId} onChange={(event) => { setBranchTouched(true); setBranchId(event.target.value); setPreview(null) }}>
               <option value="">Pilih cabang</option>
               {branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}
             </select>
@@ -3335,7 +3344,6 @@ function ManualOrderPreviewCard({
   const serviceFee = serviceFeeOverride !== '' ? Number(serviceFeeOverride) : Number(quote?.service_fee ?? quote?.service_charge ?? 0)
   const extraCharge = Number(quote?.extra_charge ?? 0)
   const total = price + serviceFee + extraCharge
-  const distance = quote?.distance_km ?? quote?.distance
   const routeMeta = (payload?.service_payload && typeof payload.service_payload === 'object' ? payload.service_payload : {}) as Record<string, unknown>
   const geocodingStatus = typeof routeMeta.geocoding_status === 'string' ? routeMeta.geocoding_status : null
   const geocodingWarning = typeof routeMeta.geocoding_warning === 'string' ? routeMeta.geocoding_warning : null
@@ -3355,7 +3363,6 @@ function ManualOrderPreviewCard({
           {(payload.points ?? []).map((point, index) => (
             <label className="manual-inline-editor" key={`${point.label}-${index}`}><span>{point.label ?? `Titik ${index + 1}`}</span><input value={point.address} onChange={(event) => onPointChange(index, event.target.value)} placeholder="Alamat titik tambahan" /></label>
           ))}
-          <div><span>Jarak</span><b>{distance ? `${Number(distance).toFixed(2)} km` : '-'}</b></div>
           {geocodingStatus && geocodingStatus !== 'base_fare' && (
             <div className={geocodingStatus === 'resolved' ? 'manual-route-status resolved' : 'manual-route-status warning'}>
               <span>Status maps</span>
@@ -3750,12 +3757,6 @@ function vehicleLabel(vehicle?: string | null) {
 function driverPreferenceLabel(preference?: string | null) {
   if (preference === 'ladies') return 'Ladies'
   return 'Umum'
-}
-
-function formatDistance(value?: number | string | null) {
-  const distance = Number(value ?? 0)
-
-  return distance > 0 ? `${distance.toLocaleString('id-ID', { maximumFractionDigits: 2 })} km` : '-'
 }
 
 function shortOrderRoute(order: Order) {

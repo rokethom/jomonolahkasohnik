@@ -855,7 +855,6 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
             {driverVehicleLabel(order)}
           </span>
         )}
-        <span>{order.distanceKm} km</span>
         <span>{statusLabel(order.status)}</span>
         {order.driverPreference === 'ladies' && <span className="direction-badge ladies">LADIES</span>}
         {order.eligibility?.area_match === false && <span className="direction-badge mismatch">LUAR AREA</span>}
@@ -907,7 +906,6 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
       </header>
 
       <section className="detail-summary-grid">
-        <InfoTile label="Jarak" value={`${order.distanceKm} km`} />
         <InfoTile label="Status" value={statusLabel(order.status)} />
         <InfoTile label="Multi Order" value={order.isMultiOrder ? 'Aktif' : 'Tidak'} />
         <InfoTile label="Pembayaran" value={order.paymentLabel ?? driverPaymentLabel(order.paymentMethod)} />
@@ -921,7 +919,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
       </section>
 
       <section className="panel route-panel">
-        <SectionTitle title="Lokasi" action={`${order.distanceKm} km`} />
+        <SectionTitle title="Lokasi" />
         <MapRow label={route.pickupLabel} address={route.pickupAddress} lat={order.pickupLat} lng={order.pickupLng} />
         <MapRow label={route.destinationLabel} address={route.destinationAddress} lat={order.destinationLat} lng={order.destinationLng} />
       </section>
@@ -1608,7 +1606,7 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
             </div>
             <div className="history-total">
               <b>Rp {formatMoney(order.total)}</b>
-              <span>{isOperHandleHistory ? 'Riwayat oper handle' : `${order.distanceKm} km`}</span>
+              {isOperHandleHistory && <span>Riwayat oper handle</span>}
             </div>
           </button>
         )})}
@@ -1767,15 +1765,19 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <article className="metric panel"><span>{label}</span><strong>{value}</strong></article> }
-function SectionTitle({ title, action }: { title: string; action: string }) { return <div className="section-title"><h2>{title}</h2><span>{action}</span></div> }
+function SectionTitle({ title, action }: { title: string; action?: string }) { return <div className="section-title"><h2>{title}</h2>{action && <span>{action}</span>}</div> }
 function PageTitle({ title, subtitle }: { title: string; subtitle: string }) { return <header className="page-title"><h1>{title}</h1><p>{subtitle}</p></header> }
 function StatusPill({ driver }: { driver: Driver }) { return <span className={`status-pill ${driver.status}`}>{driver.status.replace('_', ' ')}</span> }
 function MapRow({ label, address, lat, lng }: { label: string; address: string; lat: number; lng: number }) {
+  const mapsUrl = Number.isFinite(lat) && Number.isFinite(lng)
+    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+    : null
+
   return (
     <div className="map-row">
       <span>{label}</span>
       <strong>{address}</strong>
-      <b><MapPin size={14} /> {formatCoordinate(lat, lng)}</b>
+      {mapsUrl && <a href={mapsUrl} target="_blank" rel="noreferrer"><MapPin size={14} /> Buka Maps</a>}
     </div>
   )
 }
@@ -2138,11 +2140,6 @@ function eligibilityReason(reason?: string | null) {
     'driver off': 'Status driver OFF. Aktifkan ON jika setoran sudah paid.',
     'driver tidak aktif': 'Akun driver sedang tidak aktif/suspend.',
   }[String(reason ?? '')] ?? 'Order belum bisa diterima saat ini.'
-}
-function formatCoordinate(lat: number, lng: number) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '-'
-
-  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 }
 function formatHistoryTime(value?: string | null) {
   return value ? new Date(value).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Waktu belum tersedia'
