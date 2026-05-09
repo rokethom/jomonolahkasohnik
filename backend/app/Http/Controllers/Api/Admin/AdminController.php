@@ -468,7 +468,7 @@ class AdminController extends Controller
             'full' => ['nullable', 'boolean'],
         ]);
 
-        $deposit = $finance->monthlyDeposit($driver->load('user.branch'));
+        $deposit = $finance->monthlyDeposit($driver->load('user.branch'), now()->subMonth());
         $targetTotal = (int) $deposit->total;
         $currentPaid = (int) $deposit->paid_amount;
         $paymentAmount = $request->boolean('full', false) || ! isset($payload['amount'])
@@ -476,12 +476,11 @@ class AdminController extends Controller
             : min((int) $payload['amount'], max(0, $targetTotal - $currentPaid));
         $paidAmount = min($targetTotal, $currentPaid + $paymentAmount);
         $isPaid = $targetTotal <= 0 || $paidAmount >= $targetTotal;
-        $canReceiveWithPartial = $paidAmount > 0;
 
         $deposit->forceFill([
             'paid_amount' => $paidAmount,
             'paid_at' => $paidAmount > 0 ? now() : null,
-            'status' => ($isPaid || $canReceiveWithPartial) ? 'paid' : 'unpaid',
+            'status' => $isPaid ? 'paid' : 'unpaid',
         ])->save();
 
         if ($isPaid && $driver->status === 'suspended_unpaid') {
@@ -516,7 +515,7 @@ class AdminController extends Controller
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $deposit = $finance->monthlyDeposit($driver->load('user.branch'));
+        $deposit = $finance->monthlyDeposit($driver->load('user.branch'), now()->subMonth());
         $deposit->forceFill([
             'paid_amount' => 0,
             'paid_at' => null,
@@ -1754,8 +1753,8 @@ class AdminController extends Controller
             ->limit(12)
             ->get()
             ->reject(function (Driver $driver) use ($blockedDriverIds): bool {
-                $deposit = app(\App\Services\DriverFinanceService::class)->monthlyDeposit($driver);
-                if (($deposit->status ?? 'unpaid') !== 'paid') {
+                $deposit = app(\App\Services\DriverFinanceService::class)->monthlyDeposit($driver, now()->subMonth());
+                if (($deposit->status ?? 'unpaid') !== 'paid' && $deposit->due_date?->endOfDay()->isPast()) {
                     if ($driver->is_available) {
                         $driver->forceFill(['is_available' => false])->save();
                     }
@@ -1974,7 +1973,7 @@ class AdminController extends Controller
             ->limit(100)
             ->get()
             ->map(function (User $user): array {
-                $deposit = $user->driver ? app(DriverFinanceService::class)->monthlyDeposit($user->driver) : null;
+                $deposit = $user->driver ? app(DriverFinanceService::class)->monthlyDeposit($user->driver, now()->subMonth()) : null;
 
                 return [
                 ...$this->userPayload($user),

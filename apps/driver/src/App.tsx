@@ -344,7 +344,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     maxMultiOrder: payload.settings.max_multi_order,
     finance: payload.finance ?? null,
     performance: payload.performance ?? null,
-    isOnline: Boolean(payload.driver.can_receive_orders ?? payload.driver.is_available),
+    isOnline: Boolean(payload.driver.is_available),
   }),
   updateOrder: (order) => set((state) => ({
     orders: state.orders.map((item) => item.id === order.id ? { ...item, ...mapOrderPatch(order) } : item),
@@ -352,7 +352,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   setDriverState: (driver, finance) => set({
     driver,
     ...(finance !== undefined ? { finance } : {}),
-    isOnline: Boolean(driver.can_receive_orders ?? driver.is_available),
+    isOnline: Boolean(driver.is_available),
   }),
   logout: () => {
     resetDriverEcho()

@@ -145,13 +145,14 @@ class CreateOrder
             ->where('is_available', true)
             ->whereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id))
             ->whereDoesntHave('deposits', fn ($query) => $query
-                ->where('year', now()->year)
-                ->where('month', now()->month)
-                ->where('status', 'unpaid'))
+                ->where('year', now()->subMonth()->year)
+                ->where('month', now()->subMonth()->month)
+                ->where('status', 'unpaid')
+                ->whereDate('due_date', '<', now()->toDateString()))
             ->get()
             ->filter(function (Driver $driver) use ($order): bool {
-                $deposit = $this->finance->monthlyDeposit($driver);
-                if (($deposit->status ?? 'unpaid') !== 'paid') {
+                $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());
+                if (($deposit->status ?? 'unpaid') !== 'paid' && $deposit->due_date?->endOfDay()->isPast()) {
                     if ($driver->is_available) {
                         $driver->forceFill(['is_available' => false])->save();
                     }
