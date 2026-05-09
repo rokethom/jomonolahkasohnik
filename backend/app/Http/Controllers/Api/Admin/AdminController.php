@@ -18,6 +18,8 @@ use App\Models\LocationLog;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Models\PriceSetting;
+use App\Models\RingPricingRule;
+use App\Models\RingPricingSuggestion;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\AdminDashboardMetricsService;
@@ -32,6 +34,7 @@ use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
 use App\Services\RatingService;
+use App\Services\RingPricingService;
 use App\Services\SettingService;
 use App\Services\SLAService;
 use Illuminate\Database\Eloquent\Builder;
@@ -70,6 +73,8 @@ class AdminController extends Controller
             'branches' => Branch::query()->withCount('geofenceAreas')->orderBy('name')->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
+            'ring_pricing_rules' => RingPricingRule::query()->with('branch')->latest()->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
+            'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),
             'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
             'chats' => $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)),
@@ -395,6 +400,7 @@ class AdminController extends Controller
             'before' => $before,
             'after' => $after,
         ]);
+        app(RingPricingService::class)->recordPriceEdit($freshOrder, $request->user(), (int) $before['price'], (int) $after['price']);
 
         try {
             OrderPriceUpdated::dispatch($freshOrder, $request->user(), [
@@ -962,6 +968,112 @@ class AdminController extends Controller
         ]);
     }
 
+    public function ringPricingRules(Request $request): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+
+        return response()->json([
+            'data' => RingPricingRule::query()
+                ->with('branch')
+                ->latest()
+                ->get()
+                ->map(fn (RingPricingRule $rule): array => $this->ringPricingRulePayload($rule)),
+            'suggestions' => $this->ringPricingSuggestionsQuery($request->user())
+                ->get()
+                ->map(fn (RingPricingSuggestion $suggestion): array => $this->ringPricingSuggestionPayload($suggestion)),
+        ]);
+    }
+
+    public function storeRingPricingRule(Request $request): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+
+        $rule = RingPricingRule::create([
+            ...$this->validateRingPricingRule($request),
+            'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
+        ]);
+        $this->recordAudit($request->user(), 'created_ring_pricing_rule', $rule);
+
+        return response()->json([
+            'message' => 'Ring pricing rule created',
+            'data' => $this->ringPricingRulePayload($rule->fresh('branch')),
+        ], 201);
+    }
+
+    public function updateRingPricingRule(Request $request, RingPricingRule $ringPricingRule): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+
+        $payload = $this->validateRingPricingRule($request);
+        $before = $ringPricingRule->only(array_keys($payload));
+        $ringPricingRule->update([...$payload, 'updated_by' => $request->user()->id]);
+        $this->recordAudit($request->user(), 'updated_ring_pricing_rule', $ringPricingRule, ['before' => $before, 'after' => $payload]);
+
+        return response()->json([
+            'message' => 'Ring pricing rule updated',
+            'data' => $this->ringPricingRulePayload($ringPricingRule->fresh('branch')),
+        ]);
+    }
+
+    public function destroyRingPricingRule(Request $request, RingPricingRule $ringPricingRule): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+
+        $this->recordAudit($request->user(), 'deleted_ring_pricing_rule', $ringPricingRule);
+        $ringPricingRule->delete();
+
+        return response()->json(['message' => 'Ring pricing rule deleted']);
+    }
+
+    public function approveRingPricingSuggestion(Request $request, RingPricingSuggestion $suggestion): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+
+        $payload = $request->validate([
+            'name' => ['nullable', 'string', 'max:255'],
+            'ring' => ['nullable', 'string', 'max:40'],
+            'price' => ['nullable', 'integer', 'min:0'],
+            'is_bidirectional' => ['sometimes', 'boolean'],
+        ]);
+
+        $rule = RingPricingRule::create([
+            'branch_id' => $suggestion->branch_id,
+            'service_type' => $suggestion->service_type,
+            'name' => $payload['name'] ?? sprintf('%s ke %s', $suggestion->pickup_area, $suggestion->destination_area),
+            'pickup_area' => $suggestion->pickup_area,
+            'destination_area' => $suggestion->destination_area,
+            'ring' => $payload['ring'] ?? $suggestion->ring ?? 'ring_1',
+            'price' => $payload['price'] ?? $suggestion->suggested_price,
+            'is_bidirectional' => $payload['is_bidirectional'] ?? true,
+            'source' => 'learned',
+            'is_active' => true,
+            'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
+        ]);
+
+        $suggestion->update([
+            'status' => 'approved',
+            'approved_at' => now(),
+            'approved_by' => $request->user()->id,
+        ]);
+        $this->recordAudit($request->user(), 'approved_ring_pricing_suggestion', $rule, ['suggestion_id' => $suggestion->id]);
+
+        return response()->json([
+            'message' => 'Suggestion approved as ring pricing rule',
+            'data' => $this->ringPricingRulePayload($rule->fresh('branch')),
+        ]);
+    }
+
+    public function rejectRingPricingSuggestion(Request $request, RingPricingSuggestion $suggestion): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+        $suggestion->update(['status' => 'rejected']);
+        $this->recordAudit($request->user(), 'rejected_ring_pricing_suggestion', $suggestion);
+
+        return response()->json(['message' => 'Suggestion rejected']);
+    }
+
     public function storePriceSetting(Request $request): JsonResponse
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true), 403);
@@ -1216,6 +1328,55 @@ class AdminController extends Controller
         ]);
     }
 
+    private function validateRingPricingRule(Request $request): array
+    {
+        $payload = $request->validate([
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'service_type' => ['nullable', 'string', 'max:80'],
+            'name' => ['required', 'string', 'max:255'],
+            'pickup_area' => ['required', 'string', 'max:255'],
+            'destination_area' => ['required', 'string', 'max:255'],
+            'pickup_aliases' => ['nullable', 'array'],
+            'pickup_aliases.*' => ['string', 'max:255'],
+            'destination_aliases' => ['nullable', 'array'],
+            'destination_aliases.*' => ['string', 'max:255'],
+            'ring' => ['required', 'string', 'max:40'],
+            'price' => ['required', 'integer', 'min:0'],
+            'is_bidirectional' => ['sometimes', 'boolean'],
+            'is_active' => ['sometimes', 'boolean'],
+        ]);
+
+        $payload['service_type'] = isset($payload['service_type']) && $payload['service_type'] !== ''
+            ? app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type'])
+            : null;
+        $payload['pickup_aliases'] = array_values(array_filter($payload['pickup_aliases'] ?? []));
+        $payload['destination_aliases'] = array_values(array_filter($payload['destination_aliases'] ?? []));
+        $payload['is_bidirectional'] = $payload['is_bidirectional'] ?? true;
+        $payload['is_active'] = $payload['is_active'] ?? true;
+
+        return $payload;
+    }
+
+    private function authorizeRingPricing(Request $request): void
+    {
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM], true), 403);
+    }
+
+    private function ringPricingSuggestionsQuery(User $actor): Builder
+    {
+        $query = RingPricingSuggestion::query()
+            ->with(['branch', 'lastOrder', 'editor'])
+            ->where('status', 'pending')
+            ->orderByDesc('occurrence_count')
+            ->latest();
+
+        if (! in_array($actor->role, [UserRole::Admin, UserRole::GM], true)) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
+    }
+
     private function stats(User $user): array
     {
         return [
@@ -1319,6 +1480,7 @@ class AdminController extends Controller
             'names' => $permissionNames,
             'assignable_roles' => collect($user->role->assignableRoles())->map->value->all(),
             'can_manage_policy' => $user->hasPermission('edit_tarif'),
+            'can_manage_ring_pricing' => in_array($user->role, [UserRole::Admin, UserRole::GM], true),
             'can_manage_users' => $user->hasPermission('create_user'),
             'can_suspend_drivers' => $user->hasPermission('suspend_driver'),
             'can_unsuspend_drivers' => $user->hasPermission('unsuspend_driver'),
@@ -1970,6 +2132,58 @@ class AdminController extends Controller
                 ->whereNull('read_at')
                 ->count(),
             'updated_at' => $chat->updated_at?->toDateTimeString(),
+        ];
+    }
+
+    private function ringPricingRulePayload(RingPricingRule $rule): array
+    {
+        return [
+            'id' => $rule->id,
+            'branch_id' => $rule->branch_id,
+            'branch' => $rule->branch ? [
+                'id' => $rule->branch->id,
+                'name' => $rule->branch->name,
+                'area' => $rule->branch->area,
+            ] : null,
+            'service_type' => $rule->service_type,
+            'name' => $rule->name,
+            'pickup_area' => $rule->pickup_area,
+            'destination_area' => $rule->destination_area,
+            'pickup_aliases' => $rule->pickup_aliases ?? [],
+            'destination_aliases' => $rule->destination_aliases ?? [],
+            'ring' => $rule->ring,
+            'price' => $rule->price,
+            'is_bidirectional' => (bool) $rule->is_bidirectional,
+            'source' => $rule->source,
+            'is_active' => (bool) $rule->is_active,
+            'created_at' => $rule->created_at?->toDateTimeString(),
+            'updated_at' => $rule->updated_at?->toDateTimeString(),
+        ];
+    }
+
+    private function ringPricingSuggestionPayload(RingPricingSuggestion $suggestion): array
+    {
+        return [
+            'id' => $suggestion->id,
+            'branch_id' => $suggestion->branch_id,
+            'branch' => $suggestion->branch ? [
+                'id' => $suggestion->branch->id,
+                'name' => $suggestion->branch->name,
+                'area' => $suggestion->branch->area,
+            ] : null,
+            'service_type' => $suggestion->service_type,
+            'pickup_area' => $suggestion->pickup_area,
+            'destination_area' => $suggestion->destination_area,
+            'ring' => $suggestion->ring,
+            'suggested_price' => $suggestion->suggested_price,
+            'previous_price' => $suggestion->previous_price,
+            'occurrence_count' => $suggestion->occurrence_count,
+            'sample_order_ids' => $suggestion->sample_order_ids ?? [],
+            'last_order_code' => $suggestion->lastOrder?->order_code,
+            'last_edited_by' => $suggestion->editor?->name,
+            'status' => $suggestion->status,
+            'created_at' => $suggestion->created_at?->toDateTimeString(),
+            'updated_at' => $suggestion->updated_at?->toDateTimeString(),
         ];
     }
 

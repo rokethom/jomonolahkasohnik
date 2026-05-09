@@ -11,7 +11,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'ring-pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
 type AdminHistoryState = {
   jojoAdminView?: View
 }
@@ -206,6 +206,8 @@ type ManualOrderPreview = {
 type Branch = { id: number; name: string; area: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number }
 type ServiceRow = { id: number; name: string; code: string }
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
+type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; name: string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; ring: string; price: number; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
+type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggested_price: number; previous_price?: number | null; occurrence_count: number; sample_order_ids?: number[]; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; is_active: boolean }
 type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; accuracy?: number | null; provider?: string | null; is_mock_location?: boolean; is_valid: boolean; is_suspicious: boolean; reason: string | null; maps_url?: string | null; created_at: string | null }
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; first_operator_response_at?: string | null; rating_requested_at?: string | null; closed_at?: string | null; updated_at: string | null }
@@ -281,6 +283,7 @@ type Permissions = {
   names: string[]
   assignable_roles: Role[]
   can_manage_policy: boolean
+  can_manage_ring_pricing?: boolean
   can_manage_users: boolean
   can_suspend_drivers: boolean
   can_unsuspend_drivers?: boolean
@@ -313,6 +316,8 @@ type Bootstrap = {
   branches: Branch[]
   services: ServiceRow[]
   price_settings: PriceSetting[]
+  ring_pricing_rules?: RingPricingRule[]
+  ring_pricing_suggestions?: RingPricingSuggestion[]
   geofences: Geofence[]
   location_logs: LocationLog[]
   chats: Chat[]
@@ -404,6 +409,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'geofence', label: 'Geofence', icon: 'map' },
       { id: 'locations', label: 'Location Logs', icon: 'pin' },
       { id: 'pricing', label: 'Pricing & Policy', icon: 'cash' },
+      { id: 'ring-pricing', label: 'Master Ring', icon: 'cash' },
       { id: 'settings', label: 'System Settings', icon: 'settings' },
     ],
   },
@@ -435,6 +441,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_manage_users) views.add('users')
   if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers) views.add('drivers')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
+  if (permissions.can_manage_ring_pricing) views.add('ring-pricing')
   if (permissions.can_view_report) views.add('reports')
   if (permissions.can_monitor_live_chat) views.add('chats')
   if (permissions.can_use_internal_chat) views.add('internal-chat')
@@ -764,7 +771,7 @@ function App() {
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
-        {safeView === 'pricing' && <PricingPanel settings={data.price_settings} branches={data.branches} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {(safeView === 'pricing' || safeView === 'ring-pricing') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
@@ -2058,8 +2065,9 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
   )
 }
 
-function PricingPanel({ settings, branches, permissions, api, onChanged }: { settings: PriceSetting[]; branches: Branch[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { mode?: 'all' | 'ring'; settings: PriceSetting[]; ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showForm, setShowForm] = useState(false)
+  const [showRingForm, setShowRingForm] = useState(false)
   const [isFormula, setFormula] = useState(false)
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2086,14 +2094,70 @@ function PricingPanel({ settings, branches, permissions, api, onChanged }: { set
     await api(`/admin/price-settings/${setting.id}`, { method: 'DELETE' })
     await onChanged()
   }
+  const createRing = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    await api('/admin/ring-pricing-rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: form.get('name'),
+        branch_id: Number(form.get('branch_id')) || null,
+        service_type: form.get('service_type') || null,
+        pickup_area: form.get('pickup_area'),
+        destination_area: form.get('destination_area'),
+        pickup_aliases: aliasList(form.get('pickup_aliases')),
+        destination_aliases: aliasList(form.get('destination_aliases')),
+        ring: form.get('ring'),
+        price: Number(form.get('price') || 0),
+        is_bidirectional: form.get('is_bidirectional') === 'on',
+        is_active: form.get('is_active') === 'on',
+      }),
+    })
+    event.currentTarget.reset()
+    setShowRingForm(false)
+    await onChanged()
+  }
+  const destroyRing = async (rule: RingPricingRule) => {
+    if (!confirm(`Delete master ring ${rule.name}?`)) return
+    await api(`/admin/ring-pricing-rules/${rule.id}`, { method: 'DELETE' })
+    await onChanged()
+  }
+  const approveSuggestion = async (suggestion: RingPricingSuggestion) => {
+    await api(`/admin/ring-pricing-suggestions/${suggestion.id}/approve`, { method: 'POST' })
+    await onChanged()
+  }
+  const rejectSuggestion = async (suggestion: RingPricingSuggestion) => {
+    await api(`/admin/ring-pricing-suggestions/${suggestion.id}/reject`, { method: 'POST' })
+    await onChanged()
+  }
   const formulaCount = settings.filter((rule) => rule.is_formula).length
+  const canManageRing = Boolean(permissions.can_manage_ring_pricing)
   return (
     <section className="panel pricing-panel">
       <div className="section-head">
-        <div><h2>Pricing & Policy</h2><p>{settings.length} aturan tarif aktif, {formulaCount} memakai formula jarak.</p></div>
-        {permissions.can_manage_policy && <button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />Policy</button>}
+        <div><h2>{mode === 'ring' ? 'Master Ring Pricing' : 'Pricing & Policy'}</h2><p>{settings.length} aturan jarak, {ringRules.length} master ring, {ringSuggestions.length} suggestion koreksi.</p></div>
+        <div className="section-actions">
+          {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />Master Ring</button>}
+          {mode === 'all' && permissions.can_manage_policy && <button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />Policy</button>}
+        </div>
       </div>
-      {showForm && (
+      {showRingForm && canManageRing && (
+        <form className="admin-inline-form pricing-create-form ring-create-form" onSubmit={createRing}>
+          <label>Nama master<input name="name" required placeholder="Asembagus - Jangkar Ring 1" /></label>
+          <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
+          <label>Layanan<select name="service_type"><option value="">Semua layanan</option>{services.map((service) => <option key={service.id} value={service.code}>{service.name}</option>)}</select></label>
+          <label>Ring<select name="ring" defaultValue="ring_1"><option value="ring_1">Ring 1</option><option value="ring_2">Ring 2</option><option value="ring_3">Ring 3</option></select></label>
+          <label>Asal area<input name="pickup_area" required placeholder="Pasar Kampung Asembagus" /></label>
+          <label>Tujuan area<input name="destination_area" required placeholder="Pelabuhan Jangkar" /></label>
+          <label>Alias asal<input name="pickup_aliases" placeholder="pasar asembagus, kampung asembagus" /></label>
+          <label>Alias tujuan<input name="destination_aliases" placeholder="p jangkar, pelabuhan jangkar" /></label>
+          <label>Harga jasa<input name="price" type="number" min="0" step="1000" defaultValue="6000" required /></label>
+          <label className="toggle-row inline-toggle"><input name="is_bidirectional" type="checkbox" defaultChecked />Dua arah</label>
+          <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
+          <button className="primary-button" type="submit">Save Master Ring</button>
+        </form>
+      )}
+      {mode === 'all' && showForm && (
         <form className="admin-inline-form pricing-create-form" onSubmit={create}>
           <label>Nama policy<input name="name" required placeholder="Belanja 0-3 km" /></label>
           <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
@@ -2106,9 +2170,31 @@ function PricingPanel({ settings, branches, permissions, api, onChanged }: { set
           <button className="primary-button" type="submit">Save Policy</button>
         </form>
       )}
+      <div className="pricing-subsection">
+        <PanelHeader title="Master Ring Route" action={`${ringRules.length} rules`} />
+        <div className="pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><strong>{rule.name}</strong><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)}</span><small>{rule.pickup_area} → {rule.destination_area}{rule.is_bidirectional ? ' · dua arah' : ''}</small></div><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.source}</span><em>Rp {rule.price.toLocaleString('id-ID')}</em>{canManageRing && <button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button>}</article>)}</div>
+        {ringRules.length === 0 && <EmptyPanel title="Master ring kosong" copy="Tambahkan route ring resmi agar harga tidak hanya mengandalkan jarak maps." />}
+      </div>
+      {canManageRing && ringSuggestions.length > 0 && (
+        <div className="pricing-subsection">
+          <PanelHeader title="Suggestion dari edit harga" action={`${ringSuggestions.length} pending`} />
+          <div className="pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><strong>{suggestion.pickup_area} → {suggestion.destination_area}</strong><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><span className="status warning">Learn</span><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></article>)}</div>
+        </div>
+      )}
+      {mode === 'all' && <div className="pricing-subsection">
+        <PanelHeader title="Tarif Jarak" action={`${formulaCount} formula`} />
       <div className="pricing-list">{settings.map((rule) => <article className="pricing-card" key={rule.id}><div className="pricing-card-main"><strong>{rule.name}</strong><span>{rule.branch ? branchLabel(rule.branch) : 'Global'} Â· {rule.min_km} - {rule.max_km ?? 'unlimited'} km</span></div><span className={rule.is_formula ? 'status info' : 'status success'}>{rule.is_formula ? 'Formula' : 'Flat'}</span><em>{rule.is_formula ? `Rp ${(rule.per_km_rate ?? 0).toLocaleString('id-ID')}/km - ${rule.subtract_value ?? 0}` : `Rp ${(rule.price ?? 0).toLocaleString('id-ID')}`}</em>{permissions.can_manage_policy && <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>}</article>)}</div>
+      </div>}
     </section>
   )
+}
+
+function aliasList(value: FormDataEntryValue | null) {
+  return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+function ringLabel(value: string) {
+  return value.replace(/_/g, ' ').replace(/\bring\b/i, 'Ring').replace(/\b(\d)\b/, '$1')
 }
 
 function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; token: string }) {
@@ -3416,7 +3502,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', 'ring-pricing': 'Master Ring', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order' }[view]
 }
 
 function internalNoteStatusLabel(status: InternalNoteStatus) {

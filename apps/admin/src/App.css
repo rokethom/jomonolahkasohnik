@@ -2391,6 +2391,19 @@ td {
   gap: 12px;
 }
 
+.pricing-subsection {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .admin-inline-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2451,10 +2464,20 @@ td {
 }
 
 .pricing-card span,
+.pricing-card small,
 .branch-card span,
 .branch-card p {
   color: #667085;
   margin: 3px 0 0;
+}
+
+.pricing-card.ring-card {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+.pricing-card.suggestion {
+  border: 1px solid rgba(255, 176, 32, 0.36);
+  background: rgba(255, 251, 235, 0.78);
 }
 
 .pricing-card em {

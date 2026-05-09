@@ -14,6 +14,7 @@ class PricingController extends Controller
     public function calculate(CalculatePricingRequest $request, PricingService $pricingService, GeocodingService $geocoding): JsonResponse
     {
         $payload = $request->validated();
+        $payload['branch_id'] ??= $request->user()?->branch_id;
 
         if ((! isset($payload['destination_lat'], $payload['destination_lng'])) && filled($payload['destination_text'] ?? null)) {
             $destination = $geocoding->geocode($payload['destination_text']);

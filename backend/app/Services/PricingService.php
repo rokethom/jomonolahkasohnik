@@ -30,6 +30,7 @@ class PricingService
         private readonly TravelPricing $travelPricing,
         private readonly PricingKeywordRuleService $keywordRules,
         private readonly OrderOperationService $operations,
+        private readonly RingPricingService $ringPricing,
     ) {
     }
 
@@ -208,6 +209,15 @@ class PricingService
         $route = $payload['route'] ?? $payload['travel_route'] ?? $payload['service_payload']['route'] ?? null;
 
         $quote = $this->calculateByDistance($serviceType, $distance, $stops, $route);
+        if ($this->shouldUseDatabaseTarif($serviceType, $distance, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null)) {
+            $quote = $this->replaceTarif(
+                $quote,
+                $this->calculateTarifFromDatabase($distance, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null),
+            );
+        }
+        if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
+            $quote = $this->ringPricing->apply($quote, $ringRule);
+        }
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
             $payload['destination_text'] ?? $payload['destination_address'] ?? '',
             $payload['notes'] ?? '',
@@ -266,6 +276,41 @@ class PricingService
             'stops' => $stops,
             'service_fee_breakdown' => $this->serviceFeeBreakdown($stops),
         ]);
+    }
+
+    private function shouldUseDatabaseTarif(string $serviceType, float $distance, ?int $branchId): bool
+    {
+        if (in_array($serviceType, ['travel', 'joker_mobil'], true)) {
+            return false;
+        }
+
+        return PriceSetting::query()
+            ->forBranch($branchId)
+            ->forDistance($distance)
+            ->exists()
+            || PriceSetting::query()
+                ->forBranch($branchId)
+                ->whereNotNull('per_km_rate')
+                ->exists();
+    }
+
+    private function replaceTarif(array $quote, int $tarif): array
+    {
+        $serviceCharge = (int) ($quote['service_charge'] ?? $quote['service_fee'] ?? 0);
+        $totalBeforeRound = $tarif + $serviceCharge;
+        $finalPrice = $this->roundUpPrice($totalBeforeRound);
+
+        return [
+            ...$quote,
+            'tarif_source' => 'price_settings',
+            'tarif' => $tarif,
+            'price' => $tarif,
+            'base_price' => $tarif,
+            'total_before_round' => $totalBeforeRound,
+            'subtotal' => $totalBeforeRound,
+            'final_price' => $finalPrice,
+            'total_price' => $finalPrice,
+        ];
     }
 
     private function calculateJokerMobil(string $serviceType, float $distance, int $stops): array

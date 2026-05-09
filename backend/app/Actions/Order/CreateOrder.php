@@ -41,6 +41,7 @@ class CreateOrder
         return DB::transaction(function () use ($user, $payload): Order {
             $this->orders->assertCustomerCanCreate($user, (string) ($payload['service_type'] ?? 'ojek'));
             $payload = $this->hydrateHiddenLocations($user, $payload);
+            $payload['branch_id'] ??= $user->branch_id;
             $pricing = $this->pricingService->calculate($payload);
             $service = $this->resolveService((string) ($payload['service_type'] ?? 'ojek'));
             $branch = $user->branch;

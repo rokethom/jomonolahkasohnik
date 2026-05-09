@@ -96,7 +96,10 @@ class OrderController extends Controller
 
         return response()->json([
             'message' => 'Pricing calculated',
-            'data' => $pricingService->calculate($request->validated()),
+            'data' => $pricingService->calculate([
+                ...$request->validated(),
+                'branch_id' => $request->validated('branch_id') ?? $request->user()?->branch_id,
+            ]),
         ]);
     }
 

@@ -100,6 +100,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/price-settings', [AdminController::class, 'storePriceSetting'])->middleware('permission:edit_tarif');
         Route::put('/price-settings/{priceSetting}', [AdminController::class, 'updatePriceSetting'])->middleware('permission:edit_tarif');
         Route::delete('/price-settings/{priceSetting}', [AdminController::class, 'destroyPriceSetting'])->middleware('permission:edit_tarif');
+        Route::get('/ring-pricing-rules', [AdminController::class, 'ringPricingRules']);
+        Route::post('/ring-pricing-rules', [AdminController::class, 'storeRingPricingRule']);
+        Route::put('/ring-pricing-rules/{ringPricingRule}', [AdminController::class, 'updateRingPricingRule']);
+        Route::delete('/ring-pricing-rules/{ringPricingRule}', [AdminController::class, 'destroyRingPricingRule']);
+        Route::post('/ring-pricing-suggestions/{suggestion}/approve', [AdminController::class, 'approveRingPricingSuggestion']);
+        Route::post('/ring-pricing-suggestions/{suggestion}/reject', [AdminController::class, 'rejectRingPricingSuggestion']);
         Route::get('/branches', [AdminController::class, 'branches']);
         Route::post('/branches', [AdminController::class, 'storeBranch']);
         Route::get('/geofences', [AdminController::class, 'geofences']);
