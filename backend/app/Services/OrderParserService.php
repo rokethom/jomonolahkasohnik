@@ -181,14 +181,49 @@ class OrderParserService
         $pickupAddress = $this->field($text, 'alamat\s+jemput') ?: $loosePickup ?: $profileAddress;
         $destinationAddress = $this->field($text, 'alamat\s+antar') ?: $looseDestination;
         $passengers = $this->field($text, 'jumlah\s+penumpang') ?: $this->passengers($text) ?: '1';
+        $seatRows = $this->vehicleSeatRows($text);
         $notes = $this->field($text, 'catatan');
+        $serviceType = $this->detectService($text) === 'joker_mobil' ? 'joker_mobil' : 'ojek';
 
         if (! $destinationAddress) {
             return null;
         }
 
+        $payload = [
+            'service_type' => $serviceType,
+            'pickup_address' => $pickupAddress,
+            'pickup_lat' => $pickupLat,
+            'pickup_lng' => $pickupLng,
+            'destination_address' => $destinationAddress,
+            'destination_lat' => $pickupLat + 0.018,
+            'destination_lng' => $pickupLng + 0.018,
+            'branch_id' => $branch?->id,
+            'stops' => 1,
+            'destination_text' => $destinationAddress,
+            'notes' => trim(implode("\n", array_filter([
+                'Jumlah penumpang: '.$passengers,
+                $serviceType === 'joker_mobil' ? 'Seat / baris mobil: '.$seatRows.' baris' : null,
+                $notes ? 'Catatan: '.$notes : null,
+                $rawText ?: $text,
+            ]))),
+            'service_payload' => [
+                'passengers' => max(1, (int) preg_replace('/\D/u', '', $passengers)),
+                'source' => 'smart_parser',
+                'normalized_text' => $text,
+            ],
+            'items' => [],
+            'points' => [],
+        ];
+
+        if ($serviceType === 'joker_mobil') {
+            $payload['preferred_vehicle_type'] = 'mobil';
+            $payload['vehicle_seat_rows'] = $seatRows;
+            $payload['service_payload']['preferred_vehicle_type'] = 'mobil';
+            $payload['service_payload']['vehicle_seat_rows'] = $seatRows;
+        }
+
         return [
-            'service_type' => $this->detectService($text) === 'joker_mobil' ? 'joker_mobil' : 'ojek',
+            'service_type' => $serviceType,
             'customer_id' => $user->id,
             'name' => $user->name,
             'phone' => $user->phone,
@@ -198,30 +233,7 @@ class OrderParserService
             'passengers' => max(1, (int) preg_replace('/\D/u', '', $passengers)),
             'stops' => [],
             'branch' => $branch,
-            'payload' => [
-                'service_type' => $this->detectService($text) === 'joker_mobil' ? 'joker_mobil' : 'ojek',
-                'pickup_address' => $pickupAddress,
-                'pickup_lat' => $pickupLat,
-                'pickup_lng' => $pickupLng,
-                'destination_address' => $destinationAddress,
-                'destination_lat' => $pickupLat + 0.018,
-                'destination_lng' => $pickupLng + 0.018,
-                'branch_id' => $branch?->id,
-                'stops' => 1,
-                'destination_text' => $destinationAddress,
-                'notes' => trim(implode("\n", array_filter([
-                    'Jumlah penumpang: '.$passengers,
-                    $notes ? 'Catatan: '.$notes : null,
-                    $rawText ?: $text,
-                ]))),
-                'service_payload' => [
-                    'passengers' => max(1, (int) preg_replace('/\D/u', '', $passengers)),
-                    'source' => 'smart_parser',
-                    'normalized_text' => $text,
-                ],
-                'items' => [],
-                'points' => [],
-            ],
+            'payload' => $payload,
         ];
     }
 
@@ -321,6 +333,19 @@ class OrderParserService
         }
 
         return null;
+    }
+
+    private function vehicleSeatRows(string $text): int
+    {
+        if (preg_match('/(?:seat|kursi|baris|tempat\s+duduk)(?:\s*\/\s*baris)?\s*(?:mobil)?\s*:?\s*(\d+)/iu', $text, $match) === 1) {
+            return (int) $match[1] === 3 ? 3 : 2;
+        }
+
+        if (preg_match('/\b([23])\s*baris\b/iu', $text, $match) === 1) {
+            return (int) $match[1] === 3 ? 3 : 2;
+        }
+
+        return 2;
     }
 
     private function cleanAddress(string $value): string

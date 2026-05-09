@@ -1216,6 +1216,12 @@ function isActiveOrderStatus(order: Order) {
   return ['CREATED', 'SEARCHING_DRIVER', 'DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING', 'pending', 'accepted', 'on_delivery'].includes(String(order.status))
 }
 
+function canEditOrderPrice(order: Order | null) {
+  if (!order) return false
+
+  return !['COMPLETED', 'CANCELLED', 'DONE', 'CANCELED'].includes(String(order.status).toUpperCase())
+}
+
 function isWaitingDriverStatus(status: string) {
   return ['CREATED', 'SEARCHING_DRIVER', 'pending', 'created', 'searching_driver'].includes(String(status))
 }
@@ -1843,7 +1849,7 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
   return (
     <section className="panel order-operations-panel">
       <PanelHeader title="Order operations" action={`${filteredOrders.length}/${orders.length} orders`} />
-      {permissions.can_edit_order_price && <div className="notice">Edit harga akan dikirim realtime ke customer dan driver.</div>}
+      {permissions.can_edit_order_price && <div className="notice">Edit harga hanya aktif saat order berjalan, lalu dikirim realtime ke customer dan driver.</div>}
       <OperHandleQueue
         operHandles={operHandles}
         api={api}
@@ -1866,14 +1872,20 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
                   <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} · Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
                   <td><StatusBadge status={order.status} /></td>
                   <td><button className="mini-button" type="button" onClick={() => setSelectedOrderId(order.id)}>Lihat</button></td>
-                  {permissions.can_edit_order_price && <td><button className="mini-button" type="button" onClick={() => setEditingOrder(order)}>Edit harga</button></td>}
+                  {permissions.can_edit_order_price && (
+                    <td>
+                      {canEditOrderPrice(order)
+                        ? <button className="mini-button" type="button" onClick={() => setEditingOrder(order)}>Edit harga</button>
+                        : <span className="muted-action">Terkunci</span>}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
           {filteredOrders.length === 0 && <EmptyPanel title="Order tidak ditemukan" copy="Coba cek kode order atau hapus filter pencarian." />}
         </div>
-        <OrderDetailPanel order={selectedOrder} permissions={permissions} onEditPrice={permissions.can_edit_order_price && selectedOrder ? () => setEditingOrder(selectedOrder) : undefined} />
+        <OrderDetailPanel order={selectedOrder} permissions={permissions} onEditPrice={permissions.can_edit_order_price && selectedOrder && canEditOrderPrice(selectedOrder) ? () => setEditingOrder(selectedOrder) : undefined} />
       </div>
       {editingOrder && <OrderPriceModal order={editingOrder} api={api} onClose={() => setEditingOrder(null)} onSaved={async () => { await onChanged(); setEditingOrder(null) }} />}
     </section>
@@ -2040,16 +2052,25 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
   const [price, setPrice] = useState(order.price)
   const [serviceCharge, setServiceCharge] = useState(order.service_charge)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const canEdit = canEditOrderPrice(order)
   const total = Math.max(0, price) + Math.max(0, serviceCharge) + Math.max(0, order.extra_charge)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (!canEdit) {
+      setError('Harga hanya bisa diedit saat order masih berjalan.')
+      return
+    }
     setSaving(true)
+    setError('')
     try {
       await api(`/admin/orders/${order.id}/price`, {
         method: 'PATCH',
         body: JSON.stringify({ price: Math.max(0, price), service_charge: Math.max(0, serviceCharge) }),
       })
       await onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Edit harga gagal.')
     } finally {
       setSaving(false)
     }
@@ -2060,15 +2081,17 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
       <div className="modal price-edit-modal" role="dialog" aria-modal="true">
         <div className="modal-header"><div><h2>Edit harga order</h2><p>{order.code} Â· {order.customer || 'Customer'}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div>
         <form className="user-form" onSubmit={submit}>
+          {!canEdit && <div className="notice warning">Order sudah selesai atau batal. Harga tidak dapat diedit.</div>}
+          {error && <div className="notice danger">{error}</div>}
           <fieldset>
             <legend>Harga</legend>
             <div className="form-grid">
-              <label>Tarif dasar<input type="number" min={0} step={1000} value={price} onChange={(event) => setPrice(Number(event.target.value))} required /></label>
-              <label>Service fee<input type="number" min={0} step={1000} value={serviceCharge} onChange={(event) => setServiceCharge(Number(event.target.value))} required /></label>
+              <label>Tarif dasar<input type="number" min={0} step={1000} value={price} onChange={(event) => setPrice(Number(event.target.value))} disabled={!canEdit} required /></label>
+              <label>Service fee<input type="number" min={0} step={1000} value={serviceCharge} onChange={(event) => setServiceCharge(Number(event.target.value))} disabled={!canEdit} required /></label>
             </div>
           </fieldset>
           <div className="price-preview"><span>Total baru</span><strong>Rp {total.toLocaleString('id-ID')}</strong><small>Termasuk tambahan Rp {order.extra_charge.toLocaleString('id-ID')}. Dikirim realtime ke customer dan driver setelah disimpan.</small></div>
-          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Mengirim...' : 'Simpan & broadcast'}</button></div>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={saving || !canEdit}>{saving ? 'Mengirim...' : 'Simpan & broadcast'}</button></div>
         </form>
       </div>
     </div>

@@ -322,6 +322,8 @@ class JojoBotService
                 $activeMultilineField = 'notes';
             } elseif (preg_match('/rute|route/u', $key)) {
                 $fields['route'] = $value;
+            } elseif (preg_match('/seat|kursi|baris|tempat\s+duduk/u', $key)) {
+                $fields['vehicle_seat_rows'] = str_contains($value, '3') ? 3 : 2;
             } elseif (preg_match('/preferensi\s+driver|pilihan\s+driver|driver/u', $key)) {
                 $fields['driver_preference'] = str_contains(mb_strtolower($value), 'ladies') ? 'ladies' : 'general';
             } elseif (preg_match('/catatan|notes|barang|pesanan/u', $key)) {
@@ -433,6 +435,14 @@ class JojoBotService
 
         if ($serviceType === 'travel' && filled($parsed['route'] ?? null)) {
             $payload['route'] = $parsed['route'];
+        }
+
+        if ($serviceType === 'joker_mobil') {
+            $vehicleSeatRows = ((int) ($parsed['vehicle_seat_rows'] ?? 2)) === 3 ? 3 : 2;
+            $payload['preferred_vehicle_type'] = 'mobil';
+            $payload['vehicle_seat_rows'] = $vehicleSeatRows;
+            $payload['service_payload']['preferred_vehicle_type'] = 'mobil';
+            $payload['service_payload']['vehicle_seat_rows'] = $vehicleSeatRows;
         }
 
         if ($useBaseFare) {

@@ -2532,6 +2532,10 @@
   padding: 12px;
 }
 
+.inline-service-choice {
+  margin-top: 4px;
+}
+
 .vehicle-seat-choice > span {
   color: #1e3a8a;
   font-size: 12px;

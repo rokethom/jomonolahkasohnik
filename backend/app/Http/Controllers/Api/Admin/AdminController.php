@@ -377,6 +377,7 @@ class AdminController extends Controller
     public function updateOrderPrice(Request $request, Order $order): JsonResponse
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
+        abort_if($order->status->isTerminal(), 422, 'Harga hanya bisa diedit saat order masih berjalan.');
 
         $payload = $request->validate([
             'price' => ['required', 'integer', 'min:0'],

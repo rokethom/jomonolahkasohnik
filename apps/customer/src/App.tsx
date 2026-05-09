@@ -282,6 +282,7 @@ function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPrevie
     '',
     `Layanan: ${serviceDisplayLabel(payload?.service_type ?? preview?.service_type)}`,
     passengerCountFromPayload(payload) > 1 ? `Jumlah penumpang: ${passengerCountFromPayload(payload)}` : null,
+    isJokerMobilService(payload?.service_type ?? preview?.service_type) ? `Seat / baris mobil: ${payload?.vehicle_seat_rows === 3 ? 3 : 2} baris` : null,
     '',
     purchase ? 'Lokasi pembelian:' : 'Alamat jemput:',
     payload?.pickup_address ?? preview?.parsed?.pickup_address ?? '-',
@@ -1829,13 +1830,16 @@ function DynamicFormInline({
   const fields = normalizedSchema.fields ?? []
   const [values, setValues] = useState<Record<string, string>>(() => dynamicInitialValues(fields, user))
   const [points, setPoints] = useState<string[]>([])
+  const [vehicleSeatRows, setVehicleSeatRows] = useState<2 | 3>(2)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const isJokerMobilForm = isJokerMobilService(serviceType)
   const pointText = points
     .map((point, index) => point.trim() ? `Titik ${index + 1}: ${point.trim()}` : '')
     .filter(Boolean)
     .join('\n')
-  const previewText = [dynamicFormText(fields, values, serviceType), pointText].filter(Boolean).join('\n')
+  const vehicleText = isJokerMobilForm ? `Seat / baris mobil: ${vehicleSeatRows} baris` : ''
+  const previewText = [dynamicFormText(fields, values, serviceType), vehicleText, pointText].filter(Boolean).join('\n')
   const hasMissingRequired = fields.some((field) => field.required && !String(values[field.name] ?? '').trim())
 
   useEffect(() => {
@@ -1891,6 +1895,21 @@ function DynamicFormInline({
           </label>
         ))}
       </div>
+      {isJokerMobilForm && (
+        <div className="vehicle-seat-choice inline-service-choice">
+          <span>Pilih seat / baris Joker Mobil</span>
+          <div>
+            <button type="button" className={vehicleSeatRows === 2 ? 'active' : ''} onClick={() => setVehicleSeatRows(2)}>
+              <b>2 baris</b>
+              <small>Citycar / umum</small>
+            </button>
+            <button type="button" className={vehicleSeatRows === 3 ? 'active' : ''} onClick={() => setVehicleSeatRows(3)}>
+              <b>3 baris</b>
+              <small>MPV / keluarga</small>
+            </button>
+          </div>
+        </div>
+      )}
       <div className="dynamic-form-preview">
         <span>Preview hasil input</span>
         <p>{previewText}</p>
