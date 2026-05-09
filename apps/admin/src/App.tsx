@@ -550,6 +550,35 @@ function App() {
   }, [load, token])
 
   useEffect(() => {
+    if (!token || !data?.me || ['admin', 'gm'].includes(data.me.role)) return
+
+    const sendLocation = () => {
+      if (!navigator.geolocation) return
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          void api('/user/location', {
+            method: 'POST',
+            body: JSON.stringify({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+              gps_timestamp: new Date(position.timestamp).toISOString(),
+            }),
+          }).catch(() => undefined)
+        },
+        () => undefined,
+        { enableHighAccuracy: true, timeout: 9000, maximumAge: 60_000 },
+      )
+    }
+
+    sendLocation()
+    const interval = window.setInterval(sendLocation, 5 * 60_000)
+
+    return () => window.clearInterval(interval)
+  }, [api, data?.me, token])
+
+  useEffect(() => {
     if (!token) return
 
     const initialView = adminViewFromHistoryState(window.history.state) ?? view

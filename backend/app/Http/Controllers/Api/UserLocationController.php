@@ -11,6 +11,9 @@ class UserLocationController extends Controller
 {
     public function store(Request $request, UserLocationService $locations): JsonResponse
     {
+        $role = $request->user()->role->value ?? $request->user()->role;
+        abort_if(in_array($role, ['admin', 'gm'], true), 403, 'Lokasi admin tidak dicatat.');
+
         $payload = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
             'lng' => ['required', 'numeric', 'between:-180,180'],
