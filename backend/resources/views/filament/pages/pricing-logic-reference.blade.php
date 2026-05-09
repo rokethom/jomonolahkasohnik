@@ -183,7 +183,7 @@
                 <div>
                     <h2 class="price-title">Pricing Keyword Logic</h2>
                     <p class="price-copy">
-                        Dokumentasi dan preview charge tambahan berbasis keyword. Rule aktif dari CMS akan dipakai sebagai logic real. Jika belum ada rule aktif, sistem fallback ke hardcoded rule lama.
+                        Dokumentasi dan preview charge tambahan berbasis keyword. Rule aktif dari CMS akan dipakai sebagai logic real. Jika belum ada rule aktif, sistem fallback ke hardcoded rule lama. Sub keyword seperti "depan roxy" bisa dibuat agar menang dari keyword umum "roxy".
                     </p>
                 </div>
                 <span class="price-badge good">{{ $rules['label'] }}</span>
@@ -216,8 +216,9 @@
                 <h3 class="price-card-title">Flow Logic</h3>
                 <ol class="price-flow" style="margin-top:12px;padding:0">
                     <li>Order payload dihitung dari form/chat JojoBot.</li>
-                    <li>Pricing membaca text dari destination_text, destination_address, notes, service_payload, dan items.</li>
+                    <li>Pricing membaca text dari destination_text, destination_address, notes, service_payload.store_location, dan items.</li>
                     <li>Jika ada rule aktif di table pricing_keyword_rules, sistem memakai rule database.</li>
+                    <li>Keyword paling spesifik dipilih lebih dulu. Contoh: "depan roxy" menutup "roxy", sehingga charge tidak dobel.</li>
                     <li>Jika table/rule aktif kosong, sistem memakai fallback hardcoded lama.</li>
                     <li>Charge masuk ke extra_charge, keyword_charge, service_charge, lalu total dibulatkan.</li>
                 </ol>

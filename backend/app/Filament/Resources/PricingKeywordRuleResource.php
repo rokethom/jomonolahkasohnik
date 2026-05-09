@@ -40,7 +40,7 @@ class PricingKeywordRuleResource extends Resource
             ->columns(2)
             ->schema([
                 Forms\Components\Section::make('Rule')
-                    ->description('Rule aktif dari database akan menggantikan fallback hardcoded lama. Jika tidak ada rule aktif, sistem otomatis fallback.')
+                    ->description('Rule aktif dari database akan menggantikan fallback hardcoded lama. Sub keyword yang lebih spesifik menang, misalnya "depan roxy" menang dari "roxy".')
                     ->columnSpan(1)
                     ->schema([
                         Forms\Components\TextInput::make('name')
@@ -51,7 +51,7 @@ class PricingKeywordRuleResource extends Resource
                             ->required()
                             ->maxLength(255)
                             ->live(onBlur: false)
-                            ->helperText("Bisa banyak keyword dipisah koma, contoh: 'pasar, roxy, royal'.")
+                            ->helperText("Bisa banyak keyword dipisah koma. Untuk sub lokasi gunakan frasa lengkap, contoh: 'depan roxy, depan pasar, seberang roxy'.")
                             ->dehydrateStateUsing(fn (?string $state): ?string => $state ? app(PricingKeywordRuleService::class)->normalizeKeywordList($state) : null),
                         Forms\Components\TextInput::make('amount')
                             ->required()
@@ -71,7 +71,7 @@ class PricingKeywordRuleResource extends Resource
                             ->numeric()
                             ->default(0)
                             ->live(onBlur: false)
-                            ->helperText('Urutan evaluasi rule. Semua rule yang match akan dijumlahkan.'),
+                            ->helperText('Urutan evaluasi rule. Rule yang match akan dijumlahkan, kecuali keyword pendek yang sudah tertutup keyword lebih spesifik.'),
                         Forms\Components\Toggle::make('is_active')
                             ->label('Active')
                             ->default(true)
@@ -93,7 +93,7 @@ class PricingKeywordRuleResource extends Resource
                             ->live(),
                         Forms\Components\Textarea::make('preview_text')
                             ->label('Contoh text order')
-                            ->default('Belikan sayur di pasar')
+                            ->default('Belikan sayur di depan roxy antar ke rumah customer')
                             ->rows(5)
                             ->dehydrated(false)
                             ->live(onBlur: false),

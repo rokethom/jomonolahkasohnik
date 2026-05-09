@@ -34,7 +34,7 @@ class PricingLogicReference extends Page implements HasForms
     {
         $this->form->fill([
             'service_type' => 'belanja',
-            'text' => 'Belikan sayur di pasar',
+            'text' => 'Belikan sayur di depan roxy antar ke rumah customer',
         ]);
     }
 
@@ -71,7 +71,7 @@ class PricingLogicReference extends Page implements HasForms
                     'amount' => $rule->amount,
                     'service_scopes' => $rule->service_scopes ?: ['all'],
                     'description' => $rule->description ?: 'Rule dari CMS.',
-                    'source_fields' => ['destination_text', 'destination_address', 'notes', 'service_payload', 'items'],
+                    'source_fields' => ['destination_text', 'destination_address', 'notes', 'service_payload.store_location', 'items'],
                 ])->all(),
             ];
         }

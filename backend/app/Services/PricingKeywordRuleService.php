@@ -40,7 +40,6 @@ class PricingKeywordRuleService
         $haystack = mb_strtolower($this->textFromMixed($text));
         $serviceType = $this->normalizeServiceType($serviceType);
         $matches = [];
-        $total = 0;
 
         foreach ($rules as $rule) {
             if (! $this->scopeMatches($serviceType, $rule->service_scopes)) {
@@ -53,15 +52,19 @@ class PricingKeywordRuleService
             }
 
             $amount = (int) $rule->amount;
-            $total += $amount;
             $matches[] = [
                 'id' => $rule->id,
                 'name' => $rule->name,
                 'keyword' => $matchedKeyword,
+                'keyword_length' => mb_strlen($matchedKeyword),
                 'amount' => $amount,
                 'service_scopes' => $rule->service_scopes ?: ['all'],
+                'priority' => (int) $rule->priority,
             ];
         }
+
+        $matches = $this->withoutShadowedKeywords($matches);
+        $total = collect($matches)->sum('amount');
 
         return [
             'amount' => $total,
@@ -146,7 +149,7 @@ class PricingKeywordRuleService
                 continue;
             }
 
-            foreach ($rule['keywords'] as $keyword) {
+            foreach ($this->keywordsBySpecificity($rule['keywords']) as $keyword) {
                 if (! $this->keywordMatches($haystack, $keyword)) {
                     continue;
                 }
@@ -154,13 +157,17 @@ class PricingKeywordRuleService
                 $matches[] = [
                     'name' => $rule['name'],
                     'keyword' => $keyword,
+                    'keyword_length' => mb_strlen($keyword),
                     'amount' => $rule['amount'],
                     'service_scopes' => $rule['service_scopes'],
+                    'priority' => 0,
                 ];
-                $total += (int) $rule['amount'];
                 break;
             }
         }
+
+        $matches = $this->withoutShadowedKeywords($matches);
+        $total = collect($matches)->sum('amount');
 
         return [
             'amount' => $total,
@@ -172,14 +179,57 @@ class PricingKeywordRuleService
 
     private function matchedKeyword(string $haystack, string $keywords): ?string
     {
-        foreach (explode(',', $keywords) as $keyword) {
-            $keyword = trim($keyword);
+        foreach ($this->keywordsBySpecificity(explode(',', $keywords)) as $keyword) {
             if ($keyword !== '' && $this->keywordMatches($haystack, $keyword)) {
                 return $keyword;
             }
         }
 
         return null;
+    }
+
+    private function keywordsBySpecificity(array $keywords): array
+    {
+        return collect($keywords)
+            ->map(fn (string $keyword): string => trim(mb_strtolower(preg_replace('/\s+/u', ' ', $keyword) ?? $keyword)))
+            ->filter()
+            ->unique()
+            ->sortByDesc(fn (string $keyword): int => mb_strlen($keyword))
+            ->values()
+            ->all();
+    }
+
+    private function withoutShadowedKeywords(array $matches): array
+    {
+        $sorted = collect($matches)
+            ->sortBy([
+                ['keyword_length', 'desc'],
+                ['priority', 'desc'],
+                ['amount', 'desc'],
+            ])
+            ->values();
+
+        $accepted = [];
+
+        foreach ($sorted as $match) {
+            $keyword = mb_strtolower((string) ($match['keyword'] ?? ''));
+            if ($keyword === '') {
+                continue;
+            }
+
+            $isShadowed = collect($accepted)->contains(function (array $acceptedMatch) use ($keyword): bool {
+                $acceptedKeyword = mb_strtolower((string) ($acceptedMatch['keyword'] ?? ''));
+
+                return $acceptedKeyword !== $keyword && str_contains($acceptedKeyword, $keyword);
+            });
+
+            if (! $isShadowed) {
+                unset($match['keyword_length'], $match['priority']);
+                $accepted[] = $match;
+            }
+        }
+
+        return $accepted;
     }
 
     private function keywordMatches(string $haystack, string $keyword): bool
