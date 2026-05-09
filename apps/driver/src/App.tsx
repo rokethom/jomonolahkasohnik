@@ -974,9 +974,39 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
 }
 
 function AdjustmentModal({ order, onClose, onSubmit }: { order: Order; onClose: () => void; onSubmit: (amount: number, reason: string) => void }) {
-  const [amount, setAmount] = useState(2000)
+  const [amount, setAmount] = useState('2000')
   const [reason, setReason] = useState('')
-  return <Modal title="Tambah Jasa" onClose={onClose}><p className="modal-copy">Adjustment akan menambah total {order.code}.</p><label>Nominal<input type="number" value={amount} min={1000} step={1000} onChange={(event) => setAmount(Number(event.target.value))} /></label><label>Alasan<input value={reason} onChange={(event) => setReason(event.target.value)} required /></label><button className="primary-button" disabled={!reason.trim()} onClick={() => onSubmit(amount, reason)}>Kirim Adjustment</button></Modal>
+  const numericAmount = Number(amount)
+  const canSubmit = Number.isFinite(numericAmount) && numericAmount >= 1000 && reason.trim().length >= 5
+
+  return (
+    <Modal title="Tambah Service Charge" onClose={onClose}>
+      <p className="modal-copy">Tambahan jasa akan menambah total {order.code}. Alasan wajib ditulis karena terlihat di laporan admin dan menjadi catatan untuk customer.</p>
+      <label>
+        Nominal
+        <input
+          type="number"
+          value={amount}
+          min={1000}
+          step={1000}
+          inputMode="numeric"
+          placeholder="Contoh 2000"
+          onChange={(event) => setAmount(event.target.value.replace(/[^\d]/g, ''))}
+        />
+      </label>
+      <label>
+        Alasan
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Contoh: parkir tambahan / titik jemput berubah / belanja perlu kantong ekstra"
+          required
+        />
+      </label>
+      {amount === '' && <p className="modal-copy warning">Nominal belum diisi. Masukkan minimal Rp 1.000.</p>}
+      <button className="primary-button" disabled={!canSubmit} onClick={() => onSubmit(numericAmount, reason.trim())}>Kirim Adjustment</button>
+    </Modal>
+  )
 }
 
 function OperHandleModal({ order, onClose, onConfirm }: { order: Order; onClose: () => void; onConfirm: (reason: string) => void }) {

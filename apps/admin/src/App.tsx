@@ -214,7 +214,9 @@ type Chat = { id: number; order_id?: number | null; order_code: string | null; t
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
 type InternalChatRoom = { id: number; name: string; type: 'global' | 'branch' | 'private' | string; branch_id?: number | null; branch?: string | null; branch_area?: string | null; participants_count?: number; participants?: Array<{ id: number; name: string; role: Role | string }>; last_message?: string | null; last_sender?: string | null; unread_count?: number; updated_at?: string | null }
-type InternalChatMessage = { id: number; room_id: number; sender_id: number | null; sender_name: string; sender_role?: Role | string | null; message: string; metadata?: Record<string, unknown> | null; created_at?: string | null }
+type InternalChatAttachment = { source?: string | null; name?: string | null; mime?: string | null; size?: number | null; url?: string | null; path?: string | null }
+type InternalChatMetadata = { attachment?: InternalChatAttachment | null; mentioned_user_ids?: number[]; order_ids?: number[]; order_codes?: string[] }
+type InternalChatMessage = { id: number; room_id: number; sender_id: number | null; sender_name: string; sender_role?: Role | string | null; message: string; metadata?: InternalChatMetadata | null; created_at?: string | null }
 type InternalChatDetail = { room: InternalChatRoom; messages: InternalChatMessage[] }
 type InternalNoteStatus = 'open' | 'in_progress' | 'done' | 'archived'
 type InternalNotePriority = 'low' | 'normal' | 'high' | 'urgent'
@@ -774,7 +776,7 @@ function App() {
         {(safeView === 'pricing' || safeView === 'ring-pricing') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
-        {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
@@ -2515,11 +2517,14 @@ function ChatStatusBadge({ status }: { status: string }) {
   return <span className={`status ${tone}`}>{status}</span>
 }
 
-function InternalChatPanel({ api, me, branches, onOpenOrder }: { api: ApiClient; me: User; branches: Branch[]; onOpenOrder: (code: string) => void }) {
+function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { api: ApiClient; me: User; branches: Branch[]; users: User[]; orders: Order[]; onOpenOrder: (code: string) => void }) {
   const [rooms, setRooms] = useState<InternalChatRoom[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [detail, setDetail] = useState<InternalChatDetail | null>(null)
   const [message, setMessage] = useState('')
+  const [selectedOrderId, setSelectedOrderId] = useState('')
+  const [attachmentOpen, setAttachmentOpen] = useState(false)
+  const [attachmentFile, setAttachmentFile] = useState<{ file: File; source: 'gallery' | 'camera' | 'document' } | null>(null)
   const [query, setQuery] = useState('')
   const [roomType, setRoomType] = useState<'branch' | 'global' | 'private'>('branch')
   const [roomName, setRoomName] = useState('')
@@ -2528,9 +2533,26 @@ function InternalChatPanel({ api, me, branches, onOpenOrder }: { api: ApiClient;
   const [isSending, setSending] = useState(false)
   const [error, setError] = useState('')
   const messagesRef = useRef<HTMLDivElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const documentInputRef = useRef<HTMLInputElement | null>(null)
 
   const filteredRooms = rooms.filter((room) => `${room.name} ${room.branch ?? ''} ${room.last_message ?? ''}`.toLowerCase().includes(query.toLowerCase()))
   const activeRoom = detail?.room ?? rooms.find((room) => room.id === activeId) ?? null
+  const managementUsers = users.filter((user) => ['admin', 'gm', 'hrd', 'manager', 'spv', 'operator', 'eksekutor'].includes(user.role))
+  const visibleOrders = sortOrdersNewest(orders).slice(0, 40)
+  const selectedOrder = visibleOrders.find((order) => String(order.id) === selectedOrderId) ?? orders.find((order) => String(order.id) === selectedOrderId) ?? null
+  const mentionNeedle = lastMentionToken(message)
+  const mentionSuggestions = mentionNeedle === null
+    ? []
+    : managementUsers
+      .filter((user) => `${user.name} ${roleLabels[user.role] ?? user.role}`.toLowerCase().includes(mentionNeedle.toLowerCase()))
+      .slice(0, 6)
+  const orderSuggestions = mentionNeedle === null
+    ? []
+    : visibleOrders
+      .filter((order) => `${order.code} ${order.customer ?? ''} ${order.driver ?? ''}`.toLowerCase().includes(mentionNeedle.toLowerCase()))
+      .slice(0, 6)
 
   const loadRooms = useCallback(async () => {
     try {
@@ -2597,22 +2619,48 @@ function InternalChatPanel({ api, me, branches, onOpenOrder }: { api: ApiClient;
   }
 
   const send = async () => {
-    if (!activeId || !message.trim() || isSending) return
+    if (!activeId || (!message.trim() && !attachmentFile) || isSending) return
     setSending(true)
     try {
+      const metadata: InternalChatMetadata = {
+        mentioned_user_ids: mentionedUserIds(message, managementUsers),
+        order_ids: selectedOrder ? [selectedOrder.id] : mentionedOrderIds(message, orders),
+        order_codes: selectedOrder ? [selectedOrder.code] : mentionedOrderCodes(message, orders),
+      }
+      let body: BodyInit
+      if (attachmentFile) {
+        const form = new FormData()
+        body = form
+        form.append('message', message.trim() || `Lampiran ${attachmentLabel(attachmentFile.source)}: ${attachmentFile.file.name}`)
+        form.append('attachment', attachmentFile.file)
+        form.append('attachment_source', attachmentFile.source)
+        form.append('metadata_json', JSON.stringify(metadata))
+      } else {
+        body = JSON.stringify({ message, metadata })
+      }
       const payload = await api<{ data: InternalChatMessage }>(`/admin/internal-chat/rooms/${activeId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ message }),
+        body,
       })
       setDetail((current) => current ? { ...current, messages: current.messages.some((item) => item.id === payload.data.id) ? current.messages : [...current.messages, payload.data] } : current)
       setRooms((rows) => rows.map((room) => room.id === activeId ? { ...room, last_message: payload.data.message, last_sender: payload.data.sender_name, updated_at: payload.data.created_at } : room))
       setMessage('')
+      setSelectedOrderId('')
+      setAttachmentFile(null)
+      setAttachmentOpen(false)
       setError('')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Pesan internal gagal dikirim')
     } finally {
       setSending(false)
     }
+  }
+
+  const appendText = (value: string) => setMessage((current) => `${current}${current && !/\s$/.test(current) ? ' ' : ''}${value} `)
+  const attachFile = (source: 'gallery' | 'camera' | 'document', file?: File | null) => {
+    if (!file) return
+    setAttachmentFile({ file, source })
+    setAttachmentOpen(false)
   }
 
   return (
@@ -2659,24 +2707,125 @@ function InternalChatPanel({ api, me, branches, onOpenOrder }: { api: ApiClient;
               <span className="status success">Internal</span>
             </header>
             {error && <div className="chat-error">{error}</div>}
+            <div className="internal-context-bar">
+              <label>
+                Order
+                <select value={selectedOrderId} onChange={(event) => {
+                  setSelectedOrderId(event.target.value)
+                  const order = orders.find((item) => String(item.id) === event.target.value)
+                  if (order) appendText(`@order:${order.code}`)
+                }}>
+                  <option value="">Tag order berjalan/selesai</option>
+                  {visibleOrders.map((order) => <option key={order.id} value={order.id}>{order.code} - {order.status} - {order.customer ?? 'Customer'}</option>)}
+                </select>
+              </label>
+              <div className="internal-quick-tags">
+                {managementUsers.slice(0, 6).map((user) => (
+                  <button key={user.id} type="button" onClick={() => appendText(`@${user.name.replace(/\s+/g, '_')}`)}>
+                    @{user.name}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="admin-chat-messages" ref={messagesRef}>
               {detail?.messages.length === 0 && <EmptyPanel title="Belum ada pesan" copy="Mulai koordinasi dengan tim di room ini." />}
               {detail?.messages.map((item) => (
                 <article key={item.id} className={item.sender_id === me.id ? 'admin-bubble mine' : 'admin-bubble'}>
                   <span>{item.sender_name} <small>{roleLabels[(item.sender_role as Role) || 'operator'] ?? item.sender_role} · {formatShortTime(item.created_at)}</small></span>
                   <p>{renderOrderCodeLinks(item.message, onOpenOrder)}</p>
+                  <InternalAttachmentPreview attachment={item.metadata?.attachment} />
+                  {Boolean(item.metadata?.order_codes?.length) && (
+                    <div className="internal-message-tags">
+                      {item.metadata?.order_codes?.map((code) => <button key={code} type="button" onClick={() => onOpenOrder(code)}>@order:{code}</button>)}
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
             <form className="admin-chat-composer" onSubmit={(event) => { event.preventDefault(); void send() }}>
+              <input ref={galleryInputRef} type="file" accept="image/*" hidden onChange={(event) => { attachFile('gallery', event.target.files?.[0]); event.currentTarget.value = '' }} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { attachFile('camera', event.target.files?.[0]); event.currentTarget.value = '' }} />
+              <input ref={documentInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" hidden onChange={(event) => { attachFile('document', event.target.files?.[0]); event.currentTarget.value = '' }} />
+              <div className="internal-attachment-wrap">
+                <button className="chat-clip-button" type="button" onClick={() => setAttachmentOpen((open) => !open)} aria-label="Lampiran">
+                  <Icon name="clip" />
+                </button>
+                {attachmentOpen && (
+                  <div className="internal-attachment-menu">
+                    <button type="button" onClick={() => galleryInputRef.current?.click()}>Galeri</button>
+                    <button type="button" onClick={() => cameraInputRef.current?.click()}>Kamera</button>
+                    <button type="button" onClick={() => documentInputRef.current?.click()}>Dokumen</button>
+                  </div>
+                )}
+              </div>
               <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Tulis pesan internal, mention order, atau koordinasi driver..." onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
-              <button className="primary-button" disabled={isSending || !message.trim()} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
+              <button className="primary-button" disabled={isSending || (!message.trim() && !attachmentFile)} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
+              {(mentionSuggestions.length > 0 || orderSuggestions.length > 0 || attachmentFile) && (
+                <div className="internal-composer-hints">
+                  {attachmentFile && <button type="button" className="attachment-chip" onClick={() => setAttachmentFile(null)}>{attachmentLabel(attachmentFile.source)}: {attachmentFile.file.name} x</button>}
+                  {mentionSuggestions.map((user) => <button key={user.id} type="button" onClick={() => appendText(`@${user.name.replace(/\s+/g, '_')}`)}>@{user.name}</button>)}
+                  {orderSuggestions.map((order) => <button key={order.id} type="button" onClick={() => { setSelectedOrderId(String(order.id)); appendText(`@order:${order.code}`) }}>@order:{order.code}</button>)}
+                </div>
+              )}
             </form>
           </>
         )}
       </main>
     </section>
   )
+}
+
+function InternalAttachmentPreview({ attachment }: { attachment?: InternalChatAttachment | null }) {
+  if (!attachment?.url) return null
+
+  const url = assetUrl(attachment.url)
+  const isImage = String(attachment.mime ?? '').startsWith('image/')
+
+  return (
+    <a className="internal-attachment-preview" href={url} target="_blank" rel="noreferrer">
+      {isImage ? <img src={url} alt={attachment.name ?? 'Lampiran internal'} /> : <Icon name="receipt" />}
+      <span>
+        <b>{attachment.name ?? 'Lampiran'}</b>
+        <small>{attachmentLabel(attachment.source)}{attachment.size ? ` - ${formatFileSize(attachment.size)}` : ''}</small>
+      </span>
+    </a>
+  )
+}
+
+function attachmentLabel(source?: string | null) {
+  if (source === 'gallery') return 'Galeri'
+  if (source === 'camera') return 'Kamera'
+  return 'Dokumen'
+}
+
+function formatFileSize(size: number) {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`
+  return `${size} B`
+}
+
+function lastMentionToken(text: string) {
+  const match = text.match(/(?:^|\s)@([^\s@]*)$/)
+  return match ? match[1] : null
+}
+
+function mentionedUserIds(text: string, users: User[]) {
+  const normalized = text.toLowerCase()
+  return users
+    .filter((user) => normalized.includes(`@${user.name.replace(/\s+/g, '_').toLowerCase()}`) || normalized.includes(`@${user.name.toLowerCase()}`))
+    .map((user) => user.id)
+}
+
+function mentionedOrderIds(text: string, orders: Order[]) {
+  const codes = mentionedOrderCodes(text, orders)
+  return orders.filter((order) => codes.includes(order.code)).map((order) => order.id)
+}
+
+function mentionedOrderCodes(text: string, orders: Order[]) {
+  const normalized = text.toLowerCase()
+  return orders
+    .filter((order) => normalized.includes(`@order:${order.code.toLowerCase()}`) || normalized.includes(`@${order.code.toLowerCase()}`))
+    .map((order) => order.code)
 }
 
 function StickyNotesPanel({ api, me, users, branches }: { api: ApiClient; me: User; users: User[]; branches: Branch[] }) {
@@ -3389,14 +3538,16 @@ function isAuthError(error: unknown) {
 
 function makeApi(token: string, onUnauthorized?: () => void): ApiClient {
   return async <T,>(path: string, options: RequestInit = {}) => {
+    const isFormData = options.body instanceof FormData
+    const headers = {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers ?? {}),
+    }
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...(options.headers ?? {}),
-      },
+      headers,
     })
     const payload = await response.json().catch(() => ({}))
     if (response.status === 401 || response.status === 419) {
@@ -3703,6 +3854,7 @@ function Icon({ name }: { name: string }) {
     chat: 'M4 4h16v11H7l-5 5V4h2Zm3 4v2h10V8H7Zm0 4v2h7v-2H7Z',
     receipt: 'M6 2h12v20l-3-2-3 2-3-2-3 2V2Zm3 5v2h6V7H9Zm0 4v2h6v-2H9Zm0 4v2h4v-2H9Z',
     note: 'M5 3h11l3 3v15H5V3Zm10 2v4h4l-4-4ZM8 10v2h8v-2H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z',
+    clip: 'M16.5 6.5v9a4.5 4.5 0 0 1-9 0v-10a3.5 3.5 0 0 1 7 0v9.5a2.5 2.5 0 0 1-5 0V7h2v8a.5.5 0 0 0 1 0V5.5a1.5 1.5 0 0 0-3 0v10a2.5 2.5 0 0 0 5 0v-9h2Z',
     settings: 'M19.4 13.5a7.8 7.8 0 0 0 .1-1.5 7.8 7.8 0 0 0-.1-1.5l2-1.5-2-3.5-2.4 1a7.2 7.2 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A7.2 7.2 0 0 0 7 6L4.6 5 2.6 8.5l2 1.5a7.8 7.8 0 0 0-.1 1.5c0 .5 0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a7.2 7.2 0 0 0 2.6 1.5L10 22h4l.4-2.5A7.2 7.2 0 0 0 17 18l2.4 1 2-3.5-2-1.5ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z',
     moon: 'M21 14.8A8.5 8.5 0 0 1 9.2 3a7 7 0 1 0 11.8 11.8Z',
     sun: 'M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0-5h2v3h-2V2Zm0 17h2v3h-2v-3ZM2 12h3v2H2v-2Zm17 0h3v2h-3v-2ZM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1Zm12.1 12.1 1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1Zm2.1-13.5 1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1ZM6.3 16.3l1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1Z',

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class InternalChatController extends Controller
 {
@@ -99,19 +100,43 @@ class InternalChatController extends Controller
         $this->authorizeRoom($actor, $room);
 
         $payload = $request->validate([
-            'message' => ['required', 'string', 'max:4000'],
+            'message' => ['nullable', 'required_without:attachment', 'string', 'max:4000'],
             'metadata' => ['nullable', 'array'],
+            'metadata_json' => ['nullable', 'string', 'max:8000'],
+            'attachment' => ['nullable', 'file', 'max:10240', 'mimes:jpg,jpeg,png,webp,pdf,doc,docx,xls,xlsx,txt'],
+            'attachment_source' => ['nullable', 'string', 'in:gallery,camera,document'],
         ]);
 
-        $message = DB::transaction(function () use ($room, $actor, $payload): InternalChatMessage {
+        $metadata = $payload['metadata'] ?? [];
+        if (isset($payload['metadata_json'])) {
+            $decoded = json_decode($payload['metadata_json'], true);
+            if (is_array($decoded)) {
+                $metadata = array_replace_recursive($metadata, $decoded);
+            }
+        }
+
+        if ($request->hasFile('attachment')) {
+            $file = $request->file('attachment');
+            $path = $file?->store('internal-chat', 'public');
+            $metadata['attachment'] = [
+                'source' => $payload['attachment_source'] ?? 'document',
+                'name' => $file?->getClientOriginalName(),
+                'mime' => $file?->getClientMimeType(),
+                'size' => $file?->getSize(),
+                'path' => $path,
+                'url' => $path ? Storage::url($path) : null,
+            ];
+        }
+
+        $message = DB::transaction(function () use ($room, $actor, $payload, $metadata): InternalChatMessage {
             if (! $room->participants()->whereKey($actor->id)->exists()) {
                 $room->participants()->syncWithoutDetaching([$actor->id => ['last_read_at' => now()]]);
             }
 
             $message = $room->messages()->create([
                 'sender_id' => $actor->id,
-                'message' => trim($payload['message']),
-                'metadata' => $payload['metadata'] ?? null,
+                'message' => trim($payload['message'] ?? '') ?: 'Mengirim lampiran',
+                'metadata' => $metadata ?: null,
             ]);
 
             $room->touch();
