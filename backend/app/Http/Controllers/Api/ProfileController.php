@@ -17,10 +17,13 @@ class ProfileController extends Controller
 
     public function update(Request $request): JsonResponse
     {
+        $role = $request->user()->role instanceof UserRole ? $request->user()->role : UserRole::tryFrom((string) $request->user()->role);
+        $profileRequired = $role === UserRole::Customer;
+
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'phone' => ['required', 'string', 'max:30'],
-            'address' => ['required', 'string', 'max:500'],
+            'phone' => [$profileRequired ? 'required' : 'nullable', 'string', 'max:30'],
+            'address' => [$profileRequired ? 'required' : 'nullable', 'string', 'max:500'],
             'profile_photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
@@ -29,7 +32,7 @@ class ProfileController extends Controller
                 Storage::disk('public')->delete($request->user()->profile_photo_path);
             }
 
-            $payload['profile_photo_path'] = $request->file('profile_photo')?->store('profiles/customers', 'public');
+            $payload['profile_photo_path'] = $request->file('profile_photo')?->store($profileRequired ? 'profiles/customers' : 'profiles/staff', 'public');
         }
 
         unset($payload['profile_photo']);

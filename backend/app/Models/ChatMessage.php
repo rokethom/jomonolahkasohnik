@@ -18,6 +18,10 @@ class ChatMessage extends Model
         'image_url',
         'audio_url',
         'audio_duration',
+        'file_url',
+        'file_name',
+        'file_mime',
+        'file_size',
         'is_read',
         'read_at',
     ];

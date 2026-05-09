@@ -1610,6 +1610,8 @@ class AdminController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'phone' => $user->phone,
+            'address' => $user->address,
+            'profile_photo_url' => $user->profile_photo_path ? '/api/media/'.ltrim($user->profile_photo_path, '/') : null,
             'role' => $user->role->value,
             'branch_id' => $user->branch_id,
             'branch' => $user->branch?->name,

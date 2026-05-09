@@ -401,6 +401,10 @@
   color: #9fb0c6;
 }
 
+.admin-shell.dark .topbar {
+  background: rgba(11, 18, 32, 0.92);
+}
+
 .admin-shell.dark .section-head p,
 .admin-shell.dark .toolbar-hint,
 .admin-shell.dark .report-card small {
@@ -633,6 +637,56 @@ svg {
   line-height: 1.4;
 }
 
+.sidebar-profile-line {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sidebar-profile-line > div:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-profile-line span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sidebar-profile-line strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-avatar,
+.admin-profile-avatar {
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #083344;
+  background: linear-gradient(135deg, #facc15, #22c55e);
+  font-weight: 950;
+}
+
+.admin-avatar {
+  width: 38px;
+  height: 38px;
+}
+
+.admin-avatar img,
+.admin-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .sidebar-actions {
   width: 100%;
   display: grid;
@@ -688,12 +742,18 @@ svg {
 
 .topbar {
   flex: 0 0 auto;
+  position: sticky;
+  top: 0;
+  z-index: 12;
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(0, auto);
   align-items: start;
   justify-content: space-between;
   gap: 22px;
   margin-bottom: 24px;
+  padding: 0 0 14px;
+  background: rgba(247, 248, 251, 0.92);
+  backdrop-filter: blur(18px);
 }
 
 .topbar-title {
@@ -841,31 +901,6 @@ svg {
 .admin-shell.dark .theme-switch span {
   color: #93c5fd;
   background: #0f172a;
-}
-
-.profile-settings-button {
-  width: 46px;
-  min-width: 46px;
-  height: 46px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  color: #0f172a;
-  background: #ffffff;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
-  cursor: pointer;
-}
-
-.profile-settings-button:hover {
-  color: #0369a1;
-  border-color: rgba(14, 165, 233, 0.26);
-}
-
-.admin-shell.dark .profile-settings-button {
-  color: #dbeafe;
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.82);
 }
 
 .logout-button {
@@ -3278,6 +3313,34 @@ td {
   gap: 16px;
 }
 
+.admin-profile-modal {
+  width: min(680px, 100%);
+}
+
+.admin-profile-form {
+  gap: 18px;
+}
+
+.admin-profile-photo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.admin-profile-avatar {
+  width: 76px;
+  height: 76px;
+  font-size: 28px;
+}
+
+.admin-profile-form .span-2 {
+  grid-column: span 2;
+}
+
 fieldset {
   border: 1px solid #dbe4ef;
   border-radius: 18px;
@@ -3763,6 +3826,46 @@ textarea::placeholder {
   gap: 12px;
 }
 
+.chat-confirm-card {
+  position: absolute;
+  right: 18px;
+  bottom: 78px;
+  z-index: 6;
+  width: min(360px, calc(100% - 36px));
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 247, 247, 0.98);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.chat-confirm-card strong,
+.chat-confirm-card span {
+  display: block;
+}
+
+.chat-confirm-card strong {
+  color: #991b1b;
+  font-size: 15px;
+}
+
+.chat-confirm-card span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.chat-confirm-card > div:last-child {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .admin-chat-shell {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -3870,6 +3973,7 @@ textarea::placeholder {
 }
 
 .admin-chat-room {
+  position: relative;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
   gap: 10px;
@@ -4056,9 +4160,10 @@ textarea::placeholder {
 
 .admin-chat-composer {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 42px 1fr auto;
   gap: 10px;
   position: relative;
+  align-items: end;
 }
 
 .internal-chat-shell .admin-chat-composer {
@@ -4083,6 +4188,47 @@ textarea::placeholder {
   min-height: 44px;
   padding: 0 14px;
   border-radius: 14px;
+}
+
+.admin-composer-hints {
+  grid-column: 1 / -1;
+}
+
+.admin-file-attachment {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 13px;
+  padding: 9px;
+  color: inherit;
+  background: rgba(248, 250, 252, 0.76);
+  text-decoration: none;
+}
+
+.admin-file-attachment svg {
+  width: 28px;
+  height: 28px;
+  color: #0369a1;
+}
+
+.admin-file-attachment span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.admin-file-attachment b,
+.admin-file-attachment small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-file-attachment b {
+  color: #1f2937;
 }
 
 .admin-chat-composer textarea:disabled {
@@ -4551,12 +4697,6 @@ textarea::placeholder {
     will-change: transform;
   }
 
-  .topbar.topbar-hidden {
-    opacity: 0.96;
-    pointer-events: none;
-    transform: translateY(calc(-100% - 6px));
-  }
-
   .admin-shell.dark .topbar {
     border-bottom-color: rgba(148, 163, 184, 0.18);
     background: rgba(11, 18, 32, 0.9);
@@ -4854,7 +4994,7 @@ textarea::placeholder {
   }
 
   .admin-chat-composer {
-    grid-template-columns: 1fr;
+    grid-template-columns: 42px minmax(0, 1fr);
   }
 
   .internal-chat-shell .admin-chat-composer {
@@ -4866,7 +5006,197 @@ textarea::placeholder {
   }
 
   .admin-chat-composer .primary-button {
+    grid-column: 1 / -1;
     min-height: 44px;
+  }
+}
+
+@media (max-width: 760px) {
+  .compact-activity {
+    padding: 10px;
+  }
+
+  .compact-activity .panel-header {
+    margin-bottom: 8px;
+  }
+
+  .order-activity-item.compact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+    min-height: 0;
+    padding: 9px 10px;
+  }
+
+  .order-activity-item.compact > div:first-child {
+    display: grid;
+    gap: 4px;
+  }
+
+  .order-activity-item.compact span,
+  .order-activity-item.compact em {
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .order-activity-item.compact .status {
+    margin-left: 0;
+    justify-self: end;
+    min-height: 22px;
+    padding-inline: 8px;
+    font-size: 10px;
+  }
+
+  .compact-head {
+    display: grid;
+    gap: 8px;
+  }
+
+  .driver-performance-snapshot .secondary-button.compact {
+    width: auto;
+    min-height: 34px;
+    justify-self: start;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.12);
+    color: #0369a1;
+    box-shadow: none;
+  }
+
+  .performance-mini-card {
+    min-height: 102px;
+    padding: 13px;
+  }
+
+  .performance-mini-card strong {
+    font-size: 18px;
+  }
+
+  .activity-list .empty-panel {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .admin-chat-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+    gap: 12px;
+    overflow: visible;
+  }
+
+  .admin-chat-list {
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .admin-chat-scroll {
+    max-height: min(48dvh, 380px);
+    overflow-y: auto;
+    padding-right: 8px;
+    scrollbar-gutter: stable;
+  }
+
+  .admin-chat-scroll::-webkit-scrollbar,
+  .admin-chat-messages::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .admin-chat-scroll::-webkit-scrollbar-thumb,
+  .admin-chat-messages::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.55);
+  }
+
+  .admin-chat-item {
+    padding: 11px;
+  }
+
+  .admin-chat-room {
+    min-height: min(76dvh, 680px);
+    max-height: none;
+    grid-template-rows: auto auto auto minmax(300px, 1fr) auto;
+    overflow: hidden;
+  }
+
+  .admin-chat-room-head h2 {
+    font-size: 23px;
+  }
+
+  .admin-chat-actions .mini-button,
+  .cancel-approval .mini-button {
+    width: auto;
+    min-height: 34px;
+    align-self: stretch;
+  }
+
+  .admin-chat-messages {
+    min-height: 300px;
+    max-height: 52dvh;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    padding: 12px 10px 14px;
+  }
+
+  .admin-chat-composer {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .admin-chat-composer textarea {
+    min-height: 48px;
+  }
+
+  .admin-chat-composer .primary-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .chat-confirm-card {
+    position: sticky;
+    right: auto;
+    bottom: 8px;
+    width: 100%;
+    margin-top: 8px;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+  }
+
+  .pricing-card.ring-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .pricing-card.ring-card > .pricing-card-main {
+    grid-column: 1 / -1;
+  }
+
+  .pricing-card.ring-card > em {
+    justify-self: start;
+    align-self: center;
+    font-size: 16px;
+  }
+
+  .pricing-card.ring-card > .mini-button.reject {
+    justify-self: end;
+    align-self: center;
+    width: auto;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+  }
+
+  .pricing-card.ring-card.suggestion {
+    grid-template-columns: 1fr;
+  }
+
+  .ring-card-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -4881,7 +5211,6 @@ textarea::placeholder {
   .topbar-actions .pwa-install-button,
   .topbar-actions .theme-button,
   .topbar-actions .theme-switch,
-  .topbar-actions .profile-settings-button,
   .topbar-actions .auto-refresh-pill {
     flex-basis: calc(50% - 4px);
   }

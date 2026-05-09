@@ -27,6 +27,10 @@ class MessageService
             'image_url' => $this->storeFile($payload['image'] ?? null, 'chat/images'),
             'audio_url' => $this->storeFile($payload['audio'] ?? null, 'chat/audio'),
             'audio_duration' => $payload['audio_duration'] ?? null,
+            'file_url' => $this->storeFile($payload['file'] ?? null, 'chat/files'),
+            'file_name' => $payload['file_name'] ?? ($payload['file'] ?? null)?->getClientOriginalName(),
+            'file_mime' => $payload['file_mime'] ?? ($payload['file'] ?? null)?->getClientMimeType(),
+            'file_size' => $payload['file_size'] ?? ($payload['file'] ?? null)?->getSize(),
         ]);
 
         $role = $sender->role->value ?? $sender->role;

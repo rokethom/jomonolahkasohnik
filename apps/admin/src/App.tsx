@@ -26,6 +26,8 @@ type User = {
   name: string
   email: string
   phone: string | null
+  address?: string | null
+  profile_photo_url?: string | null
   role: Role
   branch_id: number | null
   branch: string | null
@@ -212,7 +214,7 @@ type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pi
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; is_active: boolean }
 type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; accuracy?: number | null; provider?: string | null; is_mock_location?: boolean; is_valid: boolean; is_suspicious: boolean; reason: string | null; maps_url?: string | null; created_at: string | null }
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; first_operator_response_at?: string | null; rating_requested_at?: string | null; closed_at?: string | null; updated_at: string | null }
-type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; created_at?: string | null }
+type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; file_url?: string | null; file_name?: string | null; file_mime?: string | null; file_size?: number | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
 type InternalChatRoom = { id: number; name: string; type: 'global' | 'branch' | 'private' | string; branch_id?: number | null; branch?: string | null; branch_area?: string | null; participants_count?: number; participants?: Array<{ id: number; name: string; role: Role | string }>; last_message?: string | null; last_sender?: string | null; unread_count?: number; updated_at?: string | null }
 type InternalChatAttachment = { source?: string | null; name?: string | null; mime?: string | null; size?: number | null; url?: string | null; path?: string | null }
@@ -466,7 +468,8 @@ function App() {
   const [error, setError] = useState('')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('admin_theme') === 'dark')
   const [isMobileNavOpen, setMobileNavOpen] = useState(false)
-  const [isMobileTopbarHidden, setMobileTopbarHidden] = useState(false)
+  const [isProfileOpen, setProfileOpen] = useState(false)
+  const [notificationSound, setNotificationSound] = useState(() => localStorage.getItem('admin_notification_sound') ?? 'ding')
   const [openMenuGroups, setOpenMenuGroups] = useState<Record<string, boolean>>({
     overview: true,
     operations: true,
@@ -478,7 +481,6 @@ function App() {
   const isRefreshingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
   const lastOperHandlePendingRef = useRef<number | null>(null)
-  const lastScrollYRef = useRef(0)
 
   const clearAuthSession = useCallback(() => {
     localStorage.removeItem('admin_token')
@@ -642,34 +644,6 @@ function App() {
     return () => document.removeEventListener('mousedown', closeBackdropModal)
   }, [])
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentY = window.scrollY
-      const isMobile = window.matchMedia('(max-width: 760px)').matches
-
-      if (!isMobile || isMobileNavOpen) {
-        setMobileTopbarHidden(false)
-        lastScrollYRef.current = currentY
-        return
-      }
-
-      const delta = currentY - lastScrollYRef.current
-      if (Math.abs(delta) < 8) return
-
-      setMobileTopbarHidden(currentY > 96 && delta > 0)
-      lastScrollYRef.current = currentY
-    }
-
-    handleScroll()
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    window.addEventListener('resize', handleScroll)
-
-    return () => {
-      window.removeEventListener('scroll', handleScroll)
-      window.removeEventListener('resize', handleScroll)
-    }
-  }, [isMobileNavOpen])
-
   if (!token) {
     return <LoginScreen onLogin={(nextToken) => {
       localStorage.setItem('admin_token', nextToken)
@@ -751,10 +725,18 @@ function App() {
           })}
         </nav>
         <div className="sidebar-card">
-          <span>Authenticated as</span>
-          <strong>{data.me.name}</strong>
+          <div className="sidebar-profile-line">
+            <div className="admin-avatar">
+              {data.me.profile_photo_url ? <img src={assetUrl(data.me.profile_photo_url)} alt={data.me.name} /> : <span>{data.me.name.slice(0, 1).toUpperCase()}</span>}
+            </div>
+            <div>
+              <span>Authenticated as</span>
+              <strong>{data.me.name}</strong>
+            </div>
+          </div>
           <RoleBadge role={data.me.role} />
           <div className="sidebar-actions">
+            <button className="sidebar-action-button" type="button" onClick={() => { setProfileOpen(true); setMobileNavOpen(false) }}><Icon name="settings" />Profile & Setting</button>
             {data.permissions.can_manage_users && <button className="sidebar-action-button" type="button" onClick={() => { setUserFormOpen(true); setMobileNavOpen(false) }}><Icon name="plus" />New User</button>}
             <PwaInstallButton />
             <button className="sidebar-action-button danger" type="button" onClick={logout}><Icon name="logout" />Logout</button>
@@ -763,7 +745,7 @@ function App() {
       </aside>
 
         <main className="main">
-          <header className={isMobileTopbarHidden ? 'topbar topbar-hidden' : 'topbar'}>
+          <header className="topbar">
             <button className="mobile-menu-button" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Icon name="grid" />Menu</button>
             <div className="topbar-title"><h1>{titleFor(safeView)}</h1><p>{subtitleFor(data)}</p>{error && <p className="error-text">{error}</p>}</div>
             <div className="topbar-actions">
@@ -782,18 +764,6 @@ function App() {
               <button className="theme-switch" type="button" onClick={toggleDarkMode} aria-label={darkMode ? 'Switch to light theme' : 'Switch to dark theme'} title={darkMode ? 'Light theme' : 'Dark theme'}>
                 <span><Icon name={darkMode ? 'sun' : 'moon'} /></span>
               </button>
-              <button
-                className="profile-settings-button"
-                type="button"
-                aria-label="Profile settings"
-                title="Profile settings"
-                onClick={() => {
-                  setQuery(data.me.username)
-                  setView(allowedViews.includes('users') ? 'users' : 'dashboard')
-                }}
-              >
-                <Icon name="settings" />
-              </button>
             </div>
           </header>
 
@@ -806,7 +776,7 @@ function App() {
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {(safeView === 'pricing' || safeView === 'ring-pricing') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
-        {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} notificationSound={notificationSound} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
@@ -816,6 +786,7 @@ function App() {
       </main>
 
       {isUserFormOpen && <UserFormModal permissions={data.permissions} branches={data.branches} services={data.services} api={api} onClose={() => setUserFormOpen(false)} onCreated={async (password) => { alert(`Password sementara: ${password}`); await refresh(); setUserFormOpen(false) }} />}
+      {isProfileOpen && <AdminProfileModal me={data.me} api={api} darkMode={darkMode} notificationSound={notificationSound} onDarkModeChange={toggleDarkMode} onNotificationSoundChange={(value) => { localStorage.setItem('admin_notification_sound', value); setNotificationSound(value); if (value !== 'off') playAdminNotificationSound(value) }} onClose={() => setProfileOpen(false)} onSaved={refresh} />}
     </div>
   )
 }
@@ -2343,17 +2314,125 @@ function ReportCard({ title, value, meta, tone }: { title: string; value: string
   return <article className={`report-card ${tone}`}><span>{title}</span><strong>{value}</strong>{meta && <small>{meta}</small>}</article>
 }
 
-function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder }: { initialChats: Chat[]; api: ApiClient; me: User; token: string; permissions: Permissions; onOpenOrder: (code: string) => void }) {
+function AdminProfileModal({
+  me,
+  api,
+  darkMode,
+  notificationSound,
+  onDarkModeChange,
+  onNotificationSoundChange,
+  onClose,
+  onSaved,
+}: {
+  me: User
+  api: ApiClient
+  darkMode: boolean
+  notificationSound: string
+  onDarkModeChange: () => void
+  onNotificationSoundChange: (value: string) => void
+  onClose: () => void
+  onSaved: () => Promise<void>
+}) {
+  const [name, setName] = useState(me.name)
+  const [phone, setPhone] = useState(me.phone ?? '')
+  const [address, setAddress] = useState(me.address ?? '')
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+
+    try {
+      const body = new FormData()
+      body.append('name', name.trim())
+      body.append('phone', phone.trim())
+      body.append('address', address.trim())
+      if (photo) body.append('profile_photo', photo)
+
+      await api('/user/profile', { method: 'POST', body })
+      if (photoPreview) URL.revokeObjectURL(photoPreview)
+      setPhoto(null)
+      setPhotoPreview(null)
+      await onSaved()
+      onClose()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Profile gagal disimpan')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal admin-profile-modal">
+        <header className="modal-header">
+          <div><h2>Profile & Setting</h2><p>Kelola profile admin, foto, tema, dan suara notifikasi.</p></div>
+          <button className="icon-button" type="button" onClick={onClose}>x</button>
+        </header>
+        <form className="user-form admin-profile-form" onSubmit={submit}>
+          <div className="admin-profile-photo">
+            <div className="admin-profile-avatar">
+              {photoPreview || me.profile_photo_url ? <img src={photoPreview ?? assetUrl(me.profile_photo_url ?? '')} alt={me.name} /> : <span>{me.name.slice(0, 1).toUpperCase()}</span>}
+            </div>
+            <label className="secondary-button compact">
+              Ganti Foto
+              <input type="file" accept="image/*" hidden onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                if (photoPreview) URL.revokeObjectURL(photoPreview)
+                setPhoto(file)
+                setPhotoPreview(file ? URL.createObjectURL(file) : null)
+              }} />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>Nama<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
+            <label>Telepon<input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Nomor aktif" /></label>
+            <label className="span-2">Alamat<textarea value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Alamat staff/admin" /></label>
+            <label>Tema
+              <button className="secondary-button" type="button" onClick={onDarkModeChange}>{darkMode ? 'Dark mode aktif' : 'Light mode aktif'}</button>
+            </label>
+            <label>Suara notifikasi
+              <select value={notificationSound} onChange={(event) => onNotificationSoundChange(event.target.value)}>
+                <option value="ding">Ding</option>
+                <option value="pop">Pop</option>
+                <option value="soft">Soft</option>
+                <option value="off">Nonaktif</option>
+              </select>
+            </label>
+          </div>
+          {error && <div className="chat-error">{error}</div>}
+          <div className="modal-actions">
+            <button className="secondary-button" type="button" onClick={onClose}>Batal</button>
+            <button className="primary-button" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving...' : 'Simpan Profile'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function AdminChatPanel({ initialChats, api, me, token, permissions, notificationSound, onOpenOrder }: { initialChats: Chat[]; api: ApiClient; me: User; token: string; permissions: Permissions; notificationSound: string; onOpenOrder: (code: string) => void }) {
   const [chats, setChats] = useState<Chat[]>(initialChats)
   const [activeId, setActiveId] = useState<number | null>(initialChats[0]?.id ?? null)
   const [detail, setDetail] = useState<ChatDetail | null>(null)
   const [message, setMessage] = useState('')
   const [chatQuery, setChatQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'waiting' | 'active' | 'closed'>('all')
+  const [attachmentOpen, setAttachmentOpen] = useState(false)
+  const [attachmentFile, setAttachmentFile] = useState<{ file: File; source: 'gallery' | 'camera' | 'document' } | null>(null)
   const [isSending, setSending] = useState(false)
   const [chatError, setChatError] = useState('')
   const [isBotTyping, setBotTyping] = useState(false)
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   const messagesRef = useRef<HTMLDivElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const documentInputRef = useRef<HTMLInputElement | null>(null)
+  const chatSnapshotRef = useRef('')
 
   const activeChat = detail?.chat ?? chats.find((chat) => chat.id === activeId) ?? null
   const waitingQueue = useMemo(() => chats
@@ -2364,15 +2443,20 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
     return haystack.includes(chatQuery.toLowerCase()) && (statusFilter === 'all' || chat.status === statusFilter)
   }).sort((first, second) => chatSortScore(first, waitingQueue) - chatSortScore(second, waitingQueue))
 
-  const loadChats = useCallback(async () => {
+  const loadChats = useCallback(async (notify = true) => {
     try {
       const payload = await api<{ data: { data: Chat[] } }>('/admin/chats')
+      const snapshot = chatListSnapshot(payload.data.data)
+      if (notify && chatSnapshotRef.current && chatSnapshotRef.current !== snapshot) {
+        playAdminNotificationSound(notificationSound)
+      }
+      chatSnapshotRef.current = snapshot
       setChats(payload.data.data)
       if (!activeId && payload.data.data[0]) setActiveId(payload.data.data[0].id)
     } catch (error) {
       setChatError(error instanceof Error ? error.message : 'Gagal memuat chat')
     }
-  }, [activeId, api])
+  }, [activeId, api, notificationSound])
 
   const loadDetail = useCallback(async (id: number) => {
     setChatError('')
@@ -2385,15 +2469,30 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
   }, [api])
 
   useEffect(() => {
+    const snapshot = chatListSnapshot(initialChats)
+    if (!chatSnapshotRef.current) chatSnapshotRef.current = snapshot
+    setChats(initialChats)
+    setActiveId((current) => current ?? initialChats[0]?.id ?? null)
+  }, [initialChats])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => void loadChats(), 0)
-    return () => window.clearTimeout(timer)
+    const interval = window.setInterval(() => void loadChats(), 2000)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearInterval(interval)
+    }
   }, [loadChats])
 
   useEffect(() => {
     if (!activeId) return
     setDetail(null)
     const timer = window.setTimeout(() => void loadDetail(activeId), 0)
-    return () => window.clearTimeout(timer)
+    const interval = window.setInterval(() => void loadDetail(activeId), 2500)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearInterval(interval)
+    }
   }, [activeId, loadDetail])
 
   useEffect(() => {
@@ -2417,13 +2516,17 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
   }, [detail?.messages.length, isBotTyping])
 
   const send = async () => {
-    if (!activeId || !message.trim() || isSending || activeChat?.status === 'closed') return
+    if (!activeId || (!message.trim() && !attachmentFile) || isSending || activeChat?.status === 'closed') return
     setSending(true)
     setChatError('')
     try {
+      const messageText = message.trim() || (attachmentFile ? `Lampiran ${attachmentLabel(attachmentFile.source)}: ${attachmentFile.file.name}` : '')
+      const body = attachmentFile
+        ? adminChatAttachmentBody(activeId, messageText, attachmentFile)
+        : JSON.stringify({ chat_id: activeId, message: messageText })
       const payload = await api<{ data: AdminChatMessage }>('/admin/send-message', {
         method: 'POST',
-        body: JSON.stringify({ chat_id: activeId, message }),
+        body,
       })
       setDetail((current) => current ? {
         ...current,
@@ -2432,6 +2535,9 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
       } : current)
       setChats((rows) => rows.map((chat) => chat.id === activeId ? { ...chat, status: chat.status === 'waiting' ? 'active' : chat.status, operator: chat.operator ?? me.name, last_message: payload.data.message, updated_at: payload.data.created_at ?? chat.updated_at } : chat))
       setMessage('')
+      setAttachmentFile(null)
+      setAttachmentOpen(false)
+      await loadChats(false)
     } catch (error) {
       setChatError(error instanceof Error ? error.message : 'Pesan gagal dikirim')
     } finally {
@@ -2440,10 +2546,11 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
   }
 
   const closeChat = async () => {
-    if (!activeId || activeChat?.status === 'closed' || !confirm('Tutup percakapan ini?')) return
+    if (!activeId || activeChat?.status === 'closed') return
     setChatError('')
     try {
       await api(`/admin/chat/${activeId}/close`, { method: 'POST' })
+      setCloseConfirmOpen(false)
       await loadDetail(activeId)
       await loadChats()
     } catch (error) {
@@ -2456,6 +2563,12 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
     if (!cancelId) return
     await api(`/admin/chat/cancel-requests/${cancelId}/${action}`, { method: 'POST' })
     await loadDetail(activeId!)
+  }
+
+  const attachFile = (source: 'gallery' | 'camera' | 'document', file?: File | null) => {
+    if (!file) return
+    setAttachmentFile({ file, source })
+    setAttachmentOpen(false)
   }
 
   return (
@@ -2495,7 +2608,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
           <>
             <header className="admin-chat-room-head">
               <div><h2>{activeChat.customer || activeChat.driver || 'Chat'}</h2><p>{activeChat.order_code ?? activeChat.type} Â· Operator: {activeChat.operator ?? me.name}</p></div>
-              <div className="admin-chat-actions"><QueueBadge chat={activeChat} queue={waitingQueue} /><SlaBadge chat={activeChat} /><ChatFeedbackBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={closeChat}>Close Chat</button></div>
+              <div className="admin-chat-actions"><QueueBadge chat={activeChat} queue={waitingQueue} /><SlaBadge chat={activeChat} /><ChatFeedbackBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={() => setCloseConfirmOpen(true)}>Close Chat</button></div>
             </header>
             {activeChat.order_code && <button className="order-code-link order-code-row" onClick={() => onOpenOrder(activeChat.order_code!)}>Buka order {activeChat.order_code}</button>}
             {chatError && <div className="chat-error">{chatError}</div>}
@@ -2514,15 +2627,48 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, onOpenOrder
                   {item.message && <p>{renderOrderCodeLinks(item.message, onOpenOrder)}</p>}
                   {item.image_url && <img src={assetUrl(item.image_url)} alt="Chat attachment" />}
                   {item.audio_url && <div className="admin-voice"><audio controls src={assetUrl(item.audio_url)} /><small>{item.audio_duration ?? 0}s</small></div>}
+                  <AdminChatFilePreview message={item} />
                   {(item.message ?? '').includes('Transkripsi:') && <em>Transcription available</em>}
                 </article>
               ))}
               {isBotTyping && <div className="bot-typing">Customer sedang mengetik...</div>}
             </div>
             <form className="admin-chat-composer" onSubmit={(event) => { event.preventDefault(); void send() }}>
+              <input ref={galleryInputRef} type="file" accept="image/*" hidden onChange={(event) => { attachFile('gallery', event.target.files?.[0]); event.currentTarget.value = '' }} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { attachFile('camera', event.target.files?.[0]); event.currentTarget.value = '' }} />
+              <input ref={documentInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" hidden onChange={(event) => { attachFile('document', event.target.files?.[0]); event.currentTarget.value = '' }} />
+              <div className="internal-attachment-wrap admin-attachment-wrap">
+                <button className="chat-clip-button" type="button" disabled={activeChat.status === 'closed'} onClick={() => setAttachmentOpen((open) => !open)} aria-label="Lampiran">
+                  <Icon name="clip" />
+                </button>
+                {attachmentOpen && (
+                  <div className="internal-attachment-menu admin-attachment-menu">
+                    <button type="button" onClick={() => galleryInputRef.current?.click()}>Galeri</button>
+                    <button type="button" onClick={() => cameraInputRef.current?.click()}>Kamera</button>
+                    <button type="button" onClick={() => documentInputRef.current?.click()}>Dokumen</button>
+                  </div>
+                )}
+              </div>
               <textarea value={message} disabled={activeChat.status === 'closed'} onChange={(event) => setMessage(event.target.value)} placeholder={activeChat.status === 'closed' ? 'Chat sudah ditutup' : 'Balas sebagai operator...'} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
-              <button className="primary-button" disabled={isSending || activeChat.status === 'closed' || !message.trim()} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
+              <button className="primary-button" disabled={isSending || activeChat.status === 'closed' || (!message.trim() && !attachmentFile)} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
+              {attachmentFile && (
+                <div className="internal-composer-hints admin-composer-hints">
+                  <button type="button" className="attachment-chip" onClick={() => setAttachmentFile(null)}>{attachmentLabel(attachmentFile.source)}: {attachmentFile.file.name} x</button>
+                </div>
+              )}
             </form>
+            {closeConfirmOpen && (
+              <div className="chat-confirm-card" role="dialog" aria-modal="true" aria-label="Konfirmasi tutup chat">
+                <div>
+                  <strong>Tutup percakapan ini?</strong>
+                  <span>Chat akan berubah status menjadi closed dan tidak bisa dibalas lagi.</span>
+                </div>
+                <div>
+                  <button className="secondary-button compact" type="button" onClick={() => setCloseConfirmOpen(false)}>Batal</button>
+                  <button className="mini-button reject" type="button" onClick={() => void closeChat()}>Tutup Chat</button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
@@ -2832,6 +2978,33 @@ function InternalAttachmentPreview({ attachment }: { attachment?: InternalChatAt
       </span>
     </a>
   )
+}
+
+function AdminChatFilePreview({ message }: { message: AdminChatMessage }) {
+  if (!message.file_url) return null
+
+  return (
+    <a className="admin-file-attachment" href={assetUrl(message.file_url)} target="_blank" rel="noreferrer">
+      <Icon name="clip" />
+      <span>
+        <b>{message.file_name ?? 'Dokumen chat'}</b>
+        <small>{message.file_mime ?? 'file'}{message.file_size ? ` · ${formatFileSize(message.file_size)}` : ''}</small>
+      </span>
+    </a>
+  )
+}
+
+function adminChatAttachmentBody(chatId: number, message: string, attachment: { file: File; source: 'gallery' | 'camera' | 'document' }) {
+  const form = new FormData()
+  form.append('chat_id', String(chatId))
+  form.append('message', message)
+  if (attachment.source === 'document') {
+    form.append('file', attachment.file)
+  } else {
+    form.append('image', attachment.file)
+  }
+
+  return form
 }
 
 function visibleInternalMessageText(message: InternalChatMessage) {
@@ -3516,7 +3689,7 @@ function LocationLogsPanel({ logs, branches, canViewMaps }: { logs: LocationLog[
   }, [branches, logs])
   const filteredLogs = logs.filter((log) => branchFilter === 'all' || branchLocationKey(log.branch || '') === branchFilter)
 
-  return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{canViewMaps ? `${log.branch || '-'} - ${log.latitude}, ${log.longitude}` : `${log.branch || '-'} - titik GPS disembunyikan`}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{canViewMaps && log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'Mock GPS' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
+  return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{canViewMaps ? `${log.branch || '-'} - ${log.latitude}, ${log.longitude}` : `${log.branch || '-'} - titik GPS disembunyikan`}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{canViewMaps && log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'GPS tidak valid' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
 }
 
 function UserEditModal({ user, branches, permissions, api, onClose, onSaved }: { user: User; branches: Branch[]; permissions: Permissions; api: ApiClient; onClose: () => void; onSaved: () => void }) {
@@ -3783,6 +3956,44 @@ function chatSortScore(chat: Chat, queue: Chat[]) {
   return 30_000
 }
 
+function chatListSnapshot(chats: Chat[]) {
+  return chats
+    .map((chat) => `${chat.id}:${chat.updated_at ?? ''}:${chat.last_message ?? chat.latest_message ?? ''}:${chat.unread_count ?? 0}:${chat.status}`)
+    .join('|')
+}
+
+function playAdminNotificationSound(sound: string) {
+  if (sound === 'off' || typeof window === 'undefined') return
+
+  const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextClass) return
+
+  try {
+    const context = new AudioContextClass()
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    const presets: Record<string, { frequency: number; duration: number; type: OscillatorType }> = {
+      ding: { frequency: 880, duration: 0.16, type: 'sine' },
+      pop: { frequency: 520, duration: 0.11, type: 'triangle' },
+      soft: { frequency: 660, duration: 0.2, type: 'sine' },
+    }
+    const preset = presets[sound] ?? presets.ding
+
+    oscillator.type = preset.type
+    oscillator.frequency.value = preset.frequency
+    gain.gain.setValueAtTime(0.0001, context.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + preset.duration)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start()
+    oscillator.stop(context.currentTime + preset.duration)
+    window.setTimeout(() => void context.close().catch(() => undefined), Math.ceil((preset.duration + 0.08) * 1000))
+  } catch {
+    // Browser can block audio until the first user gesture. Chat refresh still runs.
+  }
+}
+
 function paymentLabel(method?: string | null) {
   if (method === 'transfer') return 'Transfer'
   if (method === 'qris') return 'QRIS'
@@ -3893,7 +4104,7 @@ function formatLocationDistance(value?: number | null) {
 }
 
 function locationRiskLabel(risk?: string | null) {
-  if (risk === 'mock_location') return 'Mock GPS'
+  if (risk === 'mock_location') return 'GPS tidak valid'
   if (risk === 'suspicious') return 'Suspicious'
   if (risk === 'moved_far') return 'Pindah jauh'
   if (risk === 'changed') return 'Lokasi berubah'

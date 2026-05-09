@@ -47,8 +47,8 @@ class CustomerUiBuilderPage extends Page implements HasForms
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Simulation Mode')
-                    ->description('Builder ini hanya simulasi backend. Save di sini tidak mengubah tampilan FE customer sampai integrasi render FE dibuat.')
+                Forms\Components\Section::make('Preview Mode')
+                    ->description('Builder ini masih mode draft backend. Save di sini tidak mengubah tampilan FE customer sampai integrasi render FE dibuat.')
                     ->columns(2)
                     ->schema([
                         Forms\Components\Select::make('page')
@@ -64,13 +64,13 @@ class CustomerUiBuilderPage extends Page implements HasForms
                             ->live()
                             ->required(),
                         Forms\Components\TextInput::make('preview_customer_name')
-                            ->label('Nama customer mock')
+                            ->label('Nama customer contoh')
                             ->default('Jomono')
                             ->maxLength(80)
                             ->live(onBlur: false),
                     ]),
                 Forms\Components\Section::make('Block Layout')
-                    ->description('Drag / reorder block untuk simulasi penempatan komponen. Gunakan tombol panah pada repeater jika drag tidak nyaman di mobile.')
+                    ->description('Drag / reorder block untuk preview penempatan komponen. Gunakan tombol panah pada repeater jika drag tidak nyaman di mobile.')
                     ->schema([
                         Forms\Components\Repeater::make('blocks')
                             ->hiddenLabel()
@@ -133,7 +133,7 @@ class CustomerUiBuilderPage extends Page implements HasForms
                                     ]),
                             ])
                             ->default($this->defaultBlocks())
-                            ->addActionLabel('Tambah block simulasi')
+                            ->addActionLabel('Tambah block preview')
                             ->columns(1),
                     ]),
             ])
@@ -145,15 +145,15 @@ class CustomerUiBuilderPage extends Page implements HasForms
         $data = $this->normalizedState($this->form->getState());
 
         $settings->set(self::SETTING_KEY, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), true, [
-            'mode' => 'simulation_only',
+            'mode' => 'preview_only',
             'does_not_affect_frontend' => true,
         ]);
 
         $this->form->fill($data);
 
         Notification::make()
-            ->title('Simulasi UI tersimpan')
-            ->body('Data tersimpan sebagai draft simulasi dan belum mengubah FE customer.')
+            ->title('Preview UI tersimpan')
+            ->body('Data tersimpan sebagai draft preview dan belum mengubah FE customer.')
             ->success()
             ->send();
     }
@@ -163,8 +163,8 @@ class CustomerUiBuilderPage extends Page implements HasForms
         $this->form->fill($this->defaultSimulation());
 
         Notification::make()
-            ->title('Simulasi dikembalikan ke default')
-            ->body('Klik Simpan Draft Simulasi jika ingin menyimpan susunan default ini.')
+            ->title('Preview dikembalikan ke default')
+            ->body('Klik Simpan Draft Preview jika ingin menyimpan susunan default ini.')
             ->info()
             ->send();
     }

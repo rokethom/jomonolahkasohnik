@@ -61,6 +61,7 @@ class AdminChatController extends Controller
             'audio' => ['nullable', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
             'audio_duration' => ['nullable', 'integer', 'min:1'],
             'transcription' => ['nullable', 'string'],
+            'file' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,txt'],
         ]);
 
         $conversation = ChatConversation::query()->findOrFail($payload['chat_id']);
@@ -87,6 +88,9 @@ class AdminChatController extends Controller
             ...$payload,
             'message' => trim($messageText.($transcription !== '' ? "\n\nTranskripsi: ".$transcription : '')),
             'sender_type' => $request->user()->role->value,
+            'file_name' => $request->file('file')?->getClientOriginalName(),
+            'file_mime' => $request->file('file')?->getClientMimeType(),
+            'file_size' => $request->file('file')?->getSize(),
         ]);
 
         return response()->json(['data' => $this->messagePayload($message)], 201);
@@ -205,6 +209,10 @@ class AdminChatController extends Controller
             'image_url' => $message->image_url,
             'audio_url' => $message->audio_url,
             'audio_duration' => $message->audio_duration,
+            'file_url' => $message->file_url,
+            'file_name' => $message->file_name,
+            'file_mime' => $message->file_mime,
+            'file_size' => $message->file_size,
             'is_read' => $message->is_read,
             'created_at' => $message->created_at?->toISOString(),
         ];
