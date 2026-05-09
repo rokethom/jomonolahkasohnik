@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
+use App\Models\DriverSuspension;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Services\DriverSuspendService;
@@ -100,6 +101,14 @@ class DriverController extends Controller
                 ->limit(12)
                 ->get()
             : collect();
+        $branchSuspendHistory = $branchId
+            ? DriverSuspension::query()
+                ->with('driver.user')
+                ->whereHas('driver.user', fn ($query) => $query->where('branch_id', $branchId))
+                ->latest('updated_at')
+                ->limit(20)
+                ->get()
+            : collect();
 
         return response()->json([
             'driver' => $this->driverPayload($request, $deposit),
@@ -121,6 +130,16 @@ class DriverController extends Controller
                 'oper_handle_driver' => $request->driver?->user?->name,
                 'oper_handle_reason' => $request->reason,
                 'oper_handle_updated_at' => $request->updated_at?->toIso8601String(),
+            ]),
+            'branch_suspend_history' => $branchSuspendHistory->map(fn (DriverSuspension $suspension): array => [
+                'id' => $suspension->id,
+                'driver' => $suspension->driver?->user?->name ?? 'Driver',
+                'type' => $suspension->type,
+                'reason' => $suspension->reason,
+                'status' => $suspension->status,
+                'start_at' => $suspension->start_at?->toIso8601String(),
+                'end_at' => $suspension->end_at?->toIso8601String(),
+                'updated_at' => $suspension->updated_at?->toIso8601String(),
             ]),
         ]);
     }

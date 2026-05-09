@@ -1556,6 +1556,9 @@ input:focus, textarea:focus, select:focus {
 .branch-detail-list {
   display: grid;
   gap: 10px;
+  max-height: min(54vh, 430px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .branch-accepted-card {
