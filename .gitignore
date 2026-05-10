@@ -16,6 +16,7 @@ dist/
 .turbo/
 **/.turbo/
 **/.vite/
+apps/*/public/version.json
 
 # Laravel runtime files
 backend/storage/*.key

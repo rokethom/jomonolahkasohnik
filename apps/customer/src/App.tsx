@@ -480,6 +480,7 @@ function App() {
   const [orderSubmitting, setOrderSubmitting] = useState(false)
   const orderSubmittingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
+  const updateInfo = useBuildUpdate('customer', !['order-chat', 'driver-chat', 'cs-chat', 'profile-setup'].includes(screen))
 
   useEffect(() => {
     const root = document.documentElement
@@ -1230,6 +1231,7 @@ function App() {
       {screen === 'profile' && <ProfileScreen />}
       {screen === 'profile-setup' && <ProfileScreen setupMode onDone={() => setScreen('home')} />}
       {screen === 'login' && <CustomerLoginScreen onDone={() => setScreen(isProfileComplete(useCustomerStore.getState().user) ? 'home' : 'profile-setup')} />}
+      <AppUpdateNotice update={updateInfo} />
     </ChatLayout>
   )
 
@@ -1237,6 +1239,70 @@ function App() {
     window.history.replaceState({}, document.title, '/profile/setup')
     setScreen('profile-setup')
   }
+}
+
+type BuildInfo = {
+  app: string
+  sha: string
+  full_sha?: string
+  built_at?: string
+}
+
+function useBuildUpdate(appName: string, autoReload: boolean) {
+  const [update, setUpdate] = useState<BuildInfo | null>(null)
+  const reloadTimerRef = useRef<number | null>(null)
+  const currentVersionRef = useRef<BuildInfo | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    const check = async () => {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' })
+        if (!response.ok) return
+        const latest = await response.json() as BuildInfo
+        if (!active || latest.app !== appName || !latest.sha) return
+        if (!currentVersionRef.current) {
+          currentVersionRef.current = latest
+          return
+        }
+        if (latest.sha === currentVersionRef.current.sha) return
+
+        setUpdate(latest)
+        if (autoReload && reloadTimerRef.current === null) {
+          reloadTimerRef.current = window.setTimeout(() => window.location.reload(), 3500)
+        }
+      } catch {
+        // Version polling must never disturb an active order.
+      }
+    }
+
+    void check()
+    const interval = window.setInterval(check, 45000)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = null
+    }
+  }, [appName, autoReload])
+
+  return update
+}
+
+function AppUpdateNotice({ update }: { update: BuildInfo | null }) {
+  if (!update) return null
+
+  return (
+    <div className="app-update-notice">
+      <div>
+        <strong>Update aplikasi tersedia</strong>
+        <span>Versi {update.sha} siap dipakai.</span>
+      </div>
+      <button type="button" onClick={() => window.location.reload()}>Refresh</button>
+    </div>
+  )
 }
 
 function ChatLayout({

@@ -644,22 +644,34 @@ function App() {
     return () => document.removeEventListener('mousedown', closeBackdropModal)
   }, [])
 
+  const allowedViews = data ? allowedViewsFor(data.me.role, data.permissions) : []
+  const safeView = data ? (allowedViews.includes(view) ? view : (allowedViews[0] ?? 'dashboard')) : view
+  const updateInfo = useBuildUpdate('admin', !['orders', 'chats', 'internal-chat', 'manual-order', 'sticky-notes'].includes(safeView))
+
   if (!token) {
-    return <LoginScreen onLogin={(nextToken) => {
-      localStorage.setItem('admin_token', nextToken)
-      localStorage.removeItem('token')
-      setError('')
-      setData(null)
-      setToken(nextToken)
-    }} />
+    return (
+      <>
+        <LoginScreen onLogin={(nextToken) => {
+          localStorage.setItem('admin_token', nextToken)
+          localStorage.removeItem('token')
+          setError('')
+          setData(null)
+          setToken(nextToken)
+        }} />
+        <AppUpdateNotice update={updateInfo} />
+      </>
+    )
   }
 
   if (!data) {
-    return <div className="loading-screen">{isLoading ? 'Memuat data admin...' : error || 'Data belum tersedia'}</div>
+    return (
+      <>
+        <div className="loading-screen">{isLoading ? 'Memuat data admin...' : error || 'Data belum tersedia'}</div>
+        <AppUpdateNotice update={updateInfo} />
+      </>
+    )
   }
 
-  const allowedViews = allowedViewsFor(data.me.role, data.permissions)
-  const safeView = allowedViews.includes(view) ? view : (allowedViews[0] ?? 'dashboard')
   const visibleMenuGroups = menuGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => allowedViews.includes(item.id)) }))
     .filter((group) => group.items.length > 0)
@@ -785,8 +797,73 @@ function App() {
         {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} branches={data.branches} canViewMaps={data.me.role === 'admin'} />}
       </main>
 
+      <AppUpdateNotice update={updateInfo} />
       {isUserFormOpen && <UserFormModal permissions={data.permissions} branches={data.branches} services={data.services} api={api} onClose={() => setUserFormOpen(false)} onCreated={async (password) => { alert(`Password sementara: ${password}`); await refresh(); setUserFormOpen(false) }} />}
       {isProfileOpen && <AdminProfileModal me={data.me} api={api} darkMode={darkMode} notificationSound={notificationSound} onDarkModeChange={toggleDarkMode} onNotificationSoundChange={(value) => { localStorage.setItem('admin_notification_sound', value); setNotificationSound(value); if (value !== 'off') playAdminNotificationSound(value) }} onClose={() => setProfileOpen(false)} onSaved={refresh} />}
+    </div>
+  )
+}
+
+type BuildInfo = {
+  app: string
+  sha: string
+  full_sha?: string
+  built_at?: string
+}
+
+function useBuildUpdate(appName: string, autoReload: boolean) {
+  const [update, setUpdate] = useState<BuildInfo | null>(null)
+  const reloadTimerRef = useRef<number | null>(null)
+  const currentVersionRef = useRef<BuildInfo | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    const check = async () => {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' })
+        if (!response.ok) return
+        const latest = await response.json() as BuildInfo
+        if (!active || latest.app !== appName || !latest.sha) return
+        if (!currentVersionRef.current) {
+          currentVersionRef.current = latest
+          return
+        }
+        if (latest.sha === currentVersionRef.current.sha) return
+
+        setUpdate(latest)
+        if (autoReload && reloadTimerRef.current === null) {
+          reloadTimerRef.current = window.setTimeout(() => window.location.reload(), 3500)
+        }
+      } catch {
+        // Keep admin workflows alive even if version polling fails.
+      }
+    }
+
+    void check()
+    const interval = window.setInterval(check, 45000)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = null
+    }
+  }, [appName, autoReload])
+
+  return update
+}
+
+function AppUpdateNotice({ update }: { update: BuildInfo | null }) {
+  if (!update) return null
+
+  return (
+    <div className="app-update-notice">
+      <div>
+        <strong>Update admin tersedia</strong>
+        <span>Versi {update.sha} siap dipakai.</span>
+      </div>
+      <button type="button" onClick={() => window.location.reload()}>Refresh</button>
     </div>
   )
 }

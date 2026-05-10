@@ -674,6 +674,49 @@
   box-shadow: 0 16px 28px rgba(0, 183, 255, 0.22);
 }
 
+.app-update-notice {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: 18px;
+  z-index: 80;
+  max-width: 430px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 18px;
+  padding: 12px 13px;
+  background: rgba(240, 249, 255, 0.96);
+  color: #075985;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+}
+
+.app-update-notice div {
+  display: grid;
+  gap: 2px;
+}
+
+.app-update-notice strong {
+  font-size: 13px;
+}
+
+.app-update-notice span {
+  font-size: 12px;
+}
+
+.app-update-notice button {
+  border: 0;
+  border-radius: 999px;
+  min-height: 38px;
+  padding: 0 14px;
+  background: #0284c7;
+  color: #fff;
+  font-weight: 900;
+}
+
 .chat-screen,
 .driver-chat,
 .cs-chat {

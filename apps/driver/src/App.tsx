@@ -376,6 +376,7 @@ function App() {
   const isBrowserBackRef = useRef(false)
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null
   const chatOrder = chatTarget === 'operator' ? null : selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
+  const updateInfo = useBuildUpdate('driver', !['chat', 'order-detail', 'request'].includes(view))
 
   const api = useMemo(() => makeApi(token), [token])
 
@@ -582,9 +583,9 @@ function App() {
     }
   }
 
-  if (view === 'login') return <><LoginScreen publicSettings={publicSettings} onLoggedIn={() => void load()} /><ToastStack toasts={toasts} /></>
-  if (apiState.loading && !driver) return <Shell><SkeletonPage /></Shell>
-  if (apiState.error && !driver) return <Shell><ErrorState message={apiState.error} onRetry={load} /></Shell>
+  if (view === 'login') return <><LoginScreen publicSettings={publicSettings} onLoggedIn={() => void load()} /><ToastStack toasts={toasts} /><AppUpdateNotice update={updateInfo} /></>
+  if (apiState.loading && !driver) return <Shell><SkeletonPage /><AppUpdateNotice update={updateInfo} /></Shell>
+  if (apiState.error && !driver) return <Shell><ErrorState message={apiState.error} onRetry={load} /><AppUpdateNotice update={updateInfo} /></Shell>
   if (!driver) return null
 
   return (
@@ -599,6 +600,7 @@ function App() {
       {view === 'profile' && <Profile driver={driver} api={api} onSaved={async () => { await load() }} />}
       {view === 'performance' && <PerformancePage />}
       <BottomNav active={view} onNavigate={setView} />
+      <AppUpdateNotice update={updateInfo} />
     </Shell>
   )
 }
@@ -1873,6 +1875,70 @@ function PwaInstallButton() {
 
 function ToastStack({ toasts }: { toasts: Toast[] }) {
   return <div className="toast-stack">{toasts.map((toast) => <div key={toast.id} className={`toast ${toast.tone}`}>{toast.message}</div>)}</div>
+}
+
+type BuildInfo = {
+  app: string
+  sha: string
+  full_sha?: string
+  built_at?: string
+}
+
+function useBuildUpdate(appName: string, autoReload: boolean) {
+  const [update, setUpdate] = useState<BuildInfo | null>(null)
+  const reloadTimerRef = useRef<number | null>(null)
+  const currentVersionRef = useRef<BuildInfo | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    const check = async () => {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' })
+        if (!response.ok) return
+        const latest = await response.json() as BuildInfo
+        if (!active || latest.app !== appName || !latest.sha) return
+        if (!currentVersionRef.current) {
+          currentVersionRef.current = latest
+          return
+        }
+        if (latest.sha === currentVersionRef.current.sha) return
+
+        setUpdate(latest)
+        if (autoReload && reloadTimerRef.current === null) {
+          reloadTimerRef.current = window.setTimeout(() => window.location.reload(), 3500)
+        }
+      } catch {
+        // Update polling is best-effort only.
+      }
+    }
+
+    void check()
+    const interval = window.setInterval(check, 45000)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = null
+    }
+  }, [appName, autoReload])
+
+  return update
+}
+
+function AppUpdateNotice({ update }: { update: BuildInfo | null }) {
+  if (!update) return null
+
+  return (
+    <div className="app-update-notice">
+      <div>
+        <strong>Update aplikasi tersedia</strong>
+        <span>Versi {update.sha} siap dipakai.</span>
+      </div>
+      <button type="button" onClick={() => window.location.reload()}>Refresh</button>
+    </div>
+  )
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) { return <article className="metric panel"><span>{label}</span><strong>{value}</strong></article> }

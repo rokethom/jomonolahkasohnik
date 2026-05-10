@@ -18,6 +18,47 @@
   scroll-behavior: smooth;
 }
 
+.app-update-notice {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 90;
+  width: min(360px, calc(100vw - 28px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+  border-radius: 18px;
+  padding: 13px 14px;
+  background: rgba(240, 249, 255, 0.96);
+  color: #075985;
+  box-shadow: 0 20px 54px rgba(15, 23, 42, 0.22);
+}
+
+.app-update-notice div {
+  display: grid;
+  gap: 2px;
+}
+
+.app-update-notice strong {
+  font-size: 13px;
+}
+
+.app-update-notice span {
+  font-size: 12px;
+}
+
+.app-update-notice button {
+  border: 0;
+  border-radius: 999px;
+  min-height: 38px;
+  padding: 0 14px;
+  background: #0284c7;
+  color: #fff;
+  font-weight: 900;
+}
+
 .admin-shell,
 .admin-shell * {
   scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
