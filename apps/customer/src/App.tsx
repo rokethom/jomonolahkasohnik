@@ -39,6 +39,7 @@ import {
   fetchServices,
   findDriver,
   fetchChatMessages,
+  extendOrderWait,
   getApiErrorMessage,
   googleLoginUrl,
   login,
@@ -1046,6 +1047,28 @@ function App() {
     pushMessage({ from: 'bot', text: 'Order belum dikirim dan sudah dibatalkan. Ketik menu untuk memilih layanan lagi.' })
   }
 
+  const extendTimeoutOrderWait = async (order: Order) => {
+    try {
+      const response = await extendOrderWait(order.id)
+      const updatedOrder = response.data
+      setOrders(mergeOrderList(useCustomerStore.getState().orders, updatedOrder))
+      setActiveOrder((current) => current?.id === updatedOrder.id ? { ...current, ...updatedOrder } : current)
+      showToast('success', response.message ?? 'Waktu tunggu driver ditambah 10 menit.')
+      pushMessage({
+        from: 'bot',
+        text: `Baik, JOJOBOT akan mencari driver 10 menit lagi untuk order ${updatedOrder.order_code ?? updatedOrder.code ?? `#${updatedOrder.id}`}.`,
+        order: updatedOrder,
+      })
+    } catch (error) {
+      showToast('error', getApiErrorMessage(error, 'Gagal menambah waktu tunggu order.'))
+    }
+  }
+
+  const keepTimeoutOrderCancelled = (order: Order) => {
+    showToast('info', `Order ${order.order_code ?? order.code ?? `#${order.id}`} tetap dibatalkan.`)
+    pushMessage({ from: 'bot', text: 'Baik, order tetap dibatalkan. Kamu bisa membuat order baru kapan saja.' })
+  }
+
   const handleBotReply = async (rawText: string) => {
     const text = rawText.trim()
     if (!text) return
@@ -1330,6 +1353,8 @@ function App() {
           submitting={orderSubmitting}
           onEdit={editPendingOrder}
           onCancel={cancelPendingOrder}
+          onExtendWait={(order) => void extendTimeoutOrderWait(order)}
+          onKeepCancelled={keepTimeoutOrderCancelled}
         />
       )}
       {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
@@ -1342,6 +1367,8 @@ function App() {
             setScreen('driver-chat')
           }}
           onOrdersChanged={(orders) => setOrders(orders)}
+          onExtendWait={(order) => void extendTimeoutOrderWait(order)}
+          onKeepCancelled={keepTimeoutOrderCancelled}
         />
       )}
       {screen === 'profile' && <ProfileScreen />}
@@ -1691,6 +1718,8 @@ function ChatOrderScreen({
   submitting,
   onEdit,
   onCancel,
+  onExtendWait,
+  onKeepCancelled,
 }: {
   messages: LocalMessage[]
   typing: boolean
@@ -1717,6 +1746,8 @@ function ChatOrderScreen({
   submitting: boolean
   onEdit: () => void
   onCancel: () => void
+  onExtendWait: (order: Order) => void
+  onKeepCancelled: (order: Order) => void
 }) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
@@ -1733,7 +1764,15 @@ function ChatOrderScreen({
       <div className="message-list" ref={listRef}>
         {messages.map((message) => (
           <div key={message.id} className="chat-message-group">
-            {shouldShowChatMessage(message) && <MessageBubble message={message} onCs={onCs} onOrderDetail={setDetailOrder} />}
+            {shouldShowChatMessage(message) && (
+              <MessageBubble
+                message={message}
+                onCs={onCs}
+                onOrderDetail={setDetailOrder}
+                onExtendWait={onExtendWait}
+                onKeepCancelled={onKeepCancelled}
+              />
+            )}
             {message.from !== 'user' && !hasManualFormOpen && message.preview?.form_schema && (
               <DynamicFormInline
                 schema={message.preview.form_schema}
@@ -1772,7 +1811,14 @@ function ChatOrderScreen({
         )}
       </div>
       <InputBar onSend={onSend} onImage={onImage} />
-      {detailOrder && <OrderDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />}
+      {detailOrder && (
+        <OrderDetailModal
+          order={detailOrder}
+          onClose={() => setDetailOrder(null)}
+          onExtendWait={onExtendWait}
+          onKeepCancelled={onKeepCancelled}
+        />
+      )}
     </div>
   )
 }
@@ -2524,10 +2570,27 @@ function ChatOrderActions({
   )
 }
 
-function MessageBubble({ message, onCs, onOrderDetail, onImageClick, onReply }: { message: LocalMessage; onCs?: () => void; onOrderDetail?: (order: Order) => void; onImageClick?: (imageUrl: string) => void; onReply?: (reply: ReplyTarget) => void }) {
+function MessageBubble({
+  message,
+  onCs,
+  onOrderDetail,
+  onImageClick,
+  onReply,
+  onExtendWait,
+  onKeepCancelled,
+}: {
+  message: LocalMessage
+  onCs?: () => void
+  onOrderDetail?: (order: Order) => void
+  onImageClick?: (imageUrl: string) => void
+  onReply?: (reply: ReplyTarget) => void
+  onExtendWait?: (order: Order) => void
+  onKeepCancelled?: (order: Order) => void
+}) {
   const side = message.from === 'user' ? 'out' : 'in'
   const total = message.preview?.quote?.total_price ?? message.preview?.quote?.final_price
   const replyText = message.text || (message.imageUrl ? 'Foto' : 'Pesan')
+  const canExtendWait = message.order ? isDriverTimeoutCancelledOrder(message.order) : false
 
   return (
     <article className={`message-bubble ${side}`}>
@@ -2535,6 +2598,13 @@ function MessageBubble({ message, onCs, onOrderDetail, onImageClick, onReply }: 
       {message.text && <p>{redactMapText(message.text)}</p>}
       {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi Operator</button>}
       {message.order && <button className="bubble-link order-detail-link" onClick={() => onOrderDetail?.(message.order!)}>Detail {message.order.order_code ?? `#${message.order.id}`}</button>}
+      {message.order && canExtendWait && (
+        <TimeoutChoiceActions
+          order={message.order}
+          onExtendWait={onExtendWait}
+          onKeepCancelled={onKeepCancelled}
+        />
+      )}
       {total && <strong className="bubble-total">Total {formatRupiah(total)}</strong>}
       {onReply && <button className="bubble-reply" type="button" onClick={() => onReply({ id: message.id, text: replyText })}>Balas</button>}
       <time>{message.time}</time>
@@ -3328,7 +3398,17 @@ function ImagePreviewModal({ imageUrl, onClose, downloadLabel }: { imageUrl: str
   )
 }
 
-function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => void }) {
+function OrderDetailModal({
+  order,
+  onClose,
+  onExtendWait,
+  onKeepCancelled,
+}: {
+  order: Order
+  onClose: () => void
+  onExtendWait?: (order: Order) => void
+  onKeepCancelled?: (order: Order) => void
+}) {
   const driverName = driverNameFromOrder(order)
   const purchaseOrder = isPurchaseOrder(order)
   const pickupLabel = purchaseOrder ? 'Pembelian' : 'Jemput'
@@ -3361,7 +3441,38 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
           <p><span>Total</span><strong>{formatRupiah(order.total_price ?? order.total)}</strong></p>
         </div>
         <OrderReasonNote order={order} />
+        {isDriverTimeoutCancelledOrder(order) && (
+          <TimeoutChoiceActions
+            order={order}
+            onExtendWait={onExtendWait}
+            onKeepCancelled={onKeepCancelled}
+            block
+          />
+        )}
       </section>
+    </div>
+  )
+}
+
+function TimeoutChoiceActions({
+  order,
+  onExtendWait,
+  onKeepCancelled,
+  block = false,
+}: {
+  order: Order
+  onExtendWait?: (order: Order) => void
+  onKeepCancelled?: (order: Order) => void
+  block?: boolean
+}) {
+  return (
+    <div className={block ? 'timeout-choice-actions block' : 'timeout-choice-actions'}>
+      <button type="button" className="wait" onClick={() => onExtendWait?.(order)}>
+        Menunggu 10 menit lagi
+      </button>
+      <button type="button" className="cancel" onClick={() => onKeepCancelled?.(order)}>
+        Cancel
+      </button>
     </div>
   )
 }
@@ -3427,10 +3538,14 @@ function HistoryScreen({
   orders,
   onOpenDriverChat,
   onOrdersChanged,
+  onExtendWait,
+  onKeepCancelled,
 }: {
   orders: Order[]
   onOpenDriverChat: (order: Order) => void
   onOrdersChanged: (orders: Order[]) => void
+  onExtendWait: (order: Order) => void
+  onKeepCancelled: (order: Order) => void
 }) {
   const store = useCustomerStore()
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
@@ -3508,10 +3623,24 @@ function HistoryScreen({
                 onSuccess={(message) => store.showToast('success', message)}
               />
             )}
+            {isDriverTimeoutCancelledOrder(order) && (
+              <TimeoutChoiceActions
+                order={order}
+                onExtendWait={onExtendWait}
+                onKeepCancelled={onKeepCancelled}
+              />
+            )}
           </div>
         </article>
       ))}
-      {detailOrder && <OrderDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />}
+      {detailOrder && (
+        <OrderDetailModal
+          order={detailOrder}
+          onClose={() => setDetailOrder(null)}
+          onExtendWait={onExtendWait}
+          onKeepCancelled={onKeepCancelled}
+        />
+      )}
     </div>
   )
 }
@@ -4204,6 +4333,21 @@ function isCompletedStatus(status?: string) {
 
 function isCancelledStatus(status?: string) {
   return ['cancelled', 'canceled'].includes(String(status ?? '').toLowerCase())
+}
+
+function isDriverTimeoutCancelledOrder(order: Order) {
+  if (!isCancelledStatus(order.status)) return false
+  if (order.feedback?.type === 'order_auto_cancelled') {
+    return !/multi-crew|helper/i.test(order.feedback.message ?? '')
+  }
+
+  const notes = String(order.notes ?? '')
+  const reason = String(order.cancel_reason ?? '')
+
+  if (/multi-crew|helper/i.test(notes) || /multi-crew|helper/i.test(reason)) return false
+
+  return /driver timeout|batas waktu mencari driver|batas waktu cari driver/i.test(notes)
+    || /driver timeout|batas waktu mencari driver|batas waktu cari driver/i.test(reason)
 }
 
 function cancelFeedbackMessage(order: Order) {

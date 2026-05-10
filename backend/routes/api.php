@@ -171,6 +171,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders/{order}/adjustments', [DriverController::class, 'adjustOrder']);
     Route::post('/orders/{order}/status', [OrderController::class, 'updateStatus']);
     Route::post('/orders/{order}/complete', [OrderController::class, 'complete']);
+    Route::post('/orders/{order}/extend-wait', [OrderController::class, 'extendWait']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
     Route::post('/orders/{order}/rating', [RatingController::class, 'store']);
 

@@ -2164,6 +2164,41 @@
   font-weight: 900;
 }
 
+.timeout-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.timeout-choice-actions.block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #eef1f2;
+}
+
+.timeout-choice-actions button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 13px;
+  font-weight: 900;
+}
+
+.timeout-choice-actions .wait {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.timeout-choice-actions .cancel {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.history-actions .timeout-choice-actions {
+  margin-top: 0;
+}
+
 .history-rating {
   display: flex;
   align-items: center;

@@ -310,6 +310,11 @@ export async function findDriver(orderId: number) {
   return data
 }
 
+export async function extendOrderWait(orderId: number) {
+  const { data } = await api.post<{ data: Order; message?: string }>(`/orders/${orderId}/extend-wait`)
+  return data
+}
+
 export async function fetchOrders(perPage = 100, month?: string) {
   const orders: Order[] = []
   let page = 1

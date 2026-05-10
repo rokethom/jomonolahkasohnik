@@ -8,6 +8,7 @@ use App\Actions\Order\CreateOrder;
 use App\Actions\Order\FindDriver;
 use App\Actions\Order\UpdateOrderStatus;
 use App\Enums\OrderStatus;
+use App\Events\OrderStatusUpdated;
 use App\Exceptions\OrderLimitExceededException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Order\StoreOrderRequest;
@@ -18,6 +19,8 @@ use App\Services\OrderOperationService;
 use App\Services\PricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -176,6 +179,67 @@ class OrderController extends Controller
         ]);
     }
 
+    public function extendWait(Request $request, Order $order): JsonResponse
+    {
+        $this->authorizeCustomerOrAdmin($order, $request);
+
+        try {
+            $order = DB::transaction(function () use ($order): Order {
+                $lockedOrder = Order::query()
+                    ->with(['user', 'driver.user', 'items', 'payments', 'rating', 'adjustments.driver.user', 'crews.driver.user'])
+                    ->lockForUpdate()
+                    ->findOrFail($order->id);
+
+                if ($lockedOrder->driver_id !== null) {
+                    throw new RuntimeException('Order sudah diterima driver.');
+                }
+
+                if ($lockedOrder->status === OrderStatus::Completed) {
+                    throw new RuntimeException('Order sudah selesai.');
+                }
+
+                if (! $this->isDriverTimeoutOrder($lockedOrder)) {
+                    throw new RuntimeException('Order ini tidak bisa diperpanjang. Silakan buat order baru atau hubungi CS.');
+                }
+
+                $oldStatus = $lockedOrder->status;
+                $breakdown = $lockedOrder->pricing_breakdown ?? [];
+                $extensions = (int) data_get($breakdown, 'wait_extension.count', 0) + 1;
+                data_set($breakdown, 'wait_extension.count', $extensions);
+                data_set($breakdown, 'wait_extension.last_extended_at', now()->toIso8601String());
+                data_set($breakdown, 'wait_extension.minutes', 10);
+
+                $lockedOrder->update([
+                    'status' => OrderStatus::SearchingDriver,
+                    'cancelled_at' => null,
+                    'expired_at' => now()->addMinutes(10),
+                    'pricing_breakdown' => $breakdown,
+                    'notes' => trim(((string) $lockedOrder->notes)."\nCustomer memilih menunggu 10 menit lagi."),
+                ]);
+
+                $freshOrder = $lockedOrder->fresh(['user', 'driver.user', 'items', 'payments', 'rating', 'adjustments.driver.user', 'crews.driver.user']);
+
+                try {
+                    OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.order_wait_extended_failed', [
+                        'order_id' => $freshOrder->id,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+
+                return $freshOrder;
+            });
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Waktu tunggu driver ditambah 10 menit.',
+            'data' => $order,
+        ]);
+    }
+
     private function authorizeCustomerOrAdmin(Order $order, Request $request): void
     {
         $role = $request->user()->role->value ?? $request->user()->role;
@@ -207,5 +271,21 @@ class OrderController extends Controller
 
         $order->loadMissing('driver');
         abort_unless($role === 'driver' && (int) optional($order->driver)->user_id === (int) $request->user()->id, 403);
+    }
+
+    private function isDriverTimeoutOrder(Order $order): bool
+    {
+        $notes = strtolower((string) $order->notes);
+
+        if (str_contains($notes, 'multi-crew timeout')) {
+            return false;
+        }
+
+        if ($order->status === OrderStatus::Cancelled && (str_contains($notes, 'driver timeout') || str_contains($notes, 'batas waktu mencari driver'))) {
+            return true;
+        }
+
+        return in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)
+            && ($order->expired_at?->lte(now()) ?? false);
     }
 }
