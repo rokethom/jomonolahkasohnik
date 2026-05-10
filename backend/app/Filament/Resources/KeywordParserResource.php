@@ -4,12 +4,14 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\KeywordParserResource\Pages;
 use App\Models\KeywordParser;
+use App\Models\Service;
 use App\Services\KeywordParserService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\Rule;
 
@@ -42,11 +44,14 @@ class KeywordParserResource extends Resource
                             ->helperText("Bisa satu atau banyak keyword dipisah koma, contoh: 'belanja, pasar, belikan'.")
                             ->dehydrateStateUsing(fn (?string $state): ?string => $state ? app(KeywordParserService::class)->normalizeKeywordList($state) : null),
                         Forms\Components\Select::make('service_type')
+                            ->label('Service')
                             ->required()
-                            ->options(KeywordParser::SERVICE_TYPES)
+                            ->options(fn (): array => self::serviceOptions())
+                            ->searchable()
+                            ->preload()
                             ->native(false)
                             ->live()
-                            ->helperText('Mapping layanan internal yang akan dipakai JojoBot.'),
+                            ->helperText('Pilihan diambil dari menu Services. Pastikan code service sesuai layanan FE.'),
                         Forms\Components\Select::make('parser_type')
                             ->required()
                             ->options(KeywordParser::PARSER_TYPES)
@@ -155,7 +160,7 @@ class KeywordParserResource extends Resource
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_active'),
                 Tables\Filters\SelectFilter::make('service_type')
-                    ->options(KeywordParser::SERVICE_TYPES),
+                    ->options(fn (): array => self::serviceOptions()),
                 Tables\Filters\SelectFilter::make('parser_type')
                     ->options(KeywordParser::PARSER_TYPES),
             ])
@@ -185,6 +190,23 @@ class KeywordParserResource extends Resource
             'keyword' => ['required', 'string', Rule::unique('keyword_parsers', 'keyword')],
             'priority' => ['required', 'numeric'],
         ];
+    }
+
+    private static function serviceOptions(): array
+    {
+        try {
+            $options = Service::query()
+                ->orderBy('name')
+                ->get()
+                ->mapWithKeys(fn (Service $service): array => [
+                    strtoupper($service->code) => sprintf('%s (%s)%s', $service->name, strtoupper($service->code), $service->is_active ? '' : ' - nonaktif'),
+                ])
+                ->all();
+
+            return $options !== [] ? $options : KeywordParser::SERVICE_TYPES;
+        } catch (QueryException) {
+            return KeywordParser::SERVICE_TYPES;
+        }
     }
 
     private static function previewHtml(Forms\Get $get): HtmlString
