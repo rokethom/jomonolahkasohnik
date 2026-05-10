@@ -30,6 +30,7 @@ use App\Services\AdminRoleMenuOverrideService;
 use App\Services\AiParserRuleService;
 use App\Services\BranchDetectionService;
 use App\Services\DriverFinanceService;
+use App\Services\DriverManagementCsvService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
 use App\Services\JojoBotService;
@@ -307,6 +308,33 @@ class AdminController extends Controller
         $this->recordAudit($request->user(), 'reset_user_token', $user);
 
         return response()->json(['message' => 'Token user berhasil direset. User perlu login ulang.']);
+    }
+
+    public function exportDriverManagementCsv(Request $request, DriverManagementCsvService $csv): StreamedResponse
+    {
+        abort_unless($request->user()->hasPermission('create_user'), 403);
+
+        return $csv->downloadCsv();
+    }
+
+    public function importDriverManagementCsv(Request $request, DriverManagementCsvService $csv): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('create_user'), 403);
+
+        $payload = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'allow_create' => ['sometimes', 'boolean'],
+        ]);
+
+        $result = $csv->importCsv(
+            $payload['file']->getRealPath(),
+            (bool) ($payload['allow_create'] ?? true),
+        );
+
+        return response()->json([
+            'message' => "Import selesai: {$result['created']} driver baru, {$result['updated']} driver update, {$result['skipped']} baris dilewati.",
+            ...$result,
+        ]);
     }
 
     public function orders(Request $request, OrderService $orders): JsonResponse

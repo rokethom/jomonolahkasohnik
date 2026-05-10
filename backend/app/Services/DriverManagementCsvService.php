@@ -9,7 +9,9 @@ use App\Models\Driver;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DriverManagementCsvService
@@ -26,12 +28,17 @@ class DriverManagementCsvService
         'username',
         'phone',
         'email_google',
+        'password',
         'branch_id',
         'branch_name',
         'vehicle_type',
+        'vehicle_types',
         'vehicle_seat_rows',
         'is_ladies_driver',
+        'can_accept_all_areas',
         'allowed_service_types',
+        'bansos_amount',
+        'bpjs_jht_enabled',
         'status',
         'is_available',
         'is_suspend',
@@ -69,12 +76,17 @@ class DriverManagementCsvService
                             $user->username,
                             $user->phone,
                             $this->driverEmail($user),
+                            '',
                             $user->branch_id,
                             $user->branch?->display_name,
                             $driver?->vehicle_type ?: 'motor',
+                            implode('|', $driver?->vehicleTypes() ?? ['motor']),
                             $driver?->vehicle_seat_rows ?: ($driver?->vehicle_type === 'mobil' ? 2 : ''),
                             $driver?->is_ladies_driver ? 'yes' : 'no',
+                            $driver?->can_accept_all_areas ? 'yes' : 'no',
                             implode('|', $driver?->allowed_service_types ?? []),
+                            $driver?->bansos_amount,
+                            $driver?->bpjs_jht_enabled ? 'yes' : 'no',
                             $driver?->status ?: 'active',
                             $driver?->is_available ? 'yes' : 'no',
                             $driver?->is_suspend ? 'yes' : 'no',
@@ -92,14 +104,14 @@ class DriverManagementCsvService
     }
 
     /**
-     * @return array{updated: int, skipped: int, errors: array<int, string>}
+     * @return array{created: int, updated: int, skipped: int, errors: array<int, string>, credentials: array<int, array{username: string, email: string, password: string}>}
      */
-    public function importCsv(string $path): array
+    public function importCsv(string $path, bool $allowCreate = false): array
     {
         $handle = fopen($path, 'r');
 
         if ($handle === false) {
-            return ['updated' => 0, 'skipped' => 0, 'errors' => ['File import tidak bisa dibaca.']];
+            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => ['File import tidak bisa dibaca.'], 'credentials' => []];
         }
 
         try {
@@ -107,12 +119,14 @@ class DriverManagementCsvService
         } catch (\Throwable $exception) {
             fclose($handle);
 
-            return ['updated' => 0, 'skipped' => 0, 'errors' => [$exception->getMessage()]];
+            return ['created' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => [$exception->getMessage()], 'credentials' => []];
         }
 
+        $created = 0;
         $updated = 0;
         $skipped = 0;
         $errors = [];
+        $credentials = [];
         $rowNumber = 1;
 
         while (($row = fgetcsv($handle, 0, self::DELIMITER)) !== false) {
@@ -125,8 +139,15 @@ class DriverManagementCsvService
             $data = $this->combineRow($headers, $row);
 
             try {
-                $this->updateDriverRow($data);
-                $updated++;
+                $result = $this->upsertDriverRow($data, $allowCreate);
+                if ($result['created']) {
+                    $created++;
+                    if ($result['credential'] !== null) {
+                        $credentials[] = $result['credential'];
+                    }
+                } else {
+                    $updated++;
+                }
             } catch (\Throwable $exception) {
                 $skipped++;
                 $errors[] = "Baris {$rowNumber}: ".$exception->getMessage();
@@ -136,9 +157,11 @@ class DriverManagementCsvService
         fclose($handle);
 
         return [
+            'created' => $created,
             'updated' => $updated,
             'skipped' => $skipped,
             'errors' => array_slice($errors, 0, 10),
+            'credentials' => array_slice($credentials, 0, 50),
         ];
     }
 
@@ -155,10 +178,10 @@ class DriverManagementCsvService
         }
 
         $headers = array_map(fn (string $header): string => trim(str_replace("\xEF\xBB\xBF", '', $header)), $headers);
-        $missingHeaders = array_diff(['user_id', 'driver_id', 'email_google'], $headers);
+        $missingHeaders = array_diff(['name', 'username', 'email_google'], $headers);
 
         if ($missingHeaders !== []) {
-            throw new \RuntimeException('Header CSV tidak sesuai. Export ulang file dari tombol Export CSV.');
+            throw new \RuntimeException('Header CSV tidak sesuai. Minimal wajib ada name, username, dan email_google. Lebih aman download ulang template dari tombol Export CSV.');
         }
 
         return $headers;
@@ -191,17 +214,25 @@ class DriverManagementCsvService
     /**
      * @param  array<string, string>  $data
      */
-    private function updateDriverRow(array $data): void
+    private function upsertDriverRow(array $data, bool $allowCreate): array
     {
-        $user = $this->findDriverUser($data);
+        $user = $this->findDriverUser($data, false);
 
-        if (! $user->driver) {
-            throw new \RuntimeException('Akun driver tidak memiliki record driver.');
+        if (! $user && ! $allowCreate) {
+            throw new \RuntimeException('Driver tidak ditemukan. Aktifkan opsi buat driver baru jika ingin create massal.');
         }
 
         $email = strtolower($data['email_google'] ?? '');
         if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \RuntimeException('email_google tidak valid.');
+        }
+
+        if (! $user) {
+            return $this->createDriverRow($data, $email);
+        }
+
+        if (! $user->driver) {
+            throw new \RuntimeException('Akun driver tidak memiliki record driver.');
         }
 
         $this->ensureUniqueUserValue('email', $email, $user->id);
@@ -243,10 +274,14 @@ class DriverManagementCsvService
 
             $driverUpdates = [
                 'name' => $data['name'] ?: $user->name,
-                'vehicle_type' => $this->normalizeVehicleType($data['vehicle_type'] ?? null),
-                'vehicle_seat_rows' => $this->normalizeVehicleType($data['vehicle_type'] ?? null) === 'mobil' ? $this->normalizeSeatRows($data['vehicle_seat_rows'] ?? null) : null,
+                'vehicle_type' => $this->normalizeVehicleTypes($data)[0] ?? 'motor',
+                'vehicle_types' => $this->normalizeVehicleTypes($data),
+                'vehicle_seat_rows' => in_array('mobil', $this->normalizeVehicleTypes($data), true) ? $this->normalizeSeatRows($data['vehicle_seat_rows'] ?? null) : null,
                 'is_ladies_driver' => $this->booleanValue($data['is_ladies_driver'] ?? 'no'),
+                'can_accept_all_areas' => $this->booleanValue($data['can_accept_all_areas'] ?? 'no'),
                 'allowed_service_types' => $this->normalizeServiceTypes($data['allowed_service_types'] ?? ''),
+                'bansos_amount' => $this->nullableInteger($data['bansos_amount'] ?? null),
+                'bpjs_jht_enabled' => $this->booleanValue($data['bpjs_jht_enabled'] ?? 'yes'),
                 'status' => $this->normalizeStatus($data['status'] ?? null),
                 'is_available' => $this->booleanValue($data['is_available'] ?? 'yes'),
                 'is_suspend' => $this->booleanValue($data['is_suspend'] ?? 'no'),
@@ -288,12 +323,103 @@ class DriverManagementCsvService
                 ],
             ]);
         });
+
+        return ['created' => false, 'credential' => null];
+    }
+
+    /**
+     * @param  array<string, string>  $data
+     * @return array{created: bool, credential: array{username: string, email: string, password: string}}
+     */
+    private function createDriverRow(array $data, string $email): array
+    {
+        $name = trim((string) ($data['name'] ?? ''));
+        $username = trim((string) ($data['username'] ?? ''));
+
+        if ($name === '') {
+            throw new \RuntimeException('name wajib diisi untuk driver baru.');
+        }
+
+        if ($username === '') {
+            $username = $this->uniqueUsername(Str::of($email)->before('@')->slug('_')->toString() ?: $name);
+        }
+
+        $this->ensureUniqueUserValue('email', $email, 0);
+        $this->ensureUniqueUserValue('username', $username, 0);
+        if (Schema::hasColumn('drivers', 'email')) {
+            $this->ensureUniqueDriverEmail($email, 0);
+        }
+
+        $password = trim((string) ($data['password'] ?? ''));
+        if ($password === '') {
+            $password = Str::password(12);
+        }
+
+        DB::transaction(function () use ($data, $email, $username, $name, $password): void {
+            $user = User::query()->create([
+                'name' => $name,
+                'username' => $username,
+                'phone' => $data['phone'] ?: null,
+                'email' => $email,
+                'password' => Hash::make($password),
+                'role' => UserRole::Driver->value,
+                'branch_id' => $this->resolveBranchId($data),
+                'is_active' => true,
+                'is_suspended' => false,
+            ]);
+
+            $vehicleTypes = $this->normalizeVehicleTypes($data);
+            $driverPayload = [
+                'name' => $name,
+                'email' => Schema::hasColumn('drivers', 'email') ? $email : null,
+                'vehicle_type' => $vehicleTypes[0] ?? 'motor',
+                'vehicle_types' => $vehicleTypes,
+                'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? $this->normalizeSeatRows($data['vehicle_seat_rows'] ?? null) : null,
+                'is_ladies_driver' => $this->booleanValue($data['is_ladies_driver'] ?? 'no'),
+                'can_accept_all_areas' => $this->booleanValue($data['can_accept_all_areas'] ?? 'no'),
+                'allowed_service_types' => $this->normalizeServiceTypes($data['allowed_service_types'] ?? ''),
+                'bansos_amount' => $this->nullableInteger($data['bansos_amount'] ?? null),
+                'bpjs_jht_enabled' => $this->booleanValue($data['bpjs_jht_enabled'] ?? 'yes'),
+                'status' => $this->normalizeStatus($data['status'] ?? 'active'),
+                'is_available' => $this->booleanValue($data['is_available'] ?? 'yes'),
+                'is_suspend' => $this->booleanValue($data['is_suspend'] ?? 'no'),
+            ];
+
+            if (! Schema::hasColumn('drivers', 'email')) {
+                unset($driverPayload['email']);
+            }
+
+            $user->driver()->create($driverPayload);
+
+            AuditLog::query()->create([
+                'user_id' => Auth::id(),
+                'action' => 'filament_imported_driver_management_csv_created_driver',
+                'subject_type' => User::class,
+                'subject_id' => $user->id,
+                'subject_label' => $user->email,
+                'metadata' => [
+                    'username' => $username,
+                    'email' => $email,
+                    'branch_id' => $user->branch_id,
+                    'driver' => $driverPayload,
+                ],
+            ]);
+        });
+
+        return [
+            'created' => true,
+            'credential' => [
+                'username' => $username,
+                'email' => $email,
+                'password' => $password,
+            ],
+        ];
     }
 
     /**
      * @param  array<string, string>  $data
      */
-    private function findDriverUser(array $data): User
+    private function findDriverUser(array $data, bool $throw = true): ?User
     {
         $query = User::query()
             ->with('driver')
@@ -316,7 +442,7 @@ class DriverManagementCsvService
             $user = null;
         }
 
-        if (! $user) {
+        if (! $user && $throw) {
             throw new \RuntimeException('Driver tidak ditemukan. Pastikan user_id atau driver_id benar.');
         }
 
@@ -325,10 +451,12 @@ class DriverManagementCsvService
 
     private function ensureUniqueUserValue(string $column, string $value, int $ignoreUserId): void
     {
-        $exists = User::query()
-            ->where($column, $value)
-            ->where('id', '!=', $ignoreUserId)
-            ->exists();
+        $query = User::query()->where($column, $value);
+        if ($ignoreUserId > 0) {
+            $query->where('id', '!=', $ignoreUserId);
+        }
+
+        $exists = $query->exists();
 
         if ($exists) {
             throw new \RuntimeException("{$column} sudah dipakai user lain.");
@@ -337,10 +465,12 @@ class DriverManagementCsvService
 
     private function ensureUniqueDriverEmail(string $email, int $ignoreDriverId): void
     {
-        $exists = Driver::query()
-            ->where('email', $email)
-            ->where('id', '!=', $ignoreDriverId)
-            ->exists();
+        $query = Driver::query()->where('email', $email);
+        if ($ignoreDriverId > 0) {
+            $query->where('id', '!=', $ignoreDriverId);
+        }
+
+        $exists = $query->exists();
 
         if ($exists) {
             throw new \RuntimeException('email_google sudah dipakai driver lain.');
@@ -375,6 +505,7 @@ class DriverManagementCsvService
             $branch = Branch::query()
                 ->where('name', $data['branch_name'])
                 ->orWhere('area', $data['branch_name'])
+                ->orWhereRaw("CONCAT(area, ' - ', name) = ?", [$data['branch_name']])
                 ->first();
 
             return $branch?->id;
@@ -395,6 +526,24 @@ class DriverManagementCsvService
         $rows = (int) trim((string) $value);
 
         return in_array($rows, [2, 3], true) ? $rows : 2;
+    }
+
+    /**
+     * @param  array<string, string>  $data
+     * @return array<int, string>
+     */
+    private function normalizeVehicleTypes(array $data): array
+    {
+        $raw = filled($data['vehicle_types'] ?? null) ? $data['vehicle_types'] : ($data['vehicle_type'] ?? 'motor');
+
+        $types = collect(explode('|', str_replace(',', '|', strtolower((string) $raw))))
+            ->map(fn (string $item): string => trim($item))
+            ->filter(fn (string $item): bool => in_array($item, ['motor', 'mobil'], true))
+            ->unique()
+            ->values()
+            ->all();
+
+        return $types !== [] ? $types : ['motor'];
     }
 
     private function normalizeStatus(?string $value): string
@@ -424,5 +573,28 @@ class DriverManagementCsvService
     private function booleanValue(string $value): bool
     {
         return in_array(strtolower(trim($value)), ['1', 'yes', 'y', 'true', 'iya', 'ya', 'aktif', 'active'], true);
+    }
+
+    private function nullableInteger(?string $value): ?int
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        return max(0, (int) preg_replace('/[^\d]/', '', $value));
+    }
+
+    private function uniqueUsername(string $base): string
+    {
+        $base = Str::of($base ?: 'driver')->slug('_')->limit(40, '')->toString() ?: 'driver';
+        $username = $base;
+        $index = 1;
+
+        while (User::query()->where('username', $username)->exists()) {
+            $username = $base.'_'.$index;
+            $index++;
+        }
+
+        return $username;
     }
 }

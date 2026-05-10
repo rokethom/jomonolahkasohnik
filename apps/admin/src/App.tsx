@@ -1759,6 +1759,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
   const [branchFilter, setBranchFilter] = useState('all')
   const [performancePeriod, setPerformancePeriod] = useState<'today' | 'month' | 'all'>('month')
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const detailRef = useRef<HTMLElement | null>(null)
   const branchOptions = useMemo(() => {
     const unique = new Map<string, string>()
@@ -1854,6 +1855,11 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
           </select>
         </label>
         <span className="toolbar-hint">Ranking driver berubah mengikuti cabang/area dan periode yang dipilih.</span>
+        {permissions.can_manage_users && (
+          <div className="driver-import-actions">
+            <button className="mini-button" type="button" onClick={() => setImportOpen(true)}>Import CSV</button>
+          </div>
+        )}
       </div>
       <DriverPerformanceBoard drivers={filteredDrivers} period={performancePeriod} />
       <div className="driver-management-layout">
@@ -1971,7 +1977,94 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
       </div>
       {configDriver && <DriverConfigModal driver={configDriver} services={services} api={api} onClose={() => setConfigDriver(null)} onSaved={async () => { await onChanged(); setConfigDriver(null) }} />}
       {authDriver && <DriverGoogleAuthModal driver={authDriver} api={api} onClose={() => setAuthDriver(null)} onSaved={async () => { await onChanged(); setAuthDriver(null) }} />}
+      {importOpen && <DriverImportModal api={api} onClose={() => setImportOpen(false)} onImported={async () => { await onChanged(); setImportOpen(false) }} />}
     </section>
+  )
+}
+
+function DriverImportModal({ api, onClose, onImported }: { api: ApiClient; onClose: () => void; onImported: () => Promise<void> }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [allowCreate, setAllowCreate] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const downloadTemplate = async () => {
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('token') || ''
+    const response = await fetch(`${API_BASE}/admin/drivers/import-template`, {
+      headers: { Accept: 'text/csv', Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      alert('Gagal download template CSV driver.')
+      return
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `driver-management-template-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!file) {
+      alert('Pilih file CSV driver terlebih dahulu.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('allow_create', allowCreate ? '1' : '0')
+      const result = await api<{ message?: string; created: number; updated: number; skipped: number; errors?: string[]; credentials?: Array<{ username: string; email: string; password: string }> }>('/admin/drivers/import', {
+        method: 'POST',
+        body: form,
+      })
+
+      const credentials = result.credentials?.length
+        ? `\n\nPassword driver baru:\n${result.credentials.map((item) => `${item.username} / ${item.email} / ${item.password}`).join('\n')}`
+        : ''
+      const errors = result.errors?.length ? `\n\nCatatan:\n${result.errors.join('\n')}` : ''
+      alert(`${result.message ?? 'Import driver selesai.'}${credentials}${errors}`)
+      await onImported()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal driver-import-modal" role="dialog" aria-modal="true">
+        <div className="modal-header">
+          <div>
+            <h2>Import Driver CSV</h2>
+            <p>Buat akun driver massal atau update driver existing dari file CSV.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <form className="user-form" onSubmit={submit}>
+          <fieldset>
+            <legend>File import</legend>
+            <div className="driver-import-guide">
+              <strong>Alur aman</strong>
+              <span>Download template, isi di Excel/Sheets, simpan sebagai CSV, lalu upload kembali.</span>
+              <span>Untuk driver baru, kosongkan `user_id` dan `driver_id`. Isi minimal `name`, `username`, `email_google`, dan cabang.</span>
+            </div>
+            <button className="secondary-button" type="button" onClick={() => void downloadTemplate()}>Download Template CSV</button>
+            <label>Upload CSV<input type="file" accept=".csv,text/csv,text/plain" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required /></label>
+            <label className="toggle-row"><input type="checkbox" checked={allowCreate} onChange={(event) => setAllowCreate(event.target.checked)} />Buat driver baru jika belum ada</label>
+          </fieldset>
+          <div className="modal-actions">
+            <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
+            <button className="primary-button" disabled={saving} type="submit">{saving ? 'Importing...' : 'Import Driver'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 

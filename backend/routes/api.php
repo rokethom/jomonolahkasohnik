@@ -80,6 +80,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/users/{user}', [AdminController::class, 'destroyUser'])->middleware('permission:create_user');
         Route::post('/users/{user}/reset-password', [AdminController::class, 'resetPassword'])->middleware('permission:create_user');
         Route::post('/users/{user}/reset-token', [AdminController::class, 'resetUserToken'])->middleware('permission:create_user');
+        Route::get('/drivers/import-template', [AdminController::class, 'exportDriverManagementCsv'])->middleware('permission:create_user');
+        Route::post('/drivers/import', [AdminController::class, 'importDriverManagementCsv'])->middleware('permission:create_user');
         Route::get('/orders', [AdminController::class, 'orders'])->middleware('permission:monitor_live_order');
         Route::post('/orders/{order}/assign-driver', [AdminController::class, 'assignDriver'])->middleware('permission:monitor_live_order');
         Route::post('/orders/{order}/broadcast-drivers', [AdminController::class, 'broadcastDrivers'])->middleware('permission:monitor_live_order');

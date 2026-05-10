@@ -493,6 +493,20 @@
   color: #cbd5e1;
 }
 
+.admin-shell.dark .driver-import-guide {
+  border-color: rgba(56, 189, 248, 0.24);
+  background: rgba(8, 47, 73, 0.45);
+  color: #e2e8f0;
+}
+
+.admin-shell.dark .driver-import-guide strong {
+  color: #7dd3fc;
+}
+
+.admin-shell.dark .driver-import-guide span {
+  color: #cbd5e1;
+}
+
 .admin-shell.dark .driver-table-shell,
 .admin-shell.dark .driver-detail-panel,
 .admin-shell.dark .driver-detail-grid > div,
@@ -2205,7 +2219,7 @@ svg {
 
 .driver-filter-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, .7fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, .7fr) minmax(220px, 1fr) auto;
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -2391,6 +2405,36 @@ svg {
 td strong {
   display: block;
   overflow-wrap: anywhere;
+}
+
+.driver-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.driver-import-modal .secondary-button {
+  width: fit-content;
+}
+
+.driver-import-guide {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 14px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #0f172a;
+}
+
+.driver-import-guide strong {
+  color: #0369a1;
+}
+
+.driver-import-guide span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .activity-item span,

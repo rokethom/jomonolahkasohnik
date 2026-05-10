@@ -249,7 +249,7 @@ class DriverManagementResource extends Resource
                     ->visible(fn (): bool => self::canManageDriverAuth())
                     ->form([
                         Forms\Components\FileUpload::make('file')
-                            ->label('File CSV dari Export Driver')
+                            ->label('File CSV driver')
                             ->disk('local')
                             ->directory('imports/driver-management')
                             ->visibility('private')
@@ -263,10 +263,14 @@ class DriverManagementResource extends Resource
                             ])
                             ->maxSize(5120)
                             ->required()
-                            ->helperText('Gunakan file CSV hasil export. Edit di Excel, lalu simpan lagi sebagai CSV. Pisahkan layanan dengan tanda |.'),
+                            ->helperText('Gunakan Export CSV sebagai template. Untuk buat driver baru, kosongkan user_id dan driver_id, isi name, username, email_google, branch, dan kolom konfigurasi. Pisahkan layanan/kendaraan dengan tanda |.'),
+                        Forms\Components\Toggle::make('allow_create')
+                            ->label('Buat driver baru jika belum ada')
+                            ->helperText('Nonaktifkan jika file hanya untuk update driver existing. Jika aktif, baris tanpa user_id/driver_id akan dibuat sebagai akun driver baru.')
+                            ->default(true),
                     ])
                     ->modalHeading('Import Driver dari CSV')
-                    ->modalDescription('Data akan update driver yang sudah ada berdasarkan user_id/driver_id. Sistem tidak membuat driver baru.')
+                    ->modalDescription('Data dapat update driver existing atau membuat driver baru secara massal. Sistem tetap menolak email/username duplikat.')
                     ->action(function (array $data): void {
                         $path = (string) ($data['file'] ?? '');
 
@@ -279,12 +283,18 @@ class DriverManagementResource extends Resource
                             return;
                         }
 
-                        $result = app(DriverManagementCsvService::class)->importCsv(Storage::disk('local')->path($path));
+                        $result = app(DriverManagementCsvService::class)->importCsv(Storage::disk('local')->path($path), (bool) ($data['allow_create'] ?? false));
                         Storage::disk('local')->delete($path);
 
-                        $body = "Berhasil update {$result['updated']} driver.";
+                        $body = "Berhasil buat {$result['created']} driver baru, update {$result['updated']} driver.";
                         if ($result['skipped'] > 0) {
                             $body .= " Gagal/skip {$result['skipped']} baris.";
+                        }
+                        if ($result['credentials'] !== []) {
+                            $body .= "\nPassword baru:\n".implode("\n", array_map(
+                                fn (array $item): string => "{$item['username']} / {$item['email']} / {$item['password']}",
+                                $result['credentials'],
+                            ));
                         }
                         if ($result['errors'] !== []) {
                             $body .= "\n".implode("\n", $result['errors']);
