@@ -58,8 +58,13 @@ class ZonePricingTesterPage extends Page implements HasForms
         return $form
             ->schema([
                 Forms\Components\Section::make('Simulasi order')
+                    ->description('Gunakan halaman ini untuk mengecek apakah titik pickup/tujuan masuk geofence yang benar dan rule Zone Pricing mana yang akan dipakai sebelum dicoba di FE customer.')
                     ->columns(2)
                     ->schema([
+                        Forms\Components\Placeholder::make('tester_flow')
+                            ->label('Alur tester')
+                            ->content('Isi koordinat pickup dan tujuan -> klik Test zone pricing -> sistem akan mendeteksi geofence tujuan lebih dulu, lalu pickup sebagai fallback -> hasil tarif menampilkan source dan rule zona jika ada.')
+                            ->columnSpanFull(),
                         Forms\Components\Select::make('branch_id')
                             ->label('Cabang fallback')
                             ->options(fn (): array => ZonePricingRuleResource::branchOptions())

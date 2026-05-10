@@ -41,9 +41,16 @@ class ZonePricingRuleResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Zone Pricing Rule')
+                    ->description('Atur tarif khusus berdasarkan area geofence. Rule ini aktif setelah tarif dasar/ring terbaca, lalu sistem mengecek apakah titik pickup atau tujuan masuk zona yang dipilih.')
                     ->columns(2)
                     ->schema([
+                        Forms\Components\Placeholder::make('flow_reference')
+                            ->label('Cara kerja singkat')
+                            ->content('Flow: order masuk -> sistem deteksi cabang dari geofence tujuan/pickup -> hitung tarif dasar/ring -> cek Zone Pricing aktif -> tarif fixed/extra/percent diterapkan -> hasil tampil ke customer dan driver.')
+                            ->columnSpanFull(),
                         Forms\Components\TextInput::make('name')
+                            ->label('Nama rule')
+                            ->helperText('Contoh: STB Panarukan malam, Roxy radius dekat, Area RS tambah jasa.')
                             ->required()
                             ->maxLength(255),
                         Forms\Components\Select::make('branch_id')
@@ -60,6 +67,7 @@ class ZonePricingRuleResource extends Resource
                             ->searchable()
                             ->preload()
                             ->native(false)
+                            ->helperText('Zona ini diambil dari Geofence Area. Jika geofence berbentuk polygon, titik harus berada di dalam polygon. Jika circle, titik harus berada dalam radius.')
                             ->required(),
                         Forms\Components\Select::make('service_type')
                             ->label('Layanan')
@@ -77,6 +85,7 @@ class ZonePricingRuleResource extends Resource
                             ])
                             ->default('destination')
                             ->native(false)
+                            ->helperText('Pilih Tujuan untuk tarif berdasarkan alamat antar. Pilih Pickup untuk lokasi pembelian/jemput. Either artinya salah satu titik cukup masuk zona. Both artinya pickup dan tujuan wajib masuk zona.')
                             ->required(),
                         Forms\Components\Select::make('price_mode')
                             ->label('Mode tarif')
@@ -88,6 +97,7 @@ class ZonePricingRuleResource extends Resource
                             ->default('fixed')
                             ->native(false)
                             ->live()
+                            ->helperText('Fixed mengganti tarif dasar. Extra menambah nominal ke tarif dasar. Percent menambah persen dari tarif dasar.')
                             ->required(),
                         Forms\Components\TextInput::make('amount')
                             ->label(fn (Forms\Get $get): string => $get('price_mode') === 'extra' ? 'Tambahan nominal' : 'Tarif tetap')
@@ -107,19 +117,27 @@ class ZonePricingRuleResource extends Resource
                         Forms\Components\TextInput::make('min_km')
                             ->numeric()
                             ->suffix('KM')
-                            ->helperText('Opsional, kosongkan jika tidak ada batas jarak minimum.'),
+                            ->helperText('Opsional. Rule hanya berlaku jika jarak order minimal angka ini. Kosongkan agar tidak dibatasi.'),
                         Forms\Components\TextInput::make('max_km')
                             ->numeric()
                             ->suffix('KM')
-                            ->helperText('Opsional, kosongkan jika tidak ada batas jarak maksimum.'),
+                            ->helperText('Opsional. Rule hanya berlaku jika jarak order maksimal angka ini. Kosongkan untuk tanpa batas atas.'),
                         Forms\Components\TextInput::make('priority')
                             ->numeric()
                             ->default(0)
+                            ->helperText('Jika ada beberapa rule yang cocok, priority terbesar akan dipakai lebih dulu.')
                             ->required(),
                         Forms\Components\Toggle::make('is_active')
+                            ->label('Aktif')
+                            ->helperText('Nonaktifkan jika rule ingin disimpan tetapi belum dipakai sistem.')
                             ->default(true),
                         Forms\Components\Textarea::make('notes')
                             ->label('Catatan')
+                            ->helperText('Catatan internal admin, tidak tampil ke customer.')
+                            ->columnSpanFull(),
+                        Forms\Components\Placeholder::make('example_reference')
+                            ->label('Contoh')
+                            ->content('Contoh fixed: Zona Panarukan untuk delivery -> tarif tetap Rp 12.000. Contoh extra: Zona depan Roxy -> tambah Rp 3.000. Contoh percent: Zona jam/rute khusus -> tambah 30% dari tarif dasar.')
                             ->columnSpanFull(),
                     ]),
             ]);
