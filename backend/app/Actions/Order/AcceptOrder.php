@@ -35,9 +35,9 @@ class AcceptOrder
     {
     }
 
-    public function handle(Order $order, Driver $driver): Order
+    public function handle(Order $order, Driver $driver, bool $ignoreDailyPriority = false): Order
     {
-        return DB::transaction(function () use ($order, $driver): Order {
+        return DB::transaction(function () use ($order, $driver, $ignoreDailyPriority): Order {
             $order = Order::query()->lockForUpdate()->findOrFail($order->id);
             $driver = Driver::query()->with(['user', 'setting'])->lockForUpdate()->findOrFail($driver->id);
 
@@ -98,7 +98,7 @@ class AcceptOrder
                 });
             }
 
-            if (! $this->dailyPriority->canAcceptOrder($driver, $order)) {
+            if (! $ignoreDailyPriority && ! $this->dailyPriority->canAcceptOrder($driver, $order)) {
                 throw new RuntimeException('Order ini sedang diprioritaskan untuk driver yang pertama online hari ini.');
             }
 

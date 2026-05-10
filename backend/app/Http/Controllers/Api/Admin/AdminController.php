@@ -342,7 +342,7 @@ class AdminController extends Controller
         abort_unless(! $this->driverHasActiveOrder($driver), 422, 'Driver masih memiliki order aktif.');
 
         try {
-            $assigned = $acceptOrder->handle($order, $driver);
+            $assigned = $acceptOrder->handle($order, $driver, ignoreDailyPriority: true);
         } catch (\RuntimeException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }

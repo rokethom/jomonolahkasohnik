@@ -1223,7 +1223,7 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
                 <button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button>
                 <div>
                   <strong>{order.customer || 'Customer'}</strong>
-                  <span>{order.branch_area || order.branch || '-'} Â· {statusDispatchLabel(order.status)} Â· waiting {formatWaitingTime(order.waiting_seconds)}</span>
+                  <span>{order.branch_area || order.branch || '-'} - {statusDispatchLabel(order.status)} - waiting {formatWaitingTime(order.waiting_seconds)}</span>
                 </div>
                 <div className="suggested-driver">
                   <small>Suggested</small>
@@ -1305,7 +1305,7 @@ function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; 
     <div className="modal-backdrop" role="presentation">
       <div className="modal dispatch-assign-modal" role="dialog" aria-modal="true">
         <div className="modal-header">
-          <div><h2>Assign Driver</h2><p>{order.code} Â· {order.customer || 'Customer'} Â· {order.branch_area || order.branch}</p></div>
+          <div><h2>Assign Driver</h2><p>{order.code} - {order.customer || 'Customer'} - {order.branch_area || order.branch}</p></div>
           <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
         </div>
         <form className="user-form" onSubmit={submit}>
@@ -1341,7 +1341,7 @@ function LiveOrders({ orders, onOpenOrder, onViewAll }: { orders: Order[]; onOpe
             <div>
               <strong>{order.code}</strong>
               <small>{order.customer || '-'} - {order.service}</small>
-              <em>{displayBranchValue(order.branch, order.branch_area)} Â· {shortOrderRoute(order)}</em>
+              <em>{displayBranchValue(order.branch, order.branch_area)} - {shortOrderRoute(order)}</em>
             </div>
             <b>Rp {Number(order.total || 0).toLocaleString('id-ID')}</b>
             <StatusBadge status={order.status} />
@@ -2678,7 +2678,7 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
   return (
     <div className="modal-backdrop" role="presentation">
       <div className="modal price-edit-modal" role="dialog" aria-modal="true">
-        <div className="modal-header"><div><h2>Edit harga order</h2><p>{order.code} Â· {order.customer || 'Customer'}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div>
+        <div className="modal-header"><div><h2>Edit harga order</h2><p>{order.code} - {order.customer || 'Customer'}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div>
         <form className="user-form" onSubmit={submit}>
           {!canEdit && <div className="notice warning">Order sudah selesai atau batal. Harga tidak dapat diedit.</div>}
           {error && <div className="notice danger">{error}</div>}
@@ -2827,7 +2827,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
       )}
       {showPriceSection && <div className="pricing-subsection">
         <PanelHeader title="Tarif Jarak" action={`${formulaCount} formula`} />
-      <div className="pricing-list">{settings.map((rule) => <article className="pricing-card" key={rule.id}><div className="pricing-card-main"><strong>{rule.name}</strong><span>{rule.branch ? branchLabel(rule.branch) : 'Global'} Â· {rule.min_km} - {rule.max_km ?? 'unlimited'} km</span></div><span className={rule.is_formula ? 'status info' : 'status success'}>{rule.is_formula ? 'Formula' : 'Flat'}</span><em>{rule.is_formula ? `Rp ${(rule.per_km_rate ?? 0).toLocaleString('id-ID')}/km - ${rule.subtract_value ?? 0}` : `Rp ${(rule.price ?? 0).toLocaleString('id-ID')}`}</em>{permissions.can_manage_policy && <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>}</article>)}</div>
+      <div className="pricing-list">{settings.map((rule) => <article className="pricing-card" key={rule.id}><div className="pricing-card-main"><strong>{rule.name}</strong><span>{rule.branch ? branchLabel(rule.branch) : 'Global'} - {rule.min_km} - {rule.max_km ?? 'unlimited'} km</span></div><span className={rule.is_formula ? 'status info' : 'status success'}>{rule.is_formula ? 'Formula' : 'Flat'}</span><em>{rule.is_formula ? `Rp ${(rule.per_km_rate ?? 0).toLocaleString('id-ID')}/km - ${rule.subtract_value ?? 0}` : `Rp ${(rule.price ?? 0).toLocaleString('id-ID')}`}</em>{permissions.can_manage_policy && <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>}</article>)}</div>
       </div>}
     </section>
   )
