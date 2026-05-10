@@ -69,13 +69,59 @@ class AdminDashboardMetricsService
     {
         $latency = $this->databaseLatencyMs();
         $log = $this->logCounters();
+        $serverStatus = $this->serverStatus();
 
         return [
-            ['label' => 'API response time', 'value' => $latency.' ms', 'status' => $latency > 800 ? 'critical' : ($latency > 300 ? 'warning' : 'normal')],
-            ['label' => 'API uptime', 'value' => $this->serverStatus(), 'status' => $this->serverStatus()],
-            ['label' => 'Failed request', 'value' => (string) $log['failed'], 'status' => $log['failed'] > 20 ? 'critical' : ($log['failed'] > 5 ? 'warning' : 'normal')],
-            ['label' => '4xx count', 'value' => (string) $log['4xx'], 'status' => $log['4xx'] > 50 ? 'warning' : 'normal'],
-            ['label' => '5xx count', 'value' => (string) $log['5xx'], 'status' => $log['5xx'] > 0 ? 'critical' : 'normal'],
+            $this->endpointMetric(
+                'API response time',
+                $latency.' ms',
+                $latency > 800 ? 'critical' : ($latency > 300 ? 'warning' : 'normal'),
+                'Waktu database/API menjawab health check saat dashboard dibuka.',
+                'Normal <= 300 ms, waspada > 300 ms, kritis > 800 ms.',
+                $latency > 800
+                    ? 'Cek beban database, query lambat, CPU/RAM VPS, dan koneksi storage.'
+                    : ($latency > 300 ? 'Pantau query lambat dan traffic tinggi.' : 'API merespons cepat.'),
+            ),
+            $this->endpointMetric(
+                'API uptime',
+                $serverStatus,
+                $serverStatus,
+                'Status dasar API berdasarkan koneksi database dan ruang storage.',
+                'Normal berarti API dan database bisa dijangkau. Critical berarti dashboard mendeteksi gangguan.',
+                $serverStatus === 'critical'
+                    ? 'Cek koneksi database, storage penuh, dan service PHP/Laravel.'
+                    : 'API dalam kondisi aktif.',
+            ),
+            $this->endpointMetric(
+                'Failed request',
+                (string) $log['failed'],
+                $log['failed'] > 20 ? 'critical' : ($log['failed'] > 5 ? 'warning' : 'normal'),
+                'Jumlah indikasi request gagal dari potongan log Laravel terbaru.',
+                'Normal <= 5, waspada > 5, kritis > 20 dalam log terbaru.',
+                $log['failed'] > 20
+                    ? 'Buka laravel.log dan cari error terbaru yang mengandung kata failed.'
+                    : ($log['failed'] > 5 ? 'Pantau apakah angka terus bertambah setelah refresh.' : 'Tidak ada lonjakan request gagal.'),
+            ),
+            $this->endpointMetric(
+                '4xx count',
+                (string) $log['4xx'],
+                $log['4xx'] > 50 ? 'warning' : 'normal',
+                'Jumlah status 4xx di log terbaru. Biasanya dari validasi, unauthenticated, forbidden, atau route tidak ditemukan.',
+                'Normal <= 50. Jika naik cepat, kemungkinan ada token kadaluarsa, user salah akses, atau endpoint FE salah.',
+                $log['4xx'] > 50
+                    ? 'Cek endpoint yang sering 401/403/404 dan pastikan FE memakai route/API token yang benar.'
+                    : 'Masih dalam batas aman.',
+            ),
+            $this->endpointMetric(
+                '5xx count',
+                (string) $log['5xx'],
+                $log['5xx'] > 0 ? 'critical' : 'normal',
+                'Jumlah error server 5xx di log terbaru. Ini biasanya bug kode, database error, atau dependency gagal.',
+                'Target ideal 0. Satu saja 5xx perlu dicek karena berdampak ke user.',
+                $log['5xx'] > 0
+                    ? 'Segera buka log production dan lihat stacktrace 500 terbaru.'
+                    : 'Tidak ada error server pada log terbaru.',
+            ),
         ];
     }
 
@@ -327,6 +373,26 @@ class AdminDashboardMetricsService
     private function metric(string $label, int|string|null $value, string $suffix, string $status, string $detail): array
     {
         return compact('label', 'value', 'suffix', 'status', 'detail');
+    }
+
+    /**
+     * @return array{label: string, value: string, status: string, detail: string, threshold: string, action: string, status_label: string}
+     */
+    private function endpointMetric(string $label, string $value, string $status, string $detail, string $threshold, string $action): array
+    {
+        return [
+            'label' => $label,
+            'value' => $value,
+            'status' => $status,
+            'detail' => $detail,
+            'threshold' => $threshold,
+            'action' => $action,
+            'status_label' => match ($status) {
+                'critical' => 'Kritis',
+                'warning' => 'Waspada',
+                default => 'Normal',
+            },
+        ];
     }
 
     private function bytesFromPhpIni(string|false $value): int
