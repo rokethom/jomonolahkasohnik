@@ -791,7 +791,7 @@ function App() {
         {adminNotice && <div className="dispatch-toast oper-handle-toast">{adminNotice}</div>}
         {safeView === 'dashboard' && <Dashboard data={data} api={api} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
-        {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} />}
+        {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} permissions={data.permissions} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -2247,7 +2247,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
   if (!order) {
     return (
       <aside className="order-detail-panel empty-detail">
-        <EmptyPanel title="Pilih order" copy="Klik Lihat pada tabel untuk membuka detail operasional order." />
+        <EmptyPanel title="Pilih order" copy="Klik baris pada tabel untuk membuka detail operasional order." />
       </aside>
     )
   }
@@ -2309,33 +2309,49 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return <div className="detail-item"><span>{label}</span><strong>{value}</strong></div>
 }
 
-function RequestOrdersPanel({ orders, searchQuery }: { orders: Order[]; searchQuery: string }) {
+function RequestOrdersPanel({ orders, searchQuery, permissions, onOpenDriverChat }: { orders: Order[]; searchQuery: string; permissions: Permissions; onOpenDriverChat: (driverUserId: number) => void }) {
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
   const requestOrders = useMemo(() => sortOrdersNewest(orders).filter((order) => order.source === 'driver_request'), [orders])
   const filteredOrders = requestOrders.filter((order) => orderMatchesSearch(order, searchQuery))
+  const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? null
 
   return (
-    <section className="panel">
-      <PanelHeader title="Request Order" action={`Driver request terbaru Â· ${filteredOrders.length}/${requestOrders.length}`} />
+    <section className="panel order-operations-panel request-orders-panel">
+      <PanelHeader title="Request Order" action={`Driver request terbaru - ${filteredOrders.length}/${requestOrders.length}`} />
       <div className="notice">Menu ini menampilkan order yang dibuat dari request driver. Data otomatis refresh dan diurutkan dari yang paling baru.</div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Order</th><th>Driver</th><th>Service</th><th>Total</th><th>Status</th><th>Waktu</th></tr>
-          </thead>
-          <tbody>
-            {filteredOrders.map((order) => (
-              <tr key={order.id}>
-                <td><strong>{order.code}</strong><span>{order.customer || '-'}</span></td>
-                <td>{order.driver || '-'}</td>
-                <td>{order.service}</td>
-                <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong></td>
-                <td><StatusBadge status={order.status} /></td>
-                <td>{formatShortDateTime(order.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {filteredOrders.length === 0 && <EmptyPanel title="Request order belum ada" copy="Order dari request driver akan tampil di sini." />}
+      <div className="order-operations-layout">
+        <div className="table-wrap order-table-wrap request-order-table-wrap">
+          <table>
+            <thead>
+              <tr><th>Order</th><th>Driver</th><th>Service</th><th>Total</th><th>Status</th><th>Waktu</th></tr>
+            </thead>
+            <tbody>
+              {filteredOrders.map((order) => (
+                <tr
+                  className={selectedOrder?.id === order.id ? 'selected-row' : ''}
+                  key={order.id}
+                  onClick={() => setSelectedOrderId(order.id)}
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedOrderId(order.id)
+                    }
+                  }}
+                >
+                  <td><strong>{order.code}</strong><span>{order.customer || '-'}</span></td>
+                  <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{order.driver}</button> : order.driver || '-'}</td>
+                  <td>{order.service}</td>
+                  <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} - Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
+                  <td><StatusBadge status={order.status} /></td>
+                  <td>{formatShortDateTime(order.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredOrders.length === 0 && <EmptyPanel title="Request order belum ada" copy="Order dari request driver akan tampil di sini." />}
+        </div>
+        <OrderDetailPanel order={selectedOrder} permissions={permissions} onOpenDriverChat={onOpenDriverChat} />
       </div>
     </section>
   )
