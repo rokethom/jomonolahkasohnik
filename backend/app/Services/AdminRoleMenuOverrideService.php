@@ -34,6 +34,8 @@ class AdminRoleMenuOverrideService
             'Area & System' => [
                 'locations' => 'Location Logs',
                 'pricing' => 'Pricing & Policy',
+                'zone-pricing' => 'Zone Pricing Rules',
+                'zone-pricing-tester' => 'Zone Pricing Tester',
             ],
         ];
     }
@@ -99,6 +101,8 @@ class AdminRoleMenuOverrideService
 
         if (($permissions['can_edit_order_price'] ?? false) || ($permissions['can_manage_policy'] ?? false)) {
             $views[] = 'pricing';
+            $views[] = 'zone-pricing';
+            $views[] = 'zone-pricing-tester';
         }
 
         if ($permissions['can_view_report'] ?? false) {

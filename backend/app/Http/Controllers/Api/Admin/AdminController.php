@@ -22,9 +22,11 @@ use App\Models\RingPricingRule;
 use App\Models\RingPricingSuggestion;
 use App\Models\Service;
 use App\Models\User;
+use App\Models\ZonePricingRule;
 use App\Services\AdminDashboardMetricsService;
 use App\Services\AdminRoleMenuOverrideService;
 use App\Services\AiParserRuleService;
+use App\Services\BranchDetectionService;
 use App\Services\DriverFinanceService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
@@ -34,10 +36,12 @@ use App\Services\NotificationService;
 use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
+use App\Services\PricingService;
 use App\Services\RatingService;
 use App\Services\RingPricingService;
 use App\Services\SettingService;
 use App\Services\SLAService;
+use App\Services\ZonePricingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -83,6 +87,7 @@ class AdminController extends Controller
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
             'ring_pricing_rules' => RingPricingRule::query()->with('branch')->latest()->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
             'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),
+            'zone_pricing_rules' => $this->zonePricingRulesQuery()->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)),
             'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
             'chats' => $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)),
@@ -1205,6 +1210,101 @@ class AdminController extends Controller
         return response()->json(['message' => 'Suggestion rejected']);
     }
 
+    public function zonePricingRules(Request $request): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        return response()->json([
+            'data' => $this->zonePricingRulesQuery()
+                ->get()
+                ->map(fn (ZonePricingRule $rule): array => $this->zonePricingRulePayload($rule)),
+        ]);
+    }
+
+    public function storeZonePricingRule(Request $request): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $rule = ZonePricingRule::query()->create($this->validateZonePricingRule($request));
+        $this->recordAudit($request->user(), 'created_zone_pricing_rule', $rule);
+
+        return response()->json([
+            'message' => 'Zone pricing rule created',
+            'data' => $this->zonePricingRulePayload($rule->fresh(['branch', 'geofenceArea.branch'])),
+        ], 201);
+    }
+
+    public function updateZonePricingRule(Request $request, ZonePricingRule $zonePricingRule): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $payload = $this->validateZonePricingRule($request);
+        $before = $zonePricingRule->only(array_keys($payload));
+        $zonePricingRule->update($payload);
+        $this->recordAudit($request->user(), 'updated_zone_pricing_rule', $zonePricingRule, ['before' => $before, 'after' => $payload]);
+
+        return response()->json([
+            'message' => 'Zone pricing rule updated',
+            'data' => $this->zonePricingRulePayload($zonePricingRule->fresh(['branch', 'geofenceArea.branch'])),
+        ]);
+    }
+
+    public function destroyZonePricingRule(Request $request, ZonePricingRule $zonePricingRule): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $this->recordAudit($request->user(), 'deleted_zone_pricing_rule', $zonePricingRule);
+        $zonePricingRule->delete();
+
+        return response()->json(['message' => 'Zone pricing rule deleted']);
+    }
+
+    public function testZonePricing(
+        Request $request,
+        BranchDetectionService $branches,
+        PricingService $pricing,
+        ZonePricingService $zones,
+    ): JsonResponse {
+        $this->authorizeZonePricing($request);
+
+        $payload = $request->validate([
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'service_type' => ['required', 'string', 'max:80'],
+            'pickup_lat' => ['required', 'numeric', 'between:-90,90'],
+            'pickup_lng' => ['required', 'numeric', 'between:-180,180'],
+            'destination_lat' => ['required', 'numeric', 'between:-90,90'],
+            'destination_lng' => ['required', 'numeric', 'between:-180,180'],
+            'stops' => ['nullable', 'integer', 'min:1', 'max:20'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $serviceType = app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type']);
+        $pickup = $zones->testPoint((float) $payload['pickup_lat'], (float) $payload['pickup_lng']);
+        $destination = $zones->testPoint((float) $payload['destination_lat'], (float) $payload['destination_lng']);
+        $detectedBranchId = $branches->detect((float) $payload['destination_lat'], (float) $payload['destination_lng'])['branch']?->id
+            ?? $branches->detect((float) $payload['pickup_lat'], (float) $payload['pickup_lng'])['branch']?->id
+            ?? ($payload['branch_id'] ? (int) $payload['branch_id'] : null);
+
+        $quote = $pricing->calculate([
+            ...$payload,
+            'service_type' => $serviceType,
+            'branch_id' => $detectedBranchId,
+            'pickup_address' => 'Tester pickup',
+            'destination_address' => 'Tester tujuan',
+            'destination_text' => $payload['notes'] ?? 'Tester tujuan',
+        ]);
+
+        return response()->json([
+            'data' => [
+                'pickup' => $this->zonePointPayload($pickup),
+                'destination' => $this->zonePointPayload($destination),
+                'branch_id' => $detectedBranchId,
+                'branch' => $detectedBranchId ? Branch::query()->find($detectedBranchId)?->only(['id', 'name', 'area']) : null,
+                'quote' => $quote,
+            ],
+        ]);
+    }
+
     public function storePriceSetting(Request $request): JsonResponse
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true), 403);
@@ -1490,6 +1590,53 @@ class AdminController extends Controller
     private function authorizeRingPricing(Request $request): void
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM], true), 403);
+    }
+
+    private function validateZonePricingRule(Request $request): array
+    {
+        $payload = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'geofence_area_id' => ['required', 'exists:geofence_areas,id'],
+            'service_type' => ['nullable', 'string', 'max:80'],
+            'match_point' => ['required', Rule::in(['destination', 'pickup', 'either', 'both'])],
+            'price_mode' => ['required', Rule::in(['fixed', 'extra', 'percent'])],
+            'amount' => ['nullable', 'integer', 'min:0'],
+            'percent' => ['nullable', 'numeric', 'min:0', 'max:300'],
+            'min_km' => ['nullable', 'numeric', 'min:0'],
+            'max_km' => ['nullable', 'numeric', 'min:0'],
+            'is_active' => ['sometimes', 'boolean'],
+            'priority' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $payload['service_type'] = isset($payload['service_type']) && $payload['service_type'] !== ''
+            ? app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type'])
+            : null;
+        $payload['amount'] = in_array($payload['price_mode'], ['fixed', 'extra'], true) ? (int) ($payload['amount'] ?? 0) : null;
+        $payload['percent'] = $payload['price_mode'] === 'percent' ? (float) ($payload['percent'] ?? 0) : null;
+        $payload['is_active'] = $payload['is_active'] ?? true;
+        $payload['priority'] = (int) ($payload['priority'] ?? 0);
+
+        return $payload;
+    }
+
+    private function authorizeZonePricing(Request $request): void
+    {
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true)
+            || $request->user()->hasPermission('edit_tarif'), 403);
+    }
+
+    private function zonePricingRulesQuery(): Builder
+    {
+        if (! Schema::hasTable('zone_pricing_rules')) {
+            return ZonePricingRule::query()->whereRaw('1 = 0');
+        }
+
+        return ZonePricingRule::query()
+            ->with(['branch', 'geofenceArea.branch'])
+            ->orderByDesc('priority')
+            ->latest();
     }
 
     private function ringPricingSuggestionsQuery(User $actor): Builder
@@ -2379,6 +2526,69 @@ class AdminController extends Controller
             'status' => $suggestion->status,
             'created_at' => $suggestion->created_at?->toDateTimeString(),
             'updated_at' => $suggestion->updated_at?->toDateTimeString(),
+        ];
+    }
+
+    private function zonePricingRulePayload(ZonePricingRule $rule): array
+    {
+        return [
+            'id' => $rule->id,
+            'name' => $rule->name,
+            'branch_id' => $rule->branch_id,
+            'branch' => $rule->branch ? [
+                'id' => $rule->branch->id,
+                'name' => $rule->branch->name,
+                'area' => $rule->branch->area,
+            ] : null,
+            'geofence_area_id' => $rule->geofence_area_id,
+            'geofence_area' => $rule->geofenceArea ? [
+                'id' => $rule->geofenceArea->id,
+                'name' => $rule->geofenceArea->name,
+                'shape_type' => $rule->geofenceArea->shape_type ?? 'circle',
+                'radius_meters' => $rule->geofenceArea->radius_meters,
+                'branch' => $rule->geofenceArea->branch ? [
+                    'id' => $rule->geofenceArea->branch->id,
+                    'name' => $rule->geofenceArea->branch->name,
+                    'area' => $rule->geofenceArea->branch->area,
+                ] : null,
+            ] : null,
+            'service_type' => $rule->service_type,
+            'match_point' => $rule->match_point,
+            'price_mode' => $rule->price_mode,
+            'amount' => (int) ($rule->amount ?? 0),
+            'percent' => $rule->percent !== null ? (float) $rule->percent : null,
+            'min_km' => $rule->min_km !== null ? (float) $rule->min_km : null,
+            'max_km' => $rule->max_km !== null ? (float) $rule->max_km : null,
+            'is_active' => (bool) $rule->is_active,
+            'priority' => (int) $rule->priority,
+            'notes' => $rule->notes,
+            'created_at' => $rule->created_at?->toDateTimeString(),
+            'updated_at' => $rule->updated_at?->toDateTimeString(),
+        ];
+    }
+
+    private function zonePointPayload(?array $point): ?array
+    {
+        if (! $point) {
+            return null;
+        }
+
+        $area = $point['area'] ?? null;
+        $branch = $point['branch'] ?? null;
+
+        return [
+            'area' => $area ? [
+                'id' => $area->id,
+                'name' => $area->name,
+                'shape_type' => $area->shape_type ?? 'circle',
+                'radius_meters' => $area->radius_meters,
+            ] : null,
+            'branch' => $branch ? [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'area' => $branch->area,
+            ] : null,
+            'distance_meters' => $point['distance_meters'] ?? null,
         ];
     }
 

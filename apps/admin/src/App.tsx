@@ -11,7 +11,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'ring-pricing' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'pricing' | 'ring-pricing' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
 type AdminHistoryState = {
   jojoAdminView?: View
 }
@@ -214,7 +214,39 @@ type ServiceRow = { id: number; name: string; code: string; outside_area_only?: 
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
 type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; name: string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; ring: string; price: number; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
 type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggested_price: number; previous_price?: number | null; occurrence_count: number; sample_order_ids?: number[]; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
-type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; is_active: boolean }
+type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; shape_type?: 'circle' | 'polygon' | string; polygon_coordinates?: Array<{ lat: number; lng: number }> | null; is_active: boolean }
+type ZonePricingRule = {
+  id: number
+  name: string
+  branch_id: number | null
+  branch?: Pick<Branch, 'id' | 'name' | 'area'> | null
+  geofence_area_id: number
+  geofence_area?: Pick<Geofence, 'id' | 'name' | 'shape_type' | 'radius_meters'> & { branch?: Pick<Branch, 'id' | 'name' | 'area'> | null } | null
+  service_type?: string | null
+  match_point: 'destination' | 'pickup' | 'either' | 'both' | string
+  price_mode: 'fixed' | 'extra' | 'percent' | string
+  amount: number
+  percent?: number | null
+  min_km?: number | null
+  max_km?: number | null
+  is_active: boolean
+  priority: number
+  notes?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+type ZonePricingTesterResult = {
+  pickup?: ZonePricingPoint | null
+  destination?: ZonePricingPoint | null
+  branch_id?: number | null
+  branch?: Pick<Branch, 'id' | 'name' | 'area'> | null
+  quote?: Record<string, unknown> | null
+}
+type ZonePricingPoint = {
+  area?: { id: number; name: string; shape_type?: string | null; radius_meters?: number | null } | null
+  branch?: Pick<Branch, 'id' | 'name' | 'area'> | null
+  distance_meters?: number | null
+}
 type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; accuracy?: number | null; provider?: string | null; is_mock_location?: boolean; is_valid: boolean; is_suspicious: boolean; reason: string | null; maps_url?: string | null; created_at: string | null }
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; first_operator_response_at?: string | null; rating_requested_at?: string | null; closed_at?: string | null; updated_at: string | null }
 type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; file_url?: string | null; file_name?: string | null; file_mime?: string | null; file_size?: number | null; created_at?: string | null }
@@ -327,6 +359,7 @@ type Bootstrap = {
   price_settings: PriceSetting[]
   ring_pricing_rules?: RingPricingRule[]
   ring_pricing_suggestions?: RingPricingSuggestion[]
+  zone_pricing_rules?: ZonePricingRule[]
   geofences: Geofence[]
   location_logs: LocationLog[]
   chats: Chat[]
@@ -423,6 +456,8 @@ const menuGroups: MenuGroup[] = [
       { id: 'locations', label: 'Location Logs', icon: 'pin' },
       { id: 'pricing', label: 'Pricing & Policy', icon: 'cash' },
       { id: 'ring-pricing', label: 'Master Ring', icon: 'cash' },
+      { id: 'zone-pricing', label: 'Zone Pricing Rules', icon: 'map' },
+      { id: 'zone-pricing-tester', label: 'Zone Pricing Tester', icon: 'cash' },
       { id: 'settings', label: 'System Settings', icon: 'settings' },
     ],
   },
@@ -455,6 +490,10 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers) views.add('drivers')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
   if (permissions.can_manage_ring_pricing) views.add('ring-pricing')
+  if (permissions.can_edit_order_price || permissions.can_manage_policy) {
+    views.add('zone-pricing')
+    views.add('zone-pricing-tester')
+  }
   if (permissions.can_view_report) views.add('reports')
   if (permissions.can_monitor_live_chat) views.add('chats')
   if (permissions.can_use_internal_chat) views.add('internal-chat')
@@ -798,6 +837,8 @@ function App() {
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {(safeView === 'pricing' || safeView === 'ring-pricing') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'zone-pricing' && <ZonePricingPanel rules={data.zone_pricing_rules ?? []} branches={data.branches} geofences={data.geofences} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'zone-pricing-tester' && <ZonePricingTesterPanel branches={data.branches} geofences={data.geofences} services={data.services} api={api} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} notificationSound={notificationSound} targetDriverUserId={chatDriverTargetId} onTargetDriverHandled={clearChatDriverTarget} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
@@ -2680,6 +2721,222 @@ function ringLabel(value: string) {
   return value.replace(/_/g, ' ').replace(/\bring\b/i, 'Ring').replace(/\b(\d)\b/, '$1')
 }
 
+function ZonePricingPanel({ rules, branches, geofences, services, permissions, api, onChanged }: { rules: ZonePricingRule[]; branches: Branch[]; geofences: Geofence[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const activeRules = rules.filter((rule) => rule.is_active).length
+  const polygonRules = rules.filter((rule) => rule.geofence_area?.shape_type === 'polygon').length
+  const canManage = permissions.can_edit_order_price || permissions.can_manage_policy
+  const serviceOptions = zoneServiceOptions(services)
+
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setSaving(true)
+    setMessage('')
+    try {
+      await api('/admin/zone-pricing-rules', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.get('name'),
+          branch_id: Number(form.get('branch_id')) || null,
+          geofence_area_id: Number(form.get('geofence_area_id')),
+          service_type: form.get('service_type') || null,
+          match_point: form.get('match_point') || 'destination',
+          price_mode: form.get('price_mode') || 'fixed',
+          amount: Number(form.get('amount') || 0),
+          percent: form.get('percent') ? Number(form.get('percent')) : null,
+          min_km: form.get('min_km') ? Number(form.get('min_km')) : null,
+          max_km: form.get('max_km') ? Number(form.get('max_km')) : null,
+          priority: Number(form.get('priority') || 0),
+          is_active: form.get('is_active') === 'on',
+          notes: form.get('notes') || null,
+        }),
+      })
+      event.currentTarget.reset()
+      setShowForm(false)
+      setMessage('Zone pricing rule berhasil disimpan.')
+      await onChanged()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Gagal menyimpan Zone Pricing.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const destroy = async (rule: ZonePricingRule) => {
+    if (!confirm(`Hapus rule zona ${rule.name}?`)) return
+    setMessage('')
+    try {
+      await api(`/admin/zone-pricing-rules/${rule.id}`, { method: 'DELETE' })
+      setMessage('Zone pricing rule berhasil dihapus.')
+      await onChanged()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Gagal menghapus Zone Pricing.')
+    }
+  }
+
+  return (
+    <section className="panel zone-pricing-panel">
+      <div className="section-head master-ring-head">
+        <div>
+          <h2>Zone Pricing Rules</h2>
+          <p>Tarif khusus berdasarkan geofence circle atau polygon. Akses menu ini mengikuti role preview admin.</p>
+        </div>
+        {canManage && <button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />{showForm ? 'Tutup Form' : 'Tambah Rule'}</button>}
+      </div>
+
+      <div className="zone-help-card">
+        <strong>Alur singkat</strong>
+        <span>Order masuk, cabang dideteksi dari geofence, tarif dasar/ring dihitung, rule zona dicek sesuai pickup/tujuan, lalu fixed/extra/percent diterapkan.</span>
+      </div>
+
+      <div className="master-ring-summary zone-summary">
+        <article><span>Total rule</span><strong>{rules.length}</strong><small>{activeRules} aktif</small></article>
+        <article><span>Polygon rule</span><strong>{polygonRules}</strong><small>Area gambar bebas</small></article>
+        <article><span>Geofence tersedia</span><strong>{geofences.length}</strong><small>{branches.length} cabang</small></article>
+      </div>
+
+      {message && <div className={message.toLowerCase().includes('gagal') || message.toLowerCase().includes('error') ? 'notice danger' : 'notice success'}>{message}</div>}
+
+      {showForm && canManage && (
+        <form className="admin-inline-form zone-create-form" onSubmit={create}>
+          <div className="ring-form-title"><strong>Tambah Zone Pricing</strong><span>Gunakan tester setelah simpan untuk memastikan rule yang aktif sudah benar.</span></div>
+          <label>Nama rule<input name="name" required placeholder="STB Panarukan fixed 12k" /></label>
+          <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
+          <label>Zona / Geofence<select name="geofence_area_id" required><option value="">Pilih zona</option>{geofences.map((area) => <option key={area.id} value={area.id}>{geofenceOptionLabel(area)}</option>)}</select></label>
+          <label>Layanan<select name="service_type"><option value="">Semua layanan</option>{serviceOptions.map((service) => <option key={service.value} value={service.value}>{service.label}</option>)}</select></label>
+          <label>Titik dicek<select name="match_point" defaultValue="destination"><option value="destination">Tujuan / alamat antar</option><option value="pickup">Pickup / lokasi pembelian</option><option value="either">Pickup atau tujuan</option><option value="both">Pickup dan tujuan</option></select></label>
+          <label>Mode tarif<select name="price_mode" defaultValue="fixed"><option value="fixed">Fixed mengganti tarif dasar</option><option value="extra">Extra tambah nominal</option><option value="percent">Percent tambah persen</option></select></label>
+          <label>Nominal Rp<input name="amount" type="number" min="0" step="1000" defaultValue="12000" /></label>
+          <label>Persen<input name="percent" type="number" min="0" max="300" step="1" placeholder="Untuk mode percent" /></label>
+          <label>Min KM<input name="min_km" type="number" min="0" step="0.1" placeholder="Opsional" /></label>
+          <label>Max KM<input name="max_km" type="number" min="0" step="0.1" placeholder="Opsional" /></label>
+          <label>Priority<input name="priority" type="number" defaultValue="0" /></label>
+          <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
+          <label className="span-2">Catatan<textarea name="notes" placeholder="Catatan internal admin, tidak tampil ke customer." /></label>
+          <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowForm(false)}>Batal</button><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Rule'}</button></div>
+        </form>
+      )}
+
+      <div className="zone-rule-grid">
+        {rules.map((rule) => (
+          <article className={rule.is_active ? 'zone-rule-card' : 'zone-rule-card inactive'} key={rule.id}>
+            <div className="zone-rule-main">
+              <div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div>
+              <span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {zoneMatchPointLabel(rule.match_point)}</span>
+              <small>{rule.geofence_area?.name ?? `Geofence #${rule.geofence_area_id}`} · {zoneShapeLabel(rule.geofence_area?.shape_type)} · priority {rule.priority}</small>
+              {(rule.min_km !== null || rule.max_km !== null) && <small>Jarak: {rule.min_km ?? 0} - {rule.max_km ?? 'unlimited'} km</small>}
+              {rule.notes && <p>{rule.notes}</p>}
+            </div>
+            <div className="zone-rule-price">
+              <span>{zonePriceModeLabel(rule.price_mode)}</span>
+              <strong>{zoneRuleValue(rule)}</strong>
+              {canManage && <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>}
+            </div>
+          </article>
+        ))}
+      </div>
+      {rules.length === 0 && <EmptyPanel title="Belum ada Zone Pricing" copy="Tambahkan rule untuk tarif berbasis area geofence atau polygon." />}
+    </section>
+  )
+}
+
+function ZonePricingTesterPanel({ branches, geofences, services, api }: { branches: Branch[]; geofences: Geofence[]; services: ServiceRow[]; api: ApiClient }) {
+  const [result, setResult] = useState<ZonePricingTesterResult | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const serviceOptions = zoneServiceOptions(services)
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setLoading(true)
+    setError('')
+    setResult(null)
+    try {
+      const payload = await api<{ data: ZonePricingTesterResult }>('/admin/zone-pricing-tester', {
+        method: 'POST',
+        body: JSON.stringify({
+          branch_id: Number(form.get('branch_id')) || null,
+          service_type: form.get('service_type') || 'delivery',
+          pickup_lat: Number(form.get('pickup_lat')),
+          pickup_lng: Number(form.get('pickup_lng')),
+          destination_lat: Number(form.get('destination_lat')),
+          destination_lng: Number(form.get('destination_lng')),
+          stops: Number(form.get('stops') || 1),
+          notes: form.get('notes') || null,
+        }),
+      })
+      setResult(payload.data)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Tester gagal dijalankan.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <section className="panel zone-tester-panel">
+      <div className="section-head master-ring-head">
+        <div>
+          <h2>Zone Pricing Tester</h2>
+          <p>Simulasikan pickup dan tujuan untuk melihat cabang, geofence, dan rule tarif yang akan dipakai sistem.</p>
+        </div>
+        <span className="status info">{geofences.length} geofence</span>
+      </div>
+      <div className="zone-tester-layout">
+        <form className="admin-inline-form zone-tester-form" onSubmit={submit}>
+          <label>Cabang fallback<select name="branch_id"><option value="">Auto dari geofence</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
+          <label>Layanan<select name="service_type" defaultValue="delivery">{serviceOptions.map((service) => <option key={service.value} value={service.value}>{service.label}</option>)}</select></label>
+          <label>Pickup latitude<input name="pickup_lat" type="number" step="0.00000001" defaultValue="-7.70630000" required /></label>
+          <label>Pickup longitude<input name="pickup_lng" type="number" step="0.00000001" defaultValue="114.00980000" required /></label>
+          <label>Tujuan latitude<input name="destination_lat" type="number" step="0.00000001" defaultValue="-7.71000000" required /></label>
+          <label>Tujuan longitude<input name="destination_lng" type="number" step="0.00000001" defaultValue="114.02000000" required /></label>
+          <label>Jumlah titik<input name="stops" type="number" min="1" defaultValue="1" /></label>
+          <label className="span-2">Catatan / keyword<textarea name="notes" placeholder="Contoh: depan roxy, pasar panji, kue tart" /></label>
+          <button className="primary-button" type="submit" disabled={loading}>{loading ? 'Testing...' : 'Test Zone Pricing'}</button>
+        </form>
+
+        <div className="zone-tester-result">
+          {error && <div className="notice danger">{error}</div>}
+          {!result && !error && <EmptyPanel title="Belum ada hasil tester" copy="Isi koordinat lalu klik Test Zone Pricing." />}
+          {result && (
+            <>
+              <div className="tester-result-head">
+                <span>Cabang terdeteksi</span>
+                <strong>{result.branch ? branchLabel(result.branch as Branch) : 'Belum terdeteksi'}</strong>
+              </div>
+              <div className="tester-point-grid">
+                <ZonePointCard title="Pickup" point={result.pickup} />
+                <ZonePointCard title="Tujuan" point={result.destination} />
+              </div>
+              <div className="tester-quote-card">
+                <span>Tarif hasil simulasi</span>
+                <strong>Rp {Number(result.quote?.final_price ?? result.quote?.total_price ?? result.quote?.price ?? 0).toLocaleString('id-ID')}</strong>
+                <small>Source: {String(result.quote?.tarif_source ?? 'default')} · Rule: {String(result.quote?.zone_pricing_rule_name ?? '-')}</small>
+              </div>
+              <pre className="zone-json-preview">{JSON.stringify(result.quote ?? {}, null, 2)}</pre>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ZonePointCard({ title, point }: { title: string; point?: ZonePricingPoint | null }) {
+  return (
+    <article className="zone-point-card">
+      <span>{title}</span>
+      <strong>{point?.area?.name ?? 'Di luar geofence'}</strong>
+      <small>{point?.branch ? branchLabel(point.branch as Branch) : '-'} · {point?.area ? zoneShapeLabel(point.area.shape_type) : 'no zone'}</small>
+      {point?.distance_meters !== null && point?.distance_meters !== undefined && <em>{Math.round(point.distance_meters)} m dari center</em>}
+    </article>
+  )
+}
+
 function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; token: string }) {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -4511,6 +4768,55 @@ function serviceTypeFromService(service: ServiceRow) {
   }[service.code.toUpperCase()] ?? service.code.toLowerCase()
 }
 
+function zoneServiceOptions(services: ServiceRow[]) {
+  const fromCms = services.map((service) => ({ label: service.name, value: serviceTypeFromService(service) }))
+  const fallback = [
+    { label: 'Ojek', value: 'ojek' },
+    { label: 'Delivery', value: 'delivery' },
+    { label: 'Belanja', value: 'belanja' },
+    { label: 'Kurir', value: 'kurir' },
+    { label: 'Gift Order', value: 'gift_order' },
+    { label: 'Joker Mobil', value: 'joker_mobil' },
+  ]
+  const seen = new Set<string>()
+
+  return [...fromCms, ...fallback].filter((item) => {
+    if (seen.has(item.value)) return false
+    seen.add(item.value)
+    return true
+  })
+}
+
+function geofenceOptionLabel(area: Geofence) {
+  return `${area.name} - ${area.branch ? branchLabel(area.branch) : 'Tanpa cabang'} - ${zoneShapeLabel(area.shape_type)}`
+}
+
+function zoneShapeLabel(shape?: string | null) {
+  return shape === 'polygon' ? 'Polygon' : 'Circle'
+}
+
+function zoneMatchPointLabel(value?: string | null) {
+  return {
+    destination: 'Cek tujuan',
+    pickup: 'Cek pickup',
+    either: 'Pickup/tujuan',
+    both: 'Pickup dan tujuan',
+  }[String(value ?? 'destination')] ?? String(value ?? '-')
+}
+
+function zonePriceModeLabel(value?: string | null) {
+  return {
+    fixed: 'Tarif tetap',
+    extra: 'Tambah nominal',
+    percent: 'Tambah persen',
+  }[String(value ?? 'fixed')] ?? String(value ?? '-')
+}
+
+function zoneRuleValue(rule: ZonePricingRule) {
+  if (rule.price_mode === 'percent') return `${Number(rule.percent ?? 0).toLocaleString('id-ID')}%`
+  return `Rp ${Number(rule.amount ?? 0).toLocaleString('id-ID')}`
+}
+
 function AreaRow({ name, branch, radius, active }: { name: string; branch: string; radius: string; active: boolean }) {
   return <div className="activity-item"><div className="activity-icon"><Icon name="map" /></div><div><strong>{name}</strong><span>{branch} - {radius}</span></div><span className={active ? 'status success' : 'status muted'}>{active ? 'Active' : 'Off'}</span></div>
 }
@@ -4524,7 +4830,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', 'ring-pricing': 'Master Ring', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', pricing: 'Pricing & Policy', 'ring-pricing': 'Master Ring', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order' }[view]
 }
 
 function internalNoteStatusLabel(status: InternalNoteStatus) {

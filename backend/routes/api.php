@@ -106,6 +106,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/ring-pricing-rules/{ringPricingRule}', [AdminController::class, 'destroyRingPricingRule'])->middleware('permission:edit_tarif');
         Route::post('/ring-pricing-suggestions/{suggestion}/approve', [AdminController::class, 'approveRingPricingSuggestion'])->middleware('permission:edit_tarif');
         Route::post('/ring-pricing-suggestions/{suggestion}/reject', [AdminController::class, 'rejectRingPricingSuggestion'])->middleware('permission:edit_tarif');
+        Route::get('/zone-pricing-rules', [AdminController::class, 'zonePricingRules'])->middleware('permission:edit_tarif');
+        Route::post('/zone-pricing-rules', [AdminController::class, 'storeZonePricingRule'])->middleware('permission:edit_tarif');
+        Route::put('/zone-pricing-rules/{zonePricingRule}', [AdminController::class, 'updateZonePricingRule'])->middleware('permission:edit_tarif');
+        Route::delete('/zone-pricing-rules/{zonePricingRule}', [AdminController::class, 'destroyZonePricingRule'])->middleware('permission:edit_tarif');
+        Route::post('/zone-pricing-tester', [AdminController::class, 'testZonePricing'])->middleware('permission:edit_tarif');
         Route::get('/branches', [AdminController::class, 'branches']);
         Route::post('/branches', [AdminController::class, 'storeBranch'])->middleware('permission:create_user');
         Route::get('/geofences', [AdminController::class, 'geofences']);
