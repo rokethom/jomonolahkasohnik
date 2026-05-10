@@ -2550,6 +2550,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const documentInputRef = useRef<HTMLInputElement | null>(null)
   const chatSnapshotRef = useRef('')
+  const rateLimitUntilRef = useRef(0)
 
   const activeChat = detail?.chat ?? chats.find((chat) => chat.id === activeId) ?? null
   const waitingQueue = useMemo(() => chats
@@ -2561,6 +2562,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
   }).sort((first, second) => chatSortScore(first, waitingQueue) - chatSortScore(second, waitingQueue))
 
   const loadChats = useCallback(async (notify = true) => {
+    if (Date.now() < rateLimitUntilRef.current) return
     try {
       const payload = await api<{ data: { data: Chat[] } }>('/admin/chats')
       const snapshot = chatListSnapshot(payload.data.data)
@@ -2570,17 +2572,29 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
       chatSnapshotRef.current = snapshot
       setChats(payload.data.data)
       if (!activeId && payload.data.data[0]) setActiveId(payload.data.data[0].id)
+      setChatError((current) => current.includes('Terlalu banyak refresh') ? '' : current)
     } catch (error) {
+      if (isRateLimitedError(error)) {
+        rateLimitUntilRef.current = Date.now() + 15000
+        setChatError('Terlalu banyak refresh live chat. Sistem jeda 15 detik lalu sync otomatis lagi.')
+        return
+      }
       setChatError(error instanceof Error ? error.message : 'Gagal memuat chat')
     }
   }, [activeId, api, notificationSound])
 
   const loadDetail = useCallback(async (id: number) => {
+    if (Date.now() < rateLimitUntilRef.current) return
     setChatError('')
     try {
       const payload = await api<{ data: ChatDetail }>(`/admin/chat/${id}`)
       setDetail(payload.data)
     } catch (error) {
+      if (isRateLimitedError(error)) {
+        rateLimitUntilRef.current = Date.now() + 15000
+        setChatError('Terlalu banyak refresh detail chat. Sistem jeda 15 detik lalu sync otomatis lagi.')
+        return
+      }
       setChatError(error instanceof Error ? error.message : 'Gagal memuat detail chat')
     }
   }, [api])
@@ -2594,7 +2608,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadChats(), 0)
-    const interval = window.setInterval(() => void loadChats(), 2000)
+    const interval = window.setInterval(() => void loadChats(), 5000)
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(interval)
@@ -2605,7 +2619,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
     if (!activeId) return
     setDetail(null)
     const timer = window.setTimeout(() => void loadDetail(activeId), 0)
-    const interval = window.setInterval(() => void loadDetail(activeId), 2500)
+    const interval = window.setInterval(() => void loadDetail(activeId), 5000)
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(interval)
@@ -2654,8 +2668,14 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
       setMessage('')
       setAttachmentFile(null)
       setAttachmentOpen(false)
+      setChatError(attachmentFile ? 'Lampiran berhasil dikirim.' : '')
       await loadChats(false)
     } catch (error) {
+      if (isRateLimitedError(error)) {
+        rateLimitUntilRef.current = Date.now() + 15000
+        setChatError('Pesan belum terkirim karena terlalu banyak request. Tunggu sebentar lalu kirim ulang.')
+        return
+      }
       setChatError(error instanceof Error ? error.message : 'Pesan gagal dikirim')
     } finally {
       setSending(false)
@@ -2724,11 +2744,11 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
         {activeChat && (
           <>
             <header className="admin-chat-room-head">
-              <div><h2>{activeChat.customer || activeChat.driver || 'Chat'}</h2><p>{activeChat.order_code ?? activeChat.type} Â· Operator: {activeChat.operator ?? me.name}</p></div>
+              <div><h2>{activeChat.customer || activeChat.driver || 'Chat'}</h2><p>{activeChat.order_code ?? activeChat.type} · Ditangani: {activeChat.operator ?? me.name}</p></div>
               <div className="admin-chat-actions"><QueueBadge chat={activeChat} queue={waitingQueue} /><SlaBadge chat={activeChat} /><ChatFeedbackBadge chat={activeChat} /><ChatStatusBadge status={activeChat.status} /><button className="mini-button reject" disabled={activeChat.status === 'closed'} onClick={() => setCloseConfirmOpen(true)}>Close Chat</button></div>
             </header>
             {activeChat.order_code && <button className="order-code-link order-code-row" onClick={() => onOpenOrder(activeChat.order_code!)}>Buka order {activeChat.order_code}</button>}
-            {chatError && <div className="chat-error">{chatError}</div>}
+            {chatError && <div className={`chat-error ${chatNoticeTone(chatError)}`}>{chatError}</div>}
             {detail?.cancel_request && (
               <div className="cancel-approval">
                 <strong>Cancel request pending</strong><span>{detail.cancel_request.reason}</span>
@@ -2766,7 +2786,7 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
                   </div>
                 )}
               </div>
-              <textarea value={message} disabled={activeChat.status === 'closed'} onChange={(event) => setMessage(event.target.value)} placeholder={activeChat.status === 'closed' ? 'Chat sudah ditutup' : 'Balas sebagai operator...'} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
+              <textarea value={message} disabled={activeChat.status === 'closed'} onChange={(event) => setMessage(event.target.value)} placeholder={activeChat.status === 'closed' ? 'Chat sudah ditutup' : attachmentFile ? 'Tambahkan keterangan lampiran...' : 'Balas sebagai operator...'} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
               <button className="primary-button" disabled={isSending || activeChat.status === 'closed' || (!message.trim() && !attachmentFile)} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
               {attachmentFile && (
                 <div className="internal-composer-hints admin-composer-hints">
@@ -3913,6 +3933,16 @@ function isAuthError(error: unknown) {
   return error instanceof AuthExpiredError
 }
 
+function isRateLimitedError(error: unknown) {
+  return error instanceof Error && (/429/.test(error.message) || /too many attempts/i.test(error.message))
+}
+
+function chatNoticeTone(message: string) {
+  if (/berhasil/i.test(message)) return 'success'
+  if (/terlalu banyak|jeda|tunggu/i.test(message)) return 'warning'
+  return 'danger'
+}
+
 function makeApi(token: string, onUnauthorized?: () => void): ApiClient {
   return async <T,>(path: string, options: RequestInit = {}) => {
     const isFormData = options.body instanceof FormData
@@ -3931,7 +3961,7 @@ function makeApi(token: string, onUnauthorized?: () => void): ApiClient {
       onUnauthorized?.()
       throw new AuthExpiredError(typeof payload.message === 'string' ? payload.message : undefined)
     }
-    if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`)
+    if (!response.ok) throw new Error(payload.message ? `HTTP ${response.status}: ${payload.message}` : `HTTP ${response.status}`)
     return payload as T
   }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Enums\UserRole;
+use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\CancelRequest;
 use App\Models\ChatConversation;
@@ -69,16 +70,22 @@ class AdminChatController extends Controller
         $conversation = $slaService->enforceUnansweredOperatorChat($conversation);
         $chatService->assertWritable($conversation);
 
-        if (in_array($request->user()->role, [UserRole::Operator, UserRole::Eksekutor], true) && ! $conversation->operator_id) {
+        if ($request->user()->role instanceof UserRole && $request->user()->role->isStaff() && ! $conversation->operator_id) {
             $conversation->forceFill(['operator_id' => $request->user()->id, 'status' => 'active'])->save();
-            $conversation->messages()->create([
+            $joinedMessage = $conversation->messages()->create([
                 'sender_id' => $request->user()->id,
                 'sender_type' => $request->user()->role->value,
                 'message' => sprintf(
-                    'Halo saya %s Operator Jojo SI Aplikasi Joker, ada yang bisa di bantu?',
+                    '%s %s bergabung dalam percakapan ini.',
                     $request->user()->name,
+                    $this->roleLabel($request->user()->role),
                 ),
             ]);
+            try {
+                broadcast(new MessageSent($joinedMessage->load('sender')))->toOthers();
+            } catch (\Throwable) {
+                // Realtime is best-effort; polling will still sync the joined notice.
+            }
         }
 
         $transcription = trim((string) ($payload['transcription'] ?? ''));
@@ -216,5 +223,19 @@ class AdminChatController extends Controller
             'is_read' => $message->is_read,
             'created_at' => $message->created_at?->toISOString(),
         ];
+    }
+
+    private function roleLabel(UserRole $role): string
+    {
+        return match ($role) {
+            UserRole::Admin => 'Admin',
+            UserRole::GM => 'GM',
+            UserRole::HRD => 'HRD',
+            UserRole::Manager => 'Manager',
+            UserRole::SPV => 'SPV',
+            UserRole::Operator => 'Operator',
+            UserRole::Eksekutor => 'Eksekutor',
+            default => 'Manajemen',
+        };
     }
 }

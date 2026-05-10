@@ -7,6 +7,7 @@ use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvi
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
+use App\Enums\UserRole;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -42,7 +43,13 @@ class RouteServiceProvider extends ServiceProvider
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+            $user = $request->user();
+            $role = $user?->role;
+            $isStaff = $role instanceof UserRole
+                ? $role->isStaff()
+                : in_array((string) $role, ['admin', 'gm', 'hrd', 'manager', 'spv', 'operator', 'eksekutor'], true);
+
+            return Limit::perMinute($isStaff ? 240 : 90)->by($user?->id ?: $request->ip());
         });
 
         RateLimiter::for('driver-google-login', function (Request $request) {

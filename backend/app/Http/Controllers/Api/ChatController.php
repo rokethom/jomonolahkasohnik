@@ -30,7 +30,7 @@ class ChatController extends Controller
             $this->broadcastSafely(new \App\Events\MessageSent($message));
         }
 
-        return response()->json(['data' => $conversation->load('latestMessage')]);
+        return response()->json(['data' => $this->conversationPayload($conversation->load(['latestMessage', 'operator']))]);
     }
 
     public function startOrder(Order $order, Request $request, ChatService $chatService): JsonResponse
@@ -43,7 +43,7 @@ class ChatController extends Controller
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
-        return response()->json(['data' => $conversation]);
+        return response()->json(['data' => $this->conversationPayload($conversation->load('operator'))]);
     }
 
     public function orderMessages(Order $order, Request $request, ChatService $chatService): JsonResponse
@@ -239,6 +239,8 @@ class ChatController extends Controller
             'type' => $conversation->type,
             'status' => $conversation->status,
             'operator_id' => $conversation->operator_id,
+            'operator_name' => $conversation->operator?->name,
+            'operator_role' => $conversation->operator?->role?->value,
             'operator_rating' => $conversation->operator_rating,
             'rating_requested' => $ratingDue,
             'rating_requested_at' => $conversation->rating_requested_at?->toIso8601String(),

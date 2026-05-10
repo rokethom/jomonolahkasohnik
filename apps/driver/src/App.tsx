@@ -258,12 +258,15 @@ type ChatConversation = {
   order_id: number | null
   type: string
   status: string
+  operator_name?: string | null
+  operator_role?: string | null
 }
 
 type ChatMessage = {
   id: number
   sender_id: number | null
   sender_type: string
+  sender_name?: string | null
   message: string | null
   image_url?: string | null
   audio_url?: string | null
@@ -1229,7 +1232,8 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
             body: JSON.stringify({ type: 'customer_driver' }),
           })
       setConversation(started.data)
-      const response = await api<{ data: { data: ChatMessage[] } }>(`/chats/${started.data.id}/messages?per_page=50`)
+      const response = await api<{ data: { data: ChatMessage[] }; conversation?: ChatConversation }>(`/chats/${started.data.id}/messages?per_page=50`)
+      if (response.conversation) setConversation((current) => current ? { ...current, ...response.conversation } : response.conversation!)
       setMessages((current) => mergeChatMessages(current, [...response.data.data].reverse()))
     } catch (err) {
       if (!silent) setError(getErrorMessage(err, mode === 'operator' ? 'Chat operator belum tersedia' : 'Chat belum tersedia untuk order ini'))
@@ -1346,11 +1350,18 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
           {(!loading || messages.length > 0) && !error && (
             <>
               <div className="chat-list driver-chat-list" ref={listRef}>
+                {conversation?.operator_name && (
+                  <div className="operator-joined-notice">
+                    <strong>{conversation.operator_name}</strong>
+                    <span>{chatOperatorRoleLabel(conversation.operator_role)} sedang ikut memantau percakapan ini.</span>
+                  </div>
+                )}
                 {messages.length === 0 && <div className="chat-loading">Belum ada pesan. Mulai percakapan dengan {mode === 'operator' ? 'operator' : 'customer'}.</div>}
                 {messages.map((message) => {
                   const mine = message.sender_id === driver?.id || message.sender_type === 'driver'
                   return (
                     <article key={message.id} className={`bubble ${mine ? 'mine' : ''}`}>
+                      {!mine && <strong className="bubble-sender">{chatSenderLabel(message)}</strong>}
                       <p>{redactMapText(message.message) || (message.image_url ? 'Foto terkirim' : 'Pesan media')}</p>
                       {message.image_url && <button className="chat-image-button" type="button" onClick={() => setPreviewImage(assetUrl(message.image_url!))}><img className="chat-media" src={assetUrl(message.image_url)} alt="Lampiran chat" /></button>}
                       {message.audio_url && <audio controls src={assetUrl(message.audio_url)} />}
@@ -2261,6 +2272,24 @@ function formatRemaining(ms: number) {
 }
 function shortAddress(address: string) { return address.length > 28 ? `${address.slice(0, 28)}...` : address }
 function statusLabel(status: OrderStatus) { return { pending: 'Menunggu', accepted: 'Accepted', on_delivery: 'Antar', pending_cancel: 'Menunggu Cancel', done: 'Selesai', cancelled: 'Batal' }[status] }
+function chatSenderLabel(message: ChatMessage) {
+  if (message.sender?.name) return `${message.sender.name} (${chatOperatorRoleLabel(message.sender_type)})`
+  if (message.sender_name) return `${message.sender_name} (${chatOperatorRoleLabel(message.sender_type)})`
+  return chatOperatorRoleLabel(message.sender_type)
+}
+function chatOperatorRoleLabel(role?: string | null) {
+  const key = String(role ?? '').toLowerCase()
+  if (key === 'operator') return 'Operator'
+  if (key === 'eksekutor') return 'Eksekutor'
+  if (key === 'manager') return 'Manager'
+  if (key === 'spv') return 'SPV'
+  if (key === 'admin') return 'Admin'
+  if (key === 'gm') return 'GM'
+  if (key === 'bot') return 'JOJOBOT'
+  if (key === 'customer') return 'Customer'
+  if (key === 'driver') return 'Driver'
+  return 'Manajemen'
+}
 function setoranBreakdownRows(breakdown?: Record<string, number>, periodLabel = 'bulan sebelumnya', mode: 'billing' | 'running' = 'billing') {
   if (!breakdown) return []
 

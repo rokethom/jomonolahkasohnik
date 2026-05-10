@@ -4218,6 +4218,24 @@ textarea::placeholder {
   font-weight: 800;
 }
 
+.chat-error.warning {
+  border-color: #fed7aa;
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.chat-error.success {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.chat-error.danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
 .order-code-link {
   border: 1px solid #bfdbfe;
   border-radius: 10px;
