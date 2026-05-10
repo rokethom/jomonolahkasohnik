@@ -22,6 +22,7 @@ class DriverResource extends JsonResource
             'branch_id' => $this->user?->branch_id,
             'branch' => $this->user?->branch?->name,
             'vehicle_type' => $this->vehicle_type,
+            'vehicle_types' => $this->vehicleTypes(),
             'vehicle_seat_rows' => $this->vehicle_seat_rows,
             'vehicle_number' => $this->vehicle_number,
             'is_ladies_driver' => (bool) $this->is_ladies_driver,

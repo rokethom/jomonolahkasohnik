@@ -126,6 +126,8 @@ class AdminController extends Controller
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
             'vehicle_type' => ['nullable', 'string', 'in:motor,mobil'],
+            'vehicle_types' => ['nullable', 'array'],
+            'vehicle_types.*' => ['string', 'in:motor,mobil'],
             'vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
             'is_ladies_driver' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['nullable', 'array'],
@@ -135,10 +137,12 @@ class AdminController extends Controller
         $role = UserRole::from($payload['role']);
         abort_unless($this->canAssignRole($actor, $role), 403);
 
+        $vehicleTypes = $this->normalizeVehicleTypes($payload['vehicle_types'] ?? [$payload['vehicle_type'] ?? 'motor']);
         $driverPayload = [
             'bpjs_jht_enabled' => $payload['driver_bpjs_jht_enabled'] ?? true,
-            'vehicle_type' => $payload['vehicle_type'] ?? 'motor',
-            'vehicle_seat_rows' => ($payload['vehicle_type'] ?? 'motor') === 'mobil' ? ($payload['vehicle_seat_rows'] ?? 2) : null,
+            'vehicle_type' => $vehicleTypes[0] ?? 'motor',
+            'vehicle_types' => $vehicleTypes,
+            'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? ($payload['vehicle_seat_rows'] ?? 2) : null,
             'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
         ];
         if (array_key_exists('allowed_service_types', $payload)) {
@@ -147,7 +151,7 @@ class AdminController extends Controller
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
 
         $password = $this->generatePassword();
         $user = User::create([
@@ -190,6 +194,8 @@ class AdminController extends Controller
             'suspended_until' => ['nullable', 'date'],
             'driver_bansos_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'driver_bpjs_jht_enabled' => ['sometimes', 'boolean'],
+            'vehicle_types' => ['nullable', 'array'],
+            'vehicle_types.*' => ['string', 'in:motor,mobil'],
             'vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
             'is_ladies_driver' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['nullable', 'array'],
@@ -208,6 +214,12 @@ class AdminController extends Controller
         if (array_key_exists('driver_bpjs_jht_enabled', $payload)) {
             $driverPayload['bpjs_jht_enabled'] = $payload['driver_bpjs_jht_enabled'];
         }
+        if (array_key_exists('vehicle_types', $payload)) {
+            $vehicleTypes = $this->normalizeVehicleTypes($payload['vehicle_types'] ?? []);
+            $driverPayload['vehicle_types'] = $vehicleTypes;
+            $driverPayload['vehicle_type'] = $vehicleTypes[0] ?? 'motor';
+            $driverPayload['vehicle_seat_rows'] = in_array('mobil', $vehicleTypes, true) ? ($payload['vehicle_seat_rows'] ?? $user->driver?->vehicle_seat_rows ?? 2) : null;
+        }
         if (array_key_exists('vehicle_seat_rows', $payload)) {
             $driverPayload['vehicle_seat_rows'] = $payload['vehicle_seat_rows'];
         }
@@ -217,7 +229,7 @@ class AdminController extends Controller
         if (array_key_exists('allowed_service_types', $payload)) {
             $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
 
         $user->update($payload);
         $nextRole = $payload['role'] ?? ($user->role instanceof UserRole ? $user->role->value : (string) $user->role);
@@ -625,16 +637,21 @@ class AdminController extends Controller
         abort_unless($driver->user !== null, 404);
 
         $payload = $request->validate([
-            'vehicle_type' => ['required', 'string', 'in:motor,mobil'],
+            'vehicle_type' => ['nullable', 'string', 'in:motor,mobil'],
+            'vehicle_types' => ['nullable', 'array'],
+            'vehicle_types.*' => ['string', 'in:motor,mobil'],
             'vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
             'is_ladies_driver' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['array'],
             'allowed_service_types.*' => ['string', 'max:50'],
         ]);
 
+        $vehicleTypes = $this->normalizeVehicleTypes($payload['vehicle_types'] ?? [$payload['vehicle_type'] ?? $driver->vehicle_type ?? 'motor']);
+
         $driver->update([
-            'vehicle_type' => $payload['vehicle_type'],
-            'vehicle_seat_rows' => $payload['vehicle_type'] === 'mobil' ? ($payload['vehicle_seat_rows'] ?? 2) : null,
+            'vehicle_type' => $vehicleTypes[0] ?? 'motor',
+            'vehicle_types' => $vehicleTypes,
+            'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? ($payload['vehicle_seat_rows'] ?? 2) : null,
             'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
             'allowed_service_types' => array_values(array_unique(array_map(
                 fn ($service): string => $this->normalizeServiceType((string) $service),
@@ -645,6 +662,7 @@ class AdminController extends Controller
         $this->recordAudit($request->user(), 'updated_driver_config', $driver->user, [
             'driver_id' => $driver->id,
             'vehicle_type' => $driver->vehicle_type,
+            'vehicle_types' => $driver->vehicle_types,
             'vehicle_seat_rows' => $driver->vehicle_seat_rows,
             'is_ladies_driver' => $driver->is_ladies_driver,
             'allowed_service_types' => $driver->allowed_service_types,
@@ -1800,11 +1818,17 @@ class AdminController extends Controller
             ->where('status', 'active')
             ->where(fn (Builder $query) => $query->where('is_suspend', false)->orWhereNull('is_suspend'))
             ->where('is_available', true)
-            ->when(data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'motor', fn (Builder $query) => $query->where('vehicle_type', 'motor'))
+            ->when(data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'motor', fn (Builder $query) => $query->where(function (Builder $query): void {
+                $query->where('vehicle_type', 'motor')
+                    ->orWhereJsonContains('vehicle_types', 'motor');
+            }))
             ->when(data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'mobil', function (Builder $query) use ($order): Builder {
                 $requiredRows = (int) data_get($order->pricing_breakdown, 'required_vehicle_seat_rows', 2);
 
-                return $query->where('vehicle_type', 'mobil')->where(function (Builder $query) use ($requiredRows): void {
+                return $query->where(function (Builder $query): void {
+                    $query->where('vehicle_type', 'mobil')
+                        ->orWhereJsonContains('vehicle_types', 'mobil');
+                })->where(function (Builder $query) use ($requiredRows): void {
                     $query->where('vehicle_seat_rows', '>=', $requiredRows);
 
                     if ($requiredRows <= 2) {
@@ -1838,6 +1862,7 @@ class AdminController extends Controller
                 'name' => $driver->user?->name ?? 'Driver #'.$driver->id,
                 'phone' => $driver->user?->phone,
                 'vehicle_type' => $driver->vehicle_type ?? 'motor',
+                'vehicle_types' => $driver->vehicleTypes(),
                 'vehicle_seat_rows' => $driver->vehicle_seat_rows,
                 'is_ladies_driver' => (bool) $driver->is_ladies_driver,
                 'branch' => $driver->user?->branch?->name,
@@ -2063,6 +2088,7 @@ class AdminController extends Controller
                 'suspension_reason' => $user->suspension_reason,
                 'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,
                 'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
+                'vehicle_types' => $user->driver?->vehicleTypes() ?? ['motor'],
                 'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
                 'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
                 'allowed_service_types' => $user->driver?->allowed_service_types ?? [],
@@ -2138,6 +2164,16 @@ class AdminController extends Controller
             'joker mobil', 'joker-mobile', 'joker' => 'joker_mobil',
             default => strtolower(trim($service)),
         };
+    }
+
+    private function normalizeVehicleTypes(array $types): array
+    {
+        $normalized = array_values(array_unique(array_filter(array_map(
+            fn ($type): string => strtolower(trim((string) $type)),
+            $types,
+        ), fn (string $type): bool => in_array($type, ['motor', 'mobil'], true))));
+
+        return $normalized === [] ? ['motor'] : $normalized;
     }
 
     private function systemSettingsPayload(SettingService $settings): array

@@ -19,6 +19,7 @@ class Driver extends Model
         'email',
         'google_id',
         'vehicle_type',
+        'vehicle_types',
         'vehicle_seat_rows',
         'is_ladies_driver',
         'allowed_service_types',
@@ -45,6 +46,7 @@ class Driver extends Model
         'current_lat' => 'decimal:8',
         'current_lng' => 'decimal:8',
         'allowed_service_types' => 'array',
+        'vehicle_types' => 'array',
         'vehicle_seat_rows' => 'integer',
         'is_ladies_driver' => 'boolean',
         'is_available' => 'boolean',
@@ -98,6 +100,37 @@ class Driver extends Model
     public function setting(): HasOne
     {
         return $this->hasOne(DriverSetting::class);
+    }
+
+    public function vehicleTypes(): array
+    {
+        $types = $this->vehicle_types;
+
+        if (! is_array($types) || $types === []) {
+            $types = [$this->vehicle_type ?: 'motor'];
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            fn ($type): string => strtolower((string) $type),
+            $types,
+        ), fn (string $type): bool => in_array($type, ['motor', 'mobil'], true))));
+    }
+
+    public function canServeVehicle(?string $preferredVehicle, ?int $requiredSeatRows = null): bool
+    {
+        if (! in_array($preferredVehicle, ['motor', 'mobil'], true)) {
+            return true;
+        }
+
+        if (! in_array($preferredVehicle, $this->vehicleTypes(), true)) {
+            return false;
+        }
+
+        if ($preferredVehicle !== 'mobil') {
+            return true;
+        }
+
+        return (int) ($this->vehicle_seat_rows ?: 2) >= max(2, min(3, (int) ($requiredSeatRows ?: 2)));
     }
 
     public function isSuspended(): bool

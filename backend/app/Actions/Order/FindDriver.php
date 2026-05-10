@@ -46,11 +46,17 @@ class FindDriver
                 ->where('is_available', true)
                 ->when(
                     data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'motor',
-                    fn ($query) => $query->where('vehicle_type', 'motor')
+                    fn ($query) => $query->where(function ($query): void {
+                        $query->where('vehicle_type', 'motor')
+                            ->orWhereJsonContains('vehicle_types', 'motor');
+                    })
                 )
                 ->when(
                     data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'mobil',
-                    fn ($query) => $query->where('vehicle_type', 'mobil')->where(function ($query) use ($order): void {
+                    fn ($query) => $query->where(function ($query): void {
+                        $query->where('vehicle_type', 'mobil')
+                            ->orWhereJsonContains('vehicle_types', 'mobil');
+                    })->where(function ($query) use ($order): void {
                         $requiredRows = (int) data_get($order->pricing_breakdown, 'required_vehicle_seat_rows', 2);
                         $query->where('vehicle_seat_rows', '>=', $requiredRows);
 

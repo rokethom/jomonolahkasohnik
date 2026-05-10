@@ -82,6 +82,7 @@ type DriverRow = User & {
   suspension_reason: string | null
   oper_handle_count: number
   vehicle_type?: 'motor' | 'mobil' | string | null
+  vehicle_types?: string[]
   vehicle_seat_rows?: number | null
   is_ladies_driver?: boolean
   allowed_service_types?: string[]
@@ -165,7 +166,7 @@ type OperHandle = {
   created_at?: string | null
   updated_at?: string | null
 }
-type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
+type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; vehicle_types?: string[]; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
 type CustomerPreference = { favorite_driver?: { id: number; name: string } | null; blocked_drivers?: string[]; notes?: string | null }
 type ManualOrderPayload = {
   service_type: string
@@ -1135,7 +1136,7 @@ function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; 
           <label>Driver area online & idle
             <select value={driverId} onChange={(event) => setDriverId(event.target.value)} required>
               <option value="">Pilih driver</option>
-              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? 'Favorit - ' : ''}{driver.name} - {vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}{driver.is_ladies_driver ? ' - Ladies' : ''} - rating {driver.rating_average ?? 0}</option>)}
+              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? 'Favorit - ' : ''}{driver.name} - {driverVehicleLabel(driver)}{driver.is_ladies_driver ? ' - Ladies' : ''} - rating {driver.rating_average ?? 0}</option>)}
             </select>
           </label>
           <label>Alasan assign<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
@@ -1613,7 +1614,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                 >
                   <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></div></div></td>
                   <td><span className="driver-phone">{driver.phone || '-'}</span></td>
-                  <td><span className="status info">{vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
+                  <td><span className="status info">{driverVehicleLabel(driver)}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
                   <td><span className="driver-service-list">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
                   <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
                   <td>
@@ -1648,7 +1649,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
               <div className="driver-detail-statuses">
                 <span className={selectedDriver.driver_status === 'active' ? 'status success' : selectedDriver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{selectedDriver.driver_status.replace('_', ' ')}</span>
                 <span className={selectedDriver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{selectedDriver.deposit_status ?? 'sync'}</span>
-                <span className="status info">{vehicleLabel(selectedDriver.vehicle_type)}{selectedDriver.vehicle_type === 'mobil' ? ` ${selectedDriver.vehicle_seat_rows ?? 2} baris` : ''}</span>
+                <span className="status info">{driverVehicleLabel(selectedDriver)}</span>
                 {selectedDriver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}
               </div>
               <div className="driver-detail-grid">
@@ -1783,11 +1784,19 @@ function StatusInfo({ label, value, tone }: { label: string; value: string; tone
 
 function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver: DriverRow; services: ServiceRow[]; api: ApiClient; onClose: () => void; onSaved: () => Promise<void> }) {
   const serviceOptions = services.map((service) => ({ label: service.name, value: serviceTypeFromService(service) }))
-  const [vehicleType, setVehicleType] = useState<'motor' | 'mobil'>((driver.vehicle_type === 'mobil' ? 'mobil' : 'motor'))
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>(normalizedDriverVehicleTypes(driver))
   const [vehicleSeatRows, setVehicleSeatRows] = useState<2 | 3>((driver.vehicle_seat_rows === 3 ? 3 : 2))
   const [isLadiesDriver, setIsLadiesDriver] = useState(Boolean(driver.is_ladies_driver))
   const [allowed, setAllowed] = useState<string[]>(driver.allowed_service_types ?? [])
   const [saving, setSaving] = useState(false)
+
+  const toggleVehicleType = (type: 'motor' | 'mobil') => {
+    setVehicleTypes((current) => {
+      const next = current.includes(type) ? current.filter((item) => item !== type) : [...current, type]
+
+      return next.length > 0 ? next : [type]
+    })
+  }
 
   const toggle = (service: string) => {
     setAllowed((current) => current.includes(service) ? current.filter((item) => item !== service) : [...current, service])
@@ -1800,8 +1809,9 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
       await api(`/admin/drivers/${driver.driver_id}/config`, {
         method: 'PUT',
         body: JSON.stringify({
-          vehicle_type: vehicleType,
-          vehicle_seat_rows: vehicleType === 'mobil' ? vehicleSeatRows : null,
+          vehicle_types: vehicleTypes,
+          vehicle_type: vehicleTypes[0] ?? 'motor',
+          vehicle_seat_rows: vehicleTypes.includes('mobil') ? vehicleSeatRows : null,
           is_ladies_driver: isLadiesDriver,
           allowed_service_types: allowed,
         }),
@@ -1822,10 +1832,12 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
         <div className="user-form">
           <fieldset>
             <legend>Kendaraan</legend>
-            <div className="form-grid">
-              <label>Vehicle Type<select value={vehicleType} onChange={(event) => setVehicleType(event.target.value as 'motor' | 'mobil')}><option value="motor">Driver sepeda motor</option><option value="mobil">Driver mobil</option></select></label>
-              {vehicleType === 'mobil' && <label>Kapasitas Mobil<select value={vehicleSeatRows} onChange={(event) => setVehicleSeatRows(Number(event.target.value) as 2 | 3)}><option value={2}>2 baris - citycar/default</option><option value={3}>3 baris - MPV/keluarga</option></select></label>}
+            <div className="service-check-grid">
+              <label className="toggle-row"><input type="checkbox" checked={vehicleTypes.includes('motor')} onChange={() => toggleVehicleType('motor')} />Driver sepeda motor</label>
+              <label className="toggle-row"><input type="checkbox" checked={vehicleTypes.includes('mobil')} onChange={() => toggleVehicleType('mobil')} />Driver mobil</label>
             </div>
+            <div className="notice">Centang keduanya jika driver bisa menerima order motor dan mobil.</div>
+            {vehicleTypes.includes('mobil') && <div className="form-grid"><label>Kapasitas Mobil<select value={vehicleSeatRows} onChange={(event) => setVehicleSeatRows(Number(event.target.value) as 2 | 3)}><option value={2}>2 baris - citycar/default</option><option value={3}>3 baris - MPV/keluarga</option></select></label></div>}
             <label className="driver-ladies-card">
               <input type="checkbox" checked={isLadiesDriver} onChange={(event) => setIsLadiesDriver(event.target.checked)} />
               <span>
@@ -4290,6 +4302,19 @@ function vehicleLabel(vehicle?: string | null) {
   if (vehicle === 'mobil') return 'Mobil'
   if (vehicle === 'motor') return 'Motor'
   return '-'
+}
+
+function normalizedDriverVehicleTypes(driver: Pick<DriverRow, 'vehicle_type' | 'vehicle_types'>) {
+  const types = driver.vehicle_types?.length ? driver.vehicle_types : [driver.vehicle_type ?? 'motor']
+  const normalized = Array.from(new Set(types.filter((type): type is string => type === 'motor' || type === 'mobil')))
+
+  return normalized.length > 0 ? normalized : ['motor']
+}
+
+function driverVehicleLabel(driver: Pick<DriverRow, 'vehicle_type' | 'vehicle_types' | 'vehicle_seat_rows'>) {
+  const labels = normalizedDriverVehicleTypes(driver).map((type) => type === 'mobil' ? `Mobil ${driver.vehicle_seat_rows ?? 2} baris` : 'Motor')
+
+  return labels.join(' + ')
 }
 
 function driverPreferenceLabel(preference?: string | null) {

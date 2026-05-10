@@ -242,7 +242,7 @@ class MultiOrderService
             return true;
         }
 
-        if (($driver->vehicle_type ?? 'motor') !== $preferredVehicle) {
+        if (! in_array($preferredVehicle, $driver->vehicleTypes(), true)) {
             return false;
         }
 

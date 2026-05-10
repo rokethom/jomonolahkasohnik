@@ -56,18 +56,20 @@ class DriverController extends Controller
                                     ->when((bool) $driver->is_ladies_driver, fn ($query) => $query->orWhere('pricing_breakdown->driver_preference', 'ladies'));
                             })
                             ->where(function ($query) use ($driver): void {
-                                $vehicle = $driver->vehicle_type ?? 'motor';
+                                $vehicleTypes = $driver->vehicleTypes();
                                 $seatRows = (int) ($driver->vehicle_seat_rows ?: 2);
 
                                 $query->whereNull('pricing_breakdown->preferred_vehicle_type')
-                                    ->orWhere('pricing_breakdown->preferred_vehicle_type', $vehicle);
-
-                                if ($vehicle === 'mobil') {
-                                    $query->where(function ($query) use ($seatRows): void {
-                                        $query->whereNull('pricing_breakdown->required_vehicle_seat_rows')
-                                            ->orWhere('pricing_breakdown->required_vehicle_seat_rows', '<=', $seatRows);
+                                    ->when(in_array('motor', $vehicleTypes, true), fn ($query) => $query->orWhere('pricing_breakdown->preferred_vehicle_type', 'motor'))
+                                    ->when(in_array('mobil', $vehicleTypes, true), function ($query) use ($seatRows): void {
+                                        $query->orWhere(function ($query) use ($seatRows): void {
+                                            $query->where('pricing_breakdown->preferred_vehicle_type', 'mobil')
+                                                ->where(function ($query) use ($seatRows): void {
+                                                    $query->whereNull('pricing_breakdown->required_vehicle_seat_rows')
+                                                        ->orWhere('pricing_breakdown->required_vehicle_seat_rows', '<=', $seatRows);
+                                                });
+                                        });
                                     });
-                                }
                             });
                     });
                 }
@@ -409,6 +411,7 @@ class DriverController extends Controller
             'profile_photo_url' => $user->profile_photo_path ? $request->getSchemeAndHttpHost().'/api/media/'.ltrim($user->profile_photo_path, '/') : null,
             'role' => 'Driver',
             'vehicle_type' => $driver?->vehicle_type ?? 'motor',
+            'vehicle_types' => $driver?->vehicleTypes() ?? ['motor'],
             'vehicle_seat_rows' => $driver?->vehicle_seat_rows,
             'is_ladies_driver' => (bool) ($driver?->is_ladies_driver ?? false),
             'is_available' => (bool) ($driver?->is_available ?? false),
