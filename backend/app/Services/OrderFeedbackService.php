@@ -35,12 +35,7 @@ class OrderFeedbackService
             return $this->make(
                 $autoCancelled ? 'order_auto_cancelled' : 'order_cancelled',
                 $autoCancelled ? 'Order dibatalkan otomatis' : 'Order dibatalkan',
-                $this->settings->get(
-                    $autoCancelled ? self::AUTO_CANCELLED_KEY : self::CANCELLED_KEY,
-                    $autoCancelled
-                        ? 'Maaf, order Anda di {service} dibatalkan otomatis karena batas waktu mencari driver habis. Silakan buat order ulang atau hubungi CS.'
-                        : 'Maaf, order Anda di {service} dibatalkan. Alasan: {reason}',
-                ),
+                $this->cancelTemplate($order, $autoCancelled),
                 'error',
                 $order,
             );
@@ -103,12 +98,30 @@ class OrderFeedbackService
             '{driver_name}' => $order->driver?->user?->name ?? 'driver',
             '{customer_name}' => $order->user?->name ?? 'Customer',
             '{reason}' => $reason,
+            '{minutes}' => (string) $this->settings->int('multi_crew_auto_cancel_minutes', 7),
+            '{helper_label}' => (string) data_get($order->pricing_breakdown, 'crew_decision.helper_label', 'helper'),
         ]);
     }
 
     private function isAutoCancelled(Order $order): bool
     {
-        return str_contains(strtolower((string) $order->notes), 'driver timeout');
+        $notes = strtolower((string) $order->notes);
+
+        return str_contains($notes, 'driver timeout')
+            || str_contains($notes, 'multi-crew timeout');
+    }
+
+    private function cancelTemplate(Order $order, bool $autoCancelled): string
+    {
+        if (! $autoCancelled) {
+            return $this->settings->get(self::CANCELLED_KEY, 'Maaf, order Anda di {service} dibatalkan. Alasan: {reason}');
+        }
+
+        if (str_contains(strtolower((string) $order->notes), 'multi-crew timeout')) {
+            return $this->settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.');
+        }
+
+        return $this->settings->get(self::AUTO_CANCELLED_KEY, 'Maaf, order Anda di {service} dibatalkan otomatis karena batas waktu mencari driver habis. Silakan buat order ulang atau hubungi CS.');
     }
 
     private function cancelReason(Order $order): string
@@ -116,6 +129,10 @@ class OrderFeedbackService
         $notes = trim((string) $order->notes);
 
         if ($this->isAutoCancelled($order)) {
+            if (str_contains(strtolower((string) $order->notes), 'multi-crew timeout')) {
+                return 'Batas waktu mencari helper multi-crew habis.';
+            }
+
             return 'Batas waktu mencari driver habis (10 menit).';
         }
 

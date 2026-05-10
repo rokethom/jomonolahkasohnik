@@ -56,6 +56,7 @@ class OrderService
 
     public function cancelExpiredCreatedOrders(): int
     {
+        $cancelled = 0;
         $orders = Order::query()
             ->with(['user', 'driver.user'])
             ->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
@@ -95,6 +96,103 @@ class OrderService
             } catch (\Throwable $exception) {
                 Log::warning('broadcast.expired_order_status_failed', [
                     'order_id' => $order->id,
+                    'status' => OrderStatus::Cancelled->value,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $cancelled += $orders->count();
+        $cancelled += $this->cancelExpiredMultiCrewOrders();
+
+        return $cancelled;
+    }
+
+    public function cancelExpiredMultiCrewOrders(): int
+    {
+        if (! $this->settings->bool('multi_crew_auto_cancel_enabled', true)) {
+            return 0;
+        }
+
+        $minutes = max(1, min(180, $this->settings->int('multi_crew_auto_cancel_minutes', 7)));
+        $orders = Order::query()
+            ->with(['user', 'driver.user', 'crews'])
+            ->whereNotNull('driver_id')
+            ->whereIn('status', [
+                OrderStatus::DriverAccepted->value,
+                OrderStatus::DriverOnTheWay->value,
+                OrderStatus::ArrivedPickup->value,
+                OrderStatus::OnGoing->value,
+            ])
+            ->whereNotNull('pricing_breakdown->crew_decision')
+            ->whereHas('crews', fn ($query) => $query
+                ->where('role', '!=', 'rider')
+                ->where('status', 'pending'))
+            ->where('updated_at', '<=', now()->subMinutes($minutes))
+            ->limit(100)
+            ->get()
+            ->filter(fn (Order $order): bool => $this->crewWaitingStartedAt($order)?->lte(now()->subMinutes($minutes)) ?? false);
+
+        foreach ($orders as $order) {
+            $oldStatus = $order->status;
+            $helperLabel = (string) data_get($order->pricing_breakdown, 'crew_decision.helper_label', 'helper');
+            $reason = "Auto-cancel: multi-crew timeout, {$helperLabel} belum menerima dalam {$minutes} menit.";
+
+            $cancelled = DB::transaction(function () use ($order, $reason): ?Order {
+                $lockedOrder = Order::query()
+                    ->with(['user', 'driver.user', 'crews'])
+                    ->lockForUpdate()
+                    ->find($order->id);
+
+                if (! $lockedOrder || $lockedOrder->status->isTerminal()) {
+                    return null;
+                }
+
+                $hasPendingCrew = $lockedOrder->crews()
+                    ->where('role', '!=', 'rider')
+                    ->where('status', 'pending')
+                    ->exists();
+
+                if (! $hasPendingCrew) {
+                    return null;
+                }
+
+                $lockedOrder->update([
+                    'status' => OrderStatus::Cancelled->value,
+                    'cancelled_at' => now(),
+                    'notes' => trim(((string) $lockedOrder->notes)."\n{$reason}"),
+                ]);
+                $lockedOrder->driver?->update(['is_available' => true]);
+                $lockedOrder->crews()
+                    ->where('role', '!=', 'rider')
+                    ->where('status', 'pending')
+                    ->update(['status' => 'cancelled']);
+                $this->chatService->closeForOrder($lockedOrder);
+
+                return $lockedOrder->fresh(['user', 'driver.user']);
+            });
+
+            if (! $cancelled) {
+                continue;
+            }
+
+            try {
+                app(OrderFeedbackService::class)->statusUpdated($cancelled, $oldStatus, OrderStatus::Cancelled);
+                OrderStatusUpdated::dispatch($cancelled, $oldStatus, OrderStatus::Cancelled);
+                $this->notifications->sendToUser(
+                    $cancelled->user,
+                    'Order dibatalkan otomatis',
+                    $this->multiCrewAutoCancelMessage($cancelled, $minutes),
+                    [
+                        'type' => 'order_auto_cancelled',
+                        'order_id' => $cancelled->id,
+                        'order_code' => $cancelled->order_code,
+                        'url' => '/?open=history&order_id='.$cancelled->id.'&notification_type=order_auto_cancelled',
+                    ],
+                );
+            } catch (\Throwable $exception) {
+                Log::warning('broadcast.multi_crew_timeout_status_failed', [
+                    'order_id' => $cancelled->id,
                     'status' => OrderStatus::Cancelled->value,
                     'message' => $exception->getMessage(),
                 ]);
@@ -204,6 +302,34 @@ class OrderService
         }
 
         return $order->updated_at;
+    }
+
+    private function crewWaitingStartedAt(Order $order): ?CarbonInterface
+    {
+        $acceptedAt = data_get($order->pricing_breakdown, 'accepted_at');
+
+        if (filled($acceptedAt)) {
+            try {
+                return Carbon::parse($acceptedAt);
+            } catch (\Throwable) {
+                return $order->updated_at;
+            }
+        }
+
+        return $order->updated_at;
+    }
+
+    private function multiCrewAutoCancelMessage(Order $order, int $minutes): string
+    {
+        $template = $this->settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.')
+            ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.';
+
+        return strtr($template, [
+            '{order_code}' => $order->order_code ?? '#'.$order->id,
+            '{minutes}' => (string) $minutes,
+            '{helper_label}' => (string) data_get($order->pricing_breakdown, 'crew_decision.helper_label', 'helper'),
+            '{driver_name}' => $order->driver?->user?->name ?? 'driver',
+        ]);
     }
 
     public function maxTextPoints(): int

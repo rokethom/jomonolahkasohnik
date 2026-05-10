@@ -296,6 +296,9 @@ type SystemSettings = {
   order_close_start?: string
   order_close_end?: string
   order_close_message?: string
+  multi_crew_auto_cancel_enabled?: boolean
+  multi_crew_auto_cancel_minutes?: number
+  multi_crew_auto_cancel_message?: string
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
   assign_driver_allowed_roles?: Role[]
@@ -2123,6 +2126,9 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [orderCloseStart, setOrderCloseStart] = useState(settings.order_close_start ?? '01:00')
   const [orderCloseEnd, setOrderCloseEnd] = useState(settings.order_close_end ?? '05:00')
   const [orderCloseMessage, setOrderCloseMessage] = useState(settings.order_close_message ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.')
+  const [multiCrewAutoCancelEnabled, setMultiCrewAutoCancelEnabled] = useState(settings.multi_crew_auto_cancel_enabled ?? true)
+  const [multiCrewAutoCancelMinutes, setMultiCrewAutoCancelMinutes] = useState(settings.multi_crew_auto_cancel_minutes ?? 7)
+  const [multiCrewAutoCancelMessage, setMultiCrewAutoCancelMessage] = useState(settings.multi_crew_auto_cancel_message ?? 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.')
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
@@ -2140,6 +2146,9 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setOrderCloseStart(settings.order_close_start ?? '01:00')
     setOrderCloseEnd(settings.order_close_end ?? '05:00')
     setOrderCloseMessage(settings.order_close_message ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.')
+    setMultiCrewAutoCancelEnabled(settings.multi_crew_auto_cancel_enabled ?? true)
+    setMultiCrewAutoCancelMinutes(settings.multi_crew_auto_cancel_minutes ?? 7)
+    setMultiCrewAutoCancelMessage(settings.multi_crew_auto_cancel_message ?? 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.')
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
@@ -2163,6 +2172,9 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           order_close_start: orderCloseStart,
           order_close_end: orderCloseEnd,
           order_close_message: orderCloseMessage,
+          multi_crew_auto_cancel_enabled: multiCrewAutoCancelEnabled,
+          multi_crew_auto_cancel_minutes: multiCrewAutoCancelMinutes,
+          multi_crew_auto_cancel_message: multiCrewAutoCancelMessage,
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
@@ -2221,6 +2233,24 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           <label>Jam buka<input type="time" value={orderCloseEnd} disabled={!permissions.can_manage_system_settings} onChange={(event) => setOrderCloseEnd(event.target.value)} /></label>
           <label className="span-2">Pesan popup<textarea value={orderCloseMessage} disabled={!permissions.can_manage_system_settings} onChange={(event) => setOrderCloseMessage(event.target.value)} /></label>
         </div>
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Auto-cancel Multi Crew</h2>
+            <p>Timeout khusus setelah rider menerima order tetapi helper belum menerima slot. Tidak mengikuti auto-cancel cari driver 10 menit.</p>
+          </div>
+          <span className="status info">CMS</span>
+        </div>
+        <div className="settings-grid">
+          <label className="admin-toggle-row">
+            <input type="checkbox" checked={multiCrewAutoCancelEnabled} disabled={!permissions.can_manage_system_settings} onChange={(event) => setMultiCrewAutoCancelEnabled(event.target.checked)} />
+            <span>Aktifkan auto-cancel multi-crew</span>
+          </label>
+          <label>Batas tunggu helper<input type="number" min={1} max={180} value={multiCrewAutoCancelMinutes} disabled={!permissions.can_manage_system_settings} onChange={(event) => setMultiCrewAutoCancelMinutes(Math.max(1, Math.min(180, Number(event.target.value))))} /></label>
+          <label className="span-2">Pesan customer<textarea value={multiCrewAutoCancelMessage} disabled={!permissions.can_manage_system_settings} onChange={(event) => setMultiCrewAutoCancelMessage(event.target.value)} /></label>
+        </div>
+        <div className="notice">Placeholder: {'{order_code}'}, {'{minutes}'}, {'{helper_label}'}, {'{driver_name}'}.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">

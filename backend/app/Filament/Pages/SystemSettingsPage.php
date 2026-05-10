@@ -75,6 +75,9 @@ class SystemSettingsPage extends Page implements HasForms
             'order_close_start' => $settings->get('order_close_start', '01:00') ?: '01:00',
             'order_close_end' => $settings->get('order_close_end', '05:00') ?: '05:00',
             'order_close_message' => $settings->get('order_close_message', 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.') ?: 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.',
+            'multi_crew_auto_cancel_enabled' => $settings->bool('multi_crew_auto_cancel_enabled', true),
+            'multi_crew_auto_cancel_minutes' => $settings->int('multi_crew_auto_cancel_minutes', 7),
+            'multi_crew_auto_cancel_message' => $settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.') ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.',
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => $this->nightTariffRules($settings),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
@@ -410,6 +413,27 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->helperText('Gunakan {start} dan {end} untuk menampilkan jam otomatis.')
                                             ->columnSpanFull(),
                                     ]),
+                                Forms\Components\Section::make('Auto-cancel Multi Crew')
+                                    ->description('Timeout khusus order multi-crew setelah rider menerima order tetapi helper belum menerima slot. Ini terpisah dari auto-cancel cari driver 10 menit.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('multi_crew_auto_cancel_enabled')
+                                            ->label('Aktifkan auto-cancel multi-crew')
+                                            ->helperText('Jika nonaktif, order akan tetap menunggu helper sampai admin/driver menyelesaikan manual.'),
+                                        Forms\Components\TextInput::make('multi_crew_auto_cancel_minutes')
+                                            ->label('Batas tunggu helper')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(180)
+                                            ->suffix('menit')
+                                            ->required()
+                                            ->helperText('Dihitung sejak rider menerima order. Contoh: 7 menit.'),
+                                        Forms\Components\Textarea::make('multi_crew_auto_cancel_message')
+                                            ->label('Pesan customer')
+                                            ->rows(3)
+                                            ->helperText('Gunakan {order_code}, {minutes}, {helper_label}, {driver_name}.')
+                                            ->columnSpanFull(),
+                                    ]),
                                 Forms\Components\Section::make('Tarif Jam Malam')
                                     ->description('Tambahan tarif dihitung dari tarif dasar sesuai jam dan area branch. Rule area kosong berlaku global.')
                                     ->schema([
@@ -561,6 +585,9 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('order_close_start', $this->normalizeTime((string) ($data['order_close_start'] ?? '01:00')));
         $settings->set('order_close_end', $this->normalizeTime((string) ($data['order_close_end'] ?? '05:00')));
         $settings->set('order_close_message', $data['order_close_message'] ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.');
+        $settings->set('multi_crew_auto_cancel_enabled', (bool) ($data['multi_crew_auto_cancel_enabled'] ?? true));
+        $settings->set('multi_crew_auto_cancel_minutes', max(1, min(180, (int) ($data['multi_crew_auto_cancel_minutes'] ?? 7))));
+        $settings->set('multi_crew_auto_cancel_message', $data['multi_crew_auto_cancel_message'] ?? 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.');
         $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
         $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
         $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($data['assign_driver_allowed_roles'] ?? self::DEFAULT_ASSIGN_DRIVER_ROLES)));
