@@ -100,6 +100,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/price-settings', [AdminController::class, 'storePriceSetting'])->middleware('permission:edit_tarif');
         Route::put('/price-settings/{priceSetting}', [AdminController::class, 'updatePriceSetting'])->middleware('permission:edit_tarif');
         Route::delete('/price-settings/{priceSetting}', [AdminController::class, 'destroyPriceSetting'])->middleware('permission:edit_tarif');
+        Route::get('/keyword-parsers', [AdminController::class, 'adminKeywordParsers'])->middleware('permission:edit_tarif');
+        Route::post('/keyword-parsers', [AdminController::class, 'storeKeywordParser'])->middleware('permission:edit_tarif');
+        Route::delete('/keyword-parsers/{keywordParser}', [AdminController::class, 'destroyKeywordParser'])->middleware('permission:edit_tarif');
+        Route::get('/pricing-keyword-rules', [AdminController::class, 'pricingKeywordRules'])->middleware('permission:edit_tarif');
+        Route::post('/pricing-keyword-rules', [AdminController::class, 'storePricingKeywordRule'])->middleware('permission:edit_tarif');
+        Route::delete('/pricing-keyword-rules/{pricingKeywordRule}', [AdminController::class, 'destroyPricingKeywordRule'])->middleware('permission:edit_tarif');
         Route::get('/ring-pricing-rules', [AdminController::class, 'ringPricingRules'])->middleware('permission:edit_tarif');
         Route::post('/ring-pricing-rules', [AdminController::class, 'storeRingPricingRule'])->middleware('permission:edit_tarif');
         Route::put('/ring-pricing-rules/{ringPricingRule}', [AdminController::class, 'updateRingPricingRule'])->middleware('permission:edit_tarif');

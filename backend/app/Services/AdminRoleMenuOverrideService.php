@@ -33,7 +33,11 @@ class AdminRoleMenuOverrideService
             ],
             'Area & System' => [
                 'locations' => 'Location Logs',
+                'master-pricing' => 'Master Pricing',
+                'price-settings' => 'Price Settings',
                 'pricing' => 'Pricing & Policy',
+                'keyword-parsers' => 'Keyword Parsers',
+                'pricing-keyword-rules' => 'Pricing Keyword Rules',
                 'zone-pricing' => 'Zone Pricing Rules',
                 'zone-pricing-tester' => 'Zone Pricing Tester',
             ],
@@ -100,7 +104,11 @@ class AdminRoleMenuOverrideService
         }
 
         if (($permissions['can_edit_order_price'] ?? false) || ($permissions['can_manage_policy'] ?? false)) {
+            $views[] = 'master-pricing';
+            $views[] = 'price-settings';
             $views[] = 'pricing';
+            $views[] = 'keyword-parsers';
+            $views[] = 'pricing-keyword-rules';
             $views[] = 'zone-pricing';
             $views[] = 'zone-pricing-tester';
         }

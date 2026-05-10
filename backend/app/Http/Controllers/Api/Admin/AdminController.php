@@ -14,10 +14,12 @@ use App\Models\Branch;
 use App\Models\ChatConversation;
 use App\Models\Driver;
 use App\Models\GeofenceArea;
+use App\Models\KeywordParser;
 use App\Models\LocationLog;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Models\PriceSetting;
+use App\Models\PricingKeywordRule;
 use App\Models\RingPricingRule;
 use App\Models\RingPricingSuggestion;
 use App\Models\Service;
@@ -31,12 +33,14 @@ use App\Services\DriverFinanceService;
 use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
 use App\Services\JojoBotService;
+use App\Services\KeywordParserService;
 use App\Services\MultiOrderService;
 use App\Services\NotificationService;
 use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
 use App\Services\PricingService;
+use App\Services\PricingKeywordRuleService;
 use App\Services\RatingService;
 use App\Services\RingPricingService;
 use App\Services\SettingService;
@@ -85,6 +89,8 @@ class AdminController extends Controller
                 ->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
+            'keyword_parsers' => $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)),
+            'pricing_keyword_rules' => $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)),
             'ring_pricing_rules' => RingPricingRule::query()->with('branch')->latest()->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
             'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),
             'zone_pricing_rules' => $this->zonePricingRulesQuery()->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)),
@@ -1104,6 +1110,70 @@ class AdminController extends Controller
         ]);
     }
 
+    public function adminKeywordParsers(Request $request): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        return response()->json([
+            'data' => $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser): array => $this->keywordParserPayload($parser)),
+        ]);
+    }
+
+    public function storeKeywordParser(Request $request): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $parser = KeywordParser::query()->create($this->validateKeywordParser($request));
+        $this->recordAudit($request->user(), 'created_keyword_parser', $parser);
+
+        return response()->json([
+            'message' => 'Keyword parser created',
+            'data' => $this->keywordParserPayload($parser),
+        ], 201);
+    }
+
+    public function destroyKeywordParser(Request $request, KeywordParser $keywordParser): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $this->recordAudit($request->user(), 'deleted_keyword_parser', $keywordParser);
+        $keywordParser->delete();
+
+        return response()->json(['message' => 'Keyword parser deleted']);
+    }
+
+    public function pricingKeywordRules(Request $request): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        return response()->json([
+            'data' => $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule): array => $this->pricingKeywordRulePayload($rule)),
+        ]);
+    }
+
+    public function storePricingKeywordRule(Request $request): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $rule = PricingKeywordRule::query()->create($this->validatePricingKeywordRule($request));
+        $this->recordAudit($request->user(), 'created_pricing_keyword_rule', $rule);
+
+        return response()->json([
+            'message' => 'Pricing keyword rule created',
+            'data' => $this->pricingKeywordRulePayload($rule),
+        ], 201);
+    }
+
+    public function destroyPricingKeywordRule(Request $request, PricingKeywordRule $pricingKeywordRule): JsonResponse
+    {
+        $this->authorizeZonePricing($request);
+
+        $this->recordAudit($request->user(), 'deleted_pricing_keyword_rule', $pricingKeywordRule);
+        $pricingKeywordRule->delete();
+
+        return response()->json(['message' => 'Pricing keyword rule deleted']);
+    }
+
     public function ringPricingRules(Request $request): JsonResponse
     {
         $this->authorizeRingPricing($request);
@@ -1558,6 +1628,48 @@ class AdminController extends Controller
         ]);
     }
 
+    private function validateKeywordParser(Request $request): array
+    {
+        $payload = $request->validate([
+            'keyword' => ['required', 'string', 'max:255'],
+            'service_type' => ['required', 'string', 'max:40'],
+            'response_template' => ['required', 'string', 'max:4000'],
+            'form_schema' => ['nullable', 'array'],
+            'parser_type' => ['required', Rule::in(['simple', 'advanced'])],
+            'is_active' => ['sometimes', 'boolean'],
+            'priority' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
+        ]);
+
+        $payload['keyword'] = app(KeywordParserService::class)->normalizeKeywordList($payload['keyword']);
+        $payload['service_type'] = strtoupper((string) $payload['service_type']);
+        $payload['is_active'] = $payload['is_active'] ?? true;
+        $payload['priority'] = (int) ($payload['priority'] ?? 0);
+        $payload['form_schema'] = $payload['form_schema'] ?? ['fields' => []];
+
+        return $payload;
+    }
+
+    private function validatePricingKeywordRule(Request $request): array
+    {
+        $payload = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'keywords' => ['required', 'string', 'max:255'],
+            'amount' => ['required', 'integer', 'min:0'],
+            'service_scopes' => ['nullable', 'array'],
+            'service_scopes.*' => ['string', 'max:80'],
+            'is_active' => ['sometimes', 'boolean'],
+            'priority' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
+            'description' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $payload['keywords'] = app(PricingKeywordRuleService::class)->normalizeKeywordList($payload['keywords']);
+        $payload['service_scopes'] = app(PricingKeywordRuleService::class)->normalizeScopes($payload['service_scopes'] ?? ['all']);
+        $payload['is_active'] = $payload['is_active'] ?? true;
+        $payload['priority'] = (int) ($payload['priority'] ?? 0);
+
+        return $payload;
+    }
+
     private function validateRingPricingRule(Request $request): array
     {
         $payload = $request->validate([
@@ -1637,6 +1749,24 @@ class AdminController extends Controller
             ->with(['branch', 'geofenceArea.branch'])
             ->orderByDesc('priority')
             ->latest();
+    }
+
+    private function keywordParsersQuery(): Builder
+    {
+        if (! Schema::hasTable('keyword_parsers')) {
+            return KeywordParser::query()->whereRaw('1 = 0');
+        }
+
+        return KeywordParser::query()->orderByDesc('priority')->latest();
+    }
+
+    private function pricingKeywordRulesQuery(): Builder
+    {
+        if (! Schema::hasTable('pricing_keyword_rules')) {
+            return PricingKeywordRule::query()->whereRaw('1 = 0');
+        }
+
+        return PricingKeywordRule::query()->orderByDesc('priority')->latest();
     }
 
     private function ringPricingSuggestionsQuery(User $actor): Builder
@@ -2589,6 +2719,38 @@ class AdminController extends Controller
                 'area' => $branch->area,
             ] : null,
             'distance_meters' => $point['distance_meters'] ?? null,
+        ];
+    }
+
+    private function keywordParserPayload(KeywordParser $parser): array
+    {
+        return [
+            'id' => $parser->id,
+            'keyword' => $parser->keyword,
+            'service_type' => $parser->service_type,
+            'response_template' => $parser->response_template,
+            'form_schema' => $parser->form_schema ?? ['fields' => []],
+            'parser_type' => $parser->parser_type,
+            'is_active' => (bool) $parser->is_active,
+            'priority' => (int) $parser->priority,
+            'created_at' => $parser->created_at?->toDateTimeString(),
+            'updated_at' => $parser->updated_at?->toDateTimeString(),
+        ];
+    }
+
+    private function pricingKeywordRulePayload(PricingKeywordRule $rule): array
+    {
+        return [
+            'id' => $rule->id,
+            'name' => $rule->name,
+            'keywords' => $rule->keywords,
+            'amount' => (int) $rule->amount,
+            'service_scopes' => $rule->service_scopes ?? ['all'],
+            'is_active' => (bool) $rule->is_active,
+            'priority' => (int) $rule->priority,
+            'description' => $rule->description,
+            'created_at' => $rule->created_at?->toDateTimeString(),
+            'updated_at' => $rule->updated_at?->toDateTimeString(),
         ];
     }
 
