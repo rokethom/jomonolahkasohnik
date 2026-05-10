@@ -965,6 +965,34 @@ input:focus, textarea:focus, select:focus {
   color: var(--ink);
   text-align: right;
 }
+.crew-list {
+  display: grid;
+  gap: 10px;
+}
+.crew-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) minmax(120px, 1.4fr);
+  gap: 4px 10px;
+  align-items: center;
+  border: 1px solid rgba(174, 214, 255, 0.18);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(10, 31, 56, 0.42);
+}
+.crew-row span,
+.crew-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.crew-row strong {
+  color: var(--ink);
+  text-align: right;
+}
+.crew-row small {
+  grid-column: 1 / -1;
+  text-align: right;
+}
 .total-row {
   margin-top: 8px;
   border-top: 1px solid var(--line);

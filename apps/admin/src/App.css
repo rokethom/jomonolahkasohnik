@@ -431,6 +431,31 @@
   background: rgba(120, 53, 15, .2);
 }
 
+.admin-shell.dark .order-oper-handle-card,
+.admin-shell.dark .order-crew-card {
+  border-color: rgba(56, 189, 248, .26);
+  background: rgba(8, 47, 73, .24);
+}
+
+.admin-shell.dark .order-oper-handle-card.pending {
+  border-color: rgba(251, 146, 60, .32);
+  background: rgba(120, 53, 15, .18);
+}
+
+.admin-shell.dark .order-oper-handle-card span,
+.admin-shell.dark .order-oper-handle-card p,
+.admin-shell.dark .order-oper-handle-card small,
+.admin-shell.dark .order-crew-card span,
+.admin-shell.dark .order-crew-card p,
+.admin-shell.dark .order-crew-card small {
+  color: #bfd0e6;
+}
+
+.admin-shell.dark .order-oper-handle-card strong,
+.admin-shell.dark .order-crew-card strong {
+  color: #f8fafc;
+}
+
 .admin-shell.dark .performance-mini-card,
 .admin-shell.dark .driver-performance-card {
   border-color: rgba(148, 163, 184, .16);
@@ -2798,7 +2823,8 @@ tr.selected-row td {
   padding: 12px;
 }
 
-.order-oper-handle-card {
+.order-oper-handle-card,
+.order-crew-card {
   display: grid;
   gap: 6px;
   border: 1px solid #bae6fd;
@@ -2812,14 +2838,16 @@ tr.selected-row td {
   background: #fff7ed;
 }
 
-.order-oper-handle-card > div {
+.order-oper-handle-card > div,
+.order-crew-card > div {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
 }
 
-.order-oper-handle-card span {
+.order-oper-handle-card span,
+.order-crew-card span {
   color: #64748b;
   font-size: 11px;
   font-weight: 950;
@@ -2827,12 +2855,15 @@ tr.selected-row td {
   text-transform: uppercase;
 }
 
-.order-oper-handle-card strong {
+.order-oper-handle-card strong,
+.order-crew-card strong {
   color: #0f172a;
   font-size: 13px;
 }
 
-.order-oper-handle-card p {
+.order-oper-handle-card p,
+.order-crew-card p,
+.order-crew-card small {
   margin: 0;
   color: #334155;
   font-size: 13px;

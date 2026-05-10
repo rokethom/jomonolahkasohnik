@@ -589,22 +589,17 @@ function App() {
     const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const passengers = passengerCountFromPayload(payload)
     const ojekDoubleOrderCount = isOjekService(payload.service_type) && passengers === 2 && payload.service_payload?.confirm_double_order === true ? 2 : 1
-    const tartOrderCount = containsTartKeyword(payload) ? 2 : 1
-    const orderCount = Math.max(ojekDoubleOrderCount, tartOrderCount)
+    const orderCount = ojekDoubleOrderCount
     const createdOrders: Order[] = []
 
     for (let index = 0; index < orderCount; index += 1) {
-      const isTartHelper = tartOrderCount > 1 && index === 1
-      const tartOrderNote = tartOrderCount > 1
-        ? (isTartHelper ? 'Helper kue tart - tanpa service charge' : 'Driver utama kue tart')
-        : null
+      const crewNote = containsTartKeyword(payload) ? 'Crew rule: kue tart membutuhkan helper' : null
       const order = await createOrder({
         ...payload,
-        service_type: tartOrderCount > 1 ? 'delivery' : payload.service_type,
         notes: [
           payload.notes,
           ojekDoubleOrderCount > 1 ? `Order penumpang ${index + 1} dari ${ojekDoubleOrderCount}` : null,
-          tartOrderNote,
+          crewNote,
         ].filter(Boolean).join('\n'),
         preferred_vehicle_type: preferredVehicle,
         ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
@@ -612,7 +607,7 @@ function App() {
         service_payload: {
           ...(payload.service_payload ?? {}),
           ...(ojekDoubleOrderCount > 1 ? { passenger_order_index: index + 1, passenger_order_count: ojekDoubleOrderCount } : {}),
-          ...(tartOrderCount > 1 ? { tart_order_index: index + 1, tart_order_count: tartOrderCount, tart_helper: isTartHelper, helper_role: isTartHelper ? 'tart_helper' : 'tart_driver' } : {}),
+          ...(crewNote ? { crew_decision_hint: 'kue_tart_helper' } : {}),
           preferred_vehicle_type: preferredVehicle,
           ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
           driver_preference: driverPreference,

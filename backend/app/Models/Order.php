@@ -135,4 +135,9 @@ class Order extends Model
     {
         return $this->hasMany(OperHandleRequest::class);
     }
+
+    public function crews(): HasMany
+    {
+        return $this->hasMany(OrderCrew::class);
+    }
 }

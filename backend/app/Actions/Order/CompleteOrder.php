@@ -35,6 +35,15 @@ class CompleteOrder
                 throw new RuntimeException('Order sedang menunggu approval oper handle.');
             }
 
+            $hasPendingCrew = $order->crews()
+                ->where('role', '!=', 'rider')
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($hasPendingCrew) {
+                throw new RuntimeException('Order masih menunggu helper menerima slot crew.');
+            }
+
             if (in_array($order->status, [OrderStatus::DriverAccepted, OrderStatus::DriverOnTheWay, OrderStatus::ArrivedPickup, OrderStatus::OnGoing], true)
                 && $order->updated_at?->greaterThan(now()->subMinutes(5))) {
                 throw new RuntimeException('Order baru bisa diselesaikan 5 menit setelah diterima driver.');
@@ -43,6 +52,12 @@ class CompleteOrder
             $oldStatus = $order->status;
             $order->update(['status' => OrderStatus::Completed]);
             $order->driver?->update(['is_available' => true]);
+            $order->crews()
+                ->whereNotNull('driver_id')
+                ->where('role', '!=', 'rider')
+                ->with('driver')
+                ->get()
+                ->each(fn ($crew) => $crew->driver?->update(['is_available' => true]));
             $this->chatService->closeForOrder($order);
 
             try {

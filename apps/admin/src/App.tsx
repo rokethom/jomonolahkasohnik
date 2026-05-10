@@ -139,6 +139,9 @@ type Order = {
   notes?: string | null
   raw_text?: string | null
   pricing_breakdown?: Record<string, unknown> | null
+  crew_decision?: Record<string, unknown> | null
+  crew_status?: string | null
+  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; service_charge?: number; accepted_at?: string | null }>
   waiting_seconds?: number
   sla_status?: 'normal' | 'warning' | 'critical' | 'assigned' | string
   suggested_drivers?: DriverCandidate[]
@@ -2483,6 +2486,20 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
           <small>Driver: {order.oper_handle.driver || order.driver || '-'} · Update {formatShortDateTime(order.oper_handle.updated_at)}</small>
         </div>
       )}
+      {(order.crews?.length || order.crew_status) && (
+        <div className="order-crew-card">
+          <div>
+            <span>Crew order</span>
+            <strong>{crewStatusText(order.crew_status)}</strong>
+          </div>
+          {(order.crews ?? []).map((crew) => (
+            <p key={`${crew.role}-${crew.id}`}>
+              {crew.label || crew.role}: {crew.driver || (crew.status === 'pending' ? 'menunggu driver' : '-')} · {crewStatusText(crew.status)}
+            </p>
+          ))}
+          {order.crew_decision && <small>Rule: {String(order.crew_decision.rule_name ?? 'Crew decision')}</small>}
+        </div>
+      )}
       {order.cancel_reason && <div className="notice danger">Cancel reason: {order.cancel_reason}</div>}
       {detailText && <div className="order-raw-note"><span>Catatan / raw order</span><p>{detailText}</p></div>}
       <div className="order-detail-actions">
@@ -4573,7 +4590,7 @@ function ManualOrderPreviewCard({
           {customer.address && <div><span>Alamat customer</span><b>{customer.address}</b></div>}
           <div><span>{isCourierOrder ? 'Pickup / ambil barang' : 'Pickup'}</span><b>{payload.pickup_address}</b></div>
           <label className="manual-inline-editor"><span>{isCourierOrder ? 'Penerima / tujuan' : 'Tujuan'}</span><input value={payload.destination_address} onChange={(event) => onDestinationChange(event.target.value)} /></label>
-          {containsTart && <div className="manual-route-status warning"><span>Rule kue tart</span><b>Submit akan membuat 2 order delivery: driver utama dan helper tanpa service fee.</b></div>}
+          {containsTart && <div className="manual-route-status warning"><span>Rule kue tart</span><b>Submit membuat 1 order multi-crew. Rider menerima order dulu, lalu sistem membuka slot helper tanpa service charge tambahan.</b></div>}
           {(payload.points ?? []).map((point, index) => (
             <label className="manual-inline-editor" key={`${point.label}-${index}`}><span>{point.label ?? `Titik ${index + 1}`}</span><input value={point.address} onChange={(event) => onPointChange(index, event.target.value)} placeholder="Alamat titik tambahan" /></label>
           ))}
@@ -5053,6 +5070,16 @@ function operHandleStatusLabel(item: OperHandle) {
   if (!item.operator_approved_at && item.spv_approved_at) return 'Menunggu Operator'
   if (item.status === 'pending') return 'Menunggu approval'
   return item.status
+}
+
+function crewStatusText(status?: string | null) {
+  const key = String(status ?? '').toLowerCase()
+  if (key === 'waiting_helper') return 'Menunggu helper'
+  if (key === 'ready') return 'Crew siap'
+  if (key === 'accepted') return 'Diterima'
+  if (key === 'pending') return 'Menunggu'
+  if (key === 'cancelled') return 'Batal'
+  return key || 'Tidak ada crew'
 }
 
 function chatQueueTime(chat: Chat) {

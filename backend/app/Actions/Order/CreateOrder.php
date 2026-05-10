@@ -14,6 +14,7 @@ use App\Services\MultiOrderService;
 use App\Services\GeocodingService;
 use App\Services\LocationValidationService;
 use App\Services\OrderService;
+use App\Services\OrderCrewDecisionService;
 use App\Services\PricingService;
 use App\Services\SettingService;
 use App\Services\NotificationService;
@@ -30,6 +31,7 @@ class CreateOrder
         private readonly MultiOrderService $multiOrder,
         private readonly GeocodingService $geocoding,
         private readonly OrderService $orders,
+        private readonly OrderCrewDecisionService $crewDecisions,
         private readonly LocationValidationService $locations,
         private readonly SettingService $settings,
         private readonly NotificationService $notifications,
@@ -44,6 +46,11 @@ class CreateOrder
             $payload = $this->hydrateHiddenLocations($user, $payload);
             $payload['branch_id'] = $this->orders->resolveTargetBranchId($payload, $user->branch_id);
             $pricing = $this->pricingService->calculate($payload);
+            $crewDecision = $this->crewDecisions->decide($payload);
+            if ($crewDecision !== null) {
+                $pricing['crew_decision'] = $crewDecision;
+                $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nCrew: {$crewDecision['rule_name']} ({$crewDecision['helper_label']})");
+            }
             if ($this->isTartHelperOrder($payload)) {
                 $pricing['service_fee'] = 0;
                 $pricing['service_charge'] = 0;

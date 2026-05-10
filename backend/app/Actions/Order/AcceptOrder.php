@@ -13,6 +13,7 @@ use App\Services\MultiOrderService;
 use App\Services\NotificationService;
 use App\Services\DriverFinanceService;
 use App\Services\ChatService;
+use App\Services\OrderCrewDecisionService;
 use App\Services\SuspendService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class AcceptOrder
         private readonly NotificationService $notifications,
         private readonly DriverFinanceService $finance,
         private readonly ChatService $chatService,
+        private readonly OrderCrewDecisionService $crewDecisions,
     )
     {
     }
@@ -104,10 +106,13 @@ class AcceptOrder
                 'status' => OrderStatus::DriverAccepted,
                 'pricing_breakdown' => $breakdown,
             ]);
+            $this->crewDecisions->createPendingHelperCrew($order->fresh());
 
             $driver->update(['is_available' => (($eligibility['active_order_count'] ?? 0) + 1) < ($eligibility['max_order'] ?? 1)]);
             $acceptedOrder = $order->fresh(['user', 'driver.user', 'items']);
             $driverName = $acceptedOrder->driver?->user?->name ?? 'driver';
+            $crewDecision = data_get($acceptedOrder->pricing_breakdown, 'crew_decision');
+            $helperLabel = is_array($crewDecision) ? (string) ($crewDecision['helper_label'] ?? 'Helper') : null;
 
             $conversation = ChatConversation::updateOrCreate(
                 ['order_id' => $acceptedOrder->id, 'type' => 'customer_driver'],
@@ -122,7 +127,9 @@ class AcceptOrder
 
             $message = $conversation->messages()->create([
                 'sender_type' => 'system',
-                'message' => "Pesanan Anda telah diterima oleh {$driverName}",
+                'message' => $helperLabel
+                    ? "Pesanan Anda telah diterima oleh {$driverName}. Sistem sedang mencari {$helperLabel}."
+                    : "Pesanan Anda telah diterima oleh {$driverName}",
                 'is_read' => false,
             ]);
 
@@ -139,13 +146,43 @@ class AcceptOrder
             $this->notifications->sendToUser(
                 $acceptedOrder->user,
                 'Order diterima driver',
-                "Pesanan Anda telah diterima oleh {$driverName}",
+                $helperLabel ? "Pesanan Anda telah diterima oleh {$driverName}. Sistem sedang mencari {$helperLabel}." : "Pesanan Anda telah diterima oleh {$driverName}",
                 [
                     'type' => 'driver_accepted',
                     'order_id' => $acceptedOrder->id,
                     'url' => '/?open=driver-chat&order_id='.$acceptedOrder->id.'&notification_type=driver_accepted',
                 ],
             );
+
+            if ($helperLabel) {
+                $orderId = $acceptedOrder->id;
+                $branchId = $acceptedOrder->branch_id;
+                $mainDriverId = $driver->id;
+
+                DB::afterCommit(function () use ($orderId, $branchId, $mainDriverId, $helperLabel): void {
+                    Driver::query()
+                        ->with('user')
+                        ->where('status', 'active')
+                        ->where('is_available', true)
+                        ->where('id', '!=', $mainDriverId)
+                        ->where(function ($query) use ($branchId): void {
+                            $query->where('can_accept_all_areas', true)
+                                ->orWhereHas('user', fn ($query) => $query->where('branch_id', $branchId));
+                        })
+                        ->limit(50)
+                        ->get()
+                        ->each(fn (Driver $candidate) => $this->notifications->sendToUser(
+                            $candidate->user,
+                            'Slot helper tersedia',
+                            "{$helperLabel} dibutuhkan untuk order #{$orderId}.",
+                            [
+                                'type' => 'crew_helper_needed',
+                                'order_id' => $orderId,
+                                'url' => '/?open=orders&notification_type=crew_helper_needed&order_id='.$orderId,
+                            ],
+                        ));
+                });
+            }
 
             return $acceptedOrder;
         });

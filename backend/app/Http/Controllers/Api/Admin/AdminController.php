@@ -775,9 +775,8 @@ class AdminController extends Controller
                         $order->forceFill(['source' => 'dashboard_manual'])->save();
 
                         if (array_key_exists('price_override', $payload) || array_key_exists('service_charge_override', $payload)) {
-                            $isTartHelper = (bool) data_get($manualPayload, 'service_payload.tart_helper');
                             $price = $payload['price_override'] ?? $order->price;
-                            $serviceCharge = $isTartHelper ? 0 : ($payload['service_charge_override'] ?? $order->service_charge);
+                            $serviceCharge = $payload['service_charge_override'] ?? $order->service_charge;
                             $order->forceFill([
                                 'price' => $price,
                                 'service_charge' => $serviceCharge,
@@ -814,8 +813,8 @@ class AdminController extends Controller
             }
 
             return response()->json([
-                'message' => count($orders) > 1
-                    ? 'Manual order kue tart dibuat untuk driver utama dan helper'
+                'message' => $this->manualOrderContainsTart($orderPayload)
+                    ? 'Manual order crew dibuat. Rider utama akan menerima order, lalu sistem membuka slot helper.'
                     : 'Manual order created from dashboard parser',
                 'data' => $this->orderPayload($order),
                 'orders' => collect($orders)->map(fn (Order $createdOrder): array => $this->orderPayload($createdOrder))->values(),
@@ -948,27 +947,20 @@ class AdminController extends Controller
             return [$orderPayload];
         }
 
-        return collect([false, true])
-            ->map(function (bool $isHelper, int $index) use ($orderPayload): array {
-                $servicePayload = is_array($orderPayload['service_payload'] ?? null) ? $orderPayload['service_payload'] : [];
+        $servicePayload = is_array($orderPayload['service_payload'] ?? null) ? $orderPayload['service_payload'] : [];
 
-                return [
-                    ...$orderPayload,
-                    'service_type' => 'delivery',
-                    'notes' => trim(implode("\n", array_filter([
-                        $orderPayload['notes'] ?? null,
-                        $isHelper ? 'Helper kue tart - tanpa service charge' : 'Driver utama kue tart',
-                    ]))),
-                    'service_payload' => [
-                        ...$servicePayload,
-                        'tart_order_index' => $index + 1,
-                        'tart_order_count' => 2,
-                        'tart_helper' => $isHelper,
-                        'helper_role' => $isHelper ? 'tart_helper' : 'tart_driver',
-                    ],
-                ];
-            })
-            ->all();
+        return [[
+            ...$orderPayload,
+            'service_type' => 'delivery',
+            'notes' => trim(implode("\n", array_filter([
+                $orderPayload['notes'] ?? null,
+                'Crew rule: kue tart membutuhkan helper. Customer tetap melihat 1 order.',
+            ]))),
+            'service_payload' => [
+                ...$servicePayload,
+                'crew_decision_hint' => 'kue_tart_helper',
+            ],
+        ]];
     }
 
     private function manualOrderContainsTart(array $orderPayload): bool
@@ -2049,7 +2041,7 @@ class AdminController extends Controller
 
     private function orderPayload(Order $order, ?User $actor = null): array
     {
-        $order->loadMissing(['user.branch', 'driver.user.branch', 'operHandleRequests.driver.user']);
+        $order->loadMissing(['user.branch', 'driver.user.branch', 'operHandleRequests.driver.user', 'crews.driver.user']);
         $operHandle = $order->operHandleRequests->sortByDesc('updated_at')->first();
 
         return [
@@ -2082,6 +2074,17 @@ class AdminController extends Controller
             'notes' => $order->notes,
             'raw_text' => $order->raw_text,
             'pricing_breakdown' => $order->pricing_breakdown,
+            'crew_decision' => data_get($order->pricing_breakdown, 'crew_decision'),
+            'crew_status' => data_get($order->pricing_breakdown, 'crew_status', data_get($order->pricing_breakdown, 'crew_decision.requires_helper') ? 'waiting_helper' : null),
+            'crews' => $order->crews->map(fn ($crew): array => [
+                'id' => $crew->id,
+                'role' => $crew->role,
+                'label' => $crew->label,
+                'status' => $crew->status,
+                'driver' => $crew->driver?->user?->name,
+                'service_charge' => $crew->service_charge,
+                'accepted_at' => $crew->accepted_at?->toDateTimeString(),
+            ])->values(),
             'direction_bearing' => $order->direction_bearing !== null ? (float) $order->direction_bearing : null,
             'is_multi_order' => $order->is_multi_order,
             'created_at' => $order->created_at?->toDateTimeString(),

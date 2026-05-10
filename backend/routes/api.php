@@ -158,6 +158,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/driver/orders-feed', [DriverController::class, 'ordersFeed']);
     Route::get('/orders/{order}/can-accept', [DriverController::class, 'canAccept']);
     Route::post('/orders/{order}/accept', [DriverController::class, 'accept']);
+    Route::post('/orders/{order}/crew/{role}/accept', [DriverController::class, 'acceptCrew']);
     Route::get('/driver/profile', [DriverController::class, 'profile']);
     Route::get('/driver/finance', [DriverController::class, 'finance']);
     Route::get('/driver/performance', [DriverController::class, 'performance']);

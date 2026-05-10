@@ -101,6 +101,14 @@ type Order = {
   acceptedAt?: string | null
   updatedAt?: string | null
   eligibility?: Eligibility
+  crewRole?: string | null
+  crewStatus?: string | null
+  crewDecision?: {
+    requires_helper?: boolean
+    helper_label?: string
+    rule_name?: string
+  } | null
+  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; service_charge?: number; accepted_at?: string | null }>
 }
 
 type OrderAdjustment = {
@@ -305,6 +313,14 @@ type ApiOrder = {
   accepted_at?: string | null
   updated_at?: string | null
   eligibility?: Eligibility
+  crew_role?: string | null
+  crew_status?: string | null
+  crew_decision?: {
+    requires_helper?: boolean
+    helper_label?: string
+    rule_name?: string
+  } | null
+  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; service_charge?: number; accepted_at?: string | null }>
 }
 
 type ChatConversation = {
@@ -846,9 +862,9 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
   const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
-  const activeOrders = orders.filter(isActiveOrder)
+  const activeOrders = orders.filter((order) => isActiveOrder(order) && !isCrewOpportunity(order))
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
-  const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending') : []
+  const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending' || isCrewOpportunity(order)) : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
   const availabilityCopy = driver.availability_block_reason
     ?? (canReceiveOrders ? 'Order baru dan request order aktif saat tersedia.' : 'OFF: order baru dan request order nonaktif.')
@@ -1108,7 +1124,7 @@ function OrderList({ orders, loading, api, onAction, onRefreshOrders }: { orders
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const visibleOrders = useMemo(
-    () => orders.filter((order) => isActiveOrder(order) || (canReceiveOrders && order.status === 'pending')).sort(sortNewestOrderFirst),
+    () => orders.filter((order) => (isActiveOrder(order) && !isCrewOpportunity(order)) || (canReceiveOrders && (order.status === 'pending' || isCrewOpportunity(order)))).sort(sortNewestOrderFirst),
     [canReceiveOrders, orders],
   )
 
@@ -1128,6 +1144,9 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
   const hasActiveOrders = (order.eligibility?.active_order_count ?? 0) > 0
   const directionMatch = order.eligibility?.direction_match ?? true
   const route = routeInfoFor(order)
+  const crewActionRole = pendingCrewRole(order)
+  const isHelperOpportunity = isCrewOpportunity(order)
+  const helperLabel = pendingCrewLabel(order) ?? order.crewDecision?.helper_label ?? 'Helper'
 
   return (
     <article className="order-card panel fade-in">
@@ -1144,6 +1163,8 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
           </span>
         )}
         <span>{statusLabel(order.status)}</span>
+        {order.crewStatus && <span className="direction-badge match">{crewStatusLabel(order.crewStatus)}</span>}
+        {isHelperOpportunity && <span className="direction-badge vehicle">{helperLabel}</span>}
         {order.driverPreference === 'ladies' && <span className="direction-badge ladies">LADIES</span>}
         {order.eligibility?.area_match === false && <span className="direction-badge mismatch">LUAR AREA</span>}
         {hasActiveOrders && <span className={directionMatch ? 'direction-badge match' : 'direction-badge mismatch'}>{directionMatch ? 'SEARAH' : 'TIDAK SEARAH'}</span>}
@@ -1153,7 +1174,11 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
       {order.eligibility?.can_accept === false && <p className="eligibility-note">{eligibilityReason(order.eligibility.reason)}</p>}
       <footer>
         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); selectOrder(order.id) }}>Detail</button>
-        <button className="primary-button" disabled={order.eligibility?.can_accept === false || order.status !== 'pending'} onClick={(event) => { event.stopPropagation(); void onAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima') }}>Terima Order</button>
+        {isHelperOpportunity ? (
+          <button className="primary-button" onClick={(event) => { event.stopPropagation(); void onAction(() => api(`/orders/${order.id}/crew/${crewActionRole}/accept`, { method: 'POST' }), `${helperLabel} diterima`) }}>Terima {helperLabel}</button>
+        ) : (
+          <button className="primary-button" disabled={order.eligibility?.can_accept === false || order.status !== 'pending'} onClick={(event) => { event.stopPropagation(); void onAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima') }}>Terima Order</button>
+        )}
       </footer>
     </article>
   )
@@ -1166,12 +1191,18 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
   const [cancelOpen, setCancelOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const isAccepted = order.status === 'accepted'
-  const canFinish = order.status === 'accepted' || order.status === 'on_delivery'
+  const isHelperOpportunity = isCrewOpportunity(order)
+  const isHelperAssigned = order.crewRole && order.crewRole !== 'rider' && !isHelperOpportunity
+  const canMainRiderAction = !isHelperOpportunity && !isHelperAssigned
+  const crewActionRole = pendingCrewRole(order)
+  const helperLabel = pendingCrewLabel(order) ?? order.crewDecision?.helper_label ?? 'Helper'
+  const isWaitingForCrew = Boolean(pendingCrew(order))
+  const canFinish = canMainRiderAction && (order.status === 'accepted' || order.status === 'on_delivery')
   const isOperHandlePending = order.operHandleStatus === 'pending'
   const acceptedAt = order.acceptedAt ? new Date(order.acceptedAt).getTime() : now
   const finishAt = acceptedAt + 5 * 60_000
   const finishWait = Math.max(0, finishAt - now)
-  const finishDisabled = finishWait > 0 || isOperHandlePending
+  const finishDisabled = finishWait > 0 || isOperHandlePending || isWaitingForCrew
   const directionMatch = order.eligibility?.direction_match ?? true
   const route = routeInfoFor(order)
 
@@ -1206,6 +1237,22 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <span>{directionMatch ? 'Order ini mengikuti arah perjalanan aktif.' : 'Order ini tidak searah dengan perjalanan Anda.'}</span>
       </section>
 
+      {(order.crews?.length || order.crewStatus) && (
+        <section className="panel">
+          <SectionTitle title="Crew Order" action={order.crewStatus ? crewStatusLabel(order.crewStatus) : undefined} />
+          <div className="crew-list">
+            {(order.crews ?? []).map((crew) => (
+              <div className="crew-row" key={`${crew.role}-${crew.id}`}>
+                <span>{crew.label || crew.role}</span>
+                <strong>{crew.driver || (crew.status === 'pending' ? 'Menunggu driver' : '-')}</strong>
+                <small>{crewStatusLabel(crew.status)}{crew.service_charge ? ` · Rp ${formatMoney(crew.service_charge)}` : ''}</small>
+              </div>
+            ))}
+            {isHelperOpportunity && <p className="note">Order ini sudah diterima rider utama. Anda bisa menerima slot {helperLabel} jika siap membantu.</p>}
+          </div>
+        </section>
+      )}
+
       <section className="panel route-panel">
         <SectionTitle title="Lokasi" />
         <MapRow label={route.pickupLabel} address={route.pickupAddress} lat={order.pickupLat} lng={order.pickupLng} />
@@ -1234,7 +1281,10 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
             <button className="primary-button" disabled={order.eligibility?.can_accept === false} onClick={() => onAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima')}>Terima Order</button>
           </>
         )}
-        {isAccepted && (
+        {isHelperOpportunity && (
+          <button className="primary-button" onClick={() => onAction(() => api(`/orders/${order.id}/crew/${crewActionRole}/accept`, { method: 'POST' }), `${helperLabel} diterima`)}>Terima {helperLabel}</button>
+        )}
+        {isAccepted && canMainRiderAction && (
           <>
             <button className="secondary-button" onClick={() => setView('chat')}>Chat Customer</button>
             <button className="secondary-button" onClick={() => setAdjustOpen(true)}>Tambah Service Charge</button>
@@ -1248,7 +1298,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
             disabled={finishDisabled}
             onClick={() => onAction(() => api(`/orders/${order.id}/complete`, { method: 'POST' }), 'Order selesai')}
           >
-            {isOperHandlePending ? 'Menunggu approval oper handle' : finishWait > 0 ? `Selesai aktif dalam ${formatRemaining(finishWait)}` : 'Selesai'}
+            {isWaitingForCrew ? 'Menunggu helper' : isOperHandlePending ? 'Menunggu approval oper handle' : finishWait > 0 ? `Selesai aktif dalam ${formatRemaining(finishWait)}` : 'Selesai'}
           </button>
         )}
       </div>
@@ -2322,6 +2372,10 @@ function mapOrder(order: ApiOrder): Order {
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     updatedAt: order.updated_at ?? null,
     eligibility: order.eligibility,
+    crewRole: order.crew_role ?? null,
+    crewStatus: order.crew_status ?? null,
+    crewDecision: order.crew_decision ?? null,
+    crews: order.crews ?? [],
   }
 }
 
@@ -2344,6 +2398,10 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.oper_handle_reason !== undefined ? { operHandleReason: order.oper_handle_reason } : {}),
     ...(order.oper_handle_updated_at !== undefined ? { operHandleUpdatedAt: order.oper_handle_updated_at } : {}),
     ...(order.adjustments !== undefined ? { adjustments: order.adjustments } : {}),
+    ...(order.crew_role !== undefined ? { crewRole: order.crew_role } : {}),
+    ...(order.crew_status !== undefined ? { crewStatus: order.crew_status } : {}),
+    ...(order.crew_decision !== undefined ? { crewDecision: order.crew_decision } : {}),
+    ...(order.crews !== undefined ? { crews: order.crews } : {}),
   }
 }
 
@@ -2480,6 +2538,28 @@ function parseRequestPrices(text: string) {
 }
 function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
+function pendingCrew(order: Order) {
+  return order.crews?.find((crew) => crew.status === 'pending' && crew.role !== 'rider') ?? null
+}
+function pendingCrewRole(order: Order) {
+  return pendingCrew(order)?.role ?? order.crewRole ?? 'helper'
+}
+function pendingCrewLabel(order: Order) {
+  return pendingCrew(order)?.label ?? null
+}
+function isCrewOpportunity(order: Order) {
+  const role = order.crewRole
+  return Boolean(role && role !== 'rider' && pendingCrew(order)?.role === role)
+}
+function crewStatusLabel(status?: string | null) {
+  const key = String(status ?? '').toLowerCase()
+  if (key === 'waiting_helper') return 'Menunggu helper'
+  if (key === 'ready') return 'Crew siap'
+  if (key === 'accepted') return 'Diterima'
+  if (key === 'pending') return 'Menunggu'
+  if (key === 'cancelled') return 'Batal'
+  return key || 'Crew'
+}
 function operHandleStatusLabel(status?: string | null) {
   const key = String(status ?? '').toLowerCase()
   if (key === 'approved') return 'Approved'

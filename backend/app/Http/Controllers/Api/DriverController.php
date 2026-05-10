@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
+use App\Models\OrderCrew;
 use App\Models\DriverSuspension;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
@@ -22,6 +23,7 @@ use App\Services\SettingService;
 use App\Services\SuspendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
@@ -41,10 +43,11 @@ class DriverController extends Controller
         $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
 
         $orders = Order::query()
-            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user'])
+            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user', 'crews.driver.user'])
             ->where(function ($query) use ($driver, $canReceiveOrders): void {
                 $query->where('driver_id', $driver->id);
                 $query->orWhereHas('operHandleRequests', fn ($query) => $query->where('driver_id', $driver->id));
+                $query->orWhereHas('crews', fn ($query) => $query->where('driver_id', $driver->id));
 
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
@@ -77,10 +80,12 @@ class DriverController extends Controller
             ->latest()
             ->limit(50)
             ->get();
+        $helperOrders = $canReceiveOrders ? $this->helperOpportunityOrders($driver) : collect();
+        $orders = $orders->merge($helperOrders)->unique('id')->values();
         $branchId = $driver->user?->branch_id;
         $branchAcceptedOrders = $branchId
             ? Order::query()
-                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where('branch_id', $branchId)
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
@@ -89,7 +94,7 @@ class DriverController extends Controller
             : collect();
         $branchRequestOrders = $branchId
             ? Order::query()
-                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where('branch_id', $branchId)
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
@@ -180,10 +185,11 @@ class DriverController extends Controller
         $branchId = $driver->user?->branch_id;
 
         $orders = Order::query()
-            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user'])
+            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user', 'crews.driver.user'])
             ->where(function ($query) use ($driver, $canReceiveOrders): void {
                 $query->where('driver_id', $driver->id);
                 $query->orWhereHas('operHandleRequests', fn ($query) => $query->where('driver_id', $driver->id));
+                $query->orWhereHas('crews', fn ($query) => $query->where('driver_id', $driver->id));
 
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
@@ -216,10 +222,12 @@ class DriverController extends Controller
             ->latest()
             ->limit(50)
             ->get();
+        $helperOrders = $canReceiveOrders ? $this->helperOpportunityOrders($driver) : collect();
+        $orders = $orders->merge($helperOrders)->unique('id')->values();
 
         $branchAcceptedOrders = $branchId
             ? Order::query()
-                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where('branch_id', $branchId)
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
@@ -228,7 +236,7 @@ class DriverController extends Controller
             : collect();
         $branchRequestOrders = $branchId
             ? Order::query()
-                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where('branch_id', $branchId)
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
@@ -364,6 +372,61 @@ class DriverController extends Controller
         return response()->json([
             'message' => 'Order accepted',
             'data' => $order,
+        ]);
+    }
+
+    public function acceptCrew(Request $request, Order $order, string $role): JsonResponse
+    {
+        $driver = $this->ensureDriver($request)->load('user.branch');
+        $role = strtolower($role ?: 'helper');
+
+        try {
+            $crew = DB::transaction(function () use ($order, $driver, $role): OrderCrew {
+                $order = Order::query()->with(['user', 'driver.user'])->lockForUpdate()->findOrFail($order->id);
+                $crew = OrderCrew::query()
+                    ->where('order_id', $order->id)
+                    ->where('role', $role)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($crew->status !== 'pending') {
+                    throw new RuntimeException('Slot crew sudah tidak tersedia.');
+                }
+
+                if ((int) $order->driver_id === (int) $driver->id) {
+                    throw new RuntimeException('Rider utama tidak bisa menerima slot helper order yang sama.');
+                }
+
+                if ($driver->status !== 'active' || ! $driver->is_available) {
+                    throw new RuntimeException('Status driver OFF atau tidak aktif.');
+                }
+
+                if (! $driver->can_accept_all_areas && (int) $driver->user?->branch_id !== (int) $order->branch_id) {
+                    throw new RuntimeException('Order helper berada di luar cabang driver.');
+                }
+
+                $crew->update([
+                    'driver_id' => $driver->id,
+                    'status' => 'accepted',
+                    'accepted_at' => now(),
+                ]);
+                $driver->update(['is_available' => false]);
+
+                $breakdown = $order->pricing_breakdown ?? [];
+                $breakdown['crew_status'] = 'ready';
+                $breakdown['helper_driver_id'] = $driver->id;
+                $breakdown['helper_name'] = $driver->user?->name;
+                $order->update(['pricing_breakdown' => $breakdown]);
+
+                return $crew->fresh(['driver.user', 'order.user', 'order.driver.user']);
+            });
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => $crew->label.' diterima',
+            'data' => $this->orderPayload($crew->order->fresh(['user', 'driver.user', 'items', 'crews.driver.user']), $driver),
         ]);
     }
 
@@ -685,6 +748,27 @@ class DriverController extends Controller
         return null;
     }
 
+    private function helperOpportunityOrders(Driver $driver)
+    {
+        return Order::query()
+            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user', 'crews.driver.user'])
+            ->whereNotNull('driver_id')
+            ->where('driver_id', '!=', $driver->id)
+            ->whereIn('status', [
+                OrderStatus::DriverAccepted->value,
+                OrderStatus::DriverOnTheWay->value,
+                OrderStatus::ArrivedPickup->value,
+                OrderStatus::OnGoing->value,
+            ])
+            ->whereHas('crews', fn ($query) => $query
+                ->where('status', 'pending')
+                ->where('role', '!=', 'rider'))
+            ->when(! (bool) $driver->can_accept_all_areas, fn ($query) => $query->where('branch_id', $driver->user?->branch_id))
+            ->latest('updated_at')
+            ->limit(20)
+            ->get();
+    }
+
     private function orderPayload(Order $order, ?Driver $forDriver = null): array
     {
         if ($order->relationLoaded('operHandleRequests')) {
@@ -741,6 +825,36 @@ class DriverController extends Controller
             'expired_at' => $order->expired_at?->toIso8601String(),
             'updated_at' => $order->updated_at?->toIso8601String(),
             'adjustments' => $order->adjustments,
+            'crew_decision' => data_get($order->pricing_breakdown, 'crew_decision'),
+            'crew_status' => data_get($order->pricing_breakdown, 'crew_status', data_get($order->pricing_breakdown, 'crew_decision.requires_helper') ? 'waiting_helper' : null),
+            'crews' => $order->relationLoaded('crews')
+                ? $order->crews->map(fn (OrderCrew $crew): array => [
+                    'id' => $crew->id,
+                    'role' => $crew->role,
+                    'label' => $crew->label,
+                    'status' => $crew->status,
+                    'driver' => $crew->driver?->user?->name,
+                    'service_charge' => $crew->service_charge,
+                    'accepted_at' => $crew->accepted_at?->toIso8601String(),
+                ])->values()
+                : [],
+            'crew_role' => $forDriver && $order->relationLoaded('crews')
+                ? $this->crewRoleForDriver($order, $forDriver)
+                : null,
         ];
+    }
+
+    private function crewRoleForDriver(Order $order, Driver $driver): ?string
+    {
+        $assigned = $order->crews->first(fn (OrderCrew $crew): bool => (int) $crew->driver_id === (int) $driver->id);
+        if ($assigned) {
+            return $assigned->role;
+        }
+
+        if ((int) $order->driver_id === (int) $driver->id) {
+            return 'rider';
+        }
+
+        return $order->crews->first(fn (OrderCrew $crew): bool => $crew->driver_id === null && $crew->status === 'pending' && $crew->role !== 'rider')?->role;
     }
 }
