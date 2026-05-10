@@ -1314,6 +1314,75 @@ svg {
   color: #e5edf8;
 }
 
+.admin-update-history-section {
+  gap: 12px;
+}
+
+.admin-update-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-update-history-item {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.admin-shell.dark .admin-update-history-item {
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.admin-update-history-item > b {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #075985;
+  background: #e0f2fe;
+}
+
+.admin-update-history-item div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-update-history-item strong {
+  color: #0f172a;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.admin-shell.dark .admin-update-history-item strong {
+  color: #f8fafc;
+}
+
+.admin-update-history-item p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.admin-shell.dark .admin-update-history-item p {
+  color: #b6c8dc;
+}
+
+.admin-update-history-item small {
+  color: #64748b;
+  font-weight: 850;
+}
+
+.admin-shell.dark .admin-update-history-item small {
+  color: #93a8bd;
+}
+
 .eksekutor-dashboard {
   display: grid;
   gap: 18px;

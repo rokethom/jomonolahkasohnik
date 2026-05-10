@@ -821,7 +821,14 @@ type BuildInfo = {
   full_sha?: string
   message?: string
   committed_at?: string
+  history?: BuildHistoryItem[]
   built_at?: string
+}
+type BuildHistoryItem = {
+  sha: string
+  full_sha?: string
+  message?: string
+  committed_at?: string
 }
 
 function useBuildUpdate(appName: string) {
@@ -1036,6 +1043,7 @@ function AdminUpdateStatusCard({ buildInfo }: { buildInfo: BuildInfo | null }) {
 
 function AdminUpdateDetailModal({ buildInfo, onClose }: { buildInfo: BuildInfo | null; onClose: () => void }) {
   const detail = buildInfoDetail(buildInfo)
+  const history = buildInfoHistory(buildInfo)
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -1059,6 +1067,21 @@ function AdminUpdateDetailModal({ buildInfo, onClose }: { buildInfo: BuildInfo |
             <InfoBox label="Waktu commit" value={detail.commitTime || 'Belum tersedia'} />
             <InfoBox label="Waktu build" value={detail.buildTime || 'Belum tersedia'} />
           </div>
+          <section className="admin-update-history-section">
+            <span>3 history update terakhir</span>
+            <div className="admin-update-history-list">
+              {history.map((item, index) => (
+                <article key={`${item.sha}-${index}`} className="admin-update-history-item">
+                  <b>{index + 1}</b>
+                  <div>
+                    <strong>{translateBuildMessage(item.message)}</strong>
+                    <p>{buildHistoryDescription(item)}</p>
+                    <small>Versi {item.sha || '-'}{item.committed_at ? ` - commit ${formatShortDateTime(item.committed_at)}` : ''}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
           <label>
             Hash lengkap
             <input value={buildInfo?.full_sha || buildInfo?.sha || 'Belum tersedia'} readOnly />
@@ -4419,8 +4442,27 @@ function buildInfoDetail(buildInfo: BuildInfo | null) {
   }
 }
 
+function buildInfoHistory(buildInfo: BuildInfo | null): BuildHistoryItem[] {
+  const history = buildInfo?.history?.filter((item) => item?.sha) ?? []
+  if (history.length > 0) return history.slice(0, 3)
+
+  return buildInfo?.sha ? [{
+    sha: buildInfo.sha,
+    full_sha: buildInfo.full_sha,
+    message: buildInfo.message,
+    committed_at: buildInfo.committed_at,
+  }] : []
+}
+
+function buildHistoryDescription(item: BuildHistoryItem) {
+  const title = translateBuildMessage(item.message)
+
+  return `Pembaruan ini berisi: ${title.toLowerCase()}.`
+}
+
 function translateBuildMessage(message?: string | null) {
   const map: Record<string, string> = {
+    'Add Indonesian update detail modal': 'Menambahkan detail update berbahasa Indonesia',
     'Show latest update status on admin dashboard': 'Menambahkan status update terbaru di dashboard admin',
     'Refine driver profile finance details': 'Merapikan detail keuangan pada profil driver',
     'Add all area driver access setting': 'Menambahkan pengaturan akses all area untuk driver',

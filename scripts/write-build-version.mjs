@@ -23,6 +23,19 @@ const sha = git('git rev-parse --short HEAD', 'local')
 const fullSha = git('git rev-parse HEAD', sha)
 const message = git('git log -1 --pretty=%s', 'Update aplikasi terbaru')
 const committedAt = git('git log -1 --pretty=%cI', '')
+const history = git('git log -3 --pretty=%h%x1f%H%x1f%s%x1f%cI', '')
+  .split('\n')
+  .filter(Boolean)
+  .map((line) => {
+    const [itemSha, itemFullSha, itemMessage, itemCommittedAt] = line.split('\x1f')
+
+    return {
+      sha: itemSha,
+      full_sha: itemFullSha,
+      message: itemMessage,
+      committed_at: itemCommittedAt,
+    }
+  })
 const builtAt = new Date().toISOString()
 const version = {
   app,
@@ -30,6 +43,7 @@ const version = {
   full_sha: fullSha,
   message,
   committed_at: committedAt,
+  history,
   built_at: builtAt,
 }
 
