@@ -21,11 +21,15 @@ function git(command, fallback) {
 
 const sha = git('git rev-parse --short HEAD', 'local')
 const fullSha = git('git rev-parse HEAD', sha)
+const message = git('git log -1 --pretty=%s', 'Update aplikasi terbaru')
+const committedAt = git('git log -1 --pretty=%cI', '')
 const builtAt = new Date().toISOString()
 const version = {
   app,
   sha,
   full_sha: fullSha,
+  message,
+  committed_at: committedAt,
   built_at: builtAt,
 }
 

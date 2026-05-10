@@ -1163,6 +1163,68 @@ svg {
   gap: 18px;
 }
 
+.admin-update-status-card {
+  min-width: 0;
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  border-radius: 22px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #e5edf8;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(8, 47, 73, 0.84)),
+    radial-gradient(circle at 92% 18%, rgba(34, 197, 94, 0.24), transparent 32%);
+  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+}
+
+.admin-update-status-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.admin-update-status-copy span {
+  color: #7dd3fc;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-update-status-copy strong {
+  overflow-wrap: anywhere;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.admin-update-status-copy small {
+  color: #abc4df;
+  font-weight: 800;
+}
+
+.admin-update-status-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(125, 211, 252, 0.26);
+  border-radius: 16px;
+  padding: 10px 13px;
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.admin-update-status-badge b {
+  color: #bbf7d0;
+  font-size: 12px;
+}
+
+.admin-update-status-badge span {
+  color: #e0f2fe;
+  font-size: 14px;
+  font-weight: 950;
+}
+
 .eksekutor-dashboard {
   display: grid;
   gap: 18px;
@@ -5478,6 +5540,17 @@ textarea::placeholder {
 
   .oper-handle-approval-steps {
     justify-content: flex-start;
+  }
+
+  .admin-update-status-card {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .admin-update-status-badge {
+    width: 100%;
+    text-align: left;
   }
 
   .topbar-actions svg {

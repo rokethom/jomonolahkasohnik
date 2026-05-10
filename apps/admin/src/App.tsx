@@ -651,7 +651,7 @@ function App() {
 
   const allowedViews = data ? allowedViewsFor(data.me.role, data.permissions) : []
   const safeView = data ? (allowedViews.includes(view) ? view : (allowedViews[0] ?? 'dashboard')) : view
-  const updateInfo = useBuildUpdate('admin')
+  const { current: buildInfo, update: updateInfo } = useBuildUpdate('admin')
 
   useEffect(() => {
     if (safeView === 'dashboard' && query !== '') {
@@ -791,7 +791,7 @@ function App() {
           </header>
 
         {adminNotice && <div className="dispatch-toast oper-handle-toast">{adminNotice}</div>}
-        {safeView === 'dashboard' && <Dashboard data={data} api={api} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'dashboard' && <Dashboard data={data} api={api} buildInfo={buildInfo} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} permissions={data.permissions} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -819,10 +819,13 @@ type BuildInfo = {
   app: string
   sha: string
   full_sha?: string
+  message?: string
+  committed_at?: string
   built_at?: string
 }
 
 function useBuildUpdate(appName: string) {
+  const [current, setCurrent] = useState<BuildInfo | null>(null)
   const [update, setUpdate] = useState<BuildInfo | null>(null)
   const currentVersionRef = useRef<BuildInfo | null>(null)
 
@@ -837,6 +840,7 @@ function useBuildUpdate(appName: string) {
         if (!active || latest.app !== appName || !latest.sha) return
         if (!currentVersionRef.current) {
           currentVersionRef.current = latest
+          setCurrent(latest)
           return
         }
         if (latest.sha === currentVersionRef.current.sha) return
@@ -856,7 +860,7 @@ function useBuildUpdate(appName: string) {
     }
   }, [appName])
 
-  return update
+  return { current, update }
 }
 
 function AppUpdateNotice({ update }: { update: BuildInfo | null }) {
@@ -950,7 +954,7 @@ function PwaInstallButton() {
   )
 }
 
-function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
+function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; buildInfo: BuildInfo | null; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
   if (data.me.role === 'eksekutor') {
     return <EksekutorDashboard data={data} api={api} onChanged={onChanged} onNavigate={onNavigate} onOpenOrder={onOpenOrder} />
   }
@@ -965,6 +969,7 @@ function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bo
 
   return (
     <div className="dashboard-grid">
+      {['admin', 'gm'].includes(data.me.role) && <AdminUpdateStatusCard buildInfo={buildInfo} />}
       <StatsRow stats={[
         { label: 'Active Order Realtime', value: activeOrders, icon: 'bag', tone: 'amber', action: 'Orders', onClick: () => onNavigate('orders') },
         { label: 'Online Driver', value: onlineDrivers, icon: 'truck', tone: 'green', action: 'Drivers', onClick: () => onNavigate('drivers') },
@@ -1000,6 +1005,26 @@ function Dashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bo
       <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
       <PriceEditActivity auditLogs={data.audit_logs} />
     </div>
+  )
+}
+
+function AdminUpdateStatusCard({ buildInfo }: { buildInfo: BuildInfo | null }) {
+  return (
+    <section className="admin-update-status-card">
+      <div className="admin-update-status-copy">
+        <span>Status update terbaru</span>
+        <strong>{buildInfo?.message || 'Update aplikasi terbaru'}</strong>
+        <small>
+          {buildInfo?.sha ? `Versi ${buildInfo.sha}` : 'Versi belum terbaca'}
+          {buildInfo?.committed_at ? ` - commit ${formatShortDateTime(buildInfo.committed_at)}` : ''}
+          {buildInfo?.built_at ? ` - build ${formatShortDateTime(buildInfo.built_at)}` : ''}
+        </small>
+      </div>
+      <div className="admin-update-status-badge">
+        <b>{buildInfo?.app?.toUpperCase() || 'ADMIN'}</b>
+        <span>{buildInfo?.sha || 'sync'}</span>
+      </div>
+    </section>
   )
 }
 
