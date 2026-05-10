@@ -164,6 +164,7 @@ type DriverStore = {
   openOperatorChat: () => void
   setToken: (token: string) => void
   setBootstrap: (payload: BootstrapResponse) => void
+  setOrderFeeds: (payload: DriverOrdersFeedResponse) => void
   updateOrder: (order: Partial<ApiOrder> & { id: number }) => void
   setDriverState: (driver: Driver, finance?: DriverFinance | null) => void
   logout: () => void
@@ -179,6 +180,15 @@ type BootstrapResponse = {
   finance?: DriverFinance
   performance?: DriverPerformance
   branch_performance?: BranchDriverPerformance[]
+  orders: ApiOrder[]
+  branch_accepted_orders?: ApiOrder[]
+  branch_request_orders?: ApiOrder[]
+  branch_oper_handle_orders?: ApiOrder[]
+  branch_suspend_history?: BranchSuspendHistory[]
+}
+
+type DriverOrdersFeedResponse = {
+  driver?: Driver
   orders: ApiOrder[]
   branch_accepted_orders?: ApiOrder[]
   branch_request_orders?: ApiOrder[]
@@ -407,6 +417,15 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     branchPerformance: payload.branch_performance ?? [],
     isOnline: Boolean(payload.driver.is_available),
   }),
+  setOrderFeeds: (payload) => set((state) => ({
+    driver: payload.driver ?? state.driver,
+    orders: payload.orders.map(mapOrder),
+    branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
+    branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
+    branchOperHandleOrders: (payload.branch_oper_handle_orders ?? []).map(mapOrder),
+    branchSuspendHistory: payload.branch_suspend_history ?? [],
+    ...(payload.driver ? { isOnline: Boolean(payload.driver.is_available) } : {}),
+  })),
   updateOrder: (order) => set((state) => ({
     orders: state.orders.map((item) => item.id === order.id ? { ...item, ...mapOrderPatch(order) } : item),
   })),
@@ -431,7 +450,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
 }))
 
 function App() {
-  const { view, token, driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, selectedOrderId, chatTarget, toasts, setBootstrap, updateOrder, setView, toast, logout } = useDriverStore()
+  const { view, token, driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, selectedOrderId, chatTarget, toasts, setBootstrap, setOrderFeeds, updateOrder, setView, toast, logout } = useDriverStore()
   const [apiState, setApiState] = useState<ApiState>({ loading: false, error: '' })
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
@@ -519,6 +538,22 @@ function App() {
     }
   }, [api, logout, setBootstrap, toast, token])
 
+  const loadOrderFeeds = useCallback(async () => {
+    if (!token) return null
+    try {
+      const payload = await api<DriverOrdersFeedResponse>('/driver/orders-feed')
+      setOrderFeeds(payload)
+      return payload
+    } catch (error) {
+      const message = getErrorMessage(error, '')
+      if (/401|403|unauthenticated|unauthorized/i.test(message)) {
+        logout()
+        toast('Silakan login sebagai driver', 'warning')
+      }
+      return null
+    }
+  }, [api, logout, setOrderFeeds, toast, token])
+
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
     return () => window.clearTimeout(timer)
@@ -557,25 +592,6 @@ function App() {
         toast(getErrorMessage(error, 'FCM gagal membuat device token.'), 'danger')
       })
   }, [publicSettings, toast, token])
-
-  useEffect(() => {
-    if (!token) return
-
-    const refresh = () => void load(true)
-    const interval = window.setInterval(refresh, 10000)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh()
-    }
-
-    window.addEventListener('focus', refresh)
-    document.addEventListener('visibilitychange', onVisible)
-
-    return () => {
-      window.clearInterval(interval)
-      window.removeEventListener('focus', refresh)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [load, token])
 
   useEffect(() => {
     if (!token) return
@@ -634,7 +650,7 @@ function App() {
       if (!event.order?.id) return
       const state = useDriverStore.getState()
       if (!canReceiveRealtimeOrder(state.driver, state.finance, state.isOnline)) return
-      void load(true).then((payload) => {
+      void loadOrderFeeds().then((payload) => {
         const visibleOrder = payload?.orders.some((order) => order.id === event.order?.id)
         if (visibleOrder) {
           void playDriverNotificationSound()
@@ -643,7 +659,7 @@ function App() {
       })
     })
     channel.listen('.driver.accepted', () => {
-      void load(true)
+      void loadOrderFeeds()
     })
     channel.listen('.order.status.updated', (event: { order?: Partial<ApiOrder> & { id: number; code?: string }; new_status?: string }) => {
       if (!event.order?.id) return
@@ -652,7 +668,7 @@ function App() {
       const newStatus = normalizeStatus(event.new_status ?? event.order.status ?? '')
       updateOrder(event.order)
       if (!knownOrder && newStatus === 'pending' && canReceiveRealtimeOrder(currentState.driver, currentState.finance, currentState.isOnline)) {
-        void load(true).then((payload) => {
+        void loadOrderFeeds().then((payload) => {
           const visibleOrder = payload?.orders.some((order) => order.id === event.order?.id)
           if (visibleOrder) toast(`Order ${event.order?.code ?? event.order?.order_code ?? ''} kembali terbuka untuk driver`, 'warning')
         })
@@ -666,7 +682,7 @@ function App() {
     return () => {
       makeEcho(token).leave('orders')
     }
-  }, [load, toast, token, updateOrder])
+  }, [loadOrderFeeds, toast, token, updateOrder])
 
   const action = async (work: () => Promise<unknown>, success: string) => {
     try {
@@ -686,8 +702,8 @@ function App() {
   return (
     <Shell>
       <ToastStack toasts={toasts} />
-      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchRequestOrders={branchRequestOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} loading={apiState.loading} api={api} onAction={action} />}
-      {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
+      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchRequestOrders={branchRequestOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
+      {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} mode={chatTarget} />}
       {view === 'history' && <History orders={orders} loading={apiState.loading} />}
@@ -788,9 +804,48 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
   )
 }
 
-function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
+function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedResponse | null>) {
+  const [syncing, setSyncing] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    let busy = false
+
+    const refresh = async () => {
+      if (busy) return
+      busy = true
+      if (alive) setSyncing(true)
+      try {
+        await refreshOrders()
+      } finally {
+        busy = false
+        if (alive) setSyncing(false)
+      }
+    }
+
+    const interval = window.setInterval(() => void refresh(), 10000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      alive = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refreshOrders])
+
+  return syncing
+}
+
+function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction, onRefreshOrders }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
   const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const activeOrders = orders.filter(isActiveOrder)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending') : []
@@ -854,7 +909,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       {activeOrders.length > 0 && <ActiveOrderRoute orders={activeOrders} max={maxMultiOrder} />}
 
       <section>
-        <SectionTitle title="List Order" action={loading ? 'Sync' : `${pendingOrders.length} order`} />
+        <SectionTitle title="List Order" action={orderSyncing ? 'Sync order' : `${pendingOrders.length} order`} />
         {loading && <SkeletonCards />}
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
@@ -1048,8 +1103,9 @@ function PaidAmountRow({ value, paidAt }: { value: number; paidAt?: string | nul
   )
 }
 
-function OrderList({ orders, loading, api, onAction }: { orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
+function OrderList({ orders, loading, api, onAction, onRefreshOrders }: { orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
   const { driver, finance, isOnline } = useDriverStore()
+  const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const visibleOrders = useMemo(
     () => orders.filter((order) => isActiveOrder(order) || (canReceiveOrders && order.status === 'pending')).sort(sortNewestOrderFirst),
@@ -1058,7 +1114,7 @@ function OrderList({ orders, loading, api, onAction }: { orders: Order[]; loadin
 
   return (
     <section className="page">
-      <PageTitle title="Order List" subtitle="Order aktif dan terbaru untuk driver." />
+      <PageTitle title="Order List" subtitle={orderSyncing ? 'Sinkron order terbaru...' : 'Order aktif dan terbaru untuk driver.'} />
       {!canReceiveOrders && <div className="notice-card warning">Status OFF atau rule setoran/suspend aktif. Order baru tidak ditampilkan.</div>}
       {loading && <SkeletonCards />}
       {!loading && visibleOrders.length === 0 && <EmptyState title="Kosong" copy="Belum ada order aktif atau order baru." />}
@@ -1283,6 +1339,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
   const [draftImage, setDraftImage] = useState<{ file: File; url: string } | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const chatStickToBottomRef = useRef(true)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const galleryInputRef = useRef<HTMLInputElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
@@ -1313,6 +1370,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
     setConversation(null)
     setMessages([])
     setError('')
+    chatStickToBottomRef.current = true
     if (mode === 'order' && !orderId) return
 
     void loadChat()
@@ -1345,6 +1403,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
   }, [driver?.id, mode, orderId])
 
   useEffect(() => {
+    if (!chatStickToBottomRef.current) return
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages.length, loading, error])
 
@@ -1361,6 +1420,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
         method: 'POST',
         body: JSON.stringify({ message: messageText }),
       })
+      chatStickToBottomRef.current = true
       setMessages((current) => current.some((message) => String(message.id) === String(response.data.id)) ? current : [...current, response.data])
     } catch (err) {
       setText(messageText)
@@ -1382,6 +1442,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
         method: 'POST',
         body: form,
       })
+      chatStickToBottomRef.current = true
       setMessages((current) => current.some((message) => String(message.id) === String(response.data.id)) ? current : [...current, response.data])
     } catch (err) {
       toast(getErrorMessage(err, 'Gagal kirim gambar'), 'danger')
@@ -1402,6 +1463,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
         body: JSON.stringify({ message: withReplyPrefix(`Kontak driver:\n${driver.name}\n${phone}`, replyTarget) }),
       })
       setReplyTarget(null)
+      chatStickToBottomRef.current = true
       setMessages((current) => current.some((message) => String(message.id) === String(response.data.id)) ? current : [...current, response.data])
     } catch (err) {
       toast(getErrorMessage(err, 'Gagal kirim kontak'), 'danger')
@@ -1421,7 +1483,14 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
           {!loading && error && <EmptyState title="Chat belum bisa dibuka" copy={error} />}
           {(!loading || messages.length > 0) && !error && (
             <>
-              <div className="chat-list driver-chat-list" ref={listRef}>
+              <div
+                className="chat-list driver-chat-list"
+                ref={listRef}
+                onScroll={(event) => {
+                  const node = event.currentTarget
+                  chatStickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 120
+                }}
+              >
                 {conversation?.operator_name && (
                   <div className="operator-joined-notice">
                     <strong>{conversation.operator_name}</strong>
@@ -1720,6 +1789,7 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
 
 function DriverFinanceSection() {
   const { finance, performance } = useDriverStore()
+  const [incomeOpen, setIncomeOpen] = useState(false)
   const [financeOpen, setFinanceOpen] = useState(false)
   const [financeMode, setFinanceMode] = useState<'billing' | 'running'>('billing')
   const previousDeposit = finance?.previous_deposit
@@ -1733,7 +1803,7 @@ function DriverFinanceSection() {
   return (
     <section className="profile-finance-section">
       <SectionTitle title="Finance" action={finance?.status ?? 'sync'} />
-      <article className="month-income-card panel">
+      <button className="month-income-card panel" type="button" onClick={() => setIncomeOpen(true)}>
         <div className="month-income-head">
           <span>Total pendapatan bulan ini</span>
           <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
@@ -1745,7 +1815,7 @@ function DriverFinanceSection() {
           <span><b>{performance?.cancelled_orders_count ?? 0}</b><small>Cancel bulan ini</small></span>
           <span><b>{Number(performance?.rating ?? 0).toFixed(1)}</b><small>Rating</small></span>
         </div>
-      </article>
+      </button>
       <div className="profile-finance-grid">
         <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
           <span>TAGIHAN BULAN INI</span>
@@ -1758,8 +1828,35 @@ function DriverFinanceSection() {
           <small>{currentPeriodLabel} - dasar Rp {formatMoney(currentPeriodDeposit)}{previousRemaining > 0 ? ` + sisa ${previousPeriodLabel}` : ''}</small>
         </button>
       </div>
+      {incomeOpen && <DriverIncomeModal performance={performance} finance={finance} onClose={() => setIncomeOpen(false)} />}
       {financeOpen && finance && <SetoranModal finance={finance} mode={financeMode} onClose={() => setFinanceOpen(false)} />}
     </section>
+  )
+}
+
+function DriverIncomeModal({ performance, finance, onClose }: { performance: DriverPerformance | null; finance: DriverFinance | null; onClose: () => void }) {
+  return (
+    <Modal title="Detail Pendapatan Bulan Ini" onClose={onClose}>
+      <div className="driver-income-modal">
+        <section className="driver-income-total">
+          <span>Pendapatan pribadi bulan ini</span>
+          <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
+          <small>{performance?.period_label ?? 'Periode berjalan'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+        </section>
+        <div className="income-detail-grid">
+          <InfoTile label="Order selesai bulan ini" value={String(performance?.completed_orders_count ?? 0)} />
+          <InfoTile label="Order selesai hari ini" value={String(performance?.today_completed_orders_count ?? 0)} />
+          <InfoTile label="Order batal bulan ini" value={String(performance?.cancelled_orders_count ?? 0)} />
+          <InfoTile label="Rating customer" value={`${Number(performance?.rating ?? 0).toFixed(1)}/5`} />
+          <InfoTile label="Jumlah rating" value={String(performance?.ratings_count ?? 0)} />
+          <InfoTile label="Status tagihan" value={finance?.status ?? '-'} />
+        </div>
+        <div className="income-note">
+          <strong>Catatan</strong>
+          <p>Detail ini hanya menghitung performa dan pendapatan driver yang sedang login, bukan ranking seluruh cabang.</p>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

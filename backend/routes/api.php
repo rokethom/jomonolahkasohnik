@@ -155,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store'])->middleware('profile.complete');
     Route::post('/orders/{order}/find-driver', [OrderController::class, 'findDriver']);
     Route::get('/driver/bootstrap', [DriverController::class, 'bootstrap']);
+    Route::get('/driver/orders-feed', [DriverController::class, 'ordersFeed']);
     Route::get('/orders/{order}/can-accept', [DriverController::class, 'canAccept']);
     Route::post('/orders/{order}/accept', [DriverController::class, 'accept']);
     Route::get('/driver/profile', [DriverController::class, 'profile']);

@@ -333,6 +333,8 @@ input:focus, textarea:focus, select:focus {
 .online-card small { color: rgba(191, 219, 254, 0.76); font-size: 12px; font-weight: 750; }
 
 .month-income-card {
+  appearance: none;
+  cursor: pointer;
   width: 100%;
   display: grid;
   gap: 6px;
@@ -343,6 +345,9 @@ input:focus, textarea:focus, select:focus {
   color: var(--ink);
   padding: 16px 18px;
   text-align: left;
+}
+.month-income-card:active {
+  transform: translateY(1px);
 }
 .month-income-card span {
   color: rgba(226, 239, 255, 0.76);
@@ -393,6 +398,63 @@ input:focus, textarea:focus, select:focus {
 .driver-income-detail-grid small {
   color: rgba(226, 239, 255, 0.72);
   line-height: 1.2;
+}
+
+.driver-income-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.driver-income-total {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(69, 230, 167, 0.24);
+  border-radius: 20px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(69, 230, 167, 0.2), transparent 34%),
+    linear-gradient(145deg, rgba(35, 76, 125, 0.92), rgba(12, 30, 57, 0.96));
+}
+
+.driver-income-total span {
+  color: rgba(226, 239, 255, 0.76);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.driver-income-total strong {
+  color: #ffffff;
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.driver-income-total small {
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.income-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.income-note {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(191, 219, 254, 0.16);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.income-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .profile-finance-section {
@@ -1310,9 +1372,13 @@ input:focus, textarea:focus, select:focus {
 }
 .driver-chat-list {
   justify-content: flex-start;
+  align-content: flex-start;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   padding: 4px 2px 12px;
   scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;

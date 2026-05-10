@@ -169,6 +169,117 @@ class DriverController extends Controller
         ]);
     }
 
+    public function ordersFeed(Request $request, MultiOrderService $multiOrder, DriverFinanceService $finance, OrderService $ordersService): JsonResponse
+    {
+        $ordersService->cancelExpiredCreatedOrders();
+
+        $driver = $this->ensureDriver($request)->load('user.branch');
+        $billingDeposit = $finance->monthlyDeposit($driver, now()->subMonth());
+        $driver = $this->syncAvailabilityForFinance($driver, $billingDeposit);
+        $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
+        $branchId = $driver->user?->branch_id;
+
+        $orders = Order::query()
+            ->with(['user', 'driver.user', 'adjustments', 'operHandleRequests.driver.user'])
+            ->where(function ($query) use ($driver, $canReceiveOrders): void {
+                $query->where('driver_id', $driver->id);
+                $query->orWhereHas('operHandleRequests', fn ($query) => $query->where('driver_id', $driver->id));
+
+                if ($canReceiveOrders) {
+                    $query->orWhere(function ($query) use ($driver): void {
+                        $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
+                            ->when(! $driver->can_accept_all_areas, fn ($query) => $query->where('branch_id', $driver->user?->branch_id))
+                            ->where(function ($query) use ($driver): void {
+                                $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
+                                    ->orWhereNull('pricing_breakdown->driver_preference')
+                                    ->when((bool) $driver->is_ladies_driver, fn ($query) => $query->orWhere('pricing_breakdown->driver_preference', 'ladies'));
+                            })
+                            ->where(function ($query) use ($driver): void {
+                                $vehicleTypes = $driver->vehicleTypes();
+                                $seatRows = (int) ($driver->vehicle_seat_rows ?: 2);
+
+                                $query->whereNull('pricing_breakdown->preferred_vehicle_type')
+                                    ->when(in_array('motor', $vehicleTypes, true), fn ($query) => $query->orWhere('pricing_breakdown->preferred_vehicle_type', 'motor'))
+                                    ->when(in_array('mobil', $vehicleTypes, true), function ($query) use ($seatRows): void {
+                                        $query->orWhere(function ($query) use ($seatRows): void {
+                                            $query->where('pricing_breakdown->preferred_vehicle_type', 'mobil')
+                                                ->where(function ($query) use ($seatRows): void {
+                                                    $query->whereNull('pricing_breakdown->required_vehicle_seat_rows')
+                                                        ->orWhere('pricing_breakdown->required_vehicle_seat_rows', '<=', $seatRows);
+                                                });
+                                        });
+                                    });
+                            });
+                    });
+                }
+            })
+            ->latest()
+            ->limit(50)
+            ->get();
+
+        $branchAcceptedOrders = $branchId
+            ? Order::query()
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
+                ->where('branch_id', $branchId)
+                ->whereNotNull('driver_id')
+                ->latest('updated_at')
+                ->limit(20)
+                ->get()
+            : collect();
+        $branchRequestOrders = $branchId
+            ? Order::query()
+                ->with(['user', 'driver.user', 'operHandleRequests.driver.user'])
+                ->where('branch_id', $branchId)
+                ->where('source', 'driver_request')
+                ->latest('updated_at')
+                ->limit(30)
+                ->get()
+            : collect();
+        $branchOperHandleOrders = $branchId
+            ? OperHandleRequest::query()
+                ->with(['order.user', 'order.driver.user', 'driver.user'])
+                ->whereHas('order', fn ($query) => $query->where('branch_id', $branchId))
+                ->latest('updated_at')
+                ->limit(12)
+                ->get()
+            : collect();
+        $branchSuspendHistory = $branchId
+            ? DriverSuspension::query()
+                ->with('driver.user')
+                ->whereHas('driver.user', fn ($query) => $query->where('branch_id', $branchId))
+                ->latest('updated_at')
+                ->limit(20)
+                ->get()
+            : collect();
+
+        return response()->json([
+            'driver' => $this->driverPayload($request, $billingDeposit),
+            'orders' => $orders->map(fn (Order $order): array => [
+                ...$this->orderPayload($order, $driver),
+                'eligibility' => $multiOrder->canAcceptOrder($driver, $order),
+            ]),
+            'branch_accepted_orders' => $branchAcceptedOrders->map(fn (Order $order): array => $this->orderPayload($order)),
+            'branch_request_orders' => $branchRequestOrders->map(fn (Order $order): array => $this->orderPayload($order)),
+            'branch_oper_handle_orders' => $branchOperHandleOrders->map(fn (OperHandleRequest $request): array => [
+                ...$this->orderPayload($request->order),
+                'oper_handle_status' => $request->status,
+                'oper_handle_driver' => $request->driver?->user?->name,
+                'oper_handle_reason' => $request->reason,
+                'oper_handle_updated_at' => $request->updated_at?->toIso8601String(),
+            ]),
+            'branch_suspend_history' => $branchSuspendHistory->map(fn (DriverSuspension $suspension): array => [
+                'id' => $suspension->id,
+                'driver' => $suspension->driver?->user?->name ?? 'Driver',
+                'type' => $suspension->type,
+                'reason' => $suspension->reason,
+                'status' => $suspension->status,
+                'start_at' => $suspension->start_at?->toIso8601String(),
+                'end_at' => $suspension->end_at?->toIso8601String(),
+                'updated_at' => $suspension->updated_at?->toIso8601String(),
+            ]),
+        ]);
+    }
+
     public function updateAvailability(Request $request, DriverFinanceService $finance): JsonResponse
     {
         $driver = $this->ensureDriver($request)->load('user.branch');
