@@ -2714,6 +2714,7 @@ function eligibilityReason(reason?: string | null) {
     'maksimal order aktif tercapai': 'Batas order aktif sudah tercapai.',
     'driver off': 'Status driver OFF. Aktifkan ON jika setoran sudah paid.',
     'driver tidak aktif': 'Akun driver sedang tidak aktif/suspend.',
+    'prioritas harian driver lain': 'Order ini sedang diprioritaskan untuk driver yang pertama online hari ini.',
   }[String(reason ?? '')] ?? 'Order belum bisa diterima saat ini.'
 }
 function formatHistoryTime(value?: string | null) {

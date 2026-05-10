@@ -1569,6 +1569,8 @@ class AdminController extends Controller
             'multi_crew_auto_cancel_enabled' => ['sometimes', 'boolean'],
             'multi_crew_auto_cancel_minutes' => ['sometimes', 'integer', 'min:1', 'max:180'],
             'multi_crew_auto_cancel_message' => ['nullable', 'string', 'max:500'],
+            'driver_daily_priority_enabled' => ['sometimes', 'boolean'],
+            'driver_daily_priority_hold_minutes' => ['sometimes', 'integer', 'min:1', 'max:60'],
             'night_tariff_enabled' => ['sometimes', 'boolean'],
             'night_tariff_rules' => ['sometimes', 'array'],
             'night_tariff_rules.*.area' => ['nullable', 'string', 'max:50'],
@@ -1591,7 +1593,7 @@ class AdminController extends Controller
         if (array_key_exists('order_cancelled', $templates)) {
             $settings->set(OrderFeedbackService::CANCELLED_KEY, $templates['order_cancelled']);
         }
-        foreach (['order_close_enabled', 'order_close_start', 'order_close_end', 'order_close_message', 'multi_crew_auto_cancel_enabled', 'multi_crew_auto_cancel_minutes', 'multi_crew_auto_cancel_message', 'night_tariff_enabled'] as $key) {
+        foreach (['order_close_enabled', 'order_close_start', 'order_close_end', 'order_close_message', 'multi_crew_auto_cancel_enabled', 'multi_crew_auto_cancel_minutes', 'multi_crew_auto_cancel_message', 'driver_daily_priority_enabled', 'driver_daily_priority_hold_minutes', 'night_tariff_enabled'] as $key) {
             if (array_key_exists($key, $payload)) {
                 $settings->set($key, $payload[$key]);
             }
@@ -2538,6 +2540,8 @@ class AdminController extends Controller
             'multi_crew_auto_cancel_enabled' => $settings->bool('multi_crew_auto_cancel_enabled', true),
             'multi_crew_auto_cancel_minutes' => max(1, min(180, $settings->int('multi_crew_auto_cancel_minutes', 7))),
             'multi_crew_auto_cancel_message' => $settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.') ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.',
+            'driver_daily_priority_enabled' => $settings->bool('driver_daily_priority_enabled', true),
+            'driver_daily_priority_hold_minutes' => max(1, min(60, $settings->int('driver_daily_priority_hold_minutes', 3))),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),

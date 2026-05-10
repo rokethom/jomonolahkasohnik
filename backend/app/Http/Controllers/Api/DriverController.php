@@ -13,6 +13,7 @@ use App\Models\DriverSuspension;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Services\DriverSuspendService;
+use App\Services\DriverDailyPriorityService;
 use App\Services\DriverFinanceService;
 use App\Services\OrderAdjustmentService;
 use App\Services\DriverRequestOrderService;
@@ -32,7 +33,7 @@ use RuntimeException;
 
 class DriverController extends Controller
 {
-    public function bootstrap(Request $request, MultiOrderService $multiOrder, SettingService $settings, DriverFinanceService $finance, OrderService $orders): JsonResponse
+    public function bootstrap(Request $request, MultiOrderService $multiOrder, SettingService $settings, DriverFinanceService $finance, OrderService $orders, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
         $orders->cancelExpiredCreatedOrders();
 
@@ -81,7 +82,11 @@ class DriverController extends Controller
             ->limit(50)
             ->get();
         $helperOrders = $canReceiveOrders ? $this->helperOpportunityOrders($driver) : collect();
-        $orders = $orders->merge($helperOrders)->unique('id')->values();
+        $orders = $orders
+            ->merge($helperOrders)
+            ->unique('id')
+            ->filter(fn (Order $order): bool => $dailyPriority->canSeeOrder($driver, $order))
+            ->values();
         $branchId = $driver->user?->branch_id;
         $branchAcceptedOrders = $branchId
             ? Order::query()
@@ -174,7 +179,7 @@ class DriverController extends Controller
         ]);
     }
 
-    public function ordersFeed(Request $request, MultiOrderService $multiOrder, DriverFinanceService $finance, OrderService $ordersService): JsonResponse
+    public function ordersFeed(Request $request, MultiOrderService $multiOrder, DriverFinanceService $finance, OrderService $ordersService, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
         $ordersService->cancelExpiredCreatedOrders();
 
@@ -223,7 +228,11 @@ class DriverController extends Controller
             ->limit(50)
             ->get();
         $helperOrders = $canReceiveOrders ? $this->helperOpportunityOrders($driver) : collect();
-        $orders = $orders->merge($helperOrders)->unique('id')->values();
+        $orders = $orders
+            ->merge($helperOrders)
+            ->unique('id')
+            ->filter(fn (Order $order): bool => $dailyPriority->canSeeOrder($driver, $order))
+            ->values();
 
         $branchAcceptedOrders = $branchId
             ? Order::query()
@@ -288,7 +297,7 @@ class DriverController extends Controller
         ]);
     }
 
-    public function updateAvailability(Request $request, DriverFinanceService $finance): JsonResponse
+    public function updateAvailability(Request $request, DriverFinanceService $finance, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
         $driver = $this->ensureDriver($request)->load('user.branch');
         app(DriverSuspendService::class)->releaseIfExpired($driver);
@@ -296,6 +305,7 @@ class DriverController extends Controller
         $payload = $request->validate([
             'online' => ['required', 'boolean'],
         ]);
+        $wasOnline = (bool) $driver->is_available;
 
         $deposit = $finance->monthlyDeposit($driver, now()->subMonth());
 
@@ -320,9 +330,12 @@ class DriverController extends Controller
         }
 
         $driver->update(['is_available' => $request->boolean('online')]);
+        $priorityMessage = $request->boolean('online')
+            ? $dailyPriority->markOnline($driver->fresh(['user', 'setting']), $wasOnline)
+            : null;
 
         return response()->json([
-            'message' => $request->boolean('online') ? 'Driver ON dan bisa menerima/request order.' : 'Driver OFF. Order baru dan request order nonaktif.',
+            'message' => $priorityMessage ?: ($request->boolean('online') ? 'Driver ON dan bisa menerima/request order.' : 'Driver OFF. Order baru dan request order nonaktif.'),
             'driver' => $this->driverPayload($request, $deposit),
             'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
         ]);
@@ -430,11 +443,17 @@ class DriverController extends Controller
         ]);
     }
 
-    public function canAccept(Request $request, Order $order, MultiOrderService $multiOrder): JsonResponse
+    public function canAccept(Request $request, Order $order, MultiOrderService $multiOrder, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
         $driver = $this->ensureDriver($request);
+        $eligibility = $multiOrder->canAcceptOrder($driver, $order);
 
-        return response()->json($multiOrder->canAcceptOrder($driver, $order));
+        if (($eligibility['can_accept'] ?? false) && ! $dailyPriority->canAcceptOrder($driver, $order)) {
+            $eligibility['can_accept'] = false;
+            $eligibility['reason'] = 'prioritas harian driver lain';
+        }
+
+        return response()->json($eligibility);
     }
 
     public function previewRequest(Request $request, PricingParser $pricingParser): JsonResponse
@@ -603,6 +622,10 @@ class DriverController extends Controller
             'can_accept_all_areas' => (bool) ($driver?->can_accept_all_areas ?? false),
             'is_available' => (bool) ($driver?->is_available ?? false),
             'can_receive_orders' => $canReceiveOrders,
+            'daily_priority_active' => (bool) ($driver?->daily_priority_active ?? false),
+            'daily_priority_date' => $driver?->daily_priority_date?->toDateString(),
+            'first_online_at' => $driver?->first_online_at?->toIso8601String(),
+            'daily_priority_completed_at' => $driver?->daily_priority_completed_at?->toIso8601String(),
             'deposit_status' => $deposit?->status,
             'availability_block_reason' => $this->availabilityBlockReason($driver, $deposit),
             'status' => $driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),

@@ -78,6 +78,8 @@ class SystemSettingsPage extends Page implements HasForms
             'multi_crew_auto_cancel_enabled' => $settings->bool('multi_crew_auto_cancel_enabled', true),
             'multi_crew_auto_cancel_minutes' => $settings->int('multi_crew_auto_cancel_minutes', 7),
             'multi_crew_auto_cancel_message' => $settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.') ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.',
+            'driver_daily_priority_enabled' => $settings->bool('driver_daily_priority_enabled', true),
+            'driver_daily_priority_hold_minutes' => $settings->int('driver_daily_priority_hold_minutes', 3),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => $this->nightTariffRules($settings),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
@@ -434,6 +436,22 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->helperText('Gunakan {order_code}, {minutes}, {helper_label}, {driver_name}.')
                                             ->columnSpanFull(),
                                     ]),
+                                Forms\Components\Section::make('Driver Daily Priority')
+                                    ->description('Driver yang pertama kali OFFLINE ke ONLINE pada hari berjalan masuk queue prioritas 1 order jika tetap memenuhi syarat area, layanan, setoran, dan suspend. Prioritas hanya 1 kali per hari Asia/Jakarta.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('driver_daily_priority_enabled')
+                                            ->label('Aktifkan prioritas harian driver')
+                                            ->helperText('Jika aktif, order baru ditahan sebentar untuk driver prioritas sebelum distribusi normal.'),
+                                        Forms\Components\TextInput::make('driver_daily_priority_hold_minutes')
+                                            ->label('Durasi tahan prioritas')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(60)
+                                            ->suffix('menit')
+                                            ->required()
+                                            ->helperText('Setelah durasi ini lewat, order kembali tampil untuk driver eligible normal agar tidak macet.'),
+                                    ]),
                                 Forms\Components\Section::make('Tarif Jam Malam')
                                     ->description('Tambahan tarif dihitung dari tarif dasar sesuai jam dan area branch. Rule area kosong berlaku global.')
                                     ->schema([
@@ -588,6 +606,8 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('multi_crew_auto_cancel_enabled', (bool) ($data['multi_crew_auto_cancel_enabled'] ?? true));
         $settings->set('multi_crew_auto_cancel_minutes', max(1, min(180, (int) ($data['multi_crew_auto_cancel_minutes'] ?? 7))));
         $settings->set('multi_crew_auto_cancel_message', $data['multi_crew_auto_cancel_message'] ?? 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.');
+        $settings->set('driver_daily_priority_enabled', (bool) ($data['driver_daily_priority_enabled'] ?? true));
+        $settings->set('driver_daily_priority_hold_minutes', max(1, min(60, (int) ($data['driver_daily_priority_hold_minutes'] ?? 3))));
         $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
         $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
         $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($data['assign_driver_allowed_roles'] ?? self::DEFAULT_ASSIGN_DRIVER_ROLES)));

@@ -19,6 +19,7 @@ use App\Services\PricingService;
 use App\Services\SettingService;
 use App\Services\NotificationService;
 use App\Services\DriverFinanceService;
+use App\Services\DriverDailyPriorityService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -36,6 +37,7 @@ class CreateOrder
         private readonly SettingService $settings,
         private readonly NotificationService $notifications,
         private readonly DriverFinanceService $finance,
+        private readonly DriverDailyPriorityService $dailyPriority,
     ) {
     }
 
@@ -181,7 +183,10 @@ class CreateOrder
                     return false;
                 }
 
-                return (bool) data_get($this->multiOrder->canAcceptOrder($driver->fresh(['user', 'setting']), $order), 'can_accept');
+                $driver = $driver->fresh(['user', 'setting']);
+
+                return (bool) data_get($this->multiOrder->canAcceptOrder($driver, $order), 'can_accept')
+                    && $this->dailyPriority->canSeeOrder($driver, $order);
             });
 
         foreach ($drivers as $driver) {

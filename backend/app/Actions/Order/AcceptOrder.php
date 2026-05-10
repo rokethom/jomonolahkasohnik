@@ -11,6 +11,7 @@ use App\Models\Driver;
 use App\Models\Order;
 use App\Services\MultiOrderService;
 use App\Services\NotificationService;
+use App\Services\DriverDailyPriorityService;
 use App\Services\DriverFinanceService;
 use App\Services\ChatService;
 use App\Services\OrderCrewDecisionService;
@@ -24,6 +25,7 @@ class AcceptOrder
 {
     public function __construct(
         private readonly MultiOrderService $multiOrder,
+        private readonly DriverDailyPriorityService $dailyPriority,
         private readonly SuspendService $suspensions,
         private readonly NotificationService $notifications,
         private readonly DriverFinanceService $finance,
@@ -96,6 +98,10 @@ class AcceptOrder
                 });
             }
 
+            if (! $this->dailyPriority->canAcceptOrder($driver, $order)) {
+                throw new RuntimeException('Order ini sedang diprioritaskan untuk driver yang pertama online hari ini.');
+            }
+
             $breakdown = $order->pricing_breakdown ?? [];
             $breakdown['accepted_at'] = now()->toIso8601String();
 
@@ -107,6 +113,7 @@ class AcceptOrder
                 'pricing_breakdown' => $breakdown,
             ]);
             $this->crewDecisions->createPendingHelperCrew($order->fresh());
+            $this->dailyPriority->completeForAcceptedOrder($driver, $order);
 
             $driver->update(['is_available' => (($eligibility['active_order_count'] ?? 0) + 1) < ($eligibility['max_order'] ?? 1)]);
             $acceptedOrder = $order->fresh(['user', 'driver.user', 'items']);

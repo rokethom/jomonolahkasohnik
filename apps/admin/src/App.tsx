@@ -301,6 +301,8 @@ type SystemSettings = {
   multi_crew_auto_cancel_enabled?: boolean
   multi_crew_auto_cancel_minutes?: number
   multi_crew_auto_cancel_message?: string
+  driver_daily_priority_enabled?: boolean
+  driver_daily_priority_hold_minutes?: number
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
   assign_driver_allowed_roles?: Role[]
@@ -2142,6 +2144,8 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [multiCrewAutoCancelEnabled, setMultiCrewAutoCancelEnabled] = useState(settings.multi_crew_auto_cancel_enabled ?? true)
   const [multiCrewAutoCancelMinutes, setMultiCrewAutoCancelMinutes] = useState(settings.multi_crew_auto_cancel_minutes ?? 7)
   const [multiCrewAutoCancelMessage, setMultiCrewAutoCancelMessage] = useState(settings.multi_crew_auto_cancel_message ?? 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.')
+  const [driverDailyPriorityEnabled, setDriverDailyPriorityEnabled] = useState(settings.driver_daily_priority_enabled ?? true)
+  const [driverDailyPriorityHoldMinutes, setDriverDailyPriorityHoldMinutes] = useState(settings.driver_daily_priority_hold_minutes ?? 3)
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
@@ -2162,6 +2166,8 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setMultiCrewAutoCancelEnabled(settings.multi_crew_auto_cancel_enabled ?? true)
     setMultiCrewAutoCancelMinutes(settings.multi_crew_auto_cancel_minutes ?? 7)
     setMultiCrewAutoCancelMessage(settings.multi_crew_auto_cancel_message ?? 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.')
+    setDriverDailyPriorityEnabled(settings.driver_daily_priority_enabled ?? true)
+    setDriverDailyPriorityHoldMinutes(settings.driver_daily_priority_hold_minutes ?? 3)
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
@@ -2188,6 +2194,8 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           multi_crew_auto_cancel_enabled: multiCrewAutoCancelEnabled,
           multi_crew_auto_cancel_minutes: multiCrewAutoCancelMinutes,
           multi_crew_auto_cancel_message: multiCrewAutoCancelMessage,
+          driver_daily_priority_enabled: driverDailyPriorityEnabled,
+          driver_daily_priority_hold_minutes: driverDailyPriorityHoldMinutes,
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
@@ -2228,6 +2236,23 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
             onChange={(event) => setMaxMultiOrder(Math.max(1, Math.min(3, Number(event.target.value))))}
           />
         </label>
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Driver Daily Priority</h2>
+            <p>Driver yang pertama kali OFFLINE ke ONLINE pada hari berjalan mendapat prioritas 1 order jika tetap memenuhi syarat area, layanan, setoran, dan suspend.</p>
+          </div>
+          <span className="status info">CMS</span>
+        </div>
+        <div className="settings-grid">
+          <label className="admin-toggle-row">
+            <input type="checkbox" checked={driverDailyPriorityEnabled} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityEnabled(event.target.checked)} />
+            <span>Aktifkan prioritas harian driver</span>
+          </label>
+          <label>Durasi tahan prioritas<input type="number" min={1} max={60} value={driverDailyPriorityHoldMinutes} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityHoldMinutes(Math.max(1, Math.min(60, Number(event.target.value))))} /></label>
+        </div>
+        <div className="notice">Prioritas hanya 1 kali per hari berdasarkan Asia/Jakarta. Jika driver OFF lalu ON lagi di hari yang sama, prioritas tidak dibuat ulang. Setelah order accepted, driver kembali ke sistem normal.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">
