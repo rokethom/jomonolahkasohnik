@@ -41,7 +41,7 @@ class OrderParserService
             return null;
         }
 
-        $branch = $this->branch($user);
+        $branch = $this->branch($user, $normalizedText);
         $profileAddress = $this->profileAddress($user, $branch);
         $pickupLat = (float) ($branch?->latitude ?: -6.9219);
         $pickupLng = (float) ($branch?->longitude ?: 107.6071);
@@ -420,12 +420,65 @@ class OrderParserService
         return (string) ($user->address ?? $user->alamat ?? $branch?->name ?? 'Alamat profile belum diisi');
     }
 
-    private function branch(User $user): ?Branch
+    private function branch(User $user, ?string $text = null): ?Branch
     {
+        $branchFromText = $this->branchFromText($text);
+        if ($branchFromText) {
+            return $branchFromText;
+        }
+
         if ($user->branch_id) {
             return Branch::query()->find($user->branch_id);
         }
 
         return Branch::query()->whereNotNull('latitude')->whereNotNull('longitude')->first();
+    }
+
+    private function branchFromText(?string $text): ?Branch
+    {
+        if (! $text) {
+            return null;
+        }
+
+        $hint = $this->field($text, 'branch\s*id|id\s*cabang|kode\s*area');
+        if ($hint && is_numeric($hint)) {
+            return Branch::query()->find((int) $hint);
+        }
+
+        $hint ??= $this->field($text, 'area|cabang|branch');
+        $needle = str($hint ?? '')
+            ->lower()
+            ->replace(['-', '_', '/', ','], ' ')
+            ->squish()
+            ->toString();
+
+        if ($needle === '') {
+            return null;
+        }
+
+        return Branch::query()
+            ->get(['id', 'name', 'area', 'latitude', 'longitude'])
+            ->first(function (Branch $branch) use ($needle): bool {
+                $candidates = [
+                    $branch->name,
+                    $branch->area,
+                    trim(($branch->name ?? '').' '.($branch->area ?? '')),
+                    trim(($branch->area ?? '').' '.($branch->name ?? '')),
+                ];
+
+                foreach ($candidates as $candidate) {
+                    $normalized = str((string) $candidate)
+                        ->lower()
+                        ->replace(['-', '_', '/', ','], ' ')
+                        ->squish()
+                        ->toString();
+
+                    if ($normalized !== '' && ($normalized === $needle || str_contains($needle, $normalized))) {
+                        return true;
+                    }
+                }
+
+                return false;
+            });
     }
 }

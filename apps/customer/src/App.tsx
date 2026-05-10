@@ -29,6 +29,7 @@ import {
 import {
   API_BASE,
   createOrder,
+  fetchBranches,
   fetchHome,
   fetchKeywordParsers,
   fetchMe,
@@ -60,7 +61,7 @@ import {
 import { setupPushNotifications } from './services/push'
 import { getEcho, resetEcho } from './services/realtime'
 import { useCustomerStore } from './store/useCustomerStore'
-import type { ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
+import type { Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
 
 type Screen = 'home' | 'order-chat' | 'driver-chat' | 'cs-chat' | 'history' | 'profile' | 'profile-setup' | 'login'
 type JojoHistoryState = {
@@ -346,6 +347,14 @@ function manualFormKindForService(service: DynamicService): ManualFormKind | nul
   return null
 }
 
+function isGiftService(service: DynamicService) {
+  const code = service.code?.toUpperCase()
+  const type = normalizeServiceKeyword(service.service_type ?? '')
+  const name = normalizeServiceKeyword(service.name)
+
+  return code === 'GO' || type.includes('gift') || name.includes('gift')
+}
+
 function serviceKeywords(service: DynamicService) {
   const code = normalizeServiceKeyword(service.code ?? '')
   const name = normalizeServiceKeyword(service.name)
@@ -462,6 +471,7 @@ function App() {
   })
   const [screen, setScreen] = useState<Screen>(() => token ? window.location.pathname === '/profile/setup' ? 'profile-setup' : 'home' : 'login')
   const [services, setServices] = useState<DynamicService[]>([])
+  const [branches, setBranches] = useState<Branch[]>([])
   const [homeData, setHomeData] = useState<HomeData | null>(null)
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const [messages, setMessages] = useState<LocalMessage[]>([
@@ -481,6 +491,7 @@ function App() {
   const orderSubmittingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
   const updateInfo = useBuildUpdate('customer')
+  const visibleServices = useMemo(() => mustUseGiftOrder(store.user) ? services.filter(isGiftService) : services, [services, store.user])
 
   useEffect(() => {
     const root = document.documentElement
@@ -828,6 +839,9 @@ function App() {
     void fetchServices()
       .then(setServices)
       .catch(() => setServices([]))
+    void fetchBranches()
+      .then(setBranches)
+      .catch(() => setBranches([]))
     void fetchHome()
       .then(setHomeData)
       .catch(() => setHomeData(null))
@@ -970,6 +984,13 @@ function App() {
       setPendingOrder(null)
       setOrderSubmitBlocked(false)
 
+      if (mustUseGiftOrder(store.user) && !isGiftService(requestedService)) {
+        const giftService = services.find(isGiftService)
+        pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Saat ini layanan yang tersedia hanya Gift Order.' })
+        if (giftService) openManualServiceForm(giftService, { pushUser: false })
+        return
+      }
+
       if (openServiceWhatsapp(requestedService, store.user, pushMessage)) {
         return
       }
@@ -1024,7 +1045,7 @@ function App() {
         text: 'Baik, kirim ulang detail pesanan dengan cara ketik "menu" atau klik menu layanan di bawah.',
         preview: {
           intent: 'service_menu',
-          services: services.map((service) => ({ ...service, service_type: service.service_type ?? service.code })),
+          services: visibleServices.map((service) => ({ ...service, service_type: service.service_type ?? service.code })),
           selected_service: null,
           service_type: null,
           parsed: {},
@@ -1135,6 +1156,13 @@ function App() {
   }
 
   const handleManualService = (service: DynamicService) => {
+    if (mustUseGiftOrder(store.user) && !isGiftService(service)) {
+      const giftService = services.find(isGiftService)
+      pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Silakan gunakan Gift Order.' })
+      if (giftService) openManualServiceForm(giftService)
+      return
+    }
+
     if (openServiceWhatsapp(service, store.user, pushMessage)) {
       return
     }
@@ -1181,7 +1209,8 @@ function App() {
         <ChatOrderScreen
           messages={messages}
           typing={typing}
-          services={services}
+          visibleServices={visibleServices}
+          branches={branches}
           onSend={handleBotReply}
           onDynamicFormOrder={handleDynamicFormPreview}
           onImage={sendImage}
@@ -1530,7 +1559,8 @@ function Reason({ icon, title }: { icon: ReactNode; title: string }) {
 function ChatOrderScreen({
   messages,
   typing,
-  services,
+  visibleServices,
+  branches,
   onSend,
   onDynamicFormOrder,
   onImage,
@@ -1554,7 +1584,8 @@ function ChatOrderScreen({
 }: {
   messages: LocalMessage[]
   typing: boolean
-  services: DynamicService[]
+  visibleServices: DynamicService[]
+  branches: Branch[]
   onSend: (text: string) => void
   onDynamicFormOrder: (text: string) => Promise<JojoBotPreview | null>
   onImage: (file: File) => void
@@ -1606,10 +1637,10 @@ function ChatOrderScreen({
         {showBelanjaForm && <BelanjaOrderForm user={user} onSend={onBelanjaPreview} />}
         {showKurirForm && <KurirOrderForm user={user} onSend={onKurirPreview} />}
         {showOjekForm && <OjekOrderForm user={user} onSend={onOjekPreview} />}
-        {showGiftForm && <GiftOrderForm user={user} onSend={onGiftPreview} />}
+        {showGiftForm && <GiftOrderForm user={user} branches={branches} onSend={onGiftPreview} />}
         {(messages.at(-1)?.preview?.intent === 'service_menu' || messages.length === 1) && (
           <ManualServicePicker
-            services={services}
+            services={visibleServices}
             onService={onService}
             compact={hasManualFormOpen}
           />
@@ -1860,11 +1891,13 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
   )
 }
 
-function GiftOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
+function GiftOrderForm({ user, branches, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; branches: Branch[]; onSend: (text: string) => void }) {
   const [receiver, setReceiver] = useState({ name: '', phone: '', address: '' })
   const [items, setItems] = useState('')
   const [purchaseAddress, setPurchaseAddress] = useState('')
-  const area = user?.branch_display_name ?? user?.branch_name ?? user?.branch ?? 'Area cabang belum diset silahkan hubungi CS'
+  const [selectedBranchId, setSelectedBranchId] = useState('')
+  const selectedBranch = branches.find((branch) => String(branch.id) === selectedBranchId) ?? null
+  const area = selectedBranch ? branchDisplayLabel(selectedBranch) : ''
   const parsedItems = parseShoppingItems(items)
   const hasGacoan = /gacoan/i.test(items)
 
@@ -1890,8 +1923,18 @@ function GiftOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
     ...parsedItems.map((item) => `- ${item}`),
     '',
     `Alamat pembelian: ${purchaseAddress}`,
-    `Area: ${area}`,
-  ].join('\n')
+    `Area: ${area || '-'}`,
+    selectedBranch ? `Branch ID: ${selectedBranch.id}` : null,
+  ].filter((line): line is string => line !== null).join('\n')
+
+  const canPreview = Boolean(
+    selectedBranch
+      && receiver.name.trim()
+      && receiver.phone.trim()
+      && receiver.address.trim()
+      && items.trim()
+      && purchaseAddress.trim(),
+  )
 
   return (
     <form
@@ -1903,6 +1946,13 @@ function GiftOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
     >
       <strong>Form Gift Order</strong>
       {mustUseGiftOrder(user) && <span className="gift-area-note">Area kamu di luar cabang aktif, layanan diarahkan ke Gift Order.</span>}
+      <label>
+        Pilih area
+        <select value={selectedBranchId} onChange={(event) => setSelectedBranchId(event.target.value)} required>
+          <option value="">Pilih area tujuan order</option>
+          {branches.map((branch) => <option key={branch.id} value={branch.id}>{branchDisplayLabel(branch)}</option>)}
+        </select>
+      </label>
       <div className="gift-section">
         <span>Konfirmasi ke</span>
         <label>Nama<input value={user?.name ?? 'Customer Jojo'} readOnly /></label>
@@ -1918,12 +1968,11 @@ function GiftOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
       {parsedItems.length > 0 && <div className="shopping-item-preview">{parsedItems.map((item) => <span key={item}>- {item}</span>)}</div>}
       <label>Alamat pembelian<textarea value={purchaseAddress} readOnly={hasGacoan} onChange={(event) => setPurchaseAddress(event.target.value)} placeholder="Nama toko / alamat pembelian" /></label>
       {hasGacoan && <span className="locked-address-note">Alamat pembelian dikunci karena item berisi kata gacoan.</span>}
-      <label>Area<input value={area} readOnly /></label>
       <div className="gift-preview">
         <strong>Preview order</strong>
         <p>{previewText}</p>
       </div>
-      <button disabled={!receiver.name.trim() || !receiver.phone.trim() || !receiver.address.trim() || !items.trim() || !purchaseAddress.trim()}>
+      <button disabled={!canPreview}>
         Preview Order
       </button>
     </form>
@@ -3880,7 +3929,11 @@ function isExpiredUnacceptedOrder(order: Order) {
 }
 
 function mustUseGiftOrder(user: ReturnType<typeof useCustomerStore.getState>['user']) {
-  return Boolean(user && !user.branch_id)
+  return Boolean(user && (!user.branch_id || user.area_status === 'outside_branch'))
+}
+
+function branchDisplayLabel(branch: Branch) {
+  return [branch.name, branch.area].filter(Boolean).join(' - ') || `Area #${branch.id}`
 }
 
 function parseShoppingItems(value: string) {

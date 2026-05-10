@@ -287,6 +287,7 @@ class JojoBotService
             'used_fallback_location' => false,
             'service_type' => null,
             'driver_preference' => 'general',
+            'branch_id' => null,
         ];
         $activeMultilineField = null;
         $activeSection = 'sender';
@@ -310,6 +311,10 @@ class JojoBotService
 
             if (preg_match('/layanan|service/u', $key)) {
                 $fields['service_type'] = $this->normalizeRequestedService($value);
+            } elseif (preg_match('/branch\s*id|id\s*cabang|kode\s*area/u', $key)) {
+                $fields['branch_id'] = is_numeric($value) ? (int) $value : $this->branchIdFromText($value);
+            } elseif (preg_match('/\barea\b|cabang|branch/u', $key)) {
+                $fields['branch_id'] = $this->branchIdFromText($value) ?? $fields['branch_id'];
             } elseif (preg_match('/^nama/u', $key)) {
                 if ($activeSection !== 'receiver' || blank($fields['name'])) {
                     $fields['name'] = $value;
@@ -417,7 +422,7 @@ class JojoBotService
 
     private function payload(User $user, array $parsed, string $serviceType, bool $useBaseFare = false): array
     {
-        $branch = $this->branch($user);
+        $branch = $this->branch($user, isset($parsed['branch_id']) ? (int) $parsed['branch_id'] : null);
         $pickupLat = (float) ($branch?->latitude ?: -6.9219);
         $pickupLng = (float) ($branch?->longitude ?: 107.6071);
         $destinationLat = $useBaseFare ? $pickupLat : $pickupLat + 0.018;
@@ -615,13 +620,58 @@ class JojoBotService
             ->all();
     }
 
-    private function branch(User $user): ?Branch
+    private function branch(User $user, ?int $branchId = null): ?Branch
     {
+        if ($branchId) {
+            $branch = Branch::query()->find($branchId);
+            if ($branch) {
+                return $branch;
+            }
+        }
+
         if ($user->branch_id) {
             return Branch::query()->find($user->branch_id);
         }
 
         return Branch::query()->whereNotNull('latitude')->whereNotNull('longitude')->first();
+    }
+
+    private function branchIdFromText(?string $value): ?int
+    {
+        $needle = str($value ?? '')
+            ->lower()
+            ->replace(['-', '_', '/', ','], ' ')
+            ->squish()
+            ->toString();
+
+        if ($needle === '') {
+            return null;
+        }
+
+        return Branch::query()
+            ->get(['id', 'name', 'area'])
+            ->first(function (Branch $branch) use ($needle): bool {
+                $candidates = [
+                    $branch->name,
+                    $branch->area,
+                    trim(($branch->name ?? '').' '.($branch->area ?? '')),
+                    trim(($branch->area ?? '').' '.($branch->name ?? '')),
+                ];
+
+                foreach ($candidates as $candidate) {
+                    $normalized = str((string) $candidate)
+                        ->lower()
+                        ->replace(['-', '_', '/', ','], ' ')
+                        ->squish()
+                        ->toString();
+
+                    if ($normalized !== '' && ($normalized === $needle || str_contains($needle, $normalized))) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })?->id;
     }
 
     private function serviceType(string $code, string $name): string
@@ -731,9 +781,11 @@ class JojoBotService
 
     private function giftOrderDirection(Collection $services, array $parsed): array
     {
+        $giftServices = $services->filter(fn (array $service): bool => $this->isGiftOrder((string) ($service['service_type'] ?? $service['code'] ?? $service['name'] ?? '')))->values();
+
         return [
             'intent' => 'service_selected',
-            'services' => $services->values(),
+            'services' => $giftServices->isNotEmpty() ? $giftServices : $services->values(),
             'selected_service' => 'gift_order',
             'parsed' => $parsed,
             'quote' => null,

@@ -1724,6 +1724,7 @@
 }
 
 .gift-form input,
+.gift-form select,
 .gift-form textarea {
   width: 100%;
   border: 1px solid #d4ddd8;
@@ -1736,6 +1737,11 @@
 
 .gift-form input {
   height: 42px;
+}
+
+.gift-form select {
+  min-height: 42px;
+  font-weight: 900;
 }
 
 .gift-form textarea {
