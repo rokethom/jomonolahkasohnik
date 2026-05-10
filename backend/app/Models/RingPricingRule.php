@@ -49,13 +49,36 @@ class RingPricingRule extends Model
 
     public function scopeForService(Builder $query, ?string $serviceType): Builder
     {
-        return $query->where(function (Builder $query) use ($serviceType): void {
+        $serviceTypes = self::serviceAliases($serviceType);
+
+        return $query->where(function (Builder $query) use ($serviceTypes): void {
             $query->whereNull('service_type');
 
-            if ($serviceType) {
-                $query->orWhere('service_type', $serviceType);
+            if ($serviceTypes !== []) {
+                $query->orWhereIn('service_type', $serviceTypes);
             }
         });
+    }
+
+    private static function serviceAliases(?string $serviceType): array
+    {
+        $value = strtolower(trim((string) $serviceType));
+        if ($value === '') {
+            return [];
+        }
+
+        $aliases = match ($value) {
+            'do', 'delivery', 'delivery_order' => ['DO', 'do', 'delivery', 'delivery_order'],
+            'kr', 'kurir' => ['KR', 'kr', 'kurir'],
+            'oj', 'ojek' => ['OJ', 'oj', 'ojek'],
+            'bl', 'belanja' => ['BL', 'bl', 'belanja'],
+            'go', 'gift', 'gift_order', 'gift order' => ['GO', 'go', 'gift', 'gift_order', 'gift order'],
+            'tv', 'travel' => ['TV', 'tv', 'travel'],
+            'jm', 'joker', 'joker_mobil', 'joker mobil', 'mobil' => ['JM', 'jm', 'joker', 'joker_mobil', 'joker mobil', 'mobil'],
+            default => [$serviceType, strtoupper((string) $serviceType), $value],
+        };
+
+        return array_values(array_unique(array_filter($aliases)));
     }
 
     public function branch(): BelongsTo

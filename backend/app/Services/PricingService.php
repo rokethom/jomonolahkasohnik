@@ -99,6 +99,17 @@ class PricingService
             ->first();
 
         if (! $setting) {
+            $minimumFlat = PriceSetting::query()
+                ->forBranch($branchId)
+                ->whereNotNull('price')
+                ->orderByRaw('branch_id IS NULL')
+                ->orderBy('min_km')
+                ->first();
+
+            if ($minimumFlat && $distanceKm < (float) $minimumFlat->min_km) {
+                return (int) $minimumFlat->price;
+            }
+
             $setting = PriceSetting::query()
                 ->forBranch($branchId)
                 ->whereNotNull('per_km_rate')
@@ -280,6 +291,10 @@ class PricingService
 
     private function shouldUseDatabaseTarif(string $serviceType, float $distance, ?int $branchId): bool
     {
+        if ($distance <= 0) {
+            return false;
+        }
+
         if (in_array($serviceType, ['travel', 'joker_mobil'], true)) {
             return false;
         }
