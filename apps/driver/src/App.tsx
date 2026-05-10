@@ -158,6 +158,7 @@ type DriverStore = {
   maxMultiOrder: number
   finance: DriverFinance | null
   performance: DriverPerformance | null
+  branchPerformance: BranchDriverPerformance[]
   toasts: Toast[]
   setView: (view: View) => void
   openOperatorChat: () => void
@@ -177,6 +178,7 @@ type BootstrapResponse = {
   settings: { multi_order_enabled: boolean; max_multi_order: number }
   finance?: DriverFinance
   performance?: DriverPerformance
+  branch_performance?: BranchDriverPerformance[]
   orders: ApiOrder[]
   branch_accepted_orders?: ApiOrder[]
   branch_request_orders?: ApiOrder[]
@@ -221,6 +223,24 @@ type DriverPerformance = {
   setoran?: DriverFinance
   suspend_history?: Array<{ id: number; type?: string; reason: string; status: string; start_at?: string; end_at?: string }>
   oper_handle?: Array<{ id: number; status: string; reason?: string | null; created_at?: string }>
+}
+
+type BranchDriverPerformance = {
+  driver_id: number
+  user_id: number
+  name: string
+  branch?: string | null
+  branch_area?: string | null
+  status: string
+  is_available: boolean
+  rating: number
+  ratings_count: number
+  completed_orders_count: number
+  today_completed_orders_count: number
+  cancelled_orders_count: number
+  active_orders_count: number
+  month_revenue: number
+  today_revenue: number
 }
 
 type BranchSuspendHistory = {
@@ -365,6 +385,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   maxMultiOrder: 1,
   finance: null,
   performance: null,
+  branchPerformance: [],
   toasts: [],
   setView: (view) => set({ view, ...(view === 'chat' ? { chatTarget: 'order' as const } : {}) }),
   openOperatorChat: () => set({ selectedOrderId: null, chatTarget: 'operator', view: 'chat' }),
@@ -383,6 +404,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     maxMultiOrder: payload.settings.max_multi_order,
     finance: payload.finance ?? null,
     performance: payload.performance ?? null,
+    branchPerformance: payload.branch_performance ?? [],
     isOnline: Boolean(payload.driver.is_available),
   }),
   updateOrder: (order) => set((state) => ({
@@ -396,7 +418,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
   logout: () => {
     resetDriverEcho()
     localStorage.removeItem('driver_token')
-    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], branchOperHandleOrders: [], branchSuspendHistory: [], selectedOrderId: null, chatTarget: 'order', view: 'login' })
+    set({ token: '', driver: null, orders: [], branchAcceptedOrders: [], branchRequestOrders: [], branchOperHandleOrders: [], branchSuspendHistory: [], selectedOrderId: null, chatTarget: 'order', view: 'login', branchPerformance: [] })
   },
   selectOrder: (orderId) => set({ selectedOrderId: orderId, chatTarget: 'order', view: 'order-detail' }),
   setOnline: (online) => set({ isOnline: online }),
@@ -1702,7 +1724,7 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
 }
 
 function DriverFinanceSection() {
-  const { finance, performance, setView } = useDriverStore()
+  const { finance, performance } = useDriverStore()
   const [financeOpen, setFinanceOpen] = useState(false)
   const [financeMode, setFinanceMode] = useState<'billing' | 'running'>('billing')
   const previousDeposit = finance?.previous_deposit
@@ -1716,11 +1738,11 @@ function DriverFinanceSection() {
   return (
     <section className="profile-finance-section">
       <SectionTitle title="Finance" action={finance?.status ?? 'sync'} />
-      <button className="month-income-card panel" type="button" onClick={() => setView('performance')}>
+      <article className="month-income-card panel">
         <span>Total pendapatan bulan ini</span>
         <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
         <small>{performance?.period_label ?? 'Performa driver bulan ini'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
-      </button>
+      </article>
       <div className="profile-finance-grid">
         <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
           <span>TAGIHAN BULAN INI</span>
@@ -1883,80 +1905,63 @@ function RequestHistoryRow({ order }: { order: Order }) {
 
 function PerformancePage() {
   const performance = useDriverStore((state) => state.performance)
-  const orders = useDriverStore((state) => state.orders)
-  const branchRequestOrders = useDriverStore((state) => state.branchRequestOrders)
+  const branchPerformance = useDriverStore((state) => state.branchPerformance)
   const driver = useDriverStore((state) => state.driver)
-  const selectOrder = useDriverStore((state) => state.selectOrder)
-  const driverName = driver?.name ?? ''
-  const acceptedOrders = orders
-    .filter((order) => order.source !== 'driver_request')
-    .filter((order) => isDriverOrderOwner(order, driverName))
-    .filter((order) => order.status !== 'pending')
-    .sort(sortNewestOrderFirst)
-    .slice(0, 10)
-  const ownRequestOrders = branchRequestOrders
-    .filter((order) => isDriverOrderOwner(order, driverName))
-    .sort(sortNewestOrderFirst)
-    .slice(0, 10)
+  const sortedDrivers = [...branchPerformance].sort((a, b) => {
+    if (b.month_revenue !== a.month_revenue) return b.month_revenue - a.month_revenue
+    return b.completed_orders_count - a.completed_orders_count
+  })
+  const totalRevenue = sortedDrivers.reduce((sum, row) => sum + Number(row.month_revenue ?? 0), 0)
+  const totalCompleted = sortedDrivers.reduce((sum, row) => sum + Number(row.completed_orders_count ?? 0), 0)
+  const activeDrivers = sortedDrivers.filter((row) => row.is_available && row.status === 'active').length
+  const bestDriver = sortedDrivers[0]
 
   return (
     <section className="page performance-page">
-      <PageTitle title="Performa" subtitle={`Evaluasi bulan ${performance?.period_label ?? 'ini'}.`} />
+      <PageTitle title="Performa Cabang" subtitle={`Evaluasi seluruh driver cabang bulan ${performance?.period_label ?? 'ini'}.`} />
       <section className="driver-performance-hero panel">
         <div>
-          <span>Rating customer</span>
-          <strong>{Number(performance?.rating ?? 0).toFixed(1)}/5</strong>
-          <small>{performance?.ratings_count ?? 0} rating masuk</small>
+          <span>Pendapatan cabang bulan ini</span>
+          <strong>Rp {formatMoney(totalRevenue)}</strong>
+          <small>{bestDriver ? `Terbaik: ${bestDriver.name}` : 'Belum ada data driver cabang'}</small>
         </div>
         <div>
-          <span>Pendapatan bulan ini</span>
-          <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
-          <small>Hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+          <span>Driver aktif</span>
+          <strong>{activeDrivers}/{sortedDrivers.length}</strong>
+          <small>{totalCompleted} order selesai bulan ini</small>
         </div>
       </section>
       <section className="stats-grid">
-        <Metric label="Order selesai bulan ini" value={String(performance?.completed_orders_count ?? 0)} />
-        <Metric label="Order selesai hari ini" value={String(performance?.today_completed_orders_count ?? 0)} />
-        <Metric label="Cancel bulan ini" value={String(performance?.cancelled_orders_count ?? 0)} />
-        <Metric label="Jumlah Rating" value={String(performance?.ratings_count ?? 0)} />
+        <Metric label="Driver cabang" value={String(sortedDrivers.length)} />
+        <Metric label="Driver online" value={String(activeDrivers)} />
+        <Metric label="Order selesai cabang" value={String(totalCompleted)} />
+        <Metric label="Pendapatan cabang" value={`Rp ${formatMoney(totalRevenue)}`} />
       </section>
       <section className="panel performance-panel">
-        <SectionTitle title="Setoran" action={`Rp ${formatMoney(performance?.setoran?.total ?? 0)}`} />
-        <p className="note">Status: {performance?.setoran?.status ?? '-'}</p>
-      </section>
-      <section className="panel performance-panel">
-        <SectionTitle title="Order diterima" action={`${acceptedOrders.length}`} />
-        {acceptedOrders.length === 0 && <p className="note">Belum ada order diterima yang tampil untuk driver ini.</p>}
-        <div className="performance-order-list">
-          {acceptedOrders.map((order) => <PerformanceOrderRow key={order.id} order={order} onClick={() => selectOrder(order.id)} />)}
-        </div>
-      </section>
-      <section className="panel performance-panel">
-        <SectionTitle title="Request order kamu" action={`${ownRequestOrders.length}`} />
-        {ownRequestOrders.length === 0 && <p className="note">Belum ada request order dari driver ini.</p>}
-        <div className="performance-order-list">
-          {ownRequestOrders.map((order) => <PerformanceOrderRow key={order.id} order={order} onClick={() => selectOrder(order.id)} />)}
+        <SectionTitle title="Ranking driver cabang" action={`${sortedDrivers.length}`} />
+        {sortedDrivers.length === 0 && <p className="note">Belum ada data performa driver cabang.</p>}
+        <div className="branch-performance-list">
+          {sortedDrivers.map((row, index) => <BranchPerformanceRow key={row.driver_id} row={row} rank={index + 1} current={row.user_id === driver?.id} />)}
         </div>
       </section>
     </section>
   )
 }
 
-function PerformanceOrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
-  const route = routeInfoFor(order)
-
+function BranchPerformanceRow({ row, rank, current }: { row: BranchDriverPerformance; rank: number; current: boolean }) {
   return (
-    <button className="performance-order-row" type="button" onClick={onClick}>
-      <div>
-        <strong>{order.code}</strong>
-        <span>{statusLabel(order.status)} - {order.service}</span>
-        <small>{shortAddress(route.pickupAddress)} menuju {shortAddress(route.destinationAddress)}</small>
+    <article className={`branch-performance-row ${current ? 'current' : ''}`}>
+      <b>{rank}</b>
+      <div className="branch-performance-main">
+        <strong>{row.name}{current ? ' (kamu)' : ''}</strong>
+        <span>{row.is_available ? 'Online' : 'Offline'} - {row.status}</span>
+        <small>{row.completed_orders_count} selesai - {row.cancelled_orders_count} cancel - rating {Number(row.rating ?? 0).toFixed(1)} ({row.ratings_count})</small>
       </div>
-      <div>
-        <b>Rp {formatMoney(order.total)}</b>
-        <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
+      <div className="branch-performance-money">
+        <strong>Rp {formatMoney(row.month_revenue)}</strong>
+        <small>Hari ini Rp {formatMoney(row.today_revenue)}</small>
       </div>
-    </button>
+    </article>
   )
 }
 function ActiveOrderRoute({ orders, max }: { orders: Order[]; max: number }) {
@@ -2387,14 +2392,6 @@ function operHandleStatusText(order: Order) {
   if (order.operHandleStatus === 'approved') return `${driver} oper handle, order dibuka lagi`
   if (order.operHandleStatus === 'rejected') return `${driver} oper handle ditolak`
   return `${driver} mengajukan oper handle`
-}
-function isDriverOrderOwner(order: Order, driverName?: string | null) {
-  const name = String(driverName ?? '').trim().toLowerCase()
-  if (!name) return false
-
-  return [order.driver, order.customer]
-    .map((value) => String(value ?? '').trim().toLowerCase())
-    .some((value) => value === name)
 }
 function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
   if (!isOnline || !driver?.is_available) return false

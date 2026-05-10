@@ -112,6 +112,17 @@ class DriverController extends Controller
                 ->limit(20)
                 ->get()
             : collect();
+        $branchPerformance = $branchId
+            ? Driver::query()
+                ->with('user.branch')
+                ->whereHas('user', fn ($query) => $query->where('branch_id', $branchId))
+                ->orderBy('id')
+                ->limit(50)
+                ->get()
+                ->map(fn (Driver $branchDriver): array => $this->branchPerformancePayload($branchDriver))
+                ->sortByDesc('month_revenue')
+                ->values()
+            : collect();
 
         return response()->json([
             'driver' => $this->driverPayload($request, $billingDeposit),
@@ -121,6 +132,7 @@ class DriverController extends Controller
             ],
             'finance' => $this->financePayload($deposit),
             'performance' => $finance->performance($driver),
+            'branch_performance' => $branchPerformance,
             'orders' => $orders->map(fn (Order $order): array => [
                 ...$this->orderPayload($order, $driver),
                 'eligibility' => $multiOrder->canAcceptOrder($driver, $order),
@@ -423,6 +435,49 @@ class DriverController extends Controller
             'suspension_reason' => $suspensionReason,
             'suspension_type' => $activeSuspension?->type,
             'oper_handle_count' => $driver?->oper_handle_count ?? 0,
+        ];
+    }
+
+    private function branchPerformancePayload(Driver $driver): array
+    {
+        $today = now();
+        $monthStart = $today->copy()->startOfMonth();
+        $monthEnd = $today->copy()->endOfMonth();
+        $completedThisMonth = $driver->orders()
+            ->where('status', OrderStatus::Completed->value)
+            ->whereBetween('created_at', [$monthStart, $monthEnd]);
+        $completedToday = $driver->orders()
+            ->where('status', OrderStatus::Completed->value)
+            ->whereDate('created_at', $today->toDateString());
+        $cancelledThisMonth = $driver->orders()
+            ->where('status', OrderStatus::Cancelled->value)
+            ->whereBetween('created_at', [$monthStart, $monthEnd]);
+        $activeOrders = $driver->orders()
+            ->whereIn('status', [
+                OrderStatus::DriverAccepted->value,
+                OrderStatus::DriverOnTheWay->value,
+                OrderStatus::ArrivedPickup->value,
+                OrderStatus::OnGoing->value,
+            ]);
+        $rating = $driver->ratings()->avg('rating');
+        $ratingsCount = $driver->ratings()->count();
+
+        return [
+            'driver_id' => $driver->id,
+            'user_id' => $driver->user_id,
+            'name' => $driver->user?->name ?? 'Driver',
+            'branch' => $driver->user?->branch?->name,
+            'branch_area' => $driver->user?->branch?->area,
+            'status' => $driver->status,
+            'is_available' => (bool) $driver->is_available,
+            'rating' => round((float) $rating, 2),
+            'ratings_count' => $ratingsCount,
+            'completed_orders_count' => (clone $completedThisMonth)->count(),
+            'today_completed_orders_count' => (clone $completedToday)->count(),
+            'cancelled_orders_count' => (clone $cancelledThisMonth)->count(),
+            'active_orders_count' => (clone $activeOrders)->count(),
+            'month_revenue' => (int) (clone $completedThisMonth)->sum('total_price'),
+            'today_revenue' => (int) (clone $completedToday)->sum('total_price'),
         ];
     }
 
