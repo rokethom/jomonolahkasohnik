@@ -3175,7 +3175,14 @@ td {
 .user-table-wrap {
   border: 1px solid #e2e8f0;
   background: #ffffff;
+  max-height: 724px;
   scroll-behavior: smooth;
+}
+
+.user-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .user-table-wrap th:nth-child(1),
