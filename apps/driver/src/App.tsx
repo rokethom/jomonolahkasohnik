@@ -767,21 +767,12 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
 }
 
 function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
-  const { isOnline, setDriverState, setView, maxMultiOrder, finance, performance, toast } = useDriverStore()
-  const [financeOpen, setFinanceOpen] = useState(false)
-  const [financeMode, setFinanceMode] = useState<'billing' | 'running'>('billing')
+  const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const activeOrders = orders.filter(isActiveOrder)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending') : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
-  const previousDeposit = finance?.previous_deposit
-  const previousTotal = Number(previousDeposit?.total ?? 0)
-  const previousRemaining = Number(previousDeposit?.remaining ?? 0)
-  const currentPeriodDeposit = Number(finance?.current_period_deposit ?? finance?.breakdown?.setoran_hingga_hari_ini ?? 0)
-  const currentRunningTotal = Number(finance?.total ?? 0)
-  const previousPeriodLabel = previousDeposit?.period_label ?? 'bulan lalu'
-  const currentPeriodLabel = finance?.period_label ?? 'bulan ini'
   const availabilityCopy = driver.availability_block_reason
     ?? (canReceiveOrders ? 'Order baru dan request order aktif saat tersedia.' : 'OFF: order baru dan request order nonaktif.')
 
@@ -828,23 +819,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
         <label className="switch"><input checked={isOnline} disabled={availabilitySaving} onChange={(event) => void updateAvailability(event.target.checked)} type="checkbox" /><span /></label>
       </section>
 
-      <button className="month-income-card panel" type="button" onClick={() => setView('performance')}>
-        <span>Total pendapatan bulan ini</span>
-        <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
-        <small>{performance?.period_label ?? 'Performa driver bulan ini'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
-      </button>
-
       <section className="stats-grid">
-        <button className="metric setoran-card" onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
-          <span>TAGIHAN BULAN {previousPeriodLabel.toUpperCase()}</span>
-          <strong>Rp {formatMoney(previousRemaining)}</strong>
-          <small>{previousDeposit?.status ?? 'paid'} - total Rp {formatMoney(previousTotal)}{previousRemaining <= 0 && previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
-        </button>
-        <button className="metric setoran-card" onClick={() => { setFinanceMode('running'); setFinanceOpen(true) }}>
-          <span>TOTAL BULAN INI BERJALAN</span>
-          <strong>Rp {formatMoney(currentRunningTotal)}</strong>
-          <small>{currentPeriodLabel} - dasar Rp {formatMoney(currentPeriodDeposit)}{previousRemaining > 0 ? ` + sisa ${previousPeriodLabel}` : ''}</small>
-        </button>
         <Metric label="Order diterima" value={acceptedTotal} />
         <Metric label="Order aktif" value={activeOrders.length} />
       </section>
@@ -863,7 +838,6 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
       <BranchAcceptedFeed orders={branchAcceptedOrders} requestOrders={branchRequestOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={branchSuspendHistory} />
-      {financeOpen && finance && <SetoranModal finance={finance} mode={financeMode} onClose={() => setFinanceOpen(false)} />}
     </section>
   )
 }
@@ -1654,6 +1628,7 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
   return (
     <section className="page">
       <PageTitle title="Profile" subtitle="Kelola data akun driver." />
+      <DriverFinanceSection />
       <button className="panel profile-menu-button" type="button" onClick={() => setView('performance')}>
         <BarChart3 size={20} />
         <div><strong>Performa</strong><span>Rating, setoran, suspend history, dan oper handle</span></div>
@@ -1722,6 +1697,43 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
         <LogOut size={18} />
         Logout
       </button>
+    </section>
+  )
+}
+
+function DriverFinanceSection() {
+  const { finance, performance, setView } = useDriverStore()
+  const [financeOpen, setFinanceOpen] = useState(false)
+  const [financeMode, setFinanceMode] = useState<'billing' | 'running'>('billing')
+  const previousDeposit = finance?.previous_deposit
+  const previousTotal = Number(previousDeposit?.total ?? 0)
+  const previousRemaining = Number(previousDeposit?.remaining ?? 0)
+  const currentPeriodDeposit = Number(finance?.current_period_deposit ?? finance?.breakdown?.setoran_hingga_hari_ini ?? 0)
+  const currentRunningTotal = Number(finance?.total ?? 0)
+  const previousPeriodLabel = previousDeposit?.period_label ?? 'bulan lalu'
+  const currentPeriodLabel = finance?.period_label ?? 'bulan ini'
+
+  return (
+    <section className="profile-finance-section">
+      <SectionTitle title="Finance" action={finance?.status ?? 'sync'} />
+      <button className="month-income-card panel" type="button" onClick={() => setView('performance')}>
+        <span>Total pendapatan bulan ini</span>
+        <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
+        <small>{performance?.period_label ?? 'Performa driver bulan ini'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+      </button>
+      <div className="profile-finance-grid">
+        <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
+          <span>TAGIHAN BULAN INI</span>
+          <strong>Rp {formatMoney(previousRemaining)}</strong>
+          <small>{previousPeriodLabel} - {previousDeposit?.status ?? 'paid'} - total Rp {formatMoney(previousTotal)}{previousRemaining <= 0 && previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
+        </button>
+        <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('running'); setFinanceOpen(true) }}>
+          <span>TAGIHAN BERJALAN</span>
+          <strong>Rp {formatMoney(currentRunningTotal)}</strong>
+          <small>{currentPeriodLabel} - dasar Rp {formatMoney(currentPeriodDeposit)}{previousRemaining > 0 ? ` + sisa ${previousPeriodLabel}` : ''}</small>
+        </button>
+      </div>
+      {financeOpen && finance && <SetoranModal finance={finance} mode={financeMode} onClose={() => setFinanceOpen(false)} />}
     </section>
   )
 }

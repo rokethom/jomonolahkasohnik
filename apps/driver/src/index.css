@@ -361,6 +361,31 @@ input:focus, textarea:focus, select:focus {
   font-weight: 800;
 }
 
+.profile-finance-section {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-finance-section .section-title {
+  margin-bottom: 0;
+}
+
+.profile-finance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-finance-grid .metric {
+  min-height: 124px;
+  text-align: left;
+}
+
+.profile-finance-grid .metric:disabled {
+  cursor: default;
+  opacity: 0.64;
+}
+
 .switch { position: relative; width: 58px; height: 34px; }
 .switch input { width: 0; height: 0; opacity: 0; }
 .switch span {
