@@ -234,6 +234,9 @@ class PricingService
             $quote = $this->zonePricing->apply($quote, $zoneRule);
         }
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
+            $payload['pickup_address'] ?? '',
+            $payload['store_location'] ?? '',
+            $payload['purchase_address'] ?? '',
             $payload['destination_text'] ?? $payload['destination_address'] ?? '',
             $payload['notes'] ?? '',
             $payload['service_payload'] ?? [],

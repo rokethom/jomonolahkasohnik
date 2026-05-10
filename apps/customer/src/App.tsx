@@ -346,12 +346,46 @@ function normalizeServiceKeyword(value: string) {
 
 function manualFormKindForService(service: DynamicService): ManualFormKind | null {
   const code = service.code?.toUpperCase()
+  const type = normalizeServiceKeyword(service.service_type ?? '')
   const name = normalizeServiceKeyword(service.name)
 
   if (code === 'BL' || name.includes('belanja')) return 'belanja'
+  if (code === 'DO' || type.includes('delivery') || name.includes('delivery')) return 'belanja'
   if (code === 'KR' || name.includes('kurir')) return 'kurir'
   if (code === 'OJ' || name.includes('ojek')) return 'ojek'
+  if (code === 'JM' || type.includes('mobil') || name.includes('joker mobil') || name.includes('mobil')) return 'ojek'
   if (code === 'GO' || name.includes('gift')) return 'gift'
+
+  return null
+}
+
+function fallbackServiceFromType(serviceType: string | null | undefined): DynamicService | null {
+  const type = normalizeServiceKeyword(String(serviceType ?? ''))
+  if (!type) return null
+
+  if (type === 'do' || type.includes('delivery')) {
+    return { id: -1, code: 'DO', name: 'Delivery', service_type: 'delivery' }
+  }
+
+  if (type.includes('belanja')) {
+    return { id: -2, code: 'BL', name: 'Belanja', service_type: 'belanja' }
+  }
+
+  if (type.includes('kurir')) {
+    return { id: -3, code: 'KR', name: 'Kurir', service_type: 'kurir' }
+  }
+
+  if (type.includes('ojek')) {
+    return { id: -4, code: 'OJ', name: 'Ojek', service_type: 'ojek' }
+  }
+
+  if (type.includes('mobil')) {
+    return { id: -5, code: 'JM', name: 'Joker Mobil', service_type: 'joker_mobil' }
+  }
+
+  if (type.includes('gift')) {
+    return { id: -6, code: 'GO', name: 'Gift Order', service_type: 'gift_order' }
+  }
 
   return null
 }
@@ -497,6 +531,7 @@ function App() {
   const [showKurirForm, setShowKurirForm] = useState(false)
   const [showOjekForm, setShowOjekForm] = useState(false)
   const [showGiftForm, setShowGiftForm] = useState(false)
+  const [activeManualService, setActiveManualService] = useState<DynamicService | null>(null)
   const [orderClosedMessage, setOrderClosedMessage] = useState('')
   const locationSyncTokenRef = useRef<string | null>(null)
   const [orderSubmitBlocked, setOrderSubmitBlocked] = useState(false)
@@ -966,6 +1001,7 @@ function App() {
     setShowKurirForm(false)
     setShowOjekForm(false)
     setShowGiftForm(false)
+    setActiveManualService(null)
   }
 
   const openManualServiceForm = (service: DynamicService, options: { pushUser?: boolean } = {}) => {
@@ -975,6 +1011,7 @@ function App() {
     closeManualForms()
     setPendingOrder(null)
     setOrderSubmitBlocked(false)
+    setActiveManualService(service)
     setShowBelanjaForm(kind === 'belanja')
     setShowKurirForm(kind === 'kurir')
     setShowOjekForm(kind === 'ojek')
@@ -985,7 +1022,7 @@ function App() {
   }
 
   const editPendingOrder = () => {
-    const service = findServiceByType(pendingOrder?.service_type, services)
+    const service = findServiceByType(pendingOrder?.service_type, services) ?? fallbackServiceFromType(pendingOrder?.service_type)
     if (service && manualFormKindForService(service)) {
       openManualServiceForm(service, { pushUser: false })
       return
@@ -1263,6 +1300,7 @@ function App() {
           showKurirForm={showKurirForm}
           showOjekForm={showOjekForm}
           showGiftForm={showGiftForm}
+          activeManualService={activeManualService}
           onBelanjaPreview={(text) => {
             setShowBelanjaForm(false)
             void handleBotReply(text)
@@ -1635,6 +1673,7 @@ function ChatOrderScreen({
   showKurirForm,
   showOjekForm,
   showGiftForm,
+  activeManualService,
   onBelanjaPreview,
   onKurirPreview,
   onOjekPreview,
@@ -1660,6 +1699,7 @@ function ChatOrderScreen({
   showKurirForm: boolean
   showOjekForm: boolean
   showGiftForm: boolean
+  activeManualService: DynamicService | null
   onBelanjaPreview: (text: string) => void
   onKurirPreview: (text: string) => void
   onOjekPreview: (text: string) => void
@@ -1699,9 +1739,9 @@ function ChatOrderScreen({
           </div>
         ))}
         {typing && <TypingIndicator />}
-        {showBelanjaForm && <BelanjaOrderForm user={user} onSend={onBelanjaPreview} />}
+        {showBelanjaForm && <BelanjaOrderForm key={activeManualService?.code ?? 'belanja'} user={user} service={activeManualService} onSend={onBelanjaPreview} />}
         {showKurirForm && <KurirOrderForm user={user} onSend={onKurirPreview} />}
-        {showOjekForm && <OjekOrderForm user={user} onSend={onOjekPreview} />}
+        {showOjekForm && <OjekOrderForm key={activeManualService?.code ?? 'ojek'} user={user} service={activeManualService} onSend={onOjekPreview} />}
         {showGiftForm && <GiftOrderForm user={user} branches={branches} onSend={onGiftPreview} />}
         {(messages.at(-1)?.preview?.intent === 'service_menu' || messages.length === 1) && (
           <ManualServicePicker
@@ -1752,11 +1792,13 @@ function ManualServicePicker({ services, onService, compact = false }: { service
   )
 }
 
-function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
+function BelanjaOrderForm({ user, service, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; service: DynamicService | null; onSend: (text: string) => void }) {
   const [address, setAddress] = useState('')
   const [items, setItems] = useState('')
   const [purchaseAddress, setPurchaseAddress] = useState('')
   const [points, setPoints] = useState<string[]>([])
+  const serviceType = service?.service_type ?? (service?.code?.toUpperCase() === 'DO' ? 'delivery' : 'belanja')
+  const serviceLabel = serviceDisplayLabel(serviceType)
   const parsedItems = parseShoppingItems(items)
   const hasGacoan = /gacoan/i.test(items)
   const area = user?.branch_display_name ?? user?.branch_name ?? user?.branch ?? 'Area cabang belum diset silahkan hubungi CS'
@@ -1767,7 +1809,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
   }, [hasGacoan])
 
   const previewText = [
-    'Layanan: belanja',
+    `Layanan: ${serviceType}`,
     `Nama: ${user?.name ?? 'Customer Jojo'}`,
     `No. Hp: ${user?.phone ?? '-'}`,
     `Alamat Antar: ${address || '-'}`,
@@ -1789,7 +1831,7 @@ function BelanjaOrderForm({ user, onSend }: { user: ReturnType<typeof useCustome
         onSend(previewText)
       }}
     >
-      <strong>Form Belanja</strong>
+      <strong>Form {serviceLabel}</strong>
       <div className="belanja-profile-block">
         <label>Nama<input value={user?.name ?? 'Customer Jojo'} readOnly /></label>
         <label>Hp / WhatsApp<input value={user?.phone ?? '-'} readOnly /></label>
@@ -1878,13 +1920,17 @@ function KurirOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerS
   )
 }
 
-function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; onSend: (text: string) => void }) {
+function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useCustomerStore.getState>['user']; service: DynamicService | null; onSend: (text: string) => void }) {
   const [pickupAddress, setPickupAddress] = useState('')
   const [destination, setDestination] = useState('')
   const [passengers, setPassengers] = useState('1')
   const [notes, setNotes] = useState('')
+  const [seatRows, setSeatRows] = useState<2 | 3>(2)
   const [driverPreference, setDriverPreference] = useState<'general' | 'ladies'>('general')
   const [points, setPoints] = useState<string[]>([])
+  const serviceType = service?.service_type ?? (service?.code?.toUpperCase() === 'JM' ? 'joker_mobil' : 'ojek')
+  const serviceLabel = serviceDisplayLabel(serviceType)
+  const jokerMobil = isJokerMobilService(serviceType)
   const pointText = points
     .map((point, index) => ({ label: `Titik ${index + 1}`, address: point.trim() }))
     .filter((point) => point.address)
@@ -1892,7 +1938,7 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
     .join('\n')
 
   const previewText = [
-    'Ada pesanan Ojek untuk Aplikasi Joker',
+    `Ada pesanan ${serviceLabel} untuk Aplikasi Joker`,
     '',
     `Nama: ${user?.name ?? 'Customer Jojo'}`,
     `Hp / WhatsApp: ${user?.phone ?? '-'}`,
@@ -1900,7 +1946,7 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
     '',
     `Alamat Antar: ${destination}`,
     `Jumlah penumpang: ${passengers}`,
-    `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
+    jokerMobil ? `Seat / baris mobil: ${seatRows} baris` : `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
     '',
     `Catatan: ${notes}`,
     pointText,
@@ -1914,7 +1960,7 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
         onSend(previewText)
       }}
     >
-      <strong>Form Ojek</strong>
+      <strong>Form {serviceLabel}</strong>
       <div className="ojek-section">
         <label>Nama<input value={user?.name ?? 'Customer Jojo'} readOnly /></label>
         <label>Hp / WhatsApp<input value={user?.phone ?? '-'} readOnly /></label>
@@ -1923,14 +1969,29 @@ function OjekOrderForm({ user, onSend }: { user: ReturnType<typeof useCustomerSt
       <div className="ojek-section">
         <label>Alamat Antar<textarea value={destination} onChange={(event) => setDestination(event.target.value)} /></label>
         <label>Jumlah penumpang<input value={passengers} onChange={(event) => setPassengers(event.target.value)} inputMode="numeric" /></label>
-        <div className="ladies-choice">
+        {!jokerMobil && <div className="ladies-choice">
           <span>Pilihan driver</span>
           <div>
             <button type="button" className={driverPreference === 'general' ? 'active' : ''} onClick={() => setDriverPreference('general')}>Umum</button>
             <button type="button" className={driverPreference === 'ladies' ? 'active ladies' : ''} onClick={() => setDriverPreference('ladies')}>Ladies</button>
           </div>
           <small>{driverPreference === 'ladies' ? 'Order hanya dikirim ke driver Ladies area kamu.' : 'Order dapat diterima driver area yang tersedia.'}</small>
-        </div>
+        </div>}
+        {jokerMobil && (
+          <div className="vehicle-seat-choice">
+            <span>Tempat duduk Joker Mobil</span>
+            <div>
+              <button type="button" className={seatRows === 2 ? 'active' : ''} onClick={() => setSeatRows(2)}>
+                <b>2 baris</b>
+                <small>Citycar / umum</small>
+              </button>
+              <button type="button" className={seatRows === 3 ? 'active' : ''} onClick={() => setSeatRows(3)}>
+                <b>3 baris</b>
+                <small>MPV / keluarga</small>
+              </button>
+            </div>
+          </div>
+        )}
         <div className="belanja-points">
           <strong>Tambah titik</strong>
           {points.map((point, index) => (
