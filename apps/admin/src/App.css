@@ -2571,6 +2571,7 @@ tr.selected-row td {
   border-radius: 16px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
+  max-height: 724px;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
 }
@@ -2598,6 +2599,12 @@ tr.selected-row td {
 .driver-table {
   min-width: 820px;
   table-layout: fixed;
+}
+
+.driver-table thead th {
+  position: sticky;
+  top: 39px;
+  z-index: 3;
 }
 
 .driver-table th,
