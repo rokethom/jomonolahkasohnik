@@ -1941,22 +1941,32 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
       <div className="order-operations-layout">
         <div className="table-wrap order-table-wrap">
           <table>
-            <thead><tr><th>Order</th><th>Customer</th><th>Driver</th><th>Service</th><th>Branch</th><th>Total</th><th>Status</th><th>Detail</th>{permissions.can_edit_order_price && <th>Action</th>}</tr></thead>
+            <thead><tr><th>Order</th><th>Customer</th><th>Driver</th><th>Service</th><th>Branch</th><th>Total</th><th>Status</th>{permissions.can_edit_order_price && <th>Action</th>}</tr></thead>
             <tbody>
               {filteredOrders.map((order) => (
-                <tr className={selectedOrder?.id === order.id ? 'selected-row' : ''} key={order.id}>
+                <tr
+                  className={selectedOrder?.id === order.id ? 'selected-row' : ''}
+                  key={order.id}
+                  onClick={() => setSelectedOrderId(order.id)}
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedOrderId(order.id)
+                    }
+                  }}
+                >
                   <td><strong>{order.code}</strong><span>{formatShortDateTime(order.created_at)}</span></td>
                   <td>{order.customer || '-'}</td>
-                  <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={() => onOpenDriverChat(order.driver_user_id!)}>{order.driver}</button> : order.driver || '-'}</td>
+                  <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{order.driver}</button> : order.driver || '-'}</td>
                   <td>{order.service}</td>
                   <td>{displayBranchValue(order.branch, order.branch_area)}</td>
                   <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} · Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
                   <td><StatusBadge status={order.status} /></td>
-                  <td><button className="mini-button" type="button" onClick={() => setSelectedOrderId(order.id)}>Lihat</button></td>
                   {permissions.can_edit_order_price && (
                     <td>
                       {canEditOrderPrice(order)
-                        ? <button className="mini-button" type="button" onClick={() => setEditingOrder(order)}>Edit harga</button>
+                        ? <button className="mini-button" type="button" onClick={(event) => { event.stopPropagation(); setEditingOrder(order) }}>Edit harga</button>
                         : <span className="muted-action">Terkunci</span>}
                     </td>
                   )}
