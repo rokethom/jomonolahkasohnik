@@ -26,6 +26,7 @@ class DriverResource extends JsonResource
             'vehicle_seat_rows' => $this->vehicle_seat_rows,
             'vehicle_number' => $this->vehicle_number,
             'is_ladies_driver' => (bool) $this->is_ladies_driver,
+            'can_accept_all_areas' => (bool) $this->can_accept_all_areas,
             'status' => $this->status,
             'is_suspend' => (bool) ($this->is_suspend ?? false),
             'auth_suspended_at' => $this->auth_suspended_at?->toIso8601String(),

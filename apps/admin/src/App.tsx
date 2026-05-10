@@ -85,6 +85,7 @@ type DriverRow = User & {
   vehicle_types?: string[]
   vehicle_seat_rows?: number | null
   is_ladies_driver?: boolean
+  can_accept_all_areas?: boolean
   allowed_service_types?: string[]
   performance?: {
     rating_average: number
@@ -1879,6 +1880,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
   const [vehicleTypes, setVehicleTypes] = useState<string[]>(normalizedDriverVehicleTypes(driver))
   const [vehicleSeatRows, setVehicleSeatRows] = useState<2 | 3>((driver.vehicle_seat_rows === 3 ? 3 : 2))
   const [isLadiesDriver, setIsLadiesDriver] = useState(Boolean(driver.is_ladies_driver))
+  const [canAcceptAllAreas, setCanAcceptAllAreas] = useState(Boolean(driver.can_accept_all_areas))
   const [allowed, setAllowed] = useState<string[]>(driver.allowed_service_types ?? [])
   const [saving, setSaving] = useState(false)
 
@@ -1905,6 +1907,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
           vehicle_type: vehicleTypes[0] ?? 'motor',
           vehicle_seat_rows: vehicleTypes.includes('mobil') ? vehicleSeatRows : null,
           is_ladies_driver: isLadiesDriver,
+          can_accept_all_areas: canAcceptAllAreas,
           allowed_service_types: allowed,
         }),
       })
@@ -1937,6 +1940,14 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
                 <small>Aktifkan agar driver dapat menerima order Ojek Ladies sesuai cabang/area.</small>
               </span>
               <b>{isLadiesDriver ? 'Aktif' : 'Nonaktif'}</b>
+            </label>
+            <label className="driver-ladies-card">
+              <input type="checkbox" checked={canAcceptAllAreas} onChange={(event) => setCanAcceptAllAreas(event.target.checked)} />
+              <span>
+                <strong>Akses all area</strong>
+                <small>Driver dapat melihat dan menerima order dari semua cabang. Gunakan hanya untuk driver lintas area.</small>
+              </span>
+              <b>{canAcceptAllAreas ? 'Aktif' : 'Cabang saja'}</b>
             </label>
           </fieldset>
           <fieldset>

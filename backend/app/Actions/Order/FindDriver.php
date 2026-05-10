@@ -43,7 +43,12 @@ class FindDriver
             }
 
             $driver = Driver::query()
+                ->with('user')
                 ->where('is_available', true)
+                ->where(function ($query) use ($order): void {
+                    $query->where('can_accept_all_areas', true)
+                        ->orWhereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id));
+                })
                 ->when(
                     data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'motor',
                     fn ($query) => $query->where(function ($query): void {

@@ -132,6 +132,7 @@ class AdminController extends Controller
             'vehicle_types.*' => ['string', 'in:motor,mobil'],
             'vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
             'is_ladies_driver' => ['sometimes', 'boolean'],
+            'can_accept_all_areas' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['nullable', 'array'],
             'allowed_service_types.*' => ['string', 'max:80'],
         ]);
@@ -146,6 +147,7 @@ class AdminController extends Controller
             'vehicle_types' => $vehicleTypes,
             'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? ($payload['vehicle_seat_rows'] ?? 2) : null,
             'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
+            'can_accept_all_areas' => $payload['can_accept_all_areas'] ?? false,
         ];
         if (array_key_exists('allowed_service_types', $payload)) {
             $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
@@ -153,7 +155,7 @@ class AdminController extends Controller
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
         $password = $this->generatePassword();
         $user = User::create([
@@ -200,6 +202,7 @@ class AdminController extends Controller
             'vehicle_types.*' => ['string', 'in:motor,mobil'],
             'vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
             'is_ladies_driver' => ['sometimes', 'boolean'],
+            'can_accept_all_areas' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['nullable', 'array'],
             'allowed_service_types.*' => ['string', 'max:80'],
         ]);
@@ -228,10 +231,13 @@ class AdminController extends Controller
         if (array_key_exists('is_ladies_driver', $payload)) {
             $driverPayload['is_ladies_driver'] = $payload['is_ladies_driver'];
         }
+        if (array_key_exists('can_accept_all_areas', $payload)) {
+            $driverPayload['can_accept_all_areas'] = $payload['can_accept_all_areas'];
+        }
         if (array_key_exists('allowed_service_types', $payload)) {
             $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['allowed_service_types']);
+        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
         $user->update($payload);
         $nextRole = $payload['role'] ?? ($user->role instanceof UserRole ? $user->role->value : (string) $user->role);
@@ -318,7 +324,8 @@ class AdminController extends Controller
         $this->assertOrderAreaScope($actor, $order);
 
         $driver = Driver::query()->with(['user.branch'])->findOrFail($payload['driver_id']);
-        abort_unless((int) $driver->user?->branch_id === (int) $actor->branch_id || in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::SPV], true), 403, 'Driver di luar area akun ini.');
+        $driverMatchesOrderArea = (int) $driver->user?->branch_id === (int) ($order->branch_id ?? $order->user?->branch_id);
+        abort_unless($driverMatchesOrderArea || (bool) $driver->can_accept_all_areas || in_array($actor->role, [UserRole::Admin, UserRole::GM], true), 403, 'Driver di luar area dan belum diberi akses all area.');
         abort_unless($driver->status === 'active' && ! $driver->is_suspend, 422, 'Driver tidak aktif.');
         abort_unless($driver->is_available, 422, 'Driver sedang tidak idle/online.');
         abort_unless(! $this->driverHasActiveOrder($driver), 422, 'Driver masih memiliki order aktif.');
@@ -646,6 +653,7 @@ class AdminController extends Controller
             'vehicle_types.*' => ['string', 'in:motor,mobil'],
             'vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
             'is_ladies_driver' => ['sometimes', 'boolean'],
+            'can_accept_all_areas' => ['sometimes', 'boolean'],
             'allowed_service_types' => ['array'],
             'allowed_service_types.*' => ['string', 'max:50'],
         ]);
@@ -657,6 +665,7 @@ class AdminController extends Controller
             'vehicle_types' => $vehicleTypes,
             'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? ($payload['vehicle_seat_rows'] ?? 2) : null,
             'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
+            'can_accept_all_areas' => $payload['can_accept_all_areas'] ?? false,
             'allowed_service_types' => array_values(array_unique(array_map(
                 fn ($service): string => $this->normalizeServiceType((string) $service),
                 $payload['allowed_service_types'] ?? [],
@@ -669,6 +678,7 @@ class AdminController extends Controller
             'vehicle_types' => $driver->vehicle_types,
             'vehicle_seat_rows' => $driver->vehicle_seat_rows,
             'is_ladies_driver' => $driver->is_ladies_driver,
+            'can_accept_all_areas' => $driver->can_accept_all_areas,
             'allowed_service_types' => $driver->allowed_service_types,
         ]);
 
@@ -1884,8 +1894,11 @@ class AdminController extends Controller
                 });
             })
             ->when(data_get($order->pricing_breakdown, 'driver_preference') === 'ladies', fn (Builder $query) => $query->where('is_ladies_driver', true))
+            ->where(function (Builder $query) use ($branchId): void {
+                $query->where('can_accept_all_areas', true)
+                    ->orWhereHas('user', fn (Builder $query) => $query->where('branch_id', $branchId));
+            })
             ->whereHas('user', fn (Builder $query) => $query
-                ->where('branch_id', $branchId)
                 ->where('is_active', true)
                 ->where('is_suspended', false))
             ->limit(12)
@@ -1912,6 +1925,7 @@ class AdminController extends Controller
                 'vehicle_types' => $driver->vehicleTypes(),
                 'vehicle_seat_rows' => $driver->vehicle_seat_rows,
                 'is_ladies_driver' => (bool) $driver->is_ladies_driver,
+                'can_accept_all_areas' => (bool) $driver->can_accept_all_areas,
                 'branch' => $driver->user?->branch?->name,
                 'branch_area' => $driver->user?->branch?->area,
                 'rating_average' => round((float) ($driver->rating_average ?? 0), 2),
@@ -2138,6 +2152,7 @@ class AdminController extends Controller
                 'vehicle_types' => $user->driver?->vehicleTypes() ?? ['motor'],
                 'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
                 'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
+                'can_accept_all_areas' => (bool) ($user->driver?->can_accept_all_areas ?? false),
                 'allowed_service_types' => $user->driver?->allowed_service_types ?? [],
                 'performance' => [
                     'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),

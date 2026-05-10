@@ -207,6 +207,10 @@ class MultiOrderService
 
     private function isSameArea(Driver $driver, Order $order): bool
     {
+        if ((bool) $driver->can_accept_all_areas) {
+            return true;
+        }
+
         $driverBranchId = $driver->user?->branch_id;
         $orderBranchId = $order->branch_id;
 

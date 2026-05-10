@@ -110,6 +110,12 @@ class DriverManagementResource extends Resource
                     ->trueColor('danger')
                     ->falseColor('gray')
                     ->toggleable(),
+                Tables\Columns\IconColumn::make('driver.can_accept_all_areas')
+                    ->label('All Area')
+                    ->boolean()
+                    ->trueColor('success')
+                    ->falseColor('gray')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('driver.allowed_service_types')
                     ->label('Layanan')
                     ->formatStateUsing(fn (?array $state): string => $state ? implode(', ', $state) : 'Semua layanan')
@@ -478,6 +484,10 @@ class DriverManagementResource extends Resource
                             ->label('Driver Ladies')
                             ->helperText('Jika aktif, driver bisa menerima order Ojek Ladies sesuai area/cabang.')
                             ->default(fn (User $record): bool => (bool) $record->driver?->is_ladies_driver),
+                        Forms\Components\Toggle::make('can_accept_all_areas')
+                            ->label('Akses all area')
+                            ->helperText('Jika aktif, driver bisa menerima order dari semua cabang, bukan hanya cabang user driver.')
+                            ->default(fn (User $record): bool => (bool) $record->driver?->can_accept_all_areas),
                         Forms\Components\CheckboxList::make('allowed_service_types')
                             ->label('Layanan yang bisa diterima')
                             ->options(fn (): array => Service::query()
@@ -499,6 +509,7 @@ class DriverManagementResource extends Resource
                             'vehicle_types' => $vehicleTypes,
                             'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? ($data['vehicle_seat_rows'] ?? 2) : null,
                             'is_ladies_driver' => (bool) ($data['is_ladies_driver'] ?? false),
+                            'can_accept_all_areas' => (bool) ($data['can_accept_all_areas'] ?? false),
                             'allowed_service_types' => array_values($data['allowed_service_types'] ?? []),
                         ]);
 

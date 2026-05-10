@@ -49,7 +49,7 @@ class DriverController extends Controller
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->where('branch_id', $driver->user?->branch_id)
+                            ->when(! $driver->can_accept_all_areas, fn ($query) => $query->where('branch_id', $driver->user?->branch_id))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -426,6 +426,7 @@ class DriverController extends Controller
             'vehicle_types' => $driver?->vehicleTypes() ?? ['motor'],
             'vehicle_seat_rows' => $driver?->vehicle_seat_rows,
             'is_ladies_driver' => (bool) ($driver?->is_ladies_driver ?? false),
+            'can_accept_all_areas' => (bool) ($driver?->can_accept_all_areas ?? false),
             'is_available' => (bool) ($driver?->is_available ?? false),
             'can_receive_orders' => $canReceiveOrders,
             'deposit_status' => $deposit?->status,
