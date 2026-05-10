@@ -355,6 +355,10 @@ function isGiftService(service: DynamicService) {
   return code === 'GO' || type.includes('gift') || name.includes('gift')
 }
 
+function isOutsideAreaService(service: DynamicService) {
+  return Boolean(service.outside_area_only) || isGiftService(service)
+}
+
 function serviceKeywords(service: DynamicService) {
   const code = normalizeServiceKeyword(service.code ?? '')
   const name = normalizeServiceKeyword(service.name)
@@ -491,7 +495,11 @@ function App() {
   const orderSubmittingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
   const updateInfo = useBuildUpdate('customer')
-  const visibleServices = useMemo(() => mustUseGiftOrder(store.user) ? services.filter(isGiftService) : services, [services, store.user])
+  const outsideAreaServices = useMemo(() => services.filter(isOutsideAreaService), [services])
+  const visibleServices = useMemo(
+    () => mustUseGiftOrder(store.user) ? outsideAreaServices.length > 0 ? outsideAreaServices : services.filter(isGiftService) : services,
+    [outsideAreaServices, services, store.user],
+  )
 
   useEffect(() => {
     const root = document.documentElement
@@ -984,10 +992,10 @@ function App() {
       setPendingOrder(null)
       setOrderSubmitBlocked(false)
 
-      if (mustUseGiftOrder(store.user) && !isGiftService(requestedService)) {
-        const giftService = services.find(isGiftService)
-        pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Saat ini layanan yang tersedia hanya Gift Order.' })
-        if (giftService) openManualServiceForm(giftService, { pushUser: false })
+      if (mustUseGiftOrder(store.user) && !isOutsideAreaService(requestedService)) {
+        const outsideService = visibleServices[0]
+        pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Saat ini hanya layanan khusus luar area yang tersedia.' })
+        if (outsideService) openManualServiceForm(outsideService, { pushUser: false })
         return
       }
 
@@ -1156,10 +1164,10 @@ function App() {
   }
 
   const handleManualService = (service: DynamicService) => {
-    if (mustUseGiftOrder(store.user) && !isGiftService(service)) {
-      const giftService = services.find(isGiftService)
-      pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Silakan gunakan Gift Order.' })
-      if (giftService) openManualServiceForm(giftService)
+    if (mustUseGiftOrder(store.user) && !isOutsideAreaService(service)) {
+      const outsideService = visibleServices[0]
+      pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Silakan gunakan layanan khusus luar area.' })
+      if (outsideService) openManualServiceForm(outsideService)
       return
     }
 

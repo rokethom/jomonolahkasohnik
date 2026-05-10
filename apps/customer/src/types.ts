@@ -220,6 +220,7 @@ export type DynamicService = {
   code: string
   service_type?: string
   whatsapp_redirect_enabled?: boolean
+  outside_area_only?: boolean
   whatsapp_number?: string | null
   whatsapp_message_template?: string | null
   form_schema?: {

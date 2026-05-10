@@ -168,7 +168,7 @@ class JojoBotService
 
         $hasOrderShape = $parsed['pickup_address'] && $parsed['destination_address'];
 
-        if ($selectedService && $this->isOutsideRegisteredArea($user) && ! $this->isGiftOrder($selectedService)) {
+        if ($selectedService && $this->isOutsideRegisteredArea($user) && ! $this->isOutsideAreaServiceType($selectedService, $services)) {
             return $this->giftOrderDirection($services, $parsed);
         }
 
@@ -240,7 +240,7 @@ class JojoBotService
         $rows = Service::query()
             ->where('is_active', true)
             ->orderBy('id')
-            ->get(['id', 'code', 'name', 'whatsapp_redirect_enabled', 'whatsapp_number', 'whatsapp_message_template']);
+            ->get(['id', 'code', 'name', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template']);
 
         if ($rows->isEmpty()) {
             $rows = collect([
@@ -258,6 +258,7 @@ class JojoBotService
             'name' => (string) ($service['name'] ?? $service->name),
             'service_type' => $this->serviceType((string) ($service['code'] ?? $service->code), (string) ($service['name'] ?? $service->name)),
             'whatsapp_redirect_enabled' => (bool) ($service['whatsapp_redirect_enabled'] ?? $service->whatsapp_redirect_enabled ?? false),
+            'outside_area_only' => (bool) ($service['outside_area_only'] ?? $service->outside_area_only ?? $this->isGiftOrder($this->serviceType((string) ($service['code'] ?? $service->code), (string) ($service['name'] ?? $service->name)))),
             'whatsapp_number' => $service['whatsapp_number'] ?? $service->whatsapp_number ?? null,
             'whatsapp_message_template' => $service['whatsapp_message_template'] ?? $service->whatsapp_message_template ?? null,
         ]);
@@ -724,6 +725,17 @@ class JojoBotService
         return in_array(strtolower($serviceType), ['gift', 'gift_order', 'go'], true);
     }
 
+    private function isOutsideAreaServiceType(string $serviceType, Collection $services): bool
+    {
+        $normalized = $this->normalizeRequestedService($serviceType) ?? strtolower($serviceType);
+
+        return $services->contains(function (array $service) use ($normalized): bool {
+            $serviceType = $this->normalizeRequestedService((string) ($service['service_type'] ?? $service['code'] ?? $service['name'] ?? ''));
+
+            return $serviceType === $normalized && ((bool) ($service['outside_area_only'] ?? false) || $this->isGiftOrder($serviceType));
+        });
+    }
+
     private function defaultFormSchema(string $serviceType): ?array
     {
         if ($this->isPurchaseService($serviceType)) {
@@ -781,16 +793,18 @@ class JojoBotService
 
     private function giftOrderDirection(Collection $services, array $parsed): array
     {
-        $giftServices = $services->filter(fn (array $service): bool => $this->isGiftOrder((string) ($service['service_type'] ?? $service['code'] ?? $service['name'] ?? '')))->values();
+        $outsideAreaServices = $services
+            ->filter(fn (array $service): bool => (bool) ($service['outside_area_only'] ?? false) || $this->isGiftOrder((string) ($service['service_type'] ?? $service['code'] ?? $service['name'] ?? '')))
+            ->values();
 
         return [
             'intent' => 'service_selected',
-            'services' => $giftServices->isNotEmpty() ? $giftServices : $services->values(),
-            'selected_service' => 'gift_order',
+            'services' => $outsideAreaServices->isNotEmpty() ? $outsideAreaServices : $services->values(),
+            'selected_service' => $outsideAreaServices->first()['service_type'] ?? 'gift_order',
             'parsed' => $parsed,
             'quote' => null,
             'order_payload' => null,
-            'reply' => "Area kamu berada di luar cabang aktif. JOJOBOT arahkan ke layanan GIFT ORDER.\n\nIsi format Gift Order atau pilih layanan Gift Order di chat.",
+            'reply' => "Area kamu berada di luar cabang aktif. JOJOBOT hanya menampilkan layanan khusus luar area.\n\nSilakan pilih layanan yang tersedia di chat.",
         ];
     }
 

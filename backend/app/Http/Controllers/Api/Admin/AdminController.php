@@ -77,7 +77,7 @@ class AdminController extends Controller
                 ->withCount('geofenceAreas')
                 ->orderBy('name')
                 ->get(),
-            'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'whatsapp_number']),
+            'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
             'ring_pricing_rules' => RingPricingRule::query()->with('branch')->latest()->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
             'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),

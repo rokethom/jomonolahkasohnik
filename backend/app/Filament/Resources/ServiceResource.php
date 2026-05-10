@@ -73,13 +73,17 @@ class ServiceResource extends Resource
                         ->columnSpanFull(),
                 ]),
             Forms\Components\Section::make('WhatsApp Handling')
-                ->description('Aktifkan untuk layanan yang masih perlu ditangani manual, misalnya Travel.')
+                ->description('Atur handling khusus layanan, termasuk layanan yang hanya muncul untuk customer luar area.')
                 ->columns(2)
                 ->schema([
                     Forms\Components\Toggle::make('whatsapp_redirect_enabled')
                         ->label('Arahkan customer ke WhatsApp')
                         ->default(false)
                         ->live(),
+                    Forms\Components\Toggle::make('outside_area_only')
+                        ->label('Layanan khusus luar area')
+                        ->helperText('Jika aktif, layanan ini menjadi pilihan untuk customer di luar cabang/geofence.')
+                        ->default(false),
                     Forms\Components\TextInput::make('whatsapp_number')
                         ->label('Nomor WhatsApp')
                         ->placeholder('62812xxxxxxx')
@@ -104,6 +108,7 @@ class ServiceResource extends Resource
                 Tables\Columns\TextColumn::make('code')->badge()->searchable()->sortable(),
                 Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),
                 Tables\Columns\IconColumn::make('whatsapp_redirect_enabled')->label('WA')->boolean()->sortable(),
+                Tables\Columns\IconColumn::make('outside_area_only')->label('Luar Area')->boolean()->sortable(),
                 Tables\Columns\TextColumn::make('whatsapp_number')->label('WA Number')->toggleable(),
                 Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable(),
             ])

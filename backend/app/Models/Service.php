@@ -16,6 +16,7 @@ class Service extends Model
         'is_active',
         'form_schema',
         'whatsapp_redirect_enabled',
+        'outside_area_only',
         'whatsapp_number',
         'whatsapp_message_template',
     ];
@@ -24,6 +25,7 @@ class Service extends Model
         'is_active' => 'boolean',
         'form_schema' => 'array',
         'whatsapp_redirect_enabled' => 'boolean',
+        'outside_area_only' => 'boolean',
     ];
 
     public function orders(): HasMany
