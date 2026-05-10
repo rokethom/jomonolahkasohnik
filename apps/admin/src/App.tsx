@@ -646,6 +646,12 @@ function App() {
   const safeView = data ? (allowedViews.includes(view) ? view : (allowedViews[0] ?? 'dashboard')) : view
   const updateInfo = useBuildUpdate('admin')
 
+  useEffect(() => {
+    if (safeView === 'dashboard' && query !== '') {
+      setQuery('')
+    }
+  }, [query, safeView])
+
   if (!token) {
     return (
       <>
