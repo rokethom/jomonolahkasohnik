@@ -54,6 +54,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminController extends Controller
 {
+    private const DEFAULT_ASSIGN_DRIVER_ROLES = ['operator', 'eksekutor'];
+
     public function bootstrap(Request $request, SettingService $settings, OrderService $orders, SLAService $slaService, DriverSuspendService $driverSuspensions): JsonResponse
     {
         $orders->cancelExpiredCreatedOrders();
@@ -305,7 +307,7 @@ class AdminController extends Controller
     public function assignDriver(Request $request, Order $order, AcceptOrder $acceptOrder, NotificationService $notifications): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor->hasPermission('assign_driver'), 403);
+        abort_unless($this->canAssignDriver($actor), 403, 'Role Anda tidak diizinkan assign driver.');
 
         $payload = $request->validate([
             'driver_id' => ['required', 'integer', 'exists:drivers,id'],
@@ -353,7 +355,7 @@ class AdminController extends Controller
     public function broadcastDrivers(Request $request, Order $order, NotificationService $notifications): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($actor->hasPermission('assign_driver'), 403);
+        abort_unless($this->canAssignDriver($actor), 403, 'Role Anda tidak diizinkan broadcast driver.');
 
         $order->loadMissing(['branch', 'user.branch', 'driver.user.branch']);
         $this->assertOrderAreaScope($actor, $order);
@@ -1398,6 +1400,8 @@ class AdminController extends Controller
             'night_tariff_rules.*.start' => ['required_with:night_tariff_rules', 'date_format:H:i'],
             'night_tariff_rules.*.end' => ['required_with:night_tariff_rules', 'date_format:H:i'],
             'night_tariff_rules.*.percent' => ['required_with:night_tariff_rules', 'integer', 'min:0', 'max:300'],
+            'assign_driver_allowed_roles' => ['sometimes', 'array'],
+            'assign_driver_allowed_roles.*' => ['string', Rule::in(['manager', 'spv', 'operator', 'eksekutor'])],
         ]);
 
         $settings->set('multi_order_enabled', $payload['multi_order_enabled']);
@@ -1419,6 +1423,9 @@ class AdminController extends Controller
         }
         if (array_key_exists('night_tariff_rules', $payload)) {
             $settings->set('night_tariff_rules', json_encode(array_values($payload['night_tariff_rules'])));
+        }
+        if (array_key_exists('assign_driver_allowed_roles', $payload)) {
+            $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($payload['assign_driver_allowed_roles'])));
         }
 
         return response()->json([
@@ -1602,7 +1609,7 @@ class AdminController extends Controller
             'can_manage_system_settings' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
             'can_create_manual_order' => $user->hasPermission('manual_order'),
-            'can_assign_driver' => $user->hasPermission('assign_driver'),
+            'can_assign_driver' => $this->canAssignDriver($user),
             'can_view_report' => $user->hasPermission('view_report'),
             'can_export_report' => $user->hasPermission('export_report'),
             'can_monitor_live_order' => $user->hasPermission('monitor_live_order'),
@@ -1629,6 +1636,44 @@ class AdminController extends Controller
         }
 
         return $actor->role->canManageRole($target->role);
+    }
+
+    private function canAssignDriver(User $user): bool
+    {
+        if (! $user->role instanceof UserRole) {
+            return false;
+        }
+
+        if (in_array($user->role, [UserRole::Admin, UserRole::GM], true)) {
+            return true;
+        }
+
+        if (! $user->hasPermission('monitor_live_order')) {
+            return false;
+        }
+
+        return in_array($user->role->value, $this->assignDriverAllowedRoles(), true);
+    }
+
+    private function assignDriverAllowedRoles(?SettingService $settings = null): array
+    {
+        $settings ??= app(SettingService::class);
+        $raw = $settings->get('assign_driver_allowed_roles', json_encode(self::DEFAULT_ASSIGN_DRIVER_ROLES));
+        $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+
+        return $this->normalizeAssignDriverRoles(is_array($decoded) ? $decoded : self::DEFAULT_ASSIGN_DRIVER_ROLES);
+    }
+
+    private function normalizeAssignDriverRoles(array $roles): array
+    {
+        $allowed = ['manager', 'spv', 'operator', 'eksekutor'];
+
+        return collect($roles)
+            ->map(fn (mixed $role): string => strtolower(trim((string) $role)))
+            ->filter(fn (string $role): bool => in_array($role, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function authorizeDriverAuthCms(Request $request): void
@@ -1802,7 +1847,7 @@ class AdminController extends Controller
 
     private function suggestedDriversForOrder(Order $order, User $actor): array
     {
-        if (! $actor->hasPermission('assign_driver')) {
+        if (! $this->canAssignDriver($actor)) {
             return [];
         }
 
@@ -2190,6 +2235,7 @@ class AdminController extends Controller
             'order_close_message' => $settings->get('order_close_message', 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.') ?: 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.',
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
+            'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
         ];
     }
 

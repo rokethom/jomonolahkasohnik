@@ -16,6 +16,8 @@ class SystemSettingsPage extends Page implements HasForms
 {
     use InteractsWithForms;
 
+    private const DEFAULT_ASSIGN_DRIVER_ROLES = ['operator', 'eksekutor'];
+
     protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
     protected static ?string $navigationGroup = 'System';
@@ -75,6 +77,7 @@ class SystemSettingsPage extends Page implements HasForms
             'order_close_message' => $settings->get('order_close_message', 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.') ?: 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.',
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => $this->nightTariffRules($settings),
+            'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'payment_cash_enabled' => true,
             'payment_transfer_enabled' => true,
             'payment_bank_accounts' => $this->transferAccounts($settings),
@@ -441,6 +444,21 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->reorderable()
                                             ->columnSpanFull(),
                                     ]),
+                                Forms\Components\Section::make('Assign Driver Order')
+                                    ->description('Atur role manajemen yang boleh memilih driver langsung dari Order Operations. Admin dan GM selalu bisa memakai fitur ini agar CMS tidak terkunci.')
+                                    ->schema([
+                                        Forms\Components\CheckboxList::make('assign_driver_allowed_roles')
+                                            ->label('Role yang boleh assign driver')
+                                            ->options([
+                                                'manager' => 'Manager',
+                                                'spv' => 'SPV',
+                                                'operator' => 'Operator',
+                                                'eksekutor' => 'Eksekutor',
+                                            ])
+                                            ->columns(2)
+                                            ->bulkToggleable()
+                                            ->helperText('Role yang tidak dicentang tetap bisa melihat order sesuai hak aksesnya, tetapi tidak bisa melihat kandidat driver, assign driver, atau broadcast driver.'),
+                                    ]),
                             ]),
                         Tabs\Tab::make('Payment & Support')
                             ->icon('heroicon-o-banknotes')
@@ -545,6 +563,7 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('order_close_message', $data['order_close_message'] ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.');
         $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
         $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
+        $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($data['assign_driver_allowed_roles'] ?? self::DEFAULT_ASSIGN_DRIVER_ROLES)));
         $settings->set('payment_methods', json_encode($this->paymentMethods($data)));
         $settings->set('payment_transfer_account', json_encode($this->normalizeTransferAccounts($data['payment_bank_accounts'] ?? [])));
         $settings->set('payment_qris_image', $this->normalizeUploadState($data['qris_image'] ?? null));
@@ -689,6 +708,26 @@ class SystemSettingsPage extends Page implements HasForms
         }
 
         return $this->defaultNightTariffRules();
+    }
+
+    private function assignDriverAllowedRoles(SettingService $settings): array
+    {
+        $raw = $settings->get('assign_driver_allowed_roles', json_encode(self::DEFAULT_ASSIGN_DRIVER_ROLES));
+        $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+
+        return $this->normalizeAssignDriverRoles(is_array($decoded) ? $decoded : self::DEFAULT_ASSIGN_DRIVER_ROLES);
+    }
+
+    private function normalizeAssignDriverRoles(array $roles): array
+    {
+        $allowed = ['manager', 'spv', 'operator', 'eksekutor'];
+
+        return collect($roles)
+            ->map(fn (mixed $role): string => strtolower(trim((string) $role)))
+            ->filter(fn (string $role): bool => in_array($role, $allowed, true))
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function transferAccounts(SettingService $settings): array

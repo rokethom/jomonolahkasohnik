@@ -260,6 +260,7 @@ type SystemSettings = {
   order_close_message?: string
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
+  assign_driver_allowed_roles?: Role[]
   feedback_templates?: {
     driver_accepted?: string
     order_auto_cancelled?: string
@@ -1961,6 +1962,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [orderCloseMessage, setOrderCloseMessage] = useState(settings.order_close_message ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.')
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
+  const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
   const [feedbackTemplates, setFeedbackTemplates] = useState({
     driver_accepted: settings.feedback_templates?.driver_accepted ?? '',
     order_auto_cancelled: settings.feedback_templates?.order_auto_cancelled ?? '',
@@ -1977,6 +1979,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setOrderCloseMessage(settings.order_close_message ?? 'Maaf, sistem order sedang tutup. Order dibuka kembali pukul {end}.')
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
+    setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
     setFeedbackTemplates({
       driver_accepted: settings.feedback_templates?.driver_accepted ?? '',
       order_auto_cancelled: settings.feedback_templates?.order_auto_cancelled ?? '',
@@ -1999,6 +2002,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           order_close_message: orderCloseMessage,
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
+          assign_driver_allowed_roles: assignDriverAllowedRoles,
           feedback_templates: feedbackTemplates,
         }),
       })
@@ -2079,6 +2083,29 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           ))}
         </div>
         {permissions.can_manage_system_settings && <button className="secondary-button" type="button" onClick={() => setNightTariffRules((rows) => [...rows, { area: '', start: '22:00', end: '00:00', percent: 30 }])}>Tambah Rule Tarif Malam</button>}
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Assign Driver Order</h2>
+            <p>Atur role manajemen yang boleh memilih driver langsung di Order Operations. Admin dan GM selalu aktif.</p>
+          </div>
+          <span className="status info">CMS</span>
+        </div>
+        <div className="service-check-grid assign-role-grid">
+          {assignDriverRoleOptions.map((role) => (
+            <label className="toggle-row" key={role.value}>
+              <input
+                type="checkbox"
+                checked={assignDriverAllowedRoles.includes(role.value)}
+                disabled={!permissions.can_manage_system_settings}
+                onChange={() => setAssignDriverAllowedRoles((current) => toggleRoleValue(current, role.value))}
+              />
+              {role.label}
+            </label>
+          ))}
+        </div>
+        <div className="notice">Role yang tidak dicentang tetap bisa monitor order sesuai hak aksesnya, tetapi tombol assign dan broadcast driver disembunyikan.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">
@@ -4297,6 +4324,13 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`status ${tone}`}>{status}</span>
 }
 
+const assignDriverRoleOptions: Array<{ value: Role; label: string }> = [
+  { value: 'manager', label: 'Manager' },
+  { value: 'spv', label: 'SPV' },
+  { value: 'operator', label: 'Operator' },
+  { value: 'eksekutor', label: 'Eksekutor' },
+]
+
 function defaultNightTariffRules(): NightTariffRule[] {
   return [
     { area: 'bws', start: '21:30', end: '00:00', percent: 30 },
@@ -4309,6 +4343,10 @@ function defaultNightTariffRules(): NightTariffRule[] {
 
 function updateNightRule(rows: NightTariffRule[], index: number, patch: Partial<NightTariffRule>) {
   return rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row)
+}
+
+function toggleRoleValue(values: Role[], role: Role) {
+  return values.includes(role) ? values.filter((item) => item !== role) : [...values, role]
 }
 
 function serviceTypeFromService(service: ServiceRow) {
