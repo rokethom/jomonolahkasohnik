@@ -2,7 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Driver;
+use App\Services\DriverFinanceService;
 use App\Services\DriverReportService;
+use Filament\Notifications\Notification;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -10,6 +13,9 @@ use Filament\Pages\Page;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DriverDepositReportPage extends Page implements HasForms
@@ -29,6 +35,7 @@ class DriverDepositReportPage extends Page implements HasForms
     public ?array $data = [
         'month' => null,
         'year' => null,
+        'import_file' => null,
     ];
 
     public static function shouldRegisterNavigation(): bool
@@ -41,6 +48,7 @@ class DriverDepositReportPage extends Page implements HasForms
         $this->form->fill([
             'month' => now()->month,
             'year' => now()->year,
+            'import_file' => null,
         ]);
     }
 
@@ -62,8 +70,25 @@ class DriverDepositReportPage extends Page implements HasForms
                     ->maxValue(2100)
                     ->live()
                     ->required(),
+                Forms\Components\FileUpload::make('import_file')
+                    ->label('Import update setoran')
+                    ->disk('local')
+                    ->directory('imports/driver-deposits')
+                    ->acceptedFileTypes([
+                        'text/csv',
+                        'text/plain',
+                        'application/csv',
+                        'application/vnd.ms-excel',
+                    ])
+                    ->helperText('Upload file Export CSV atau Export Excel dari halaman ini. Sistem hanya membaca DRIVER, Terbayar, Tgl Bayar, dan Status; angka tagihan tetap dihitung dari order sistem.')
+                    ->preserveFilenames()
+                    ->maxSize(4096),
             ])
-            ->columns(2)
+            ->columns([
+                'default' => 1,
+                'md' => 2,
+                'xl' => 3,
+            ])
             ->statePath('data');
     }
 
@@ -85,6 +110,48 @@ class DriverDepositReportPage extends Page implements HasForms
     public function exportExcel(): StreamedResponse
     {
         return $this->download('driver-setoran-'.$this->period()->format('Y-m').'.xls', "\t");
+    }
+
+    public function importDepositFile(): void
+    {
+        $state = $this->form->getState();
+        $upload = $this->uploadedImportFile($state['import_file'] ?? null);
+
+        if (! $upload['path'] || ! is_file($upload['path'])) {
+            Notification::make()
+                ->title('File import belum dipilih')
+                ->body('Pilih file CSV atau XLS hasil export setoran, lalu klik Import.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $period = $this->period();
+        $result = $this->importRowsFromFile($upload['path'], $period);
+
+        if ($upload['stored_path']) {
+            Storage::disk('local')->delete($upload['stored_path']);
+        }
+        $this->form->fill([
+            'month' => $this->month(),
+            'year' => $this->year(),
+            'import_file' => null,
+        ]);
+
+        $body = "{$result['updated']} driver diperbarui.";
+        if ($result['skipped'] > 0) {
+            $body .= " {$result['skipped']} baris dilewati.";
+        }
+        if ($result['errors'] !== []) {
+            $body .= ' Catatan: '.implode(' ', array_slice($result['errors'], 0, 3));
+        }
+
+        Notification::make()
+            ->title($result['updated'] > 0 ? 'Import setoran selesai' : 'Import tidak mengubah data')
+            ->body($body)
+            ->{$result['updated'] > 0 ? 'success' : 'warning'}()
+            ->send();
     }
 
     private function download(string $filename, string $separator): StreamedResponse
@@ -121,6 +188,208 @@ class DriverDepositReportPage extends Page implements HasForms
         }, $filename, [
             'Content-Type' => $separator === ',' ? 'text/csv' : 'application/vnd.ms-excel',
         ]);
+    }
+
+    private function importRowsFromFile(string $path, Carbon $period): array
+    {
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            return ['updated' => 0, 'skipped' => 0, 'errors' => ['File tidak dapat dibaca.']];
+        }
+
+        $firstLine = fgets($handle);
+        if ($firstLine === false) {
+            fclose($handle);
+
+            return ['updated' => 0, 'skipped' => 0, 'errors' => ['File kosong.']];
+        }
+
+        $separator = $this->detectSeparator($firstLine);
+        rewind($handle);
+
+        $headers = fgetcsv($handle, 0, $separator);
+        if (! is_array($headers)) {
+            fclose($handle);
+
+            return ['updated' => 0, 'skipped' => 0, 'errors' => ['Header file tidak valid.']];
+        }
+
+        $headerMap = $this->headerMap($headers);
+        $updated = 0;
+        $skipped = 0;
+        $errors = [];
+        $rowNumber = 1;
+
+        DB::transaction(function () use ($handle, $separator, $headerMap, $period, &$updated, &$skipped, &$errors, &$rowNumber): void {
+            while (($values = fgetcsv($handle, 0, $separator)) !== false) {
+                $rowNumber++;
+                $row = $this->mapImportRow($headerMap, $values);
+                $driverName = trim((string) ($row['driver'] ?? ''));
+
+                if ($driverName === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                $driver = $this->findDriver($row);
+                if (! $driver) {
+                    $skipped++;
+                    $errors[] = "Baris {$rowNumber}: driver {$driverName} tidak ditemukan.";
+                    continue;
+                }
+
+                $paidAmount = $this->moneyToInt($row['paid_amount'] ?? $row['terbayar'] ?? 0);
+                $paidAt = $this->parsePaidAt($row['paid_at'] ?? $row['tgl_bayar'] ?? null, $paidAmount);
+
+                $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver->load('user.branch'), $period->copy());
+                $status = $this->statusFromImport($row['status'] ?? null, $paidAmount, (int) $deposit->total);
+
+                $deposit->forceFill([
+                    'paid_amount' => $paidAmount,
+                    'paid_at' => $paidAmount > 0 ? $paidAt : null,
+                    'status' => $status,
+                ])->save();
+
+                $updated++;
+            }
+        });
+
+        fclose($handle);
+
+        return compact('updated', 'skipped', 'errors');
+    }
+
+    private function uploadedImportFile(mixed $value): array
+    {
+        if (is_object($value) && method_exists($value, 'getRealPath')) {
+            return ['path' => $value->getRealPath(), 'stored_path' => null];
+        }
+
+        if (is_string($value)) {
+            return [
+                'path' => Storage::disk('local')->exists($value) ? Storage::disk('local')->path($value) : null,
+                'stored_path' => $value,
+            ];
+        }
+
+        if (is_array($value)) {
+            $first = reset($value);
+
+            return $this->uploadedImportFile($first);
+        }
+
+        return ['path' => null, 'stored_path' => null];
+    }
+
+    private function detectSeparator(string $line): string
+    {
+        $candidates = [
+            "\t" => substr_count($line, "\t"),
+            ',' => substr_count($line, ','),
+            ';' => substr_count($line, ';'),
+        ];
+
+        arsort($candidates);
+
+        return (string) array_key_first($candidates);
+    }
+
+    private function headerMap(array $headers): array
+    {
+        $map = [];
+
+        foreach ($headers as $index => $header) {
+            $key = Str::of((string) $header)
+                ->lower()
+                ->replaceMatches('/[^a-z0-9]+/i', '_')
+                ->trim('_')
+                ->toString();
+
+            $map[$index] = match (true) {
+                $key === 'driver' => 'driver',
+                in_array($key, ['email', 'driver_email'], true) => 'email',
+                in_array($key, ['username', 'driver_username'], true) => 'username',
+                in_array($key, ['terbayar', 'paid_amount', 'paid'], true) => 'paid_amount',
+                in_array($key, ['tgl_bayar', 'tanggal_bayar', 'paid_at', 'payment_date'], true) => 'paid_at',
+                $key === 'status' => 'status',
+                default => $key,
+            };
+        }
+
+        return $map;
+    }
+
+    private function mapImportRow(array $headerMap, array $values): array
+    {
+        $row = [];
+
+        foreach ($values as $index => $value) {
+            if (! isset($headerMap[$index])) {
+                continue;
+            }
+
+            $row[$headerMap[$index]] = is_string($value) ? trim($value) : $value;
+        }
+
+        return $row;
+    }
+
+    private function findDriver(array $row): ?Driver
+    {
+        $email = strtolower(trim((string) ($row['email'] ?? '')));
+        $username = strtolower(trim((string) ($row['username'] ?? '')));
+        $name = strtolower(trim((string) ($row['driver'] ?? '')));
+
+        return Driver::query()
+            ->with('user.branch')
+            ->whereHas('user', function ($query) use ($email, $username, $name): void {
+                $query
+                    ->when($email !== '', fn ($query) => $query->orWhereRaw('LOWER(email) = ?', [$email]))
+                    ->when($username !== '', fn ($query) => $query->orWhereRaw('LOWER(username) = ?', [$username]))
+                    ->when($name !== '', fn ($query) => $query->orWhereRaw('LOWER(name) = ?', [$name]));
+            })
+            ->first();
+    }
+
+    private function moneyToInt(mixed $value): int
+    {
+        $raw = trim((string) $value);
+        if ($raw === '' || $raw === '-') {
+            return 0;
+        }
+
+        $numeric = preg_replace('/[^\d\-]/', '', $raw);
+
+        return max(0, (int) $numeric);
+    }
+
+    private function parsePaidAt(mixed $value, int $paidAmount): ?Carbon
+    {
+        $raw = trim((string) $value);
+        if ($raw === '' || $raw === '-') {
+            return $paidAmount > 0 ? now() : null;
+        }
+
+        try {
+            return Carbon::parse($raw);
+        } catch (\Throwable) {
+            return $paidAmount > 0 ? now() : null;
+        }
+    }
+
+    private function statusFromImport(mixed $value, int $paidAmount, int $total): string
+    {
+        $status = strtolower(trim((string) $value));
+
+        if ($paidAmount <= 0) {
+            return 'unpaid';
+        }
+
+        if ($status === 'paid' && ($total <= 0 || $paidAmount >= $total)) {
+            return 'paid';
+        }
+
+        return $total > 0 && $paidAmount >= $total ? 'paid' : 'unpaid';
     }
 
     private function month(): int

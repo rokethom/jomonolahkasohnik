@@ -211,6 +211,9 @@
                 <div class="deposit-period">Periode {{ \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1)->translatedFormat('F Y') }}</div>
             </div>
             <div class="flex flex-wrap gap-3">
+                <x-filament::button wire:click="importDepositFile" color="warning" icon="heroicon-o-arrow-up-tray">
+                    Import Update Setoran
+                </x-filament::button>
                 <x-filament::button wire:click="exportCsv" icon="heroicon-o-arrow-down-tray">
                     Export CSV
                 </x-filament::button>
