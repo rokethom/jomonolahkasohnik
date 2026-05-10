@@ -553,6 +553,43 @@ input:focus, textarea:focus, select:focus {
   line-height: 1.4;
 }
 
+.profile-sound-card {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border-color: rgba(123, 255, 204, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(123, 255, 204, 0.12), transparent 36%),
+    var(--panel);
+}
+
+.profile-sound-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-sound-card strong {
+  color: #ffffff;
+}
+
+.profile-sound-card span {
+  color: rgba(226, 239, 255, 0.72);
+  font-size: 13px;
+}
+
+.profile-sound-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-sound-actions .secondary-button,
+.profile-sound-actions .ghost-button {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+}
+
 .driver-profile-photo {
   display: flex;
   align-items: center;

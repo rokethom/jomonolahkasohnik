@@ -3746,6 +3746,18 @@ td {
   grid-column: span 2;
 }
 
+.admin-sound-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-sound-actions .secondary-button {
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+}
+
 fieldset {
   border: 1px solid #dbe4ef;
   border-radius: 18px;

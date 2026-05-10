@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jojo-admin-pwa-v1'
-const APP_ASSETS = ['/logo.png', '/favicon.svg', '/manifest.webmanifest']
+const CACHE_NAME = 'jojo-admin-pwa-v2'
+const APP_ASSETS = ['/logo.png', '/favicon.svg', '/manifest.webmanifest', '/notifadmin.mpeg']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)))

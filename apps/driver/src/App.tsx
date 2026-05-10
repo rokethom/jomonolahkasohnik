@@ -119,6 +119,11 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
+const DEFAULT_DRIVER_NOTIFICATION_SOUND = '/driveraudio.mpeg'
+const DRIVER_SOUND_DB = 'jojo-driver-settings'
+const DRIVER_SOUND_STORE = 'notification-sound'
+const DRIVER_SOUND_KEY = 'custom'
+
 type DriverStore = {
   view: View
   token: string
@@ -504,6 +509,20 @@ function App() {
   }, [load, token])
 
   useEffect(() => {
+    if (!token) return
+
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'driver_push_notification') {
+        void playDriverNotificationSound()
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage)
+
+    return () => navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage)
+  }, [token])
+
+  useEffect(() => {
     if (!token || !driver || driver.role.toLowerCase() === 'admin') return
 
     const sendLocation = () => {
@@ -547,7 +566,10 @@ function App() {
       if (!canReceiveRealtimeOrder(state.driver, state.finance, state.isOnline)) return
       void load(true).then((payload) => {
         const visibleOrder = payload?.orders.some((order) => order.id === event.order?.id)
-        if (visibleOrder) toast(`Order baru ${event.order?.code ?? event.order?.order_code ?? ''} masuk`, 'success')
+        if (visibleOrder) {
+          void playDriverNotificationSound()
+          toast(`Order baru ${event.order?.code ?? event.order?.order_code ?? ''} masuk`, 'success')
+        }
       })
     })
     channel.listen('.driver.accepted', () => {
@@ -1264,7 +1286,12 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
     channel.listen('.message.sent', (event: { message?: ChatMessage }) => {
       const incoming = event.message
       if (!incoming) return
-      setMessages((current) => current.some((message) => String(message.id) === String(incoming.id)) ? current : [...current, incoming])
+      setMessages((current) => {
+        if (current.some((message) => String(message.id) === String(incoming.id))) return current
+        if (incoming.sender_id !== driver?.id && incoming.sender_type !== 'driver') void playDriverNotificationSound()
+
+        return [...current, incoming]
+      })
     })
 
     return () => {
@@ -1531,6 +1558,11 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
   const [form, setForm] = useState({ name: driver.name, username: driver.username, password: '' })
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [hasCustomSound, setHasCustomSound] = useState(false)
+
+  useEffect(() => {
+    void hasCustomDriverNotificationSound().then(setHasCustomSound)
+  }, [])
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     try {
@@ -1581,6 +1613,35 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
         <MessageCircleMore size={20} />
         <div><strong>Chat CS / Operator</strong><span>Hubungi operator untuk bantuan akun, suspend, atau order.</span></div>
       </button>
+      <section className="panel profile-sound-card">
+        <div>
+          <strong>Suara Notifikasi</strong>
+          <span>{hasCustomSound ? 'Custom aktif di perangkat ini' : 'Default driveraudio aktif'}</span>
+        </div>
+        <div className="profile-sound-actions">
+          <button className="secondary-button" type="button" onClick={() => void playDriverNotificationSound()}>Tes Suara</button>
+          <label className="secondary-button">
+            Upload Custom
+            <input
+              type="file"
+              accept="audio/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                event.currentTarget.value = ''
+                if (!file) return
+                void saveCustomDriverNotificationSound(file)
+                  .then(() => {
+                    setHasCustomSound(true)
+                    toast('Suara notifikasi custom tersimpan di perangkat ini', 'success')
+                  })
+                  .catch((error) => toast(getErrorMessage(error, 'Gagal menyimpan audio custom'), 'danger'))
+              }}
+            />
+          </label>
+          {hasCustomSound && <button className="ghost-button" type="button" onClick={() => void clearCustomDriverNotificationSound().then(() => { setHasCustomSound(false); toast('Kembali ke suara default', 'success') })}>Default</button>}
+        </div>
+      </section>
       {driver.status !== 'active' && (
         <section className="panel profile-suspend-card">
           <strong>{driver.status === 'suspended_unpaid' ? 'Suspend setoran' : 'Status suspend'}</strong>
@@ -2429,6 +2490,82 @@ function redactMapText(message?: string | null) {
 function autoResizeTextarea(textarea: HTMLTextAreaElement) {
   textarea.style.height = 'auto'
   textarea.style.height = `${Math.min(textarea.scrollHeight, 132)}px`
+}
+
+function openDriverSoundDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DRIVER_SOUND_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(DRIVER_SOUND_STORE)) db.createObjectStore(DRIVER_SOUND_STORE)
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB tidak tersedia'))
+  })
+}
+
+async function driverSoundStore(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest) {
+  const db = await openDriverSoundDb()
+  return new Promise<unknown>((resolve, reject) => {
+    const transaction = db.transaction(DRIVER_SOUND_STORE, mode)
+    const request = work(transaction.objectStore(DRIVER_SOUND_STORE))
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Gagal mengakses audio notifikasi'))
+    transaction.oncomplete = () => db.close()
+    transaction.onerror = () => {
+      db.close()
+      reject(transaction.error ?? new Error('Gagal menyimpan audio notifikasi'))
+    }
+  })
+}
+
+async function saveCustomDriverNotificationSound(file: File) {
+  if (!file.type.startsWith('audio/')) throw new Error('File harus berupa audio.')
+  if (file.size > 2 * 1024 * 1024) throw new Error('Ukuran audio maksimal 2 MB.')
+
+  await driverSoundStore('readwrite', (store) => store.put(file, DRIVER_SOUND_KEY))
+}
+
+async function clearCustomDriverNotificationSound() {
+  await driverSoundStore('readwrite', (store) => store.delete(DRIVER_SOUND_KEY))
+}
+
+async function hasCustomDriverNotificationSound() {
+  try {
+    const blob = await driverSoundStore('readonly', (store) => store.get(DRIVER_SOUND_KEY))
+
+    return blob instanceof Blob
+  } catch {
+    return false
+  }
+}
+
+async function driverNotificationSoundUrl() {
+  try {
+    const blob = await driverSoundStore('readonly', (store) => store.get(DRIVER_SOUND_KEY))
+    if (blob instanceof Blob) return URL.createObjectURL(blob)
+  } catch {
+    // fallback default audio tetap dipakai jika IndexedDB diblokir.
+  }
+
+  return DEFAULT_DRIVER_NOTIFICATION_SOUND
+}
+
+async function playDriverNotificationSound() {
+  if (typeof Audio === 'undefined') return
+
+  const url = await driverNotificationSoundUrl()
+  const audio = new Audio(url)
+  audio.preload = 'auto'
+  audio.volume = 1
+
+  try {
+    await audio.play()
+  } catch {
+    // Browser bisa menolak autoplay sebelum driver pernah berinteraksi dengan aplikasi.
+  } finally {
+    if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 3000)
+  }
 }
 
 function withReplyPrefix(text: string, reply?: ReplyTarget | null) {

@@ -2354,6 +2354,50 @@
   font-weight: 800;
 }
 
+.wa-profile-sound {
+  display: grid;
+  gap: 12px;
+  margin: 0 22px 14px;
+  padding: 16px;
+  border: 1px solid #d8f1ea;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f7fffc, #eefaff);
+}
+
+.wa-profile-sound > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.wa-profile-sound strong {
+  color: #04203a;
+  font-size: 16px;
+}
+
+.wa-profile-sound span {
+  color: #5d7286;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wa-profile-sound > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wa-profile-sound button,
+.wa-profile-sound label {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 14px;
+  background: #eaf8ff;
+  color: #0079cf;
+  font-weight: 900;
+}
+
 .wa-profile-form {
   display: grid;
   gap: 0;

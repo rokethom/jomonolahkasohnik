@@ -347,6 +347,10 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase()
 const APP_BASE = API_BASE.replace(/\/api$/, '')
+const DEFAULT_ADMIN_NOTIFICATION_SOUND = '/notifadmin.mpeg'
+const ADMIN_SOUND_DB = 'jojo-admin-settings'
+const ADMIN_SOUND_STORE = 'notification-sound'
+const ADMIN_SOUND_KEY = 'custom'
 
 const roleLabels: Record<Role, string> = {
   admin: 'Admin',
@@ -471,7 +475,7 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('admin_theme') === 'dark')
   const [isMobileNavOpen, setMobileNavOpen] = useState(false)
   const [isProfileOpen, setProfileOpen] = useState(false)
-  const [notificationSound, setNotificationSound] = useState(() => localStorage.getItem('admin_notification_sound') ?? 'ding')
+  const [notificationSound, setNotificationSound] = useState(() => localStorage.getItem('admin_notification_sound') ?? 'default')
   const [chatDriverTargetId, setChatDriverTargetId] = useState<number | null>(null)
   const clearChatDriverTarget = useCallback(() => setChatDriverTargetId(null), [])
   const [openMenuGroups, setOpenMenuGroups] = useState<Record<string, boolean>>({
@@ -2570,6 +2574,11 @@ function AdminProfileModal({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [hasCustomSound, setHasCustomSound] = useState(false)
+
+  useEffect(() => {
+    void hasCustomAdminNotificationSound().then(setHasCustomSound)
+  }, [])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2627,12 +2636,37 @@ function AdminProfileModal({
             </label>
             <label>Suara notifikasi
               <select value={notificationSound} onChange={(event) => onNotificationSoundChange(event.target.value)}>
+                <option value="default">Default Admin</option>
+                {hasCustomSound && <option value="custom">Custom perangkat ini</option>}
                 <option value="ding">Ding</option>
                 <option value="pop">Pop</option>
                 <option value="soft">Soft</option>
                 <option value="off">Nonaktif</option>
               </select>
             </label>
+            <div className="span-2 admin-sound-actions">
+              <button className="secondary-button" type="button" onClick={() => playAdminNotificationSound(notificationSound === 'off' ? 'default' : notificationSound)}>Tes Suara</button>
+              <label className="secondary-button">
+                Upload Custom
+                <input
+                  type="file"
+                  accept="audio/*"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null
+                    event.currentTarget.value = ''
+                    if (!file) return
+                    void saveCustomAdminNotificationSound(file)
+                      .then(() => {
+                        setHasCustomSound(true)
+                        onNotificationSoundChange('custom')
+                      })
+                      .catch((error) => setError(error instanceof Error ? error.message : 'Gagal menyimpan audio custom'))
+                  }}
+                />
+              </label>
+              {hasCustomSound && <button className="secondary-button" type="button" onClick={() => void clearCustomAdminNotificationSound().then(() => { setHasCustomSound(false); onNotificationSoundChange('default') })}>Default</button>}
+            </div>
           </div>
           {error && <div className="chat-error">{error}</div>}
           <div className="modal-actions">
@@ -4259,8 +4293,87 @@ function chatListSnapshot(chats: Chat[]) {
     .join('|')
 }
 
+function openAdminSoundDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(ADMIN_SOUND_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(ADMIN_SOUND_STORE)) db.createObjectStore(ADMIN_SOUND_STORE)
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB tidak tersedia'))
+  })
+}
+
+async function adminSoundStore(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest) {
+  const db = await openAdminSoundDb()
+  return new Promise<unknown>((resolve, reject) => {
+    const transaction = db.transaction(ADMIN_SOUND_STORE, mode)
+    const request = work(transaction.objectStore(ADMIN_SOUND_STORE))
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Gagal mengakses audio notifikasi'))
+    transaction.oncomplete = () => db.close()
+    transaction.onerror = () => {
+      db.close()
+      reject(transaction.error ?? new Error('Gagal menyimpan audio notifikasi'))
+    }
+  })
+}
+
+async function saveCustomAdminNotificationSound(file: File) {
+  if (!file.type.startsWith('audio/')) throw new Error('File harus berupa audio.')
+  if (file.size > 2 * 1024 * 1024) throw new Error('Ukuran audio maksimal 2 MB.')
+
+  await adminSoundStore('readwrite', (store) => store.put(file, ADMIN_SOUND_KEY))
+}
+
+async function clearCustomAdminNotificationSound() {
+  await adminSoundStore('readwrite', (store) => store.delete(ADMIN_SOUND_KEY))
+}
+
+async function hasCustomAdminNotificationSound() {
+  try {
+    const blob = await adminSoundStore('readonly', (store) => store.get(ADMIN_SOUND_KEY))
+
+    return blob instanceof Blob
+  } catch {
+    return false
+  }
+}
+
+async function adminNotificationSoundUrl() {
+  try {
+    const blob = await adminSoundStore('readonly', (store) => store.get(ADMIN_SOUND_KEY))
+    if (blob instanceof Blob) return URL.createObjectURL(blob)
+  } catch {
+    // fallback ke audio default.
+  }
+
+  return DEFAULT_ADMIN_NOTIFICATION_SOUND
+}
+
+function playAudioUrl(url: string) {
+  if (typeof Audio === 'undefined') return
+  const audio = new Audio(url)
+  audio.preload = 'auto'
+  audio.volume = 1
+  void audio.play().catch(() => undefined).finally(() => {
+    if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 3000)
+  })
+}
+
 function playAdminNotificationSound(sound: string) {
   if (sound === 'off' || typeof window === 'undefined') return
+
+  if (sound === 'default') {
+    playAudioUrl(DEFAULT_ADMIN_NOTIFICATION_SOUND)
+    return
+  }
+
+  if (sound === 'custom') {
+    void adminNotificationSoundUrl().then(playAudioUrl)
+    return
+  }
 
   const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
   if (!AudioContextClass) return

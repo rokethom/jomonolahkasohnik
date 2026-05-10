@@ -90,6 +90,11 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
+const DEFAULT_CUSTOMER_NOTIFICATION_SOUND = '/customernotif.mpeg'
+const CUSTOMER_SOUND_DB = 'jojo-customer-settings'
+const CUSTOMER_SOUND_STORE = 'notification-sound'
+const CUSTOMER_SOUND_KEY = 'custom'
+
 type RegistrationLocation = {
   lat: number
   lng: number
@@ -710,6 +715,20 @@ function App() {
         showToast('error', getApiErrorMessage(error, 'FCM gagal membuat device token.'))
       })
   }, [publicSettings, showToast, token])
+
+  useEffect(() => {
+    if (!token) return
+
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'customer_push_notification') {
+        void playCustomerNotificationSound()
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage)
+
+    return () => navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage)
+  }, [token])
 
   useEffect(() => {
     if (!token) setScreen('login')
@@ -2923,7 +2942,12 @@ function DriverChatScreen({ order }: { order: Order | null }) {
     channel.listen('.message.sent', (event: { message?: ChatMessage }) => {
       const incoming = event.message
       if (!incoming) return
-      setMessages((rows) => rows.some((row) => String(row.id) === String(incoming.id)) ? rows : [...rows, incoming])
+      setMessages((rows) => {
+        if (rows.some((row) => String(row.id) === String(incoming.id))) return rows
+        if (incoming.sender_type !== 'customer' && incoming.sender_id !== store.user?.id) void playCustomerNotificationSound()
+
+        return [...rows, incoming]
+      })
     })
     return () => {
       getEcho().leave(`chat.order.${order.id}`)
@@ -3044,7 +3068,12 @@ function CsChatScreen({ initialConversationId }: { initialConversationId?: numbe
     channel.listen('.message.sent', (event: { message?: ChatMessage }) => {
       const incoming = event.message
       if (!incoming) return
-      setMessages((rows) => rows.some((row) => String(row.id) === String(incoming.id)) ? rows : [...rows, incoming])
+      setMessages((rows) => {
+        if (rows.some((row) => String(row.id) === String(incoming.id))) return rows
+        if (incoming.sender_type !== 'customer' && incoming.sender_id !== store.user?.id) void playCustomerNotificationSound()
+
+        return [...rows, incoming]
+      })
     })
     return () => {
       getEcho().leave(`chat.${conversationId}`)
@@ -3406,6 +3435,7 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   const [imageFailed, setImageFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [hasCustomSound, setHasCustomSound] = useState(false)
   const branchLabel = firstProfileText([user?.branch_display_name, user?.branch_name, user?.branch], 'Cabang belum diset')
   const areaStatus = user?.area_status === 'inside_branch'
     ? 'Di area cabang'
@@ -3455,6 +3485,10 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
   useEffect(() => () => {
     if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview)
   }, [profilePhotoPreview])
+
+  useEffect(() => {
+    void hasCustomCustomerNotificationSound().then(setHasCustomSound)
+  }, [])
 
   const choosePhoto = (file: File | null) => {
     if (file) {
@@ -3515,6 +3549,35 @@ function ProfileScreen({ setupMode = false, onDone }: { setupMode?: boolean; onD
         <input ref={fileInputRef} className="sr-only-file" type="file" accept="image/*" onChange={(event) => choosePhoto(event.target.files?.[0] ?? null)} />
       </section>
       {setupMode && <div className="profile-setup-alert">Nama, phone, dan alamat wajib diisi sebelum membuat order.</div>}
+      <section className="wa-profile-sound">
+        <div>
+          <strong>Suara Notifikasi</strong>
+          <span>{hasCustomSound ? 'Custom aktif di perangkat ini' : 'Default customernotif aktif'}</span>
+        </div>
+        <div>
+          <button type="button" onClick={() => void playCustomerNotificationSound()}>Tes Suara</button>
+          <label>
+            Upload Custom
+            <input
+              type="file"
+              accept="audio/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                event.currentTarget.value = ''
+                if (!file) return
+                void saveCustomCustomerNotificationSound(file)
+                  .then(() => {
+                    setHasCustomSound(true)
+                    store.showToast('success', 'Suara notifikasi custom tersimpan di perangkat ini')
+                  })
+                  .catch((error) => store.showToast('error', getApiErrorMessage(error, 'Gagal menyimpan audio custom')))
+              }}
+            />
+          </label>
+          {hasCustomSound && <button type="button" onClick={() => void clearCustomCustomerNotificationSound().then(() => { setHasCustomSound(false); store.showToast('success', 'Kembali ke suara default') })}>Default</button>}
+        </div>
+      </section>
       <form
         className="wa-profile-form"
         onSubmit={async (event) => {
@@ -3837,6 +3900,82 @@ function mergeRemoteChatMessages(current: ChatMessage[], incoming: ChatMessage[]
   incoming.forEach((message) => byId.set(String(message.id), message))
 
   return [...byId.values()].sort((a, b) => new Date(a.created_at ?? '').getTime() - new Date(b.created_at ?? '').getTime())
+}
+
+function openCustomerSoundDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CUSTOMER_SOUND_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(CUSTOMER_SOUND_STORE)) db.createObjectStore(CUSTOMER_SOUND_STORE)
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB tidak tersedia'))
+  })
+}
+
+async function customerSoundStore(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest) {
+  const db = await openCustomerSoundDb()
+  return new Promise<unknown>((resolve, reject) => {
+    const transaction = db.transaction(CUSTOMER_SOUND_STORE, mode)
+    const request = work(transaction.objectStore(CUSTOMER_SOUND_STORE))
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Gagal mengakses audio notifikasi'))
+    transaction.oncomplete = () => db.close()
+    transaction.onerror = () => {
+      db.close()
+      reject(transaction.error ?? new Error('Gagal menyimpan audio notifikasi'))
+    }
+  })
+}
+
+async function saveCustomCustomerNotificationSound(file: File) {
+  if (!file.type.startsWith('audio/')) throw new Error('File harus berupa audio.')
+  if (file.size > 2 * 1024 * 1024) throw new Error('Ukuran audio maksimal 2 MB.')
+
+  await customerSoundStore('readwrite', (store) => store.put(file, CUSTOMER_SOUND_KEY))
+}
+
+async function clearCustomCustomerNotificationSound() {
+  await customerSoundStore('readwrite', (store) => store.delete(CUSTOMER_SOUND_KEY))
+}
+
+async function hasCustomCustomerNotificationSound() {
+  try {
+    const blob = await customerSoundStore('readonly', (store) => store.get(CUSTOMER_SOUND_KEY))
+
+    return blob instanceof Blob
+  } catch {
+    return false
+  }
+}
+
+async function customerNotificationSoundUrl() {
+  try {
+    const blob = await customerSoundStore('readonly', (store) => store.get(CUSTOMER_SOUND_KEY))
+    if (blob instanceof Blob) return URL.createObjectURL(blob)
+  } catch {
+    // fallback ke default audio.
+  }
+
+  return DEFAULT_CUSTOMER_NOTIFICATION_SOUND
+}
+
+async function playCustomerNotificationSound() {
+  if (typeof Audio === 'undefined') return
+
+  const url = await customerNotificationSoundUrl()
+  const audio = new Audio(url)
+  audio.preload = 'auto'
+  audio.volume = 1
+
+  try {
+    await audio.play()
+  } catch {
+    // Browser bisa menolak autoplay sebelum ada interaksi user.
+  } finally {
+    if (url.startsWith('blob:')) window.setTimeout(() => URL.revokeObjectURL(url), 3000)
+  }
 }
 
 function formatOrderTime(value?: string) {

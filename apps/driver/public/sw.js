@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jojo-driver-pwa-v2'
-const APP_ASSETS = ['/logo.png', '/favicon.ico', '/manifest.webmanifest']
+const CACHE_NAME = 'jojo-driver-pwa-v3'
+const APP_ASSETS = ['/logo.png', '/favicon.ico', '/manifest.webmanifest', '/driveraudio.mpeg']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)).finally(() => self.skipWaiting()))
@@ -29,7 +29,12 @@ self.addEventListener('push', (event) => {
     data: payload.data || {},
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => client.postMessage({ type: 'driver_push_notification', data: options.data }))
+    }),
+  ]))
 })
 
 function notificationTarget(data = {}) {
