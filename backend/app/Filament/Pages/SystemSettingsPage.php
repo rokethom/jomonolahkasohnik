@@ -220,10 +220,10 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->options(fn (Forms\Get $get): array => $this->aiModelOptions((string) $get('ai_provider')))
                                             ->searchable()
                                             ->native(false)
-                                            ->helperText('Untuk OpenRouter, pilih model dengan suffix :free agar biaya parser lebih hemat. Bisa ketik custom model ID jika daftar berubah.'),
+                                            ->helperText('Untuk OpenRouter, gunakan OpenRouter Free Router atau isi custom model ID. Sistem akan mencoba model pilihan admin lebih dulu lalu fallback ke router gratis.'),
                                         Forms\Components\TextInput::make('ai_model_custom')
                                             ->label('Custom model ID')
-                                            ->placeholder('contoh: qwen/qwen3-8b:free')
+                                            ->placeholder('contoh: openrouter/free')
                                             ->helperText('Opsional. Jika diisi, nilai ini menggantikan pilihan Model parser tanpa perlu ubah kode.'),
                                         Forms\Components\TextInput::make('ai_max_tokens')
                                             ->label('Max token output')
@@ -737,15 +737,7 @@ class SystemSettingsPage extends Page implements HasForms
     {
         return match ($provider) {
             'openrouter' => [
-                'deepseek/deepseek-chat-v3-0324:free' => 'DeepSeek Chat V3 0324 (free) - priority 1',
-                'qwen/qwen3-32b:free' => 'Qwen Qwen3 32B (free) - priority 2',
-                'google/gemma-3-27b-it:free' => 'Google Gemma 3 27B IT (free) - priority 3',
-                'meta-llama/llama-3.3-70b-instruct:free' => 'Meta Llama 3.3 70B Instruct (free) - priority 4',
-                'qwen/qwen3-8b:free' => 'Qwen Qwen3 8B (free)',
-                'qwen/qwen3-14b:free' => 'Qwen Qwen3 14B (free)',
-                'deepseek/deepseek-r1:free' => 'DeepSeek R1 (free)',
-                'meta-llama/llama-3.3-8b-instruct:free' => 'Meta Llama 3.3 8B Instruct (free)',
-                'mistralai/mistral-small-3.1-24b-instruct:free' => 'Mistral Small 3.1 24B Instruct (free)',
+                'openrouter/free' => 'OpenRouter Free Router - otomatis pilih model gratis tersedia',
             ],
             'kimi' => [
                 'kimi-pro' => 'Kimi Pro',

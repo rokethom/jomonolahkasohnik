@@ -13,10 +13,7 @@ use Throwable;
 class AiMonitoringService
 {
     private const OPENROUTER_FREE_MODELS = [
-        'deepseek/deepseek-chat-v3-0324:free',
-        'qwen/qwen3-32b:free',
-        'google/gemma-3-27b-it:free',
-        'meta-llama/llama-3.3-70b-instruct:free',
+        'openrouter/free',
     ];
 
     public function __construct(private readonly SettingService $settings)
@@ -48,15 +45,15 @@ class AiMonitoringService
                 'avg_latency_seconds' => $avgLatency,
                 'health' => $failed > 0 && $success === 0 ? 'critical' : ($fallback > 3 || $avgLatency >= 10 ? 'warning' : 'normal'),
             ],
-            'model_cards' => collect(self::OPENROUTER_FREE_MODELS)->map(fn (string $model, int $index): array => $this->modelCard($model, $index + 1, $events))->all(),
+            'model_cards' => $this->monitoredModels()->map(fn (string $model, int $index): array => $this->modelCard($model, $index + 1, $events))->all(),
             'fallback_history' => collect($events)
                 ->filter(fn (array $event): bool => str_contains($event['event'], 'fallback') || str_contains($event['event'], 'failed') || str_contains($event['event'], 'exception'))
                 ->take(12)
                 ->values()
                 ->all(),
             'health' => [
-                'normal_models' => collect(self::OPENROUTER_FREE_MODELS)->filter(fn (string $model): bool => ! $this->slowModel($model))->count(),
-                'slow_models' => collect(self::OPENROUTER_FREE_MODELS)->filter(fn (string $model): bool => (bool) $this->slowModel($model))->count(),
+                'normal_models' => $this->monitoredModels()->filter(fn (string $model): bool => ! $this->slowModel($model))->count(),
+                'slow_models' => $this->monitoredModels()->filter(fn (string $model): bool => (bool) $this->slowModel($model))->count(),
                 'log_file' => 'storage/logs/ai.log',
                 'last_event_at' => data_get($events, '0.time'),
             ],
@@ -137,6 +134,14 @@ class AiMonitoringService
             'avg_latency_seconds' => round((float) $modelEvents->avg('response_time_seconds'), 3),
             'slow_until' => data_get($slow, 'marked_at') ? '10 menit sejak '.data_get($slow, 'marked_at') : null,
         ];
+    }
+
+    private function monitoredModels()
+    {
+        return collect([$this->settings->get('ai_model'), ...self::OPENROUTER_FREE_MODELS])
+            ->filter()
+            ->unique()
+            ->values();
     }
 
     private function aiLogEvents(): array

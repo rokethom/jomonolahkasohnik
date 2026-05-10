@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\NotificationService;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -104,8 +105,18 @@ class OrderService
 
         $cancelled += $orders->count();
         $cancelled += $this->cancelExpiredMultiCrewOrders();
+        $cancelled += $this->autoCompleteForgottenDriverOrdersIfDue();
 
         return $cancelled;
+    }
+
+    public function autoCompleteForgottenDriverOrdersIfDue(): int
+    {
+        if (! Cache::add('orders:auto_complete_forgotten:last_run', now()->toIso8601String(), 60)) {
+            return 0;
+        }
+
+        return $this->autoCompleteForgottenDriverOrders();
     }
 
     public function cancelExpiredMultiCrewOrders(): int
