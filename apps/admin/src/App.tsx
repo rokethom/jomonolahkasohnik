@@ -1494,12 +1494,35 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
   const [authDriver, setAuthDriver] = useState<DriverRow | null>(null)
   const [branchFilter, setBranchFilter] = useState('all')
   const [performancePeriod, setPerformancePeriod] = useState<'today' | 'month' | 'all'>('month')
+  const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null)
+  const detailRef = useRef<HTMLElement | null>(null)
   const branchOptions = useMemo(() => {
     const unique = new Map<string, string>()
     drivers.forEach((driver) => unique.set(driverBranchKey(driver), driverBranchLabel(driver)))
     return [...unique.entries()].sort((first, second) => first[1].localeCompare(second[1]))
   }, [drivers])
   const filteredDrivers = useMemo(() => drivers.filter((driver) => branchFilter === 'all' || driverBranchKey(driver) === branchFilter), [branchFilter, drivers])
+  const selectedDriver = useMemo(
+    () => filteredDrivers.find((driver) => driver.id === selectedDriverId) ?? filteredDrivers[0] ?? null,
+    [filteredDrivers, selectedDriverId],
+  )
+
+  useEffect(() => {
+    if (filteredDrivers.length === 0) {
+      if (selectedDriverId !== null) setSelectedDriverId(null)
+      return
+    }
+
+    if (!filteredDrivers.some((driver) => driver.id === selectedDriverId)) {
+      setSelectedDriverId(filteredDrivers[0].id)
+    }
+  }, [filteredDrivers, selectedDriverId])
+
+  const selectDriver = (driver: DriverRow) => {
+    setSelectedDriverId(driver.id)
+    window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0)
+  }
+
   const suspend = async (driver: DriverRow, duration: number, status: 'suspended' | 'suspended_unpaid') => {
     if (!driver.driver_id) return
     const reason = prompt('Alasan suspend', status === 'suspended_unpaid' ? 'Belum bayar setoran' : 'Suspend manual admin')
@@ -1569,48 +1592,118 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
         <span className="toolbar-hint">Ranking driver berubah mengikuti cabang/area dan periode yang dipilih.</span>
       </div>
       <DriverPerformanceBoard drivers={filteredDrivers} period={performancePeriod} />
-      <div className="driver-table-shell">
-        <table className="driver-table">
-          <thead><tr><th>Driver</th><th>Phone</th><th>Kendaraan</th><th>Layanan</th><th>Status</th><th>Setoran</th><th>Until</th><th>Oper</th><th>History</th><th>Actions</th></tr></thead>
-          <tbody>
-            {filteredDrivers.map((driver) => (
-              <tr key={driver.id}>
-                <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></div></div></td>
-                <td><span className="driver-phone">{driver.phone || '-'}</span></td>
-                <td><span className="status info">{vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
-                <td><span className="driver-phone">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
-                <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
-                <td>
-                  <span className={driver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{driver.deposit_status === 'paid' && Number(driver.deposit_remaining ?? 0) > 0 ? 'paid parsial' : driver.deposit_status ?? 'sync'}</span>
-                  <span className="driver-phone">Sisa Rp {Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}</span>
-                </td>
-                <td>{driver.suspended_until || '-'}</td>
-                <td>{driver.oper_handle_count}</td>
-                <td><div className="driver-history">{driver.suspensions.slice(0, 2).map((item) => <span key={item.id}>{item.duration}h - {item.reason}</span>)}{driver.suspensions.length === 0 && <span>-</span>}</div></td>
-                <td>
-                  <div className="row-actions">
-                    {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 1, 'suspended')}>1h</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id} onClick={() => void suspend(driver, 12, 'suspended')}>12h</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || Number(driver.deposit_remaining ?? 0) <= 0} onClick={() => void markDeposit(driver, 'paid')}>Bayar</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id || Number(driver.deposit_remaining ?? 0) <= 0} onClick={() => void markDeposit(driver, 'paid', true)}>Lunas</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button reject" type="button" disabled={!driver.driver_id || driver.deposit_status === 'unpaid'} onClick={() => void markDeposit(driver, 'unpaid')}>Unpaid</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setConfigDriver(driver)}>Config</button>}
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => void resetToken(driver)}>Reset Token</button>}
-                    {permissions.can_manage_driver_auth && <button className="mini-button" type="button" disabled={!driver.driver_id} onClick={() => setAuthDriver(driver)}>Google Auth</button>}
-                    {permissions.can_unsuspend_drivers && driver.driver_status !== 'active' && <button className="mini-button" type="button" onClick={() => void release(driver)}>Release</button>}
+      <div className="driver-management-layout">
+        <div className="driver-table-shell">
+          <div className="driver-table-hint">Klik baris driver untuk membuka detail dan aksi.</div>
+          <table className="driver-table">
+            <thead><tr><th>Driver</th><th>Phone</th><th>Kendaraan</th><th>Layanan</th><th>Status</th><th>Setoran</th><th>Oper</th></tr></thead>
+            <tbody>
+              {filteredDrivers.map((driver) => (
+                <tr
+                  key={driver.id}
+                  className={selectedDriver?.id === driver.id ? 'selected-row' : ''}
+                  onClick={() => selectDriver(driver)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      selectDriver(driver)
+                    }
+                  }}
+                  tabIndex={0}
+                >
+                  <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></div></div></td>
+                  <td><span className="driver-phone">{driver.phone || '-'}</span></td>
+                  <td><span className="status info">{vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
+                  <td><span className="driver-service-list">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
+                  <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
+                  <td>
+                    <span className={driver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{driver.deposit_status === 'paid' && Number(driver.deposit_remaining ?? 0) > 0 ? 'paid parsial' : driver.deposit_status ?? 'sync'}</span>
+                    <span className="driver-phone">Sisa Rp {Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}</span>
+                  </td>
+                  <td><strong>{driver.oper_handle_count}</strong></td>
+                </tr>
+              ))}
+              {filteredDrivers.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <EmptyPanel title="Belum ada driver" copy="Driver yang terlihat sesuai filter cabang akan muncul di sini." />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <section className="driver-detail-panel" ref={detailRef}>
+          {!selectedDriver && <EmptyPanel title="Pilih driver" copy="Detail driver dan tombol aksi akan tampil di sini." />}
+          {selectedDriver && (
+            <>
+              <div className="driver-detail-hero">
+                <UserAvatar user={selectedDriver} />
+                <div>
+                  <span>Driver terpilih</span>
+                  <strong>{selectedDriver.name}</strong>
+                  <small>{selectedDriver.username} - {driverBranchLabel(selectedDriver)}</small>
+                </div>
+              </div>
+              <div className="driver-detail-statuses">
+                <span className={selectedDriver.driver_status === 'active' ? 'status success' : selectedDriver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{selectedDriver.driver_status.replace('_', ' ')}</span>
+                <span className={selectedDriver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{selectedDriver.deposit_status ?? 'sync'}</span>
+                <span className="status info">{vehicleLabel(selectedDriver.vehicle_type)}{selectedDriver.vehicle_type === 'mobil' ? ` ${selectedDriver.vehicle_seat_rows ?? 2} baris` : ''}</span>
+                {selectedDriver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}
+              </div>
+              <div className="driver-detail-grid">
+                <div><span>Telepon</span><strong>{selectedDriver.phone || '-'}</strong></div>
+                <div><span>Email</span><strong>{selectedDriver.google_email ?? selectedDriver.email ?? '-'}</strong></div>
+                <div><span>Setoran</span><strong>Rp {Number(selectedDriver.deposit_remaining ?? 0).toLocaleString('id-ID')}</strong></div>
+                <div><span>Oper handle</span><strong>{selectedDriver.oper_handle_count}</strong></div>
+                <div><span>Suspend until</span><strong>{selectedDriver.suspended_until || '-'}</strong></div>
+                <div><span>Layanan</span><strong>{selectedDriver.allowed_service_types?.length ? selectedDriver.allowed_service_types.join(', ') : 'Semua layanan'}</strong></div>
+              </div>
+              <div className="driver-detail-history">
+                <div className="section-title"><h2>History suspend</h2><span>{selectedDriver.suspensions.length}</span></div>
+                <div className="driver-history-list">
+                  {selectedDriver.suspensions.slice(0, 5).map((item) => (
+                    <article key={item.id}>
+                      <strong>{item.duration} jam</strong>
+                      <span>{item.reason}</span>
+                    </article>
+                  ))}
+                  {selectedDriver.suspensions.length === 0 && <p>Belum ada history suspend.</p>}
+                </div>
+              </div>
+              <div className="driver-detail-actions">
+                {permissions.can_suspend_drivers && (
+                  <div className="driver-action-group danger">
+                    <span>Suspend</span>
+                    <div>
+                      <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id} onClick={() => void suspend(selectedDriver, 1, 'suspended')}>1h</button>
+                      <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id} onClick={() => void suspend(selectedDriver, 12, 'suspended')}>12h</button>
+                      <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id || selectedDriver.deposit_status === 'unpaid'} onClick={() => void markDeposit(selectedDriver, 'unpaid')}>Unpaid</button>
+                    </div>
                   </div>
-                </td>
-              </tr>
-            ))}
-            {filteredDrivers.length === 0 && (
-              <tr>
-                <td colSpan={10}>
-                  <EmptyPanel title="Belum ada driver" copy="Driver yang terlihat sesuai filter cabang akan muncul di sini." />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                )}
+                {permissions.can_suspend_drivers && (
+                  <div className="driver-action-group">
+                    <span>Setoran</span>
+                    <div>
+                      <button className="mini-button" type="button" disabled={!selectedDriver.driver_id || Number(selectedDriver.deposit_remaining ?? 0) <= 0} onClick={() => void markDeposit(selectedDriver, 'paid')}>Bayar</button>
+                      <button className="mini-button approve" type="button" disabled={!selectedDriver.driver_id || Number(selectedDriver.deposit_remaining ?? 0) <= 0} onClick={() => void markDeposit(selectedDriver, 'paid', true)}>Lunas</button>
+                    </div>
+                  </div>
+                )}
+                <div className="driver-action-group">
+                  <span>Akun</span>
+                  <div>
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => setConfigDriver(selectedDriver)}>Config</button>}
+                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => void resetToken(selectedDriver)}>Reset Token</button>}
+                    {permissions.can_manage_driver_auth && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => setAuthDriver(selectedDriver)}>Google Auth</button>}
+                    {permissions.can_unsuspend_drivers && selectedDriver.driver_status !== 'active' && <button className="mini-button approve" type="button" onClick={() => void release(selectedDriver)}>Release</button>}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
       </div>
       {configDriver && <DriverConfigModal driver={configDriver} services={services} api={api} onClose={() => setConfigDriver(null)} onSaved={async () => { await onChanged(); setConfigDriver(null) }} />}
       {authDriver && <DriverGoogleAuthModal driver={authDriver} api={api} onClose={() => setAuthDriver(null)} onSaved={async () => { await onChanged(); setAuthDriver(null) }} />}
