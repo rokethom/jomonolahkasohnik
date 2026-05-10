@@ -859,7 +859,7 @@ function AppUpdateNotice({ update }: { update: BuildInfo | null }) {
     <div className="app-update-notice">
       <div>
         <strong>Update admin tersedia</strong>
-        <span>Versi {update.sha} siap dipakai.</span>
+        <span>Versi terbaru telah tersedia.</span>
       </div>
       <button type="button" onClick={() => window.location.reload()}>Refresh</button>
     </div>
