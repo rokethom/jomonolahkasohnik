@@ -84,7 +84,7 @@ class OrderController extends Controller
         ], 201);
     }
 
-    public function quote(StoreOrderRequest $request, PricingService $pricingService, OrderOperationService $operations): JsonResponse
+    public function quote(StoreOrderRequest $request, PricingService $pricingService, OrderOperationService $operations, OrderService $orders): JsonResponse
     {
         if ($message = $operations->closedMessage()) {
             return response()->json([
@@ -94,12 +94,12 @@ class OrderController extends Controller
             ], 423);
         }
 
+        $payload = $request->validated();
+        $payload['branch_id'] = $orders->resolveTargetBranchId($payload, $request->user()?->branch_id);
+
         return response()->json([
             'message' => 'Pricing calculated',
-            'data' => $pricingService->calculate([
-                ...$request->validated(),
-                'branch_id' => $request->validated('branch_id') ?? $request->user()?->branch_id,
-            ]),
+            'data' => $pricingService->calculate($payload),
         ]);
     }
 

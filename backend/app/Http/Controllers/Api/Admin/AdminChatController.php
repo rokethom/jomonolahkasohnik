@@ -53,6 +53,19 @@ class AdminChatController extends Controller
         ]);
     }
 
+    public function startDriver(User $driverUser, Request $request, ChatService $chatService): JsonResponse
+    {
+        $driverRole = $driverUser->role instanceof UserRole ? $driverUser->role->value : (string) $driverUser->role;
+
+        abort_unless($driverRole === UserRole::Driver->value, 422, 'User ini bukan driver.');
+        $this->authorizeDriverChat($driverUser, $request->user());
+
+        $conversation = $chatService->startCustomerOperator($driverUser);
+        $conversation->load(['customer', 'driver', 'operator', 'order', 'latestMessage']);
+
+        return response()->json(['data' => $this->payload($conversation, $request->user())]);
+    }
+
     public function sendMessage(Request $request, MessageService $messageService, ChatService $chatService, SLAService $slaService): JsonResponse
     {
         $payload = $request->validate([
@@ -171,6 +184,21 @@ class AdminChatController extends Controller
     private function authorizeOperator(User $actor): void
     {
         abort_unless($actor->role instanceof UserRole && $actor->role->isStaff(), 403);
+    }
+
+    private function authorizeDriverChat(User $driverUser, User $actor): void
+    {
+        $this->authorizeOperator($actor);
+
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::SPV], true)) {
+            return;
+        }
+
+        abort_unless(
+            $actor->branch_id !== null && (int) $actor->branch_id === (int) $driverUser->branch_id,
+            403,
+            'Driver di luar area akun ini.',
+        );
     }
 
     private function authorizeCancelApprover(User $actor): void

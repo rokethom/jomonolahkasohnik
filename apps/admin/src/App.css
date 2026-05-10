@@ -4256,6 +4256,29 @@ textarea::placeholder {
   vertical-align: baseline;
 }
 
+.inline-action-link {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1;
+  padding: 3px 8px;
+  font-weight: 950;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inline-action-link:hover {
+  background: rgba(14, 165, 233, 0.2);
+}
+
+.inline-action-link.detail-link {
+  padding-inline: 0;
+  background: transparent;
+}
+
 .order-code-row {
   justify-self: start;
   min-height: 36px;

@@ -1704,6 +1704,7 @@ class AdminController extends Controller
             'id' => $order->id,
             'code' => $order->order_code,
             'customer' => $order->user?->name,
+            'driver_user_id' => $order->driver?->user?->id,
             'driver' => $order->driver?->user?->name,
             'service' => $order->service_type,
             'service_code' => $order->service_code,

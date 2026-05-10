@@ -379,7 +379,7 @@ function App() {
   const isBrowserBackRef = useRef(false)
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null
   const chatOrder = chatTarget === 'operator' ? null : selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
-  const updateInfo = useBuildUpdate('driver', !['chat', 'order-detail', 'request'].includes(view))
+  const updateInfo = useBuildUpdate('driver')
 
   const api = useMemo(() => makeApi(token), [token])
 
@@ -1895,9 +1895,8 @@ type BuildInfo = {
   built_at?: string
 }
 
-function useBuildUpdate(appName: string, autoReload: boolean) {
+function useBuildUpdate(appName: string) {
   const [update, setUpdate] = useState<BuildInfo | null>(null)
-  const reloadTimerRef = useRef<number | null>(null)
   const currentVersionRef = useRef<BuildInfo | null>(null)
 
   useEffect(() => {
@@ -1916,9 +1915,6 @@ function useBuildUpdate(appName: string, autoReload: boolean) {
         if (latest.sha === currentVersionRef.current.sha) return
 
         setUpdate(latest)
-        if (autoReload && reloadTimerRef.current === null) {
-          reloadTimerRef.current = window.setTimeout(() => window.location.reload(), 3500)
-        }
       } catch {
         // Update polling is best-effort only.
       }
@@ -1930,10 +1926,8 @@ function useBuildUpdate(appName: string, autoReload: boolean) {
     return () => {
       active = false
       window.clearInterval(interval)
-      if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current)
-      reloadTimerRef.current = null
     }
-  }, [appName, autoReload])
+  }, [appName])
 
   return update
 }

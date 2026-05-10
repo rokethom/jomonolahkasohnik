@@ -112,6 +112,7 @@ type Order = {
   id: number
   code: string
   customer: string | null
+  driver_user_id?: number | null
   driver: string | null
   service: string
   service_code?: string | null
@@ -470,6 +471,8 @@ function App() {
   const [isMobileNavOpen, setMobileNavOpen] = useState(false)
   const [isProfileOpen, setProfileOpen] = useState(false)
   const [notificationSound, setNotificationSound] = useState(() => localStorage.getItem('admin_notification_sound') ?? 'ding')
+  const [chatDriverTargetId, setChatDriverTargetId] = useState<number | null>(null)
+  const clearChatDriverTarget = useCallback(() => setChatDriverTargetId(null), [])
   const [openMenuGroups, setOpenMenuGroups] = useState<Record<string, boolean>>({
     overview: true,
     operations: true,
@@ -533,10 +536,6 @@ function App() {
   useEffect(() => {
     if (!token) return
 
-    const interval = window.setInterval(() => {
-      void load(true)
-    }, 5000)
-
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void load(true)
     }
@@ -544,7 +543,6 @@ function App() {
     document.addEventListener('visibilitychange', refreshWhenVisible)
 
     return () => {
-      window.clearInterval(interval)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [load, token])
@@ -646,7 +644,7 @@ function App() {
 
   const allowedViews = data ? allowedViewsFor(data.me.role, data.permissions) : []
   const safeView = data ? (allowedViews.includes(view) ? view : (allowedViews[0] ?? 'dashboard')) : view
-  const updateInfo = useBuildUpdate('admin', !['orders', 'chats', 'internal-chat', 'manual-order', 'sticky-notes'].includes(safeView))
+  const updateInfo = useBuildUpdate('admin')
 
   if (!token) {
     return (
@@ -781,14 +779,14 @@ function App() {
 
         {adminNotice && <div className="dispatch-toast oper-handle-toast">{adminNotice}</div>}
         {safeView === 'dashboard' && <Dashboard data={data} api={api} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
-        {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {(safeView === 'pricing' || safeView === 'ring-pricing') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
-        {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} notificationSound={notificationSound} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} notificationSound={notificationSound} targetDriverUserId={chatDriverTargetId} onTargetDriverHandled={clearChatDriverTarget} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
@@ -811,9 +809,8 @@ type BuildInfo = {
   built_at?: string
 }
 
-function useBuildUpdate(appName: string, autoReload: boolean) {
+function useBuildUpdate(appName: string) {
   const [update, setUpdate] = useState<BuildInfo | null>(null)
-  const reloadTimerRef = useRef<number | null>(null)
   const currentVersionRef = useRef<BuildInfo | null>(null)
 
   useEffect(() => {
@@ -832,9 +829,6 @@ function useBuildUpdate(appName: string, autoReload: boolean) {
         if (latest.sha === currentVersionRef.current.sha) return
 
         setUpdate(latest)
-        if (autoReload && reloadTimerRef.current === null) {
-          reloadTimerRef.current = window.setTimeout(() => window.location.reload(), 3500)
-        }
       } catch {
         // Keep admin workflows alive even if version polling fails.
       }
@@ -846,10 +840,8 @@ function useBuildUpdate(appName: string, autoReload: boolean) {
     return () => {
       active = false
       window.clearInterval(interval)
-      if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current)
-      reloadTimerRef.current = null
     }
-  }, [appName, autoReload])
+  }, [appName])
 
   return update
 }
@@ -1927,7 +1919,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   )
 }
 
-function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions, api, onChanged }: { orders: Order[]; operHandles: OperHandle[]; auditLogs: AuditLog[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions, api, onChanged, onOpenDriverChat }: { orders: Order[]; operHandles: OperHandle[]; auditLogs: AuditLog[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void>; onOpenDriverChat: (driverUserId: number) => void }) {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
   const latestOrders = useMemo(() => sortOrdersNewest(orders), [orders])
@@ -1955,7 +1947,7 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
                 <tr className={selectedOrder?.id === order.id ? 'selected-row' : ''} key={order.id}>
                   <td><strong>{order.code}</strong><span>{formatShortDateTime(order.created_at)}</span></td>
                   <td>{order.customer || '-'}</td>
-                  <td>{order.driver || '-'}</td>
+                  <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={() => onOpenDriverChat(order.driver_user_id!)}>{order.driver}</button> : order.driver || '-'}</td>
                   <td>{order.service}</td>
                   <td>{displayBranchValue(order.branch, order.branch_area)}</td>
                   <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} · Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
@@ -1974,7 +1966,7 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
           </table>
           {filteredOrders.length === 0 && <EmptyPanel title="Order tidak ditemukan" copy="Coba cek kode order atau hapus filter pencarian." />}
         </div>
-        <OrderDetailPanel order={selectedOrder} permissions={permissions} onEditPrice={permissions.can_edit_order_price && selectedOrder && canEditOrderPrice(selectedOrder) ? () => setEditingOrder(selectedOrder) : undefined} />
+        <OrderDetailPanel order={selectedOrder} permissions={permissions} onOpenDriverChat={onOpenDriverChat} onEditPrice={permissions.can_edit_order_price && selectedOrder && canEditOrderPrice(selectedOrder) ? () => setEditingOrder(selectedOrder) : undefined} />
       </div>
       {editingOrder && <OrderPriceModal order={editingOrder} api={api} onClose={() => setEditingOrder(null)} onSaved={async () => { await onChanged(); setEditingOrder(null) }} />}
     </section>
@@ -2039,7 +2031,7 @@ function OperHandleQueue({ operHandles, api, permissions, onChanged, onSelectOrd
   )
 }
 
-function OrderDetailPanel({ order, permissions, onEditPrice }: { order: Order | null; permissions: Permissions; onEditPrice?: () => void }) {
+function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }: { order: Order | null; permissions: Permissions; onEditPrice?: () => void; onOpenDriverChat?: (driverUserId: number) => void }) {
   if (!order) {
     return (
       <aside className="order-detail-panel empty-detail">
@@ -2068,7 +2060,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice }: { order: Order | 
       </div>
       <div className="order-detail-grid">
         <DetailItem label="Customer" value={order.customer || '-'} />
-        <DetailItem label="Driver" value={order.driver || 'Belum diambil'} />
+        <DetailItem label="Driver" value={order.driver_user_id && order.driver && onOpenDriverChat ? <button className="inline-action-link detail-link" type="button" onClick={() => onOpenDriverChat(order.driver_user_id!)}>{order.driver}</button> : order.driver || 'Belum diambil'} />
         <DetailItem label="Layanan" value={`${order.service_code ? `${order.service_code} · ` : ''}${order.service}`} />
         <DetailItem label="Cabang / Area" value={displayBranchValue(order.branch, order.branch_area)} />
         <DetailItem label="Pembayaran" value={payment} />
@@ -2532,7 +2524,7 @@ function AdminProfileModal({
   )
 }
 
-function AdminChatPanel({ initialChats, api, me, token, permissions, notificationSound, onOpenOrder }: { initialChats: Chat[]; api: ApiClient; me: User; token: string; permissions: Permissions; notificationSound: string; onOpenOrder: (code: string) => void }) {
+function AdminChatPanel({ initialChats, api, me, token, permissions, notificationSound, targetDriverUserId, onTargetDriverHandled, onOpenOrder }: { initialChats: Chat[]; api: ApiClient; me: User; token: string; permissions: Permissions; notificationSound: string; targetDriverUserId: number | null; onTargetDriverHandled: () => void; onOpenOrder: (code: string) => void }) {
   const [chats, setChats] = useState<Chat[]>(initialChats)
   const [activeId, setActiveId] = useState<number | null>(initialChats[0]?.id ?? null)
   const [detail, setDetail] = useState<ChatDetail | null>(null)
@@ -2598,6 +2590,32 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
       setChatError(error instanceof Error ? error.message : 'Gagal memuat detail chat')
     }
   }, [api])
+
+  useEffect(() => {
+    if (!targetDriverUserId) return
+
+    let active = true
+    const openDriverChat = async () => {
+      setChatError('')
+      try {
+        const payload = await api<{ data: Chat }>(`/admin/chat/drivers/${targetDriverUserId}`, { method: 'POST' })
+        if (!active) return
+        setChats((rows) => [payload.data, ...rows.filter((chat) => chat.id !== payload.data.id)])
+        setActiveId(payload.data.id)
+        await loadDetail(payload.data.id)
+      } catch (error) {
+        if (active) setChatError(error instanceof Error ? error.message : 'Gagal membuka chat driver')
+      } finally {
+        if (active) onTargetDriverHandled()
+      }
+    }
+
+    void openDriverChat()
+
+    return () => {
+      active = false
+    }
+  }, [api, loadDetail, onTargetDriverHandled, targetDriverUserId])
 
   useEffect(() => {
     const snapshot = chatListSnapshot(initialChats)

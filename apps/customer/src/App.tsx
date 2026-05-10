@@ -480,7 +480,7 @@ function App() {
   const [orderSubmitting, setOrderSubmitting] = useState(false)
   const orderSubmittingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
-  const updateInfo = useBuildUpdate('customer', !['order-chat', 'driver-chat', 'cs-chat', 'profile-setup'].includes(screen))
+  const updateInfo = useBuildUpdate('customer')
 
   useEffect(() => {
     const root = document.documentElement
@@ -1248,9 +1248,8 @@ type BuildInfo = {
   built_at?: string
 }
 
-function useBuildUpdate(appName: string, autoReload: boolean) {
+function useBuildUpdate(appName: string) {
   const [update, setUpdate] = useState<BuildInfo | null>(null)
-  const reloadTimerRef = useRef<number | null>(null)
   const currentVersionRef = useRef<BuildInfo | null>(null)
 
   useEffect(() => {
@@ -1269,9 +1268,6 @@ function useBuildUpdate(appName: string, autoReload: boolean) {
         if (latest.sha === currentVersionRef.current.sha) return
 
         setUpdate(latest)
-        if (autoReload && reloadTimerRef.current === null) {
-          reloadTimerRef.current = window.setTimeout(() => window.location.reload(), 3500)
-        }
       } catch {
         // Version polling must never disturb an active order.
       }
@@ -1283,10 +1279,8 @@ function useBuildUpdate(appName: string, autoReload: boolean) {
     return () => {
       active = false
       window.clearInterval(interval)
-      if (reloadTimerRef.current !== null) window.clearTimeout(reloadTimerRef.current)
-      reloadTimerRef.current = null
     }
-  }, [appName, autoReload])
+  }, [appName])
 
   return update
 }

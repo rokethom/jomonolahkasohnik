@@ -112,6 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/location-logs', [AdminController::class, 'locationLogs']);
         Route::get('/chats', [AdminController::class, 'chats'])->middleware('permission:monitor_live_chat');
         Route::get('/chat/{conversation}', [AdminChatController::class, 'show'])->middleware('permission:monitor_live_chat');
+        Route::post('/chat/drivers/{driverUser}', [AdminChatController::class, 'startDriver'])->middleware('permission:monitor_live_chat');
         Route::post('/send-message', [AdminChatController::class, 'sendMessage'])->middleware('permission:monitor_live_chat');
         Route::post('/chat/{conversation}/close', [AdminChatController::class, 'close'])->middleware('permission:monitor_live_chat');
         Route::post('/chat/cancel-requests/{cancelRequest}/approve', [AdminChatController::class, 'approveCancel'])->middleware('permission:approve_cancel_order');

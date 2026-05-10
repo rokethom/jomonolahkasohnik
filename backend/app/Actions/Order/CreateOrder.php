@@ -5,6 +5,7 @@ namespace App\Actions\Order;
 use App\Enums\OrderStatus;
 use App\Events\OrderCreated;
 use App\Models\Driver;
+use App\Models\Branch;
 use App\Models\Order;
 use App\Models\Service;
 use App\Models\User;
@@ -41,7 +42,7 @@ class CreateOrder
         return DB::transaction(function () use ($user, $payload): Order {
             $this->orders->assertCustomerCanCreate($user, (string) ($payload['service_type'] ?? 'ojek'));
             $payload = $this->hydrateHiddenLocations($user, $payload);
-            $payload['branch_id'] ??= $user->branch_id;
+            $payload['branch_id'] = $this->orders->resolveTargetBranchId($payload, $user->branch_id);
             $pricing = $this->pricingService->calculate($payload);
             if ($this->isTartHelperOrder($payload)) {
                 $pricing['service_fee'] = 0;
@@ -51,7 +52,7 @@ class CreateOrder
                 $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nFlag: helper kue tart tanpa service charge.");
             }
             $service = $this->resolveService((string) ($payload['service_type'] ?? 'ojek'));
-            $branch = $user->branch;
+            $branch = $payload['branch_id'] ? Branch::query()->find($payload['branch_id']) : $user->branch;
             $payload['pickup_address'] = str($payload['pickup_address'])->limit(250, '')->toString();
             $payload['destination_address'] = str($payload['destination_address'])->limit(250, '')->toString();
             $payment = $this->paymentPayload((string) ($payload['payment_method'] ?? 'cash'));
@@ -85,7 +86,7 @@ class CreateOrder
                 ...$payment,
                 'user_id' => $user->id,
                 'service_id' => $service?->id,
-                'branch_id' => $user->branch_id,
+                'branch_id' => $payload['branch_id'],
                 'service_code' => $service?->code,
                 'order_code' => $this->orderCodeGenerator->generate($service?->code, $branch),
                 'distance_km' => $pricing['distance'],

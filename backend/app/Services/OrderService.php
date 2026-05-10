@@ -20,6 +20,7 @@ class OrderService
         private readonly OrderOperationService $operations,
         private readonly NotificationService $notifications,
         private readonly ChatService $chatService,
+        private readonly BranchDetectionService $branches,
     )
     {
     }
@@ -114,6 +115,28 @@ class OrderService
             $payload['destination_lat'] ?? '',
             $payload['destination_lng'] ?? '',
         ]));
+    }
+
+    public function resolveTargetBranchId(array $payload, ?int $fallbackBranchId = null): ?int
+    {
+        foreach ([
+            ['destination_lat', 'destination_lng'],
+            ['pickup_lat', 'pickup_lng'],
+        ] as [$latKey, $lngKey]) {
+            if (! isset($payload[$latKey], $payload[$lngKey])) {
+                continue;
+            }
+
+            $detected = $this->branches->detect((float) $payload[$latKey], (float) $payload[$lngKey]);
+            $branchId = $detected['branch']?->id ?? null;
+            if ($branchId) {
+                return (int) $branchId;
+            }
+        }
+
+        return isset($payload['branch_id'])
+            ? (int) $payload['branch_id']
+            : $fallbackBranchId;
     }
 
     private function isGiftOrder(string $serviceType): bool
