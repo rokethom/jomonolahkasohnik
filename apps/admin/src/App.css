@@ -1165,6 +1165,7 @@ svg {
 
 .admin-update-status-card {
   min-width: 0;
+  width: 100%;
   border: 1px solid rgba(34, 211, 238, 0.24);
   border-radius: 22px;
   padding: 18px 20px;
@@ -1177,6 +1178,8 @@ svg {
     linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(8, 47, 73, 0.84)),
     radial-gradient(circle at 92% 18%, rgba(34, 197, 94, 0.24), transparent 32%);
   box-shadow: 0 22px 70px rgba(15, 23, 42, 0.24);
+  cursor: pointer;
+  text-align: left;
 }
 
 .admin-update-status-copy {
@@ -1223,6 +1226,92 @@ svg {
   color: #e0f2fe;
   font-size: 14px;
   font-weight: 950;
+}
+
+.admin-update-detail-modal {
+  width: min(680px, 100%);
+}
+
+.admin-update-detail-body {
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+}
+
+.admin-update-detail-body section {
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-radius: 18px;
+  padding: 16px;
+  display: grid;
+  gap: 7px;
+  background:
+    radial-gradient(circle at top right, rgba(34, 211, 238, 0.12), transparent 34%),
+    rgba(15, 23, 42, 0.04);
+}
+
+.admin-shell.dark .admin-update-detail-body section {
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.admin-update-detail-body section span,
+.admin-update-info-box span {
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.admin-shell.dark .admin-update-detail-body section span,
+.admin-shell.dark .admin-update-info-box span {
+  color: #7dd3fc;
+}
+
+.admin-update-detail-body section strong {
+  color: #0f172a;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.admin-shell.dark .admin-update-detail-body section strong {
+  color: #f8fafc;
+}
+
+.admin-update-detail-body section p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.admin-shell.dark .admin-update-detail-body section p {
+  color: #b6c8dc;
+}
+
+.admin-update-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-update-info-box {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.admin-shell.dark .admin-update-info-box {
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.admin-update-info-box strong {
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.admin-shell.dark .admin-update-info-box strong {
+  color: #e5edf8;
 }
 
 .eksekutor-dashboard {
@@ -5551,6 +5640,10 @@ textarea::placeholder {
   .admin-update-status-badge {
     width: 100%;
     text-align: left;
+  }
+
+  .admin-update-detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .topbar-actions svg {

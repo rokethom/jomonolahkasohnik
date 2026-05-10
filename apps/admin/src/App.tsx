@@ -1009,23 +1009,68 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenOrder }:
 }
 
 function AdminUpdateStatusCard({ buildInfo }: { buildInfo: BuildInfo | null }) {
+  const [detailOpen, setDetailOpen] = useState(false)
+  const detail = buildInfoDetail(buildInfo)
+
   return (
-    <section className="admin-update-status-card">
-      <div className="admin-update-status-copy">
-        <span>Status update terbaru</span>
-        <strong>{buildInfo?.message || 'Update aplikasi terbaru'}</strong>
-        <small>
-          {buildInfo?.sha ? `Versi ${buildInfo.sha}` : 'Versi belum terbaca'}
-          {buildInfo?.committed_at ? ` - commit ${formatShortDateTime(buildInfo.committed_at)}` : ''}
-          {buildInfo?.built_at ? ` - build ${formatShortDateTime(buildInfo.built_at)}` : ''}
-        </small>
-      </div>
-      <div className="admin-update-status-badge">
-        <b>{buildInfo?.app?.toUpperCase() || 'ADMIN'}</b>
-        <span>{buildInfo?.sha || 'sync'}</span>
-      </div>
-    </section>
+    <>
+      <button className="admin-update-status-card" type="button" onClick={() => setDetailOpen(true)}>
+        <div className="admin-update-status-copy">
+          <span>Status update terbaru</span>
+          <strong>{detail.title}</strong>
+          <small>
+            {detail.version}
+            {detail.commitTime ? ` - commit ${detail.commitTime}` : ''}
+            {detail.buildTime ? ` - build ${detail.buildTime}` : ''}
+          </small>
+        </div>
+        <div className="admin-update-status-badge">
+          <b>{buildInfo?.app?.toUpperCase() || 'ADMIN'}</b>
+          <span>{buildInfo?.sha || 'sync'}</span>
+        </div>
+      </button>
+      {detailOpen && <AdminUpdateDetailModal buildInfo={buildInfo} onClose={() => setDetailOpen(false)} />}
+    </>
   )
+}
+
+function AdminUpdateDetailModal({ buildInfo, onClose }: { buildInfo: BuildInfo | null; onClose: () => void }) {
+  const detail = buildInfoDetail(buildInfo)
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="modal admin-update-detail-modal" role="dialog" aria-modal="true">
+        <div className="modal-header">
+          <div>
+            <h2>Detail Update Terbaru</h2>
+            <p>Informasi ini hanya ditampilkan untuk Admin dan GM.</p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <div className="admin-update-detail-body">
+          <section>
+            <span>Ringkasan</span>
+            <strong>{detail.title}</strong>
+            <p>{detail.description}</p>
+          </section>
+          <div className="admin-update-detail-grid">
+            <InfoBox label="Aplikasi" value={buildInfo?.app?.toUpperCase() || 'ADMIN'} />
+            <InfoBox label="Versi" value={buildInfo?.sha || 'Belum terbaca'} />
+            <InfoBox label="Waktu commit" value={detail.commitTime || 'Belum tersedia'} />
+            <InfoBox label="Waktu build" value={detail.buildTime || 'Belum tersedia'} />
+          </div>
+          <label>
+            Hash lengkap
+            <input value={buildInfo?.full_sha || buildInfo?.sha || 'Belum tersedia'} readOnly />
+          </label>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return <div className="admin-update-info-box"><span>{label}</span><strong>{value}</strong></div>
 }
 
 function StatsRow({ stats }: { stats: { label: string; value: number; icon: string; tone: string; action?: string; onClick?: () => void }[] }) {
@@ -4358,6 +4403,33 @@ function RoleBadge({ role }: { role: Role }) {
 function StatusBadge({ status }: { status: string }) {
   const tone = status === 'COMPLETED' ? 'success' : status === 'CANCELLED' ? 'danger' : status === 'SEARCHING_DRIVER' ? 'warning' : 'info'
   return <span className={`status ${tone}`}>{status}</span>
+}
+
+function buildInfoDetail(buildInfo: BuildInfo | null) {
+  const title = translateBuildMessage(buildInfo?.message)
+
+  return {
+    title,
+    description: buildInfo?.message
+      ? `Update terakhir telah dipasang dengan ringkasan: ${title}. Detail ini membantu Admin/GM memastikan versi yang sedang aktif tanpa membuka Git atau server.`
+      : 'Informasi update belum tersedia. Jalankan proses build/deploy agar versi terbaru dapat terbaca di dashboard.',
+    version: buildInfo?.sha ? `Versi ${buildInfo.sha}` : 'Versi belum terbaca',
+    commitTime: buildInfo?.committed_at ? formatShortDateTime(buildInfo.committed_at) : '',
+    buildTime: buildInfo?.built_at ? formatShortDateTime(buildInfo.built_at) : '',
+  }
+}
+
+function translateBuildMessage(message?: string | null) {
+  const map: Record<string, string> = {
+    'Show latest update status on admin dashboard': 'Menambahkan status update terbaru di dashboard admin',
+    'Refine driver profile finance details': 'Merapikan detail keuangan pada profil driver',
+    'Add all area driver access setting': 'Menambahkan pengaturan akses all area untuk driver',
+    'Add CMS role control for driver assignment': 'Menambahkan CMS role untuk assign driver',
+    'Show branch performance in driver app': 'Menampilkan performa cabang di aplikasi driver',
+    'Render customer home CMS banners': 'Menampilkan banner CMS pada home customer',
+  }
+
+  return message && map[message] ? map[message] : 'Pembaruan sistem terbaru telah tersedia'
 }
 
 const assignDriverRoleOptions: Array<{ value: Role; label: string }> = [
