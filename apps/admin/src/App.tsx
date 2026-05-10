@@ -1433,7 +1433,21 @@ function driverBranchKey(driver: DriverRow) {
 
 function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permissions, api, onChanged }: { users: User[]; branches: Branch[]; me: User; roleFilter: Role | 'all'; onRoleFilterChange: (role: Role | 'all') => void; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
+  const detailRef = useRef<HTMLElement | null>(null)
   const canEditUser = (user: User) => permissions.can_manage_users && user.id !== me.id && (['admin', 'gm'].includes(me.role) || !['admin', 'gm'].includes(user.role))
+  const selectedUser = useMemo(() => users.find((user) => user.id === selectedUserId) ?? users[0] ?? null, [selectedUserId, users])
+  useEffect(() => {
+    if (users.length === 0) {
+      if (selectedUserId !== null) setSelectedUserId(null)
+      return
+    }
+    if (!users.some((user) => user.id === selectedUserId)) setSelectedUserId(users[0].id)
+  }, [selectedUserId, users])
+  const selectUser = (user: User) => {
+    setSelectedUserId(user.id)
+    window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0)
+  }
   const resetPassword = async (user: User) => {
     const payload = await api<{ temporary_password: string }>(`/admin/users/${user.id}/reset-password`, { method: 'POST' })
     alert(`Password baru ${user.username}: ${payload.temporary_password}`)
@@ -1449,10 +1463,83 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
     await onChanged()
   }
   return (
-    <section className="panel">
+    <section className="panel user-management-panel">
       <PanelHeader title="User management" action={`${users.length} records`} />
-      <div className="table-toolbar"><select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><span className="toolbar-hint">Admin/GM only can edit Admin & GM accounts.</span></div>
-      <div className="table-wrap user-table-wrap"><table><thead><tr><th>User</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="user-identity-cell"><UserAvatar user={user} /><div><strong>{user.username}</strong><span>{user.email}</span></div></div></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><UserLocationSummary user={user} canViewMaps={me.role === 'admin'} /></td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
+      <div className="table-toolbar user-toolbar">
+        <select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
+        <span className="toolbar-hint">Klik baris user untuk melihat detail dan aksi. Admin/GM only can edit Admin & GM accounts.</span>
+      </div>
+      <div className="user-management-layout">
+        <div className="table-wrap user-table-wrap">
+          <table>
+            <thead><tr><th>User</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th></tr></thead>
+            <tbody>
+              {users.map((user) => (
+                <tr
+                  key={user.id}
+                  className={selectedUser?.id === user.id ? 'selected-row' : ''}
+                  tabIndex={0}
+                  onClick={() => selectUser(user)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      selectUser(user)
+                    }
+                  }}
+                >
+                  <td><div className="user-identity-cell"><UserAvatar user={user} /><div><strong>{user.username}</strong><span>{user.email}</span></div></div></td>
+                  <td><strong className="user-name-cell">{user.name}</strong></td>
+                  <td><RoleBadge role={user.role} /></td>
+                  <td><span className="user-branch-cell">{userBranchLabel(user)}</span></td>
+                  <td><UserLocationSummary user={user} canViewMaps={me.role === 'admin'} /></td>
+                  <td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={6}><EmptyPanel title="Belum ada user" copy="User yang sesuai filter akan tampil di sini." /></td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <section className="user-detail-panel" ref={detailRef}>
+          {!selectedUser && <EmptyPanel title="Pilih user" copy="Detail dan aksi user akan tampil di sini." />}
+          {selectedUser && (
+            <>
+              <div className="user-detail-hero">
+                <UserAvatar user={selectedUser} />
+                <div>
+                  <span>User terpilih</span>
+                  <strong>{selectedUser.name}</strong>
+                  <small>{selectedUser.username} - {selectedUser.email}</small>
+                </div>
+              </div>
+              <div className="user-detail-statuses">
+                <RoleBadge role={selectedUser.role} />
+                <span className={selectedUser.is_suspended ? 'status danger' : selectedUser.is_active ? 'status success' : 'status muted'}>{selectedUser.is_suspended ? 'Suspended' : selectedUser.is_active ? 'Active' : 'Inactive'}</span>
+                {!canEditUser(selectedUser) && <span className="status muted">Locked</span>}
+              </div>
+              <div className="user-detail-grid">
+                <div><span>Telepon</span><strong>{selectedUser.phone || '-'}</strong></div>
+                <div><span>Cabang</span><strong>{userBranchLabel(selectedUser)}</strong></div>
+                <div><span>Alamat</span><strong>{selectedUser.address || '-'}</strong></div>
+                <div><span>Lokasi</span><UserLocationSummary user={selectedUser} canViewMaps={me.role === 'admin'} /></div>
+              </div>
+              <div className="user-action-panel">
+                <span>Aksi akun</span>
+                <div>
+                  {canEditUser(selectedUser) && <button className="mini-button" type="button" onClick={() => setEditingUser(selectedUser)}>Edit</button>}
+                  {canEditUser(selectedUser) && <button className="mini-button" type="button" onClick={() => void resetPassword(selectedUser)}>Reset Pass</button>}
+                  {canEditUser(selectedUser) && selectedUser.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(selectedUser)}>Reset Token</button>}
+                  {canEditUser(selectedUser) && <button className="mini-button reject" type="button" onClick={() => void destroy(selectedUser)}>Delete</button>}
+                  {!canEditUser(selectedUser) && <span className="status muted">Akun ini tidak dapat diedit oleh role Anda.</span>}
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
       {editingUser && <UserEditModal user={editingUser} branches={branches} permissions={permissions} api={api} onClose={() => setEditingUser(null)} onSaved={async () => { await onChanged(); setEditingUser(null) }} />}
     </section>
   )

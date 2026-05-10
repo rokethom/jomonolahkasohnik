@@ -71,9 +71,9 @@
 
 .admin-shell.dark {
   background:
-    radial-gradient(circle at 12% -6%, rgba(14, 165, 233, 0.20), transparent 34%),
-    radial-gradient(circle at 92% 4%, rgba(34, 197, 94, 0.10), transparent 30%),
-    linear-gradient(135deg, #07111f 0%, #0d1726 48%, #101b2d 100%);
+    radial-gradient(circle at 10% -6%, rgba(14, 165, 233, 0.24), transparent 34%),
+    radial-gradient(circle at 92% 4%, rgba(45, 212, 191, 0.13), transparent 30%),
+    linear-gradient(135deg, #071422 0%, #0b1a2c 48%, #102238 100%);
   color: #edf3fb;
 }
 
@@ -479,6 +479,61 @@
 .admin-shell.dark .driver-action-group.danger {
   border-color: rgba(248, 113, 113, .28);
   background: rgba(127, 29, 29, .22);
+}
+
+.admin-shell.dark .user-toolbar,
+.admin-shell.dark .user-table-wrap,
+.admin-shell.dark .user-detail-panel,
+.admin-shell.dark .user-detail-grid > div,
+.admin-shell.dark .user-action-panel {
+  border-color: rgba(148, 163, 184, .18);
+}
+
+.admin-shell.dark .user-toolbar,
+.admin-shell.dark .user-table-wrap {
+  background: rgba(15, 23, 42, .70);
+}
+
+.admin-shell.dark .user-table-wrap tbody tr:hover td,
+.admin-shell.dark .user-table-wrap tbody tr:focus-visible td {
+  background: rgba(15, 44, 72, .96);
+}
+
+.admin-shell.dark .user-table-wrap tbody tr.selected-row td {
+  background: rgba(8, 47, 73, .92);
+}
+
+.admin-shell.dark .user-table-wrap td {
+  color: #f8fbff;
+  background: rgba(15, 23, 42, .82);
+}
+
+.admin-shell.dark .user-detail-panel {
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, .18), transparent 34%),
+    linear-gradient(180deg, rgba(15, 23, 42, .84), rgba(30, 41, 59, .72));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .22);
+}
+
+.admin-shell.dark .user-detail-grid > div,
+.admin-shell.dark .user-action-panel {
+  background: rgba(15, 23, 42, .48);
+}
+
+.admin-shell.dark .user-detail-hero strong,
+.admin-shell.dark .user-detail-grid strong,
+.admin-shell.dark .user-name-cell {
+  color: #f8fafc;
+}
+
+.admin-shell.dark .user-detail-hero span,
+.admin-shell.dark .user-detail-hero small,
+.admin-shell.dark .user-detail-grid span,
+.admin-shell.dark .user-action-panel > span,
+.admin-shell.dark .user-branch-cell,
+.admin-shell.dark .user-location-summary small,
+.admin-shell.dark .user-location-summary em {
+  color: #9fb0c6;
 }
 
 .admin-shell.dark .critical-dispatch-alert {
@@ -3092,7 +3147,77 @@ td {
 }
 
 .user-table-wrap table {
-  min-width: 1120px;
+  min-width: 880px;
+  table-layout: fixed;
+}
+
+.user-management-panel {
+  display: grid;
+  gap: 16px;
+  scroll-behavior: smooth;
+}
+
+.user-management-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 420px);
+  gap: 14px;
+  align-items: start;
+}
+
+.user-toolbar {
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.user-table-wrap {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  scroll-behavior: smooth;
+}
+
+.user-table-wrap th:nth-child(1),
+.user-table-wrap td:nth-child(1) { width: 250px; }
+.user-table-wrap th:nth-child(2),
+.user-table-wrap td:nth-child(2) { width: 150px; }
+.user-table-wrap th:nth-child(3),
+.user-table-wrap td:nth-child(3) { width: 110px; }
+.user-table-wrap th:nth-child(4),
+.user-table-wrap td:nth-child(4) { width: 170px; }
+.user-table-wrap th:nth-child(5),
+.user-table-wrap td:nth-child(5) { width: 190px; }
+.user-table-wrap th:nth-child(6),
+.user-table-wrap td:nth-child(6) { width: 100px; }
+
+.user-table-wrap tbody tr {
+  cursor: pointer;
+  outline: none;
+}
+
+.user-table-wrap tbody tr:hover td,
+.user-table-wrap tbody tr:focus-visible td {
+  background: #f8fbff;
+}
+
+.user-table-wrap tbody tr.selected-row td {
+  background: #e0f2fe;
+  box-shadow: inset 0 1px 0 rgba(14, 165, 233, 0.16), inset 0 -1px 0 rgba(14, 165, 233, 0.16);
+}
+
+.user-table-wrap td {
+  color: #0f172a;
+  background: #ffffff;
+  vertical-align: middle;
+}
+
+.user-name-cell,
+.user-branch-cell {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .user-identity-cell {
@@ -3126,6 +3251,106 @@ td {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.user-detail-panel {
+  position: sticky;
+  top: 96px;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 34%),
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, .08);
+}
+
+.user-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-detail-hero .user-avatar {
+  width: 54px;
+  height: 54px;
+}
+
+.user-detail-hero div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.user-detail-hero span,
+.user-detail-hero small,
+.user-detail-grid span,
+.user-action-panel > span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.user-detail-hero strong {
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.user-detail-statuses {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.user-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.user-detail-grid > div,
+.user-action-panel {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, .84);
+}
+
+.user-detail-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.user-detail-grid strong {
+  color: #0f172a;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+.user-detail-grid .user-location-summary {
+  min-width: 0;
+}
+
+.user-action-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.user-action-panel > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.user-action-panel .mini-button {
+  width: 100%;
+  min-height: 38px;
 }
 
 .user-location-summary {
@@ -5380,11 +5605,23 @@ textarea::placeholder {
     grid-template-columns: 1fr;
   }
 
+  .user-management-layout {
+    grid-template-columns: 1fr;
+  }
+
   .driver-detail-panel {
     position: static;
   }
 
+  .user-detail-panel {
+    position: static;
+  }
+
   .driver-table {
+    min-width: 760px;
+  }
+
+  .user-table-wrap table {
     min-width: 760px;
   }
 
