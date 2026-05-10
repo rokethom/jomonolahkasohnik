@@ -61,7 +61,7 @@ import {
 import { setupPushNotifications } from './services/push'
 import { getEcho, resetEcho } from './services/realtime'
 import { useCustomerStore } from './store/useCustomerStore'
-import type { Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
+import type { Banner, Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
 
 type Screen = 'home' | 'order-chat' | 'driver-chat' | 'cs-chat' | 'history' | 'profile' | 'profile-setup' | 'login'
 type JojoHistoryState = {
@@ -1453,6 +1453,7 @@ function HomeScreen({
 }) {
   const sliderSection = homeData?.sections.find((section) => section.type === 'slider' || /slider/i.test(section.name))
   const promoSection = homeData?.sections.find((section) => section.type === 'promo' || /promo/i.test(section.name))
+  const banners = homeData?.banners ?? []
   const announcement = homeData?.announcements[0]
   const customer = useCustomerStore((state) => state.user)
   const customerName = customer?.name?.trim() || 'Customer'
@@ -1484,6 +1485,11 @@ function HomeScreen({
           </div>
         </div>
       </section>
+      {banners.length > 0 && (
+        <section className="home-cms-slider home-banner-slider" aria-label="Banner CMS">
+          {banners.map((banner) => <HomeBannerCard key={banner.id} banner={banner} onClick={onOrder} />)}
+        </section>
+      )}
       {(sliderSection?.items ?? []).length > 0 && (
         <section className="home-cms-slider" aria-label="Slider CMS">
           {sliderSection?.items.map((item) => <HomeSliderCard key={item.id} item={item} onClick={onOrder} />)}
@@ -1520,6 +1526,22 @@ function HomeScreen({
         Order Sekarang
       </button>
     </div>
+  )
+}
+
+function HomeBannerCard({ banner, onClick }: { banner: Banner; onClick: () => void }) {
+  const imagePath = banner.image_original || banner.image || ''
+  const image = imagePath ? cmsAssetUrl(imagePath) : ''
+
+  return (
+    <button className={`home-slider-card home-banner-card ${image ? 'has-image' : ''}`} onClick={onClick}>
+      {image && <img className="home-slider-image" src={image} alt={banner.title} loading="lazy" decoding="async" />}
+      <span className="home-slider-overlay" />
+      <span className="home-slider-copy">
+        <strong>{banner.title}</strong>
+        <small>{banner.link ? 'Tap untuk mulai order' : 'Promo dari JOJO'}</small>
+      </span>
+    </button>
   )
 }
 
