@@ -46,8 +46,14 @@ class CreateOrder
             $payload = $this->hydrateHiddenLocations($user, $payload);
             $payload['branch_id'] = $this->orders->resolveTargetBranchId($payload, $user->branch_id);
             $pricing = $this->pricingService->calculate($payload);
-            $crewDecision = $this->crewDecisions->decide($payload);
+            $crewDecision = is_array($pricing['crew_decision'] ?? null)
+                ? $pricing['crew_decision']
+                : $this->crewDecisions->decide($payload);
             if ($crewDecision !== null) {
+                if (! isset($pricing['crew_helper_fee'])) {
+                    $pricing = $this->crewDecisions->applyHelperPricingToQuote($pricing, $crewDecision);
+                }
+                $crewDecision = $pricing['crew_decision'];
                 $pricing['crew_decision'] = $crewDecision;
                 $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nCrew: {$crewDecision['rule_name']} ({$crewDecision['helper_label']})");
             }

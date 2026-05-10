@@ -68,6 +68,14 @@ export type PriceQuote = {
   minimum_price?: number
   final_price?: number
   total_price: number
+  crew_helper_fee?: number
+  helper_service_charge?: number
+  crew_decision?: {
+    requires_helper?: boolean
+    helper_label?: string
+    helper_service_charge?: number
+    helper_fee?: number
+  }
   stops?: number
 }
 
@@ -115,6 +123,9 @@ export type Order = {
   preferred_vehicle_type?: 'motor' | 'mobil' | string | null
   vehicle_seat_rows?: 2 | 3 | number | null
   driver_preference?: 'general' | 'ladies' | string | null
+  crew_status?: string | null
+  crew_decision?: PriceQuote['crew_decision'] | null
+  crews?: Array<{ id?: number; role: string; label?: string; status: string; driver?: string | null; service_charge?: number }>
 }
 
 export type OrderAdjustment = {

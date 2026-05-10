@@ -61,7 +61,7 @@ import {
 import { setupPushNotifications } from './services/push'
 import { getEcho, resetEcho } from './services/realtime'
 import { useCustomerStore } from './store/useCustomerStore'
-import type { Banner, Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PublicSettings } from './types'
+import type { Banner, Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PriceQuote, PublicSettings } from './types'
 
 type Screen = 'home' | 'order-chat' | 'driver-chat' | 'cs-chat' | 'history' | 'profile' | 'profile-setup' | 'login'
 type JojoHistoryState = {
@@ -304,10 +304,21 @@ function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPrevie
     quote ? `Tarif: ${formatRupiah(quote.tarif ?? quote.price ?? 0)}` : null,
     quote ? `Service fee: ${formatRupiah(quote.service_fee ?? quote.service_charge ?? 0)}` : null,
     quote ? `Tambahan: ${formatRupiah(quote.extra_charge ?? 0)}` : null,
+    helperFeeFromQuote(quote) > 0 ? `${helperLabelFromQuote(quote)}: ${formatRupiah(helperFeeFromQuote(quote))}` : null,
     quote ? `Total: ${formatRupiah(quote.total_price ?? quote.final_price ?? 0)}` : null,
   ]
 
   return lines.filter((line) => line !== null).join('\n')
+}
+
+function helperFeeFromQuote(quote?: PriceQuote | null) {
+  if (!quote) return 0
+
+  return Number(quote.crew_helper_fee ?? quote.helper_service_charge ?? quote.crew_decision?.helper_fee ?? quote.crew_decision?.helper_service_charge ?? 0)
+}
+
+function helperLabelFromQuote(quote?: PriceQuote | null) {
+  return quote?.crew_decision?.helper_label || 'Jasa helper'
 }
 
 function isPurchasePayload(payload?: OrderPayload | null, preview?: JojoBotPreview) {
@@ -3340,6 +3351,12 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
           <p><span>{pickupLabel}</span><strong>{order.pickup_address ?? '-'}</strong></p>
           <p><span>{destinationLabel}</span><strong>{order.destination_address ?? '-'}</strong></p>
           <p><span>Driver</span><strong>Nama: {driverName}</strong></p>
+          {orderHelperRows(order).map((helper) => (
+            <p key={`${helper.label}-${helper.driver}`}>
+              <span>{helper.label}</span>
+              <strong>{helper.driver}{helper.fee > 0 ? ` - ${formatRupiah(helper.fee)}` : ''}</strong>
+            </p>
+          ))}
           <p><span>Pembayaran</span><strong>{order.payment_label ?? paymentMethodLabel(order.payment_method)}</strong></p>
           <p><span>Total</span><strong>{formatRupiah(order.total_price ?? order.total)}</strong></p>
         </div>
@@ -3347,6 +3364,27 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
       </section>
     </div>
   )
+}
+
+function orderHelperRows(order: Order) {
+  const crewRows = (order.crews ?? [])
+    .filter((crew) => crew.role !== 'rider')
+    .map((crew) => ({
+      label: crew.label || 'Helper',
+      driver: crew.driver || (crew.status === 'pending' ? 'Menunggu helper' : '-'),
+      fee: Number(crew.service_charge ?? 0),
+    }))
+
+  if (crewRows.length > 0) return crewRows
+
+  const fee = Number(order.pricing_breakdown?.crew_helper_fee ?? order.pricing_breakdown?.helper_service_charge ?? order.crew_decision?.helper_fee ?? order.crew_decision?.helper_service_charge ?? 0)
+  if (fee <= 0) return []
+
+  return [{
+    label: order.crew_decision?.helper_label || order.pricing_breakdown?.crew_decision?.helper_label || 'Jasa helper',
+    driver: 'Menunggu helper',
+    fee,
+  }]
 }
 
 function OrderReasonNote({ order, compact = false }: { order: Order; compact?: boolean }) {

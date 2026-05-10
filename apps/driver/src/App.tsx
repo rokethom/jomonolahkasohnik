@@ -106,6 +106,8 @@ type Order = {
   crewDecision?: {
     requires_helper?: boolean
     helper_label?: string
+    helper_service_charge?: number
+    helper_fee?: number
     rule_name?: string
   } | null
   crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; service_charge?: number; accepted_at?: string | null }>
@@ -1216,7 +1218,13 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
     <section className="page detail-page">
       <button className="back-button" aria-label="Kembali" onClick={() => setView('orders')}><ChevronLeft size={22} /></button>
       <header className="detail-hero panel">
-        <div><span className="eyebrow">{order.code}</span><h1>{order.customer}</h1><p>{order.customerPhone || '-'}</p></div>
+        <div>
+          <span className="eyebrow">{order.code}</span>
+          <h1>{order.customer}</h1>
+          {order.customerPhone
+            ? <a className="customer-wa-link" href={whatsappUrl(order.customerPhone)} target="_blank" rel="noreferrer">{order.customerPhone}</a>
+            : <p>-</p>}
+        </div>
         <div className="detail-hero-meta">
           <span className="badge">{order.service}</span>
           <strong>Rp {formatMoney(order.total)}</strong>
@@ -1270,6 +1278,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <PriceRow label="Tarif" value={order.price} />
         <PriceRow label="Service fee" value={order.serviceFee} />
         <PriceRow label="Tambahan jasa" value={order.extraCharge} />
+        {helperFeeForOrder(order) > 0 && <PriceRow label={helperLabelForOrder(order)} value={helperFeeForOrder(order)} />}
         <AdjustmentReasonList adjustments={order.adjustments ?? []} />
         <div className="total-row"><span>Total</span><strong>Rp {formatMoney(order.total)}</strong></div>
       </section>
@@ -2547,6 +2556,15 @@ function pendingCrewRole(order: Order) {
 function pendingCrewLabel(order: Order) {
   return pendingCrew(order)?.label ?? null
 }
+function helperFeeForOrder(order: Order) {
+  const fromCrew = order.crews?.find((crew) => crew.role !== 'rider' && Number(crew.service_charge ?? 0) > 0)
+  if (fromCrew) return Number(fromCrew.service_charge ?? 0)
+
+  return Number(order.crewDecision?.helper_fee ?? order.crewDecision?.helper_service_charge ?? 0)
+}
+function helperLabelForOrder(order: Order) {
+  return order.crews?.find((crew) => crew.role !== 'rider')?.label || order.crewDecision?.helper_label || 'Jasa helper'
+}
 function isCrewOpportunity(order: Order) {
   const role = order.crewRole
   return Boolean(role && role !== 'rider' && pendingCrew(order)?.role === role)
@@ -2780,6 +2798,12 @@ function assetUrl(path: string) {
   return `${APP_BASE}${cleanPath}`
 }
 function formatChatTime(value?: string) { return value ? new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '' }
+function whatsappUrl(phone: string) {
+  const digits = phone.replace(/\D/g, '')
+  const normalized = digits.startsWith('0') ? `62${digits.slice(1)}` : digits
+
+  return `https://wa.me/${normalized}`
+}
 function redactMapText(message?: string | null) {
   if (!message) return ''
 

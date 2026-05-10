@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 
 class OrderCrewDecisionService
 {
-    private const CACHE_KEY = 'order_crew_rules.active';
+    private const CACHE_KEY = 'order_crew_rules.active.v2';
 
     public function activeRules(): Collection
     {
@@ -54,10 +54,50 @@ class OrderCrewDecisionService
                 'helper_role' => $rule->helper_role ?: 'helper',
                 'helper_label' => $rule->helper_label ?: 'Helper',
                 'helper_service_charge' => (int) $rule->helper_service_charge,
+                'helper_pricing' => [
+                    'base_distance_km' => (float) ($rule->helper_base_distance_km ?? 10),
+                    'base_price' => (int) ($rule->helper_base_price ?? 6000),
+                    'over_distance_percent' => (float) ($rule->helper_over_distance_percent ?? 50),
+                ],
             ];
         }
 
         return null;
+    }
+
+    public function applyHelperPricingToQuote(array $quote, array $decision): array
+    {
+        $helperFee = $this->helperCharge(
+            (float) ($quote['distance'] ?? $quote['distance_km'] ?? 0),
+            (int) ($quote['tarif'] ?? $quote['price'] ?? 0),
+            $decision,
+        );
+
+        $decision['helper_service_charge'] = $helperFee;
+        $decision['helper_fee'] = $helperFee;
+        $quote['crew_decision'] = $decision;
+        $quote['crew_helper_fee'] = $helperFee;
+        $quote['helper_service_charge'] = $helperFee;
+        $quote['total_before_round'] = (int) ($quote['total_before_round'] ?? $quote['subtotal'] ?? $quote['final_price'] ?? 0) + $helperFee;
+        $quote['subtotal'] = $quote['total_before_round'];
+        $quote['final_price'] = (int) $quote['total_before_round'];
+        $quote['total_price'] = $quote['final_price'];
+
+        return $quote;
+    }
+
+    public function helperChargeForOrder(Order $order, ?array $decision = null): int
+    {
+        $decision ??= data_get($order->pricing_breakdown, 'crew_decision');
+        if (! is_array($decision)) {
+            return 0;
+        }
+
+        return $this->helperCharge(
+            (float) $order->distance_km,
+            (int) $order->price,
+            $decision,
+        );
     }
 
     public function createPendingHelperCrew(Order $order): void
@@ -80,15 +120,31 @@ class OrderCrewDecisionService
             ],
         );
 
+        $helperCharge = $this->helperChargeForOrder($order, $decision);
+
         $order->crews()->firstOrCreate(
             ['role' => (string) ($decision['helper_role'] ?? 'helper')],
             [
                 'order_crew_rule_id' => $decision['rule_id'] ?? null,
                 'label' => (string) ($decision['helper_label'] ?? 'Helper'),
                 'status' => 'pending',
-                'service_charge' => (int) ($decision['helper_service_charge'] ?? 0),
+                'service_charge' => $helperCharge,
             ],
         );
+    }
+
+    private function helperCharge(float $distanceKm, int $driverPrice, array $decision): int
+    {
+        $pricing = is_array($decision['helper_pricing'] ?? null) ? $decision['helper_pricing'] : [];
+        $baseDistance = max(0, (float) ($pricing['base_distance_km'] ?? 10));
+        $basePrice = max(0, (int) ($pricing['base_price'] ?? ($decision['helper_service_charge'] ?? 6000)));
+        $percent = max(0, (float) ($pricing['over_distance_percent'] ?? 50));
+
+        if ($distanceKm <= $baseDistance) {
+            return $basePrice;
+        }
+
+        return max(0, (int) ceil($driverPrice * ($percent / 100)));
     }
 
     private function scopeMatches(string $serviceType, ?array $scopes): bool

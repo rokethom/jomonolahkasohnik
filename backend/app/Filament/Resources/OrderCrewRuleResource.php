@@ -91,11 +91,29 @@ class OrderCrewRuleResource extends Resource
                         ->required()
                         ->maxLength(80),
                     Forms\Components\TextInput::make('helper_service_charge')
-                        ->label('Service charge helper')
+                        ->label('Jasa helper fallback')
                         ->numeric()
                         ->prefix('Rp')
                         ->default(0)
-                        ->helperText('Untuk kue tart saat ini isi 0. Nanti bisa diubah untuk flow lain.'),
+                        ->helperText('Fallback lama. Untuk rule baru gunakan rumus harga helper di bawah.'),
+                    Forms\Components\TextInput::make('helper_base_distance_km')
+                        ->label('Jarak dasar helper')
+                        ->numeric()
+                        ->suffix('KM')
+                        ->default(10)
+                        ->helperText('Jika jarak order 0 KM sampai nilai ini, jasa helper memakai harga dasar.'),
+                    Forms\Components\TextInput::make('helper_base_price')
+                        ->label('Harga dasar helper')
+                        ->numeric()
+                        ->prefix('Rp')
+                        ->default(6000)
+                        ->helperText('Contoh rule kue tart: 0-10 KM jasa helper Rp 6.000.'),
+                    Forms\Components\TextInput::make('helper_over_distance_percent')
+                        ->label('Persen jika lewat jarak dasar')
+                        ->numeric()
+                        ->suffix('%')
+                        ->default(50)
+                        ->helperText('Jika jarak > jarak dasar, jasa helper = persen ini dari harga jasa driver. Contoh 50% dari tarif driver.'),
                     Forms\Components\TextInput::make('priority')
                         ->numeric()
                         ->default(0)
@@ -119,7 +137,8 @@ class OrderCrewRuleResource extends Resource
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('keywords')->wrap()->limit(48)->searchable(),
                 Tables\Columns\TextColumn::make('helper_label')->badge(),
-                Tables\Columns\TextColumn::make('helper_service_charge')->money('IDR')->sortable(),
+                Tables\Columns\TextColumn::make('helper_base_price')->label('0-10 KM')->money('IDR')->sortable(),
+                Tables\Columns\TextColumn::make('helper_over_distance_percent')->label('> KM')->suffix('%')->sortable(),
                 Tables\Columns\IconColumn::make('requires_helper')->boolean(),
                 Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),
                 Tables\Columns\TextColumn::make('priority')->sortable(),

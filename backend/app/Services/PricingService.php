@@ -32,6 +32,7 @@ class PricingService
         private readonly OrderOperationService $operations,
         private readonly RingPricingService $ringPricing,
         private readonly ZonePricingService $zonePricing,
+        private readonly OrderCrewDecisionService $crewDecisions,
     ) {
     }
 
@@ -272,6 +273,10 @@ class PricingService
             $quote['subtotal'] = $quote['total_before_round'];
             $quote['final_price'] = $this->roundUpPrice($quote['total_before_round']);
             $quote['total_price'] = $quote['final_price'];
+        }
+
+        if ($crewDecision = $this->crewDecisions->decide($payload)) {
+            $quote = $this->crewDecisions->applyHelperPricingToQuote($quote, $crewDecision);
         }
 
         return $quote;

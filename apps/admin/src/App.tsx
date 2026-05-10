@@ -2546,9 +2546,10 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
           {(order.crews ?? []).map((crew) => (
             <p key={`${crew.role}-${crew.id}`}>
               {crew.label || crew.role}: {crew.driver || (crew.status === 'pending' ? 'menunggu driver' : '-')} · {crewStatusText(crew.status)}
+              {Number(crew.service_charge ?? 0) > 0 ? ` · Harga helper Rp ${Number(crew.service_charge ?? 0).toLocaleString('id-ID')}` : ''}
             </p>
           ))}
-          {order.crew_decision && <small>Rule: {String(order.crew_decision.rule_name ?? 'Crew decision')}</small>}
+          {order.crew_decision && <small>Rule: {String(order.crew_decision.rule_name ?? 'Crew decision')} · Estimasi helper Rp {Number(order.crew_decision.helper_fee ?? order.crew_decision.helper_service_charge ?? order.pricing_breakdown?.crew_helper_fee ?? 0).toLocaleString('id-ID')}</small>}
         </div>
       )}
       {order.cancel_reason && <div className="notice danger">Cancel reason: {order.cancel_reason}</div>}
@@ -4641,7 +4642,7 @@ function ManualOrderPreviewCard({
           {customer.address && <div><span>Alamat customer</span><b>{customer.address}</b></div>}
           <div><span>{isCourierOrder ? 'Pickup / ambil barang' : 'Pickup'}</span><b>{payload.pickup_address}</b></div>
           <label className="manual-inline-editor"><span>{isCourierOrder ? 'Penerima / tujuan' : 'Tujuan'}</span><input value={payload.destination_address} onChange={(event) => onDestinationChange(event.target.value)} /></label>
-          {containsTart && <div className="manual-route-status warning"><span>Rule kue tart</span><b>Submit membuat 1 order multi-crew. Rider menerima order dulu, lalu sistem membuka slot helper tanpa service charge tambahan.</b></div>}
+          {containsTart && <div className="manual-route-status warning"><span>Rule kue tart</span><b>Submit membuat 1 order multi-crew. Rider menerima order dulu, lalu sistem membuka slot helper dengan harga sesuai CMS crew rule.</b></div>}
           {(payload.points ?? []).map((point, index) => (
             <label className="manual-inline-editor" key={`${point.label}-${index}`}><span>{point.label ?? `Titik ${index + 1}`}</span><input value={point.address} onChange={(event) => onPointChange(index, event.target.value)} placeholder="Alamat titik tambahan" /></label>
           ))}
