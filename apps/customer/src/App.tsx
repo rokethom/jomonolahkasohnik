@@ -377,6 +377,17 @@ function findServiceByKeyword(text: string, services: DynamicService[]) {
   return services.find((service) => serviceKeywords(service).includes(keyword)) ?? null
 }
 
+function findServiceByType(serviceType: string | null | undefined, services: DynamicService[]) {
+  const keyword = normalizeServiceKeyword(String(serviceType ?? ''))
+  if (!keyword) return null
+
+  return services.find((service) => {
+    const code = normalizeServiceKeyword(service.code ?? '')
+    const type = normalizeServiceKeyword(service.service_type ?? '')
+    return code === keyword || type === keyword || serviceKeywords(service).includes(keyword)
+  }) ?? null
+}
+
 function openServiceWhatsapp(
   service: Pick<DynamicService, 'name' | 'code' | 'service_type' | 'whatsapp_redirect_enabled' | 'whatsapp_number' | 'whatsapp_message_template'>,
   user: ReturnType<typeof useCustomerStore.getState>['user'],
@@ -915,6 +926,25 @@ function App() {
     pushMessage({ from: 'bot', text: `Baik, silakan lengkapi form ${service.name}.` })
   }
 
+  const editPendingOrder = () => {
+    const service = findServiceByType(pendingOrder?.service_type, services)
+    if (service && manualFormKindForService(service)) {
+      openManualServiceForm(service, { pushUser: false })
+      return
+    }
+
+    setPendingOrder(null)
+    setOrderSubmitBlocked(false)
+    pushMessage({ from: 'bot', text: 'Silakan isi ulang detail order dari form layanan.' })
+  }
+
+  const cancelPendingOrder = () => {
+    setPendingOrder(null)
+    setOrderSubmitBlocked(false)
+    closeManualForms()
+    pushMessage({ from: 'bot', text: 'Order belum dikirim dan sudah dibatalkan. Ketik menu untuk memilih layanan lagi.' })
+  }
+
   const handleBotReply = async (rawText: string) => {
     const text = rawText.trim()
     if (!text) return
@@ -1181,6 +1211,8 @@ function App() {
           publicSettings={publicSettings}
           submitBlocked={orderSubmitBlocked}
           submitting={orderSubmitting}
+          onEdit={editPendingOrder}
+          onCancel={cancelPendingOrder}
         />
       )}
       {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
@@ -1457,6 +1489,8 @@ function ChatOrderScreen({
   publicSettings,
   submitBlocked,
   submitting,
+  onEdit,
+  onCancel,
 }: {
   messages: LocalMessage[]
   typing: boolean
@@ -1479,6 +1513,8 @@ function ChatOrderScreen({
   publicSettings: PublicSettings | null
   submitBlocked: boolean
   submitting: boolean
+  onEdit: () => void
+  onCancel: () => void
 }) {
   const listRef = useRef<HTMLDivElement | null>(null)
   const [detailOrder, setDetailOrder] = useState<Order | null>(null)
@@ -1519,7 +1555,7 @@ function ChatOrderScreen({
           />
         )}
         {messages.at(-1)?.preview?.intent === 'fallback_form' && <FallbackForm onSend={onSend} />}
-        {messages.at(-1)?.preview?.intent === 'order_preview' && (
+        {messages.at(-1)?.preview?.intent === 'order_preview' && !hasManualFormOpen && (
           <ChatOrderActions
             preview={messages.at(-1)?.preview}
             pendingOrder={pendingOrder}
@@ -1528,6 +1564,8 @@ function ChatOrderScreen({
             onConfirm={() => onSend('ya')}
             submitBlocked={submitBlocked}
             submitting={submitting}
+            onEdit={onEdit}
+            onCancel={onCancel}
           />
         )}
       </div>
@@ -1971,6 +2009,8 @@ function ChatOrderActions({
   onConfirm,
   submitBlocked,
   submitting,
+  onEdit,
+  onCancel,
 }: {
   preview?: JojoBotPreview
   pendingOrder: OrderPayload | null
@@ -1979,6 +2019,8 @@ function ChatOrderActions({
   onConfirm: () => void
   submitBlocked: boolean
   submitting: boolean
+  onEdit: () => void
+  onCancel: () => void
 }) {
   const [points, setPoints] = useState<string[]>([])
   const [showSummary, setShowSummary] = useState(preview?.intent === 'order_preview')
@@ -2231,7 +2273,8 @@ function ChatOrderActions({
           {points.filter(Boolean).length > 0 && <p>{points.filter(Boolean).map((point, index) => `Titik ${index + 1}: ${point}`).join('\n')}</p>}
           <div>
             <button type="button" disabled={submitting || submitBlocked || (isOjekOrder && passengerCount > 2) || (isOjekOrder && passengerCount === 2 && !doubleOrderConfirmed)} onClick={onConfirm}>{submitting ? 'MENGIRIM...' : 'YA KIRIM'}</button>
-            <button type="button" onClick={() => setShowSummary(false)}>EDIT</button>
+            <button type="button" onClick={onEdit}>EDIT</button>
+            <button type="button" className="cancel-order-preview" onClick={onCancel}>BATAL</button>
           </div>
           {qrisPreviewOpen && qrisImageUrl && <ImagePreviewModal imageUrl={qrisImageUrl} onClose={() => setQrisPreviewOpen(false)} downloadLabel="Download QRIS" />}
         </div>

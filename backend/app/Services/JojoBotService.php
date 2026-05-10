@@ -358,6 +358,12 @@ class JojoBotService
 
     private function completeParsedForPreview(User $user, array $parsed, string $serviceType): array
     {
+        foreach (['pickup_address', 'destination_address'] as $key) {
+            if ($this->isCustomerAddressAlias((string) ($parsed[$key] ?? '')) && filled($user->address)) {
+                $parsed[$key] = (string) $user->address;
+            }
+        }
+
         if ($this->isPurchaseService($serviceType)) {
             if (blank($parsed['pickup_address'] ?? null)) {
                 $parsed['pickup_address'] = $parsed['store_location'] ?: ($this->branch($user)?->name ?? 'Lokasi pembelian');
@@ -523,10 +529,16 @@ class JojoBotService
 
         foreach ($this->geocodeCandidates($address, $branch) as $query) {
             try {
-                return [
+                $result = [
                     ...$this->geocoding->geocode($query, $this->geocodingContext($branch)),
                     'query' => $query,
                 ];
+
+                if ($this->isGeocodeTooFarFromBranch($result, $branch)) {
+                    continue;
+                }
+
+                return $result;
             } catch (Throwable) {
                 continue;
             }
@@ -562,6 +574,35 @@ class JojoBotService
             'lng' => (float) $branch->longitude,
             'radius_km' => is_numeric($branch->radius_km ?? null) ? max(5, (float) $branch->radius_km * 3) : 25,
         ];
+    }
+
+    private function isCustomerAddressAlias(string $address): bool
+    {
+        $normalized = mb_strtolower(trim($address));
+
+        return in_array($normalized, [
+            'rumah',
+            'rumah saya',
+            'alamat saya',
+            'lokasi saya',
+            'tempat saya',
+            'alamat rumah',
+            'dari rumah',
+            'jemput rumah',
+        ], true);
+    }
+
+    private function isGeocodeTooFarFromBranch(array $result, ?Branch $branch): bool
+    {
+        if (! $branch || ! is_numeric($result['distance_from_bias_km'] ?? null)) {
+            return false;
+        }
+
+        $allowedKm = is_numeric($branch->radius_km ?? null)
+            ? max(25, (float) $branch->radius_km * 8)
+            : 50;
+
+        return (float) $result['distance_from_bias_km'] > min($allowedKm, 80);
     }
 
     private function shoppingItems(string $text): array

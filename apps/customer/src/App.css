@@ -1924,6 +1924,11 @@
   color: #17213b;
 }
 
+.final-preview-card .cancel-order-preview {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 .simple-page {
   min-height: calc(var(--jojo-viewport-height, 100dvh) - 98px);
   padding: 24px 18px;
