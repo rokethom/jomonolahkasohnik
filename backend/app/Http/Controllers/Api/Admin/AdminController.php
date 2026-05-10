@@ -721,9 +721,32 @@ class AdminController extends Controller
 
             $orderPayload = $payload['order_payload'];
             $orderPayload['notes'] = trim((string) ($orderPayload['notes'] ?? '')."\nDibuat dari dashboard oleh ".$request->user()->name);
+            $orderPayloads = $this->manualOrderPayloads($orderPayload);
 
             try {
-                $order = $createOrder->handle($customer, $orderPayload);
+                $orders = DB::transaction(function () use ($createOrder, $customer, $orderPayloads, $payload): array {
+                    $created = [];
+
+                    foreach ($orderPayloads as $manualPayload) {
+                        $order = $createOrder->handle($customer, $manualPayload);
+                        $order->forceFill(['source' => 'dashboard_manual'])->save();
+
+                        if (array_key_exists('price_override', $payload) || array_key_exists('service_charge_override', $payload)) {
+                            $isTartHelper = (bool) data_get($manualPayload, 'service_payload.tart_helper');
+                            $price = $payload['price_override'] ?? $order->price;
+                            $serviceCharge = $isTartHelper ? 0 : ($payload['service_charge_override'] ?? $order->service_charge);
+                            $order->forceFill([
+                                'price' => $price,
+                                'service_charge' => $serviceCharge,
+                                'total_price' => $price + $serviceCharge + $order->extra_charge,
+                            ])->save();
+                        }
+
+                        $created[] = $order->fresh(['user.branch', 'driver.user.branch']);
+                    }
+
+                    return $created;
+                });
             } catch (OrderLimitExceededException $exception) {
                 return response()->json([
                     'message' => $exception->getMessage(),
@@ -736,28 +759,23 @@ class AdminController extends Controller
                     'errors' => $exception->errors(),
                 ], 422);
             }
-            $order->forceFill(['source' => 'dashboard_manual'])->save();
+            $order = $orders[0];
 
-            if (array_key_exists('price_override', $payload) || array_key_exists('service_charge_override', $payload)) {
-                $price = $payload['price_override'] ?? $order->price;
-                $serviceCharge = $payload['service_charge_override'] ?? $order->service_charge;
-                $order->forceFill([
-                    'price' => $price,
-                    'service_charge' => $serviceCharge,
-                    'total_price' => $price + $serviceCharge + $order->extra_charge,
-                ])->save();
+            $this->rememberManualOrderParserRule($parserRules, $payload, $order);
+
+            foreach ($orders as $createdOrder) {
+                $this->recordAudit($request->user(), 'created_dashboard_text_order', $createdOrder, [
+                    'order_code' => $createdOrder->order_code,
+                    'branch_id' => $createdOrder->branch_id,
+                ]);
             }
 
-            $this->rememberManualOrderParserRule($parserRules, $payload, $order->fresh());
-
-            $this->recordAudit($request->user(), 'created_dashboard_text_order', $order, [
-                'order_code' => $order->order_code,
-                'branch_id' => $order->branch_id,
-            ]);
-
             return response()->json([
-                'message' => 'Manual order created from dashboard parser',
-                'data' => $this->orderPayload($order->fresh(['user.branch', 'driver.user.branch'])),
+                'message' => count($orders) > 1
+                    ? 'Manual order kue tart dibuat untuk driver utama dan helper'
+                    : 'Manual order created from dashboard parser',
+                'data' => $this->orderPayload($order),
+                'orders' => collect($orders)->map(fn (Order $createdOrder): array => $this->orderPayload($createdOrder))->values(),
             ], 201);
         }
 
@@ -879,6 +897,53 @@ class AdminController extends Controller
             'items' => $items,
             'notes' => $orderPayload['notes'] ?? null,
         ], 'manual_order', 'dashboard');
+    }
+
+    private function manualOrderPayloads(array $orderPayload): array
+    {
+        if (! $this->manualOrderContainsTart($orderPayload)) {
+            return [$orderPayload];
+        }
+
+        return collect([false, true])
+            ->map(function (bool $isHelper, int $index) use ($orderPayload): array {
+                $servicePayload = is_array($orderPayload['service_payload'] ?? null) ? $orderPayload['service_payload'] : [];
+
+                return [
+                    ...$orderPayload,
+                    'service_type' => 'delivery',
+                    'notes' => trim(implode("\n", array_filter([
+                        $orderPayload['notes'] ?? null,
+                        $isHelper ? 'Helper kue tart - tanpa service charge' : 'Driver utama kue tart',
+                    ]))),
+                    'service_payload' => [
+                        ...$servicePayload,
+                        'tart_order_index' => $index + 1,
+                        'tart_order_count' => 2,
+                        'tart_helper' => $isHelper,
+                        'helper_role' => $isHelper ? 'tart_helper' : 'tart_driver',
+                    ],
+                ];
+            })
+            ->all();
+    }
+
+    private function manualOrderContainsTart(array $orderPayload): bool
+    {
+        $items = collect($orderPayload['items'] ?? [])
+            ->map(fn (mixed $item): string => is_array($item)
+                ? implode(' ', array_filter([$item['name'] ?? null, $item['notes'] ?? null]))
+                : (string) $item)
+            ->implode(' ');
+        $haystack = implode(' ', array_filter([
+            $orderPayload['notes'] ?? null,
+            $orderPayload['pickup_address'] ?? null,
+            $orderPayload['destination_address'] ?? null,
+            $items,
+            json_encode($orderPayload['service_payload'] ?? []),
+        ]));
+
+        return preg_match('/\b(?:kue\s*)?tart\b/iu', $haystack) === 1;
     }
 
     private function manualPreviewCustomer(Request $request, array $payload): User

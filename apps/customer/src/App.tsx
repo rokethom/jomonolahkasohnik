@@ -1290,13 +1290,15 @@ function HomeScreen({
   const sliderSection = homeData?.sections.find((section) => section.type === 'slider' || /slider/i.test(section.name))
   const promoSection = homeData?.sections.find((section) => section.type === 'promo' || /promo/i.test(section.name))
   const announcement = homeData?.announcements[0]
-  const customerName = useCustomerStore((state) => state.user?.name?.trim() || 'Customer')
+  const customer = useCustomerStore((state) => state.user)
+  const customerName = customer?.name?.trim() || 'Customer'
   const greeting = greetingByTime()
   const complaintUrl = safeWhatsappUrl(publicSettings?.support?.complaint_whatsapp_url)
 
   return (
     <div className="home-screen">
       <section className="home-hero">
+        <CustomerHomeAvatar name={customerName} photoUrl={customer?.profile_photo_url} />
         <div className="hero-copy">
           <h1>Hai {customerName},<br />Selamat {greeting}</h1>
           <p>Pesan berbagai layanan cepat, aman dan terpercaya lewat <strong>JOJO si Aplikasi Joker</strong>.</p>
@@ -1353,6 +1355,21 @@ function HomeScreen({
         <SendHorizontal size={24} />
         Order Sekarang
       </button>
+    </div>
+  )
+}
+
+function CustomerHomeAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
+  const [failed, setFailed] = useState(false)
+  const image = photoUrl ? cmsAssetUrl(photoUrl) : ''
+
+  return (
+    <div className="home-profile-badge" aria-label={`Profile ${name}`}>
+      {image && !failed ? (
+        <img src={image} alt={name} loading="eager" decoding="async" onError={() => setFailed(true)} />
+      ) : (
+        <UserRound size={18} />
+      )}
     </div>
   )
 }
@@ -2169,8 +2186,10 @@ function ChatOrderActions({
               )}
               {qrisImageUrl && (
                 <div className="payment-qris">
-                  <span>QRIS Aplikasi</span>
-                  <a href={qrisImageUrl} download target="_blank" rel="noreferrer">Download QRIS</a>
+                  <div className="payment-qris-head">
+                    <span>QRIS Aplikasi</span>
+                    <button type="button" className="payment-qris-download" onClick={() => void downloadAsset(qrisImageUrl, 'qris-jojo.png')}>Download QRIS</button>
+                  </div>
                   <button type="button" className="payment-qris-image-button" onClick={() => setQrisPreviewOpen(true)}>
                     <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
                   </button>
@@ -2183,8 +2202,10 @@ function ChatOrderActions({
             <div className="payment-transfer-panel">
               {qrisImageUrl ? (
                 <div className="payment-qris">
-                  <span>QRIS Aplikasi</span>
-                  <a href={qrisImageUrl} download target="_blank" rel="noreferrer">Download QRIS</a>
+                  <div className="payment-qris-head">
+                    <span>QRIS Aplikasi</span>
+                    <button type="button" className="payment-qris-download" onClick={() => void downloadAsset(qrisImageUrl, 'qris-jojo.png')}>Download QRIS</button>
+                  </div>
                   <button type="button" className="payment-qris-image-button" onClick={() => setQrisPreviewOpen(true)}>
                     <img src={qrisImageUrl} alt="QRIS pembayaran JojoApp" />
                   </button>
@@ -3006,7 +3027,7 @@ function ImagePreviewModal({ imageUrl, onClose, downloadLabel }: { imageUrl: str
     <div className="image-editor-backdrop" onClick={onClose}>
       <div className="image-preview" onClick={(event) => event.stopPropagation()}>
         <button type="button" onClick={onClose}>x</button>
-        {downloadLabel && <a href={imageUrl} download target="_blank" rel="noreferrer">{downloadLabel}</a>}
+        {downloadLabel && <button type="button" className="image-preview-download" onClick={() => void downloadAsset(imageUrl, 'qris-jojo.png')}>{downloadLabel}</button>}
         <img src={imageUrl} alt="Preview lampiran" />
       </div>
     </div>
@@ -3817,6 +3838,31 @@ function cmsAssetUrl(path: string) {
   if (!/^https?:\/\//i.test(path)) return assetUrl(path)
 
   return normalizeRemoteAsset(path)
+}
+
+async function downloadAsset(url: string, filename: string) {
+  try {
+    const response = await fetch(url, { mode: 'cors' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  } catch {
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.target = '_blank'
+    anchor.rel = 'noreferrer'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
 }
 
 function normalizeRemoteAsset(path: string) {

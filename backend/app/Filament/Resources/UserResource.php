@@ -52,6 +52,14 @@ class UserResource extends Resource
                                     ->columns(2)
                                     ->extraAttributes(['class' => 'rounded-xl shadow-xl transition hover:shadow-2xl'])
                                     ->schema([
+                                        Forms\Components\FileUpload::make('profile_photo_path')
+                                            ->label('Foto Profile')
+                                            ->disk('public')
+                                            ->directory('profile-photos')
+                                            ->image()
+                                            ->imageEditor()
+                                            ->maxSize(2048)
+                                            ->columnSpanFull(),
                                         Forms\Components\TextInput::make('username')
                                             ->required()
                                             ->maxLength(255)
@@ -155,6 +163,10 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\ImageColumn::make('profile_photo_path')
+                    ->label('Foto')
+                    ->disk('public')
+                    ->circular(),
                 Tables\Columns\TextColumn::make('username')
                     ->searchable()
                     ->sortable()

@@ -1372,9 +1372,21 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
     <section className="panel">
       <PanelHeader title="User management" action={`${users.length} records`} />
       <div className="table-toolbar"><select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><span className="toolbar-hint">Admin/GM only can edit Admin & GM accounts.</span></div>
-      <div className="table-wrap user-table-wrap"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><strong>{user.username}</strong><span>{user.email}</span></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><UserLocationSummary user={user} canViewMaps={me.role === 'admin'} /></td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
+      <div className="table-wrap user-table-wrap"><table><thead><tr><th>User</th><th>Name</th><th>Role</th><th>Branch</th><th>Lokasi</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id}><td><div className="user-identity-cell"><UserAvatar user={user} /><div><strong>{user.username}</strong><span>{user.email}</span></div></div></td><td>{user.name}</td><td><RoleBadge role={user.role} /></td><td>{userBranchLabel(user)}</td><td><UserLocationSummary user={user} canViewMaps={me.role === 'admin'} /></td><td><span className={user.is_suspended ? 'status danger' : user.is_active ? 'status success' : 'status muted'}>{user.is_suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</span></td><td><div className="row-actions">{canEditUser(user) && <button className="mini-button" type="button" onClick={() => setEditingUser(user)}>Edit</button>}{canEditUser(user) && <button className="mini-button" type="button" onClick={() => void resetPassword(user)}>Reset Pass</button>}{canEditUser(user) && user.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(user)}>Reset Token</button>}{canEditUser(user) && <button className="mini-button reject" type="button" onClick={() => void destroy(user)}>Delete</button>}{!canEditUser(user) && <span className="status muted">Locked</span>}</div></td></tr>)}</tbody></table></div>
       {editingUser && <UserEditModal user={editingUser} branches={branches} permissions={permissions} api={api} onClose={() => setEditingUser(null)} onSaved={async () => { await onChanged(); setEditingUser(null) }} />}
     </section>
+  )
+}
+
+function UserAvatar({ user }: { user: Pick<User, 'name' | 'username' | 'profile_photo_url'> }) {
+  const [failed, setFailed] = useState(false)
+  const image = user.profile_photo_url ? assetUrl(user.profile_photo_url) : ''
+  const initial = (user.name || user.username || 'U').trim().slice(0, 1).toUpperCase()
+
+  return (
+    <span className="user-avatar">
+      {image && !failed ? <img src={image} alt={user.name || user.username} onError={() => setFailed(true)} /> : initial}
+    </span>
   )
 }
 
@@ -1488,7 +1500,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
           <tbody>
             {filteredDrivers.map((driver) => (
               <tr key={driver.id}>
-                <td><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></td>
+                <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></div></div></td>
                 <td><span className="driver-phone">{driver.phone || '-'}</span></td>
                 <td><span className="status info">{vehicleLabel(driver.vehicle_type)}{driver.vehicle_type === 'mobil' ? ` ${driver.vehicle_seat_rows ?? 2} baris` : ''}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
                 <td><span className="driver-phone">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
@@ -3592,6 +3604,15 @@ function ManualOrderPreviewCard({
   const geocodingWarning = typeof routeMeta.geocoding_warning === 'string' ? routeMeta.geocoding_warning : null
   const pickupProvider = typeof routeMeta.pickup_geocoded_by === 'string' ? routeMeta.pickup_geocoded_by : null
   const destinationProvider = typeof routeMeta.destination_geocoded_by === 'string' ? routeMeta.destination_geocoded_by : null
+  const serviceKey = String(payload?.service_type ?? preview.service_type ?? preview.selected_service ?? '').toLowerCase()
+  const isCourierOrder = ['kurir', 'kr'].includes(serviceKey) || serviceKey.includes('kurir')
+  const containsTart = /\b(?:kue\s*)?tart\b/i.test([
+    payload?.notes,
+    payload?.pickup_address,
+    payload?.destination_address,
+    JSON.stringify(payload?.items ?? []),
+    JSON.stringify(payload?.service_payload ?? {}),
+  ].filter(Boolean).join(' '))
 
   return (
     <aside className={payload ? 'manual-preview-card ready' : 'manual-preview-card warning'}>
@@ -3600,9 +3621,11 @@ function ManualOrderPreviewCard({
       <p>{sanitizeManualPreviewText(preview.reply ?? preview.message, preview) ?? 'Lengkapi teks order agar sistem bisa membuat preview.'}</p>
       {payload && (
         <div className="manual-preview-detail">
-          <div><span>Customer</span><b>{customer.name || 'Belum terbaca'}{customer.phone ? ` - ${customer.phone}` : ''}</b></div>
-          <div><span>Pickup</span><b>{payload.pickup_address}</b></div>
-          <label className="manual-inline-editor"><span>Tujuan</span><input value={payload.destination_address} onChange={(event) => onDestinationChange(event.target.value)} /></label>
+          <div><span>{isCourierOrder ? 'Customer / pengirim' : 'Customer'}</span><b>{customer.name || 'Belum terbaca'}{customer.phone ? ` - ${customer.phone}` : ''}</b></div>
+          {customer.address && <div><span>Alamat customer</span><b>{customer.address}</b></div>}
+          <div><span>{isCourierOrder ? 'Pickup / ambil barang' : 'Pickup'}</span><b>{payload.pickup_address}</b></div>
+          <label className="manual-inline-editor"><span>{isCourierOrder ? 'Penerima / tujuan' : 'Tujuan'}</span><input value={payload.destination_address} onChange={(event) => onDestinationChange(event.target.value)} /></label>
+          {containsTart && <div className="manual-route-status warning"><span>Rule kue tart</span><b>Submit akan membuat 2 order delivery: driver utama dan helper tanpa service fee.</b></div>}
           {(payload.points ?? []).map((point, index) => (
             <label className="manual-inline-editor" key={`${point.label}-${index}`}><span>{point.label ?? `Titik ${index + 1}`}</span><input value={point.address} onChange={(event) => onPointChange(index, event.target.value)} placeholder="Alamat titik tambahan" /></label>
           ))}

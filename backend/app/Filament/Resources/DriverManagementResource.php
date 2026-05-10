@@ -62,6 +62,10 @@ class DriverManagementResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\ImageColumn::make('profile_photo_path')
+                    ->label('Foto')
+                    ->disk('public')
+                    ->circular(),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Driver')
                     ->searchable()

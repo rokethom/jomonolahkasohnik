@@ -289,9 +289,14 @@ class JojoBotService
             'driver_preference' => 'general',
         ];
         $activeMultilineField = null;
+        $activeSection = 'sender';
 
         foreach (preg_split('/\R/u', $rawText) ?: [] as $line) {
             if (! str_contains($line, ':')) {
+                if (preg_match('/antarkan\s+barang\s+ke|antar(?:kan)?\s+ke|diantar\s+ke|penerima|tujuan/u', mb_strtolower($line)) === 1) {
+                    $activeSection = 'receiver';
+                }
+
                 if ($activeMultilineField === 'notes' && trim($line) !== '') {
                     $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], trim($line)])));
                 }
@@ -306,9 +311,13 @@ class JojoBotService
             if (preg_match('/layanan|service/u', $key)) {
                 $fields['service_type'] = $this->normalizeRequestedService($value);
             } elseif (preg_match('/^nama/u', $key)) {
-                $fields['name'] = $value;
+                if ($activeSection !== 'receiver' || blank($fields['name'])) {
+                    $fields['name'] = $value;
+                }
             } elseif (preg_match('/no|hp|wa|telepon|phone/u', $key)) {
-                $fields['phone'] = $value;
+                if ($activeSection !== 'receiver' || blank($fields['phone'])) {
+                    $fields['phone'] = $value;
+                }
             } elseif (preg_match('/alamat\s+pembelian|lokasi\s+(?:beli|pembelian)|toko|store|warung|resto|restaurant|pasar/u', $key)) {
                 $fields['store_location'] = $value;
             } elseif (preg_match('/jemput|pickup|asal/u', $key)) {
@@ -316,7 +325,13 @@ class JojoBotService
             } elseif (preg_match('/tujuan|antar|destination/u', $key)) {
                 $fields['destination_address'] = $value;
             } elseif (preg_match('/\balamat\b|address/u', $key)) {
-                $fields['destination_address'] = $value;
+                if ($activeSection === 'receiver') {
+                    $fields['destination_address'] = $value;
+                } elseif (blank($fields['pickup_address'])) {
+                    $fields['pickup_address'] = $value;
+                } else {
+                    $fields['destination_address'] = $value;
+                }
             } elseif (preg_match('/barang|item|produk|list|belanja|pembelian|belikan/u', $key)) {
                 $fields['notes'] = trim(implode("\n", array_filter([$fields['notes'], $value])));
                 $activeMultilineField = 'notes';
