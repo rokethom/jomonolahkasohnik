@@ -93,6 +93,10 @@ type Order = {
   preferredVehicleType?: string | null
   requiredVehicleSeatRows?: number | null
   driverPreference?: string | null
+  assignReason?: string | null
+  assignedBy?: string | null
+  assignedByRole?: string | null
+  assignedAt?: string | null
   operHandleStatus?: string | null
   operHandleDriver?: string | null
   operHandleReason?: string | null
@@ -306,6 +310,10 @@ type ApiOrder = {
   preferred_vehicle_type?: string | null
   required_vehicle_seat_rows?: number | null
   driver_preference?: string | null
+  assign_reason?: string | null
+  assigned_by?: string | null
+  assigned_by_role?: string | null
+  assigned_at?: string | null
   oper_handle_status?: string | null
   oper_handle_driver?: string | null
   oper_handle_reason?: string | null
@@ -1245,6 +1253,13 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <span>{directionMatch ? 'Order ini mengikuti arah perjalanan aktif.' : 'Order ini tidak searah dengan perjalanan Anda.'}</span>
       </section>
 
+      {order.assignReason && (
+        <section className="direction-panel match">
+          <strong>ASSIGN DISPATCHER</strong>
+          <span>{order.assignedBy ? `Ditugaskan oleh ${order.assignedBy}${order.assignedByRole ? ` (${order.assignedByRole})` : ''}. ` : ''}Alasan: {order.assignReason}</span>
+        </section>
+      )}
+
       {(order.crews?.length || order.crewStatus) && (
         <section className="panel">
           <SectionTitle title="Crew Order" action={order.crewStatus ? crewStatusLabel(order.crewStatus) : undefined} />
@@ -1253,7 +1268,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
               <div className="crew-row" key={`${crew.role}-${crew.id}`}>
                 <span>{crew.label || crew.role}</span>
                 <strong>{crew.driver || (crew.status === 'pending' ? 'Menunggu driver' : '-')}</strong>
-                <small>{crewStatusLabel(crew.status)}{crew.service_charge ? ` · Rp ${formatMoney(crew.service_charge)}` : ''}</small>
+                <small>{crewStatusLabel(crew.status)}{crew.service_charge ? ` - Rp ${formatMoney(crew.service_charge)}` : ''}</small>
               </div>
             ))}
             {isHelperOpportunity && <p className="note">Order ini sudah diterima rider utama. Anda bisa menerima slot {helperLabel} jika siap membantu.</p>}
@@ -2373,6 +2388,10 @@ function mapOrder(order: ApiOrder): Order {
     preferredVehicleType: order.preferred_vehicle_type ?? null,
     requiredVehicleSeatRows: order.required_vehicle_seat_rows ?? null,
     driverPreference: order.driver_preference ?? null,
+    assignReason: order.assign_reason ?? null,
+    assignedBy: order.assigned_by ?? null,
+    assignedByRole: order.assigned_by_role ?? null,
+    assignedAt: order.assigned_at ?? null,
     operHandleStatus: order.oper_handle_status ?? null,
     operHandleDriver: order.oper_handle_driver ?? null,
     operHandleReason: order.oper_handle_reason ?? null,
@@ -2402,6 +2421,10 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.preferred_vehicle_type !== undefined ? { preferredVehicleType: order.preferred_vehicle_type } : {}),
     ...(order.required_vehicle_seat_rows !== undefined ? { requiredVehicleSeatRows: order.required_vehicle_seat_rows } : {}),
     ...(order.driver_preference !== undefined ? { driverPreference: order.driver_preference } : {}),
+    ...(order.assign_reason !== undefined ? { assignReason: order.assign_reason } : {}),
+    ...(order.assigned_by !== undefined ? { assignedBy: order.assigned_by } : {}),
+    ...(order.assigned_by_role !== undefined ? { assignedByRole: order.assigned_by_role } : {}),
+    ...(order.assigned_at !== undefined ? { assignedAt: order.assigned_at } : {}),
     ...(order.oper_handle_status !== undefined ? { operHandleStatus: order.oper_handle_status } : {}),
     ...(order.oper_handle_driver !== undefined ? { operHandleDriver: order.oper_handle_driver } : {}),
     ...(order.oper_handle_reason !== undefined ? { operHandleReason: order.oper_handle_reason } : {}),

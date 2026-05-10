@@ -347,15 +347,27 @@ class AdminController extends Controller
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
+        $assignReason = trim((string) ($payload['reason'] ?? '')) ?: 'Manual assign dispatcher';
+        $breakdown = $assigned->pricing_breakdown ?? [];
+        $breakdown['admin_assign'] = [
+            'reason' => $assignReason,
+            'assigned_by' => $actor->name,
+            'assigned_by_role' => $actor->role instanceof UserRole ? $actor->role->value : (string) $actor->role,
+            'assigned_at' => now()->toIso8601String(),
+        ];
+        $assigned->update(['pricing_breakdown' => $breakdown]);
+        $assigned = $assigned->fresh(['user.branch', 'driver.user.branch']);
+
         $notifications->sendToUser(
             $driver->user,
             'Order ditugaskan dispatcher',
-            "Order {$assigned->order_code} ditugaskan oleh {$actor->name}.",
+            "Order {$assigned->order_code} ditugaskan oleh {$actor->name}. Alasan: {$assignReason}.",
             [
                 'type' => 'dispatcher_assigned_order',
                 'order_id' => $assigned->id,
                 'order_code' => $assigned->order_code,
                 'assigned_by' => $actor->id,
+                'assign_reason' => $assignReason,
             ],
         );
 
@@ -366,7 +378,7 @@ class AdminController extends Controller
 
         return response()->json([
             'message' => 'Driver berhasil di-assign ke order.',
-            'data' => $this->orderPayload($assigned->fresh(['user.branch', 'driver.user.branch']), $actor),
+            'data' => $this->orderPayload($assigned, $actor),
         ]);
     }
 
