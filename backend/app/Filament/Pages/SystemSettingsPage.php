@@ -67,6 +67,10 @@ class SystemSettingsPage extends Page implements HasForms
             'hermes_active' => $settings->raw('hermes_api_key')?->is_active ?? false,
             'map_provider' => $settings->get('map_provider', 'osm'),
             'map_active' => $settings->raw('map_provider')?->is_active ?? true,
+            'location_log_cleanup_enabled' => $settings->bool('location_log_cleanup_enabled', true),
+            'location_log_retention_days' => $settings->int('location_log_retention_days', 14),
+            'location_log_suspicious_retention_days' => $settings->int('location_log_suspicious_retention_days', 30),
+            'location_log_cleanup_batch_limit' => $settings->int('location_log_cleanup_batch_limit', 1000),
             'google_oauth_enabled' => $settings->bool('google_oauth_enabled'),
             'google_oauth_client_id' => $settings->get('google_oauth_client_id'),
             'multi_order_enabled' => $settings->bool('multi_order_enabled', false),
@@ -368,6 +372,41 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->label('Status aktif')
                                             ->helperText('Matikan untuk memakai fallback .env/default.'),
                                     ]),
+                                Forms\Components\Section::make('Auto Cleanup Location Logs')
+                                    ->description('Menghapus riwayat GPS lama secara bertahap agar tabel location_logs tidak membebani server. Data lokasi terakhir user/driver tetap tersimpan di profile/log terbaru.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\Toggle::make('location_log_cleanup_enabled')
+                                            ->label('Aktifkan cleanup otomatis')
+                                            ->helperText('Scheduler berjalan harian pukul 02:30 server. Matikan hanya jika sedang investigasi log.'),
+                                        Forms\Components\TextInput::make('location_log_cleanup_batch_limit')
+                                            ->label('Maksimal hapus per run')
+                                            ->numeric()
+                                            ->minValue(100)
+                                            ->maxValue(10000)
+                                            ->default(1000)
+                                            ->helperText('Batch kecil lebih aman untuk VPS. Rekomendasi 1000-5000.'),
+                                        Forms\Components\TextInput::make('location_log_retention_days')
+                                            ->label('Retensi log normal')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(365)
+                                            ->suffix('hari')
+                                            ->default(14)
+                                            ->helperText('Log normal adalah GPS yang tidak suspicious/mock. Rekomendasi 14 hari.'),
+                                        Forms\Components\TextInput::make('location_log_suspicious_retention_days')
+                                            ->label('Retensi suspicious/mock')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->maxValue(730)
+                                            ->suffix('hari')
+                                            ->default(30)
+                                            ->helperText('Log suspicious/mock disimpan lebih lama untuk investigasi. Nilai akan dipaksa minimal sama dengan retensi normal.'),
+                                        Forms\Components\Placeholder::make('location_log_cleanup_flow')
+                                            ->label('Flow readonly')
+                                            ->content('Normal log > retensi normal akan dihapus. Suspicious/mock > retensi suspicious akan dihapus. Penghapusan memakai batch agar database tidak spike.')
+                                            ->columnSpanFull(),
+                                    ]),
                             ]),
                         Tabs\Tab::make('Multi Order')
                             ->icon('heroicon-o-arrows-right-left')
@@ -649,6 +688,11 @@ class SystemSettingsPage extends Page implements HasForms
             $this->saveSecret($settings, 'hermes_api_key', $data['hermes_api_key'] ?? null, (bool) ($data['hermes_active'] ?? false));
 
             $settings->set('map_provider', $data['map_provider'] ?? 'osm', (bool) ($data['map_active'] ?? true));
+            $normalLocationLogRetention = max(1, min(365, (int) ($data['location_log_retention_days'] ?? 14)));
+            $settings->set('location_log_cleanup_enabled', (bool) ($data['location_log_cleanup_enabled'] ?? true));
+            $settings->set('location_log_retention_days', $normalLocationLogRetention);
+            $settings->set('location_log_suspicious_retention_days', max($normalLocationLogRetention, min(730, (int) ($data['location_log_suspicious_retention_days'] ?? 30))));
+            $settings->set('location_log_cleanup_batch_limit', max(100, min(10000, (int) ($data['location_log_cleanup_batch_limit'] ?? 1000))));
             $settings->set('google_oauth_enabled', (bool) ($data['google_oauth_enabled'] ?? false));
             $settings->set('google_oauth_client_id', $data['google_oauth_client_id'] ?? null, (bool) ($data['google_oauth_enabled'] ?? false));
             $settings->set('firebase_web_config', $data['firebase_web_config'] ?? null, (bool) ($data['firebase_web_config_active'] ?? false));
