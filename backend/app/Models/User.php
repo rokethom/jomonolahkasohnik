@@ -150,13 +150,13 @@ class User extends Authenticatable implements FilamentUser
     private function legacyRolePermissions(): array
     {
         return match ($this->role?->value ?? (string) $this->role) {
-            'admin' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order'],
-            'gm' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order'],
+            'admin' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order'],
+            'gm' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order'],
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat'],
             'manager' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'export_report', 'edit_tarif'],
             'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'edit_tarif'],
-            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'edit_tarif'],
-            'eksekutor' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat'],
+            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'edit_tarif', 'manual_order'],
+            'eksekutor' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'manual_order'],
             'web_admin', 'cms_editor' => ['manage_cms'],
             default => [],
         };

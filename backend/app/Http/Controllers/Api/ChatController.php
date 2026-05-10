@@ -91,9 +91,9 @@ class ChatController extends Controller
         }
 
         $payload = $request->validate([
-            'message' => ['nullable', 'string'],
-            'image' => ['nullable', 'image', 'max:4096'],
-            'audio' => ['nullable', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
+            'message' => ['nullable', 'required_without_all:image,audio', 'string', 'max:4000'],
+            'image' => ['nullable', 'required_without_all:message,audio', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'audio' => ['nullable', 'required_without_all:message,image', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
             'audio_duration' => ['nullable', 'integer', 'min:1'],
         ]);
 
@@ -118,9 +118,9 @@ class ChatController extends Controller
     {
         $payload = $request->validate([
             'order_id' => ['required', 'integer', 'exists:orders,id'],
-            'message' => ['nullable', 'string'],
-            'image' => ['nullable', 'image', 'max:4096'],
-            'audio' => ['nullable', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
+            'message' => ['nullable', 'required_without_all:image,audio', 'string', 'max:4000'],
+            'image' => ['nullable', 'required_without_all:message,audio', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'audio' => ['nullable', 'required_without_all:message,image', 'file', 'mimetypes:audio/mpeg,audio/mp3,audio/webm,video/webm', 'max:8192'],
             'audio_duration' => ['nullable', 'integer', 'min:1'],
         ]);
 

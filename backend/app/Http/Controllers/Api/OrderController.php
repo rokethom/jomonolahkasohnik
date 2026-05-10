@@ -35,9 +35,14 @@ class OrderController extends Controller
         }
 
         if (($user->role->value ?? $user->role) === 'driver') {
+            $user->loadMissing('driver');
+
             $query->where(function ($query) use ($user) {
                 $query->whereHas('driver', fn ($query) => $query->where('user_id', $user->id))
-                    ->orWhereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value]);
+                    ->orWhere(function ($query) use ($user): void {
+                        $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
+                            ->when($user->branch_id, fn ($query) => $query->where('branch_id', $user->branch_id), fn ($query) => $query->whereRaw('1 = 0'));
+                    });
             })->where('status', '!=', OrderStatus::Cancelled->value);
         }
 

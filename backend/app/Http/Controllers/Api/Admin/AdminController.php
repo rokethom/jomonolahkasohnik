@@ -389,6 +389,8 @@ class AdminController extends Controller
     public function updateOrderPrice(Request $request, Order $order): JsonResponse
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
+        $order->loadMissing(['branch', 'user.branch', 'driver.user.branch']);
+        $this->assertOrderAreaScope($request->user(), $order);
         abort_if($order->status->isTerminal(), 422, 'Harga hanya bisa diedit saat order masih berjalan.');
 
         $payload = $request->validate([
@@ -1599,7 +1601,7 @@ class AdminController extends Controller
                 && $user->hasPermission('suspend_driver'),
             'can_manage_system_settings' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
-            'can_create_manual_order' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::Eksekutor], true),
+            'can_create_manual_order' => $user->hasPermission('manual_order'),
             'can_assign_driver' => $user->hasPermission('assign_driver'),
             'can_view_report' => $user->hasPermission('view_report'),
             'can_export_report' => $user->hasPermission('export_report'),
