@@ -26,6 +26,11 @@ type DriverHistoryState = {
   jojoDriverView?: View
 }
 
+type DriverNotificationTarget = {
+  view: View
+  orderId?: number
+}
+
 type OrderStatus = 'pending' | 'accepted' | 'on_delivery' | 'pending_cancel' | 'done' | 'cancelled'
 
 type Driver = {
@@ -92,9 +97,22 @@ type Order = {
   operHandleDriver?: string | null
   operHandleReason?: string | null
   operHandleUpdatedAt?: string | null
+  adjustments?: OrderAdjustment[]
   acceptedAt?: string | null
   updatedAt?: string | null
   eligibility?: Eligibility
+}
+
+type OrderAdjustment = {
+  id?: number
+  amount: number
+  reason?: string | null
+  created_at?: string | null
+  driver?: {
+    user?: {
+      name?: string | null
+    } | null
+  } | null
 }
 
 type Toast = { id: number; message: string; tone: 'success' | 'warning' | 'danger' }
@@ -252,6 +270,7 @@ type ApiOrder = {
   oper_handle_driver?: string | null
   oper_handle_reason?: string | null
   oper_handle_updated_at?: string | null
+  adjustments?: OrderAdjustment[]
   payment_meta?: Record<string, unknown> | null
   accepted_at?: string | null
   updated_at?: string | null
@@ -310,12 +329,24 @@ function guardViewForSession(view: View, token?: string | null): View {
 }
 
 function viewFromNotificationTarget() {
+  return readDriverNotificationTarget()?.view ?? null
+}
+
+function readDriverNotificationTarget(): DriverNotificationTarget | null {
   const params = new URLSearchParams(window.location.search)
   const open = params.get('open')
   const type = params.get('notification_type') ?? params.get('type')
+  const orderId = numericQueryParam(params.get('order_id'))
 
-  if (open === 'orders' || type === 'new_order' || type === 'dispatcher_broadcast_order') return 'orders' as View
+  if (open === 'chat' || open === 'driver-chat' || (type === 'chat_message' && orderId)) return { view: 'chat', orderId }
+  if (open === 'order-detail' || (orderId && ['order_adjustment', 'driver_accepted', 'order_status'].includes(String(type)))) return { view: 'order-detail', orderId }
+  if (open === 'orders' || type === 'new_order' || type === 'dispatcher_broadcast_order') return { view: 'orders', orderId }
   return null
+}
+
+function numericQueryParam(value: string | null) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : undefined
 }
 
 const useDriverStore = create<DriverStore>((set, get) => ({
@@ -382,6 +413,7 @@ function App() {
   const [apiState, setApiState] = useState<ApiState>({ loading: false, error: '' })
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
+  const notificationTargetRef = useRef<DriverNotificationTarget | null>(readDriverNotificationTarget())
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null
   const chatOrder = chatTarget === 'operator' ? null : selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
   const updateInfo = useBuildUpdate('driver')
@@ -389,7 +421,7 @@ function App() {
   const api = useMemo(() => makeApi(token), [token])
 
   useEffect(() => {
-    const initialView = guardViewForSession(viewFromNotificationTarget() ?? viewFromHistoryState(window.history.state) ?? view, useDriverStore.getState().token)
+    const initialView = guardViewForSession(notificationTargetRef.current?.view ?? viewFromNotificationTarget() ?? viewFromHistoryState(window.history.state) ?? view, useDriverStore.getState().token)
     window.history.replaceState(
       { ...(window.history.state as DriverHistoryState | null), jojoDriverView: initialView },
       document.title,
@@ -469,6 +501,21 @@ function App() {
     const timer = window.setTimeout(() => void load(), 0)
     return () => window.clearTimeout(timer)
   }, [load])
+
+  useEffect(() => {
+    const target = notificationTargetRef.current
+    if (!target?.orderId || orders.length === 0) return
+
+    const order = orders.find((item) => item.id === target.orderId)
+    if (!order) return
+
+    useDriverStore.setState({
+      selectedOrderId: order.id,
+      chatTarget: 'order',
+      view: target.view === 'chat' ? 'chat' : 'order-detail',
+    })
+    notificationTargetRef.current = null
+  }, [orders])
 
   useEffect(() => {
     void fetch(`${API_BASE}/settings/public`, { headers: { Accept: 'application/json' } })
@@ -555,10 +602,11 @@ function App() {
     if (!token) return
 
     const channel = makeEcho(token).private('orders')
-    channel.listen('.order.price.updated', (event: { order?: Partial<ApiOrder> & { id: number; code?: string } }) => {
+    channel.listen('.order.price.updated', (event: { order?: Partial<ApiOrder> & { id: number; code?: string }; actor_name?: string | null; change?: { reason?: string | null; type?: string } }) => {
       if (!event.order?.id) return
       updateOrder(event.order)
-      toast(`Harga order ${event.order.code ?? event.order.order_code ?? ''} diperbarui admin`, 'warning')
+      const reason = event.change?.reason ? ` Alasan: ${event.change.reason}` : ''
+      toast(`Harga order ${event.order.code ?? event.order.order_code ?? ''} diperbarui ${event.actor_name ?? 'sistem'}.${reason}`, 'warning')
     })
     channel.listen('.order.created', (event: { order?: ApiOrder }) => {
       if (!event.order?.id) return
@@ -1123,6 +1171,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         <PriceRow label="Tarif" value={order.price} />
         <PriceRow label="Service fee" value={order.serviceFee} />
         <PriceRow label="Tambahan jasa" value={order.extraCharge} />
+        <AdjustmentReasonList adjustments={order.adjustments ?? []} />
         <div className="total-row"><span>Total</span><strong>Rp {formatMoney(order.total)}</strong></div>
       </section>
 
@@ -2020,6 +2069,21 @@ function MapRow({ label, address }: { label: string; address: string; lat: numbe
   )
 }
 function PriceRow({ label, value }: { label: string; value: number }) { return <div className="price-row"><span>{label}</span><strong>Rp {formatMoney(value)}</strong></div> }
+function AdjustmentReasonList({ adjustments }: { adjustments: OrderAdjustment[] }) {
+  const rows = adjustments.filter((adjustment) => adjustment.reason)
+  if (rows.length === 0) return null
+
+  return (
+    <div className="adjustment-reason-list">
+      {rows.map((adjustment, index) => (
+        <div key={adjustment.id ?? index}>
+          <span>Alasan tambahan {index + 1}</span>
+          <strong>Rp {formatMoney(Number(adjustment.amount ?? 0))} - {adjustment.reason}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
 function mergeChatMessages(current: ChatMessage[], incoming: ChatMessage[]) {
   const byId = new Map(current.map((message) => [String(message.id), message]))
   incoming.forEach((message) => byId.set(String(message.id), message))
@@ -2099,6 +2163,7 @@ function mapOrder(order: ApiOrder): Order {
     operHandleDriver: order.oper_handle_driver ?? null,
     operHandleReason: order.oper_handle_reason ?? null,
     operHandleUpdatedAt: order.oper_handle_updated_at ?? null,
+    adjustments: order.adjustments ?? [],
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     updatedAt: order.updated_at ?? null,
     eligibility: order.eligibility,
@@ -2123,6 +2188,7 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.oper_handle_driver !== undefined ? { operHandleDriver: order.oper_handle_driver } : {}),
     ...(order.oper_handle_reason !== undefined ? { operHandleReason: order.oper_handle_reason } : {}),
     ...(order.oper_handle_updated_at !== undefined ? { operHandleUpdatedAt: order.oper_handle_updated_at } : {}),
+    ...(order.adjustments !== undefined ? { adjustments: order.adjustments } : {}),
   }
 }
 
@@ -2273,7 +2339,7 @@ function operHandleStatusText(order: Order) {
   return `${driver} mengajukan oper handle`
 }
 function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
-  if (!isOnline) return false
+  if (!isOnline || !driver?.is_available) return false
   return Boolean(driver?.can_receive_orders ?? (driver?.status === 'active' && (driver?.deposit_status ?? finance?.status ?? 'paid') === 'paid'))
 }
 function sortNewestOrderFirst(a: Order, b: Order) {

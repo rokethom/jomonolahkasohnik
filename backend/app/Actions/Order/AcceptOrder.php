@@ -136,7 +136,11 @@ class AcceptOrder
                 $acceptedOrder->user,
                 'Order diterima driver',
                 "Pesanan Anda telah diterima oleh {$driverName}",
-                ['type' => 'driver_accepted', 'order_id' => $acceptedOrder->id],
+                [
+                    'type' => 'driver_accepted',
+                    'order_id' => $acceptedOrder->id,
+                    'url' => '/?open=driver-chat&order_id='.$acceptedOrder->id.'&notification_type=driver_accepted',
+                ],
             );
 
             return $acceptedOrder;

@@ -2,10 +2,14 @@
 
 namespace App\Services;
 
+use App\Events\MessageSent;
+use App\Events\OrderPriceUpdated;
+use App\Models\ChatConversation;
 use App\Models\Driver;
 use App\Models\Order;
 use App\Models\OrderAdjustment;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class OrderAdjustmentService
@@ -46,11 +50,55 @@ class OrderAdjustmentService
                 'pricing_breakdown' => $breakdown,
             ]);
 
+            $freshOrder = $order->fresh(['user', 'driver.user', 'adjustments']);
+            $driverName = $driver->user?->name ?? 'Driver';
+            $messageText = 'Tambahan service charge Rp '.number_format($amount, 0, ',', '.').' oleh '.$driverName.'. Alasan: '.$reason;
+
+            $conversation = ChatConversation::query()
+                ->where('order_id', $order->id)
+                ->where('type', 'customer_driver')
+                ->first();
+
+            if ($conversation) {
+                $message = $conversation->messages()->create([
+                    'sender_type' => 'system',
+                    'message' => $messageText,
+                    'is_read' => false,
+                ]);
+
+                try {
+                    broadcast(new MessageSent($message))->toOthers();
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.order_adjustment_chat_failed', [
+                        'order_id' => $order->id,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            }
+
+            try {
+                OrderPriceUpdated::dispatch($freshOrder, $driver->user, [
+                    'type' => 'driver_adjustment',
+                    'amount' => $amount,
+                    'reason' => $reason,
+                ]);
+            } catch (\Throwable $exception) {
+                Log::warning('broadcast.order_adjustment_price_failed', [
+                    'order_id' => $order->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+
             $this->notifications->sendToUser(
                 $order->user,
                 'Penyesuaian biaya order',
-                "Tambahan jasa Rp ".number_format($amount, 0, ',', '.')." - {$reason}",
-                ['type' => 'order_adjustment', 'order_id' => $order->id],
+                $messageText,
+                [
+                    'type' => 'order_adjustment',
+                    'order_id' => $order->id,
+                    'url' => '/?open=driver-chat&order_id='.$order->id.'&notification_type=order_adjustment',
+                    'reason' => $reason,
+                ],
             );
 
             return $adjustment->fresh(['order', 'driver.user']);

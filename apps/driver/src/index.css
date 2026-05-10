@@ -1178,16 +1178,20 @@ input:focus, textarea:focus, select:focus {
 }
 .driver-chat {
   display: grid;
-  min-height: 64vh;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: calc(100dvh - 170px);
+  min-height: 520px;
   overflow: hidden;
   padding: 14px;
 }
 .driver-chat-list {
-  max-height: calc(100dvh - 270px);
-  min-height: min(52vh, 520px);
+  justify-content: flex-start;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 2px 12px;
   scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 .chat-loading {
   display: grid;
@@ -1207,6 +1211,7 @@ input:focus, textarea:focus, select:focus {
   padding: 0;
   border: 0;
   background: transparent;
+  cursor: zoom-in;
 }
 .bubble-reply {
   display: inline-flex;
@@ -1224,6 +1229,29 @@ input:focus, textarea:focus, select:focus {
   width: 220px;
   max-width: 100%;
   margin-top: 8px;
+}
+.adjustment-reason-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  border: 1px solid rgba(140, 248, 208, 0.22);
+  border-radius: 16px;
+  padding: 10px;
+  background: rgba(15, 159, 110, 0.08);
+}
+.adjustment-reason-list div {
+  display: grid;
+  gap: 3px;
+}
+.adjustment-reason-list span {
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 950;
+}
+.adjustment-reason-list strong {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
 }
 .driver-composer {
   bottom: 0;
@@ -1817,13 +1845,13 @@ input:focus, textarea:focus, select:focus {
 
 @media (max-width: 420px) {
   .driver-chat {
-    min-height: calc(100dvh - 190px);
+    height: calc(100dvh - 184px);
+    min-height: 0;
     padding: 12px;
   }
 
   .driver-chat-list {
-    max-height: calc(100dvh - 300px);
-    min-height: 44vh;
+    min-height: 0;
   }
 
   .bubble {

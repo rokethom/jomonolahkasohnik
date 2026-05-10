@@ -86,6 +86,7 @@ class OrderService
                         'type' => 'order_auto_cancelled',
                         'order_id' => $freshOrder->id,
                         'order_code' => $freshOrder->order_code,
+                        'url' => '/?open=history&order_id='.$freshOrder->id.'&notification_type=order_auto_cancelled',
                     ],
                 );
             } catch (\Throwable $exception) {

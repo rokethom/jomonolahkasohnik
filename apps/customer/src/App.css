@@ -2101,6 +2101,45 @@
   white-space: nowrap;
 }
 
+.history-detail .order-reason-note.compact {
+  margin-top: 2px;
+}
+
+.order-reason-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  padding: 10px;
+  background: #eff8ff;
+}
+
+.order-reason-note.compact {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #f0f9ff;
+}
+
+.order-reason-note p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.order-reason-note span {
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.order-reason-note strong {
+  color: #17213b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .history-price {
   display: grid;
   gap: 4px;

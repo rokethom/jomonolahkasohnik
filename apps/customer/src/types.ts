@@ -101,6 +101,8 @@ export type Order = {
   } | null
   driver_name?: string | null
   cancel_reason?: string | null
+  notes?: string | null
+  adjustments?: OrderAdjustment[]
   feedback?: OrderFeedback | null
   rating?: {
     id?: number
@@ -113,6 +115,18 @@ export type Order = {
   preferred_vehicle_type?: 'motor' | 'mobil' | string | null
   vehicle_seat_rows?: 2 | 3 | number | null
   driver_preference?: 'general' | 'ladies' | string | null
+}
+
+export type OrderAdjustment = {
+  id?: number
+  amount: number
+  reason?: string | null
+  created_at?: string | null
+  driver?: {
+    user?: {
+      name?: string | null
+    } | null
+  } | null
 }
 
 export type OrderFeedback = {

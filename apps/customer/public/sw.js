@@ -53,8 +53,12 @@ function notificationTarget(data = {}) {
   if (conversationId) params.set('conversation_id', String(conversationId))
   if (orderId) params.set('order_id', String(orderId))
 
-  if (type === 'chat_message') {
+  if (type === 'chat_message' || type === 'driver_accepted' || type === 'order_adjustment') {
     params.set('open', orderId ? 'driver-chat' : 'cs-chat')
+  }
+
+  if (type === 'order_cancelled' || type === 'order_auto_cancelled' || type === 'order_completed') {
+    params.set('open', 'history')
   }
 
   return params.toString() ? `/?${params.toString()}` : '/'

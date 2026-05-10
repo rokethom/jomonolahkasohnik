@@ -69,7 +69,7 @@ type JojoHistoryState = {
 }
 
 type NotificationOpenTarget = {
-  screen: 'driver-chat' | 'cs-chat'
+  screen: 'driver-chat' | 'cs-chat' | 'history'
   conversationId?: number
   orderId?: number
 }
@@ -143,7 +143,11 @@ function readNotificationOpenTarget(): NotificationOpenTarget | null {
   const conversationId = numericParam(params.get('conversation_id'))
   const orderId = numericParam(params.get('order_id'))
 
-  if (open === 'driver-chat' || (type === 'chat_message' && orderId)) {
+  if (open === 'history' || ['order_cancelled', 'order_auto_cancelled', 'order_completed'].includes(String(type))) {
+    return { screen: 'history', conversationId, orderId }
+  }
+
+  if (open === 'driver-chat' || (orderId && ['chat_message', 'driver_accepted', 'order_adjustment'].includes(String(type)))) {
     return { screen: 'driver-chat', conversationId, orderId }
   }
 
@@ -772,6 +776,13 @@ function App() {
       return
     }
 
+    if (notificationTarget.screen === 'history') {
+      setScreen('history')
+      clearNotificationOpenParams('history')
+      setNotificationTarget(null)
+      return
+    }
+
     const openDriverChat = (orders: Order[]) => {
       const order = orders.find((item) => item.id === notificationTarget.orderId)
 
@@ -893,14 +904,19 @@ function App() {
     if (!token || !store.user?.id) return
 
     const channel = getEcho().private(`user.${store.user.id}`)
-    channel.listen('.order.price.updated', (event: { order?: Order; actor_name?: string | null; message?: string | null }) => {
+    channel.listen('.order.price.updated', (event: { order?: Order; actor_name?: string | null; message?: string | null; change?: { amount?: number; reason?: string | null; type?: string } }) => {
       const updatedOrder = event.order
       if (!updatedOrder) return
       setOrders(mergeOrderList(useCustomerStore.getState().orders, updatedOrder))
       setActiveOrder((current) => current?.id === updatedOrder.id ? { ...current, ...updatedOrder } : current)
       const code = updatedOrder.order_code ?? updatedOrder.code ?? ''
       const actor = event.actor_name?.trim()
-      store.showToast('info', event.message ?? `Harga order ${code} diedit oleh ${actor || 'operator'}.`)
+      const reason = event.change?.reason?.trim()
+      const message = reason && event.change?.type === 'driver_adjustment'
+        ? `Tambahan service charge order ${code}: ${formatRupiah(event.change.amount ?? 0)}. Alasan: ${reason}`
+        : event.message ?? `Harga order ${code} diedit oleh ${actor || 'operator'}.`
+      store.showToast('info', message)
+      if (reason) pushMessage({ from: 'bot', text: message, order: updatedOrder })
     })
     channel.listen('.order.status.updated', (event: { order?: Order; new_status?: string; feedback?: OrderFeedback | null }) => {
       const updatedOrder = event.order
@@ -3249,7 +3265,24 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
           <p><span>Pembayaran</span><strong>{order.payment_label ?? paymentMethodLabel(order.payment_method)}</strong></p>
           <p><span>Total</span><strong>{formatRupiah(order.total_price ?? order.total)}</strong></p>
         </div>
+        <OrderReasonNote order={order} />
       </section>
+    </div>
+  )
+}
+
+function OrderReasonNote({ order, compact = false }: { order: Order; compact?: boolean }) {
+  const reasons = orderReasonItems(order)
+  if (reasons.length === 0) return null
+
+  return (
+    <div className={compact ? 'order-reason-note compact' : 'order-reason-note'}>
+      {reasons.map((item) => (
+        <p key={`${item.label}-${item.text}`}>
+          <span>{item.label}</span>
+          <strong>{item.text}</strong>
+        </p>
+      ))}
     </div>
   )
 }
@@ -3335,6 +3368,7 @@ function HistoryScreen({
             <div className="history-detail">
               <span>{order.order_code ?? `#${order.id}`}</span>
               <small>{order.pickup_address ?? 'Pickup'} ke {order.destination_address ?? 'Tujuan'}</small>
+              <OrderReasonNote order={order} compact />
             </div>
             <div className="history-price">
               <strong>{formatRupiah(order.total_price ?? order.total)}</strong>
@@ -4059,7 +4093,44 @@ function isCancelledStatus(status?: string) {
 function cancelFeedbackMessage(order: Order) {
   return order.feedback?.message
     ?? order.cancel_reason
+    ?? cancelReasonFromNotes(order.notes)
     ?? 'Maaf, order Anda dibatalkan. Silakan buat order ulang atau hubungi CS.'
+}
+
+function orderReasonItems(order: Order) {
+  const items: Array<{ label: string; text: string }> = []
+  const cancelReason = order.feedback?.message ?? order.cancel_reason ?? cancelReasonFromNotes(order.notes)
+
+  if (cancelReason && isCancelledStatus(order.status)) {
+    items.push({ label: 'Alasan cancel', text: cancelReason })
+  }
+
+  const adjustments = order.adjustments ?? []
+  adjustments.forEach((adjustment, index) => {
+    if (!adjustment.reason) return
+    const amount = Number(adjustment.amount ?? 0)
+    const driver = adjustment.driver?.user?.name
+    items.push({
+      label: `Service charge ${index + 1}`,
+      text: `${amount > 0 ? `${formatRupiah(amount)} - ` : ''}${adjustment.reason}${driver ? ` (${driver})` : ''}`,
+    })
+  })
+
+  return items
+}
+
+function cancelReasonFromNotes(notes?: string | null) {
+  const lines = String(notes ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) return ''
+
+  const lastLine = lines.at(-1) ?? ''
+  if (/driver timeout|batas waktu/i.test(lastLine)) return 'Batas waktu mencari driver habis (10 menit).'
+
+  return lastLine.replace(/^cancel(?:led)?(?:\s+reason)?\s*:\s*/i, '').trim()
 }
 
 function isExpiredUnacceptedOrder(order: Order) {

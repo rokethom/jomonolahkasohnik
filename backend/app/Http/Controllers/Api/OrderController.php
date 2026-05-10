@@ -28,7 +28,7 @@ class OrderController extends Controller
         $orders->cancelExpiredCreatedOrders();
 
         $user = $request->user();
-        $query = Order::query()->with(['user', 'driver.user', 'items', 'payments', 'rating'])->latest();
+        $query = Order::query()->with(['user', 'driver.user', 'items', 'payments', 'rating', 'adjustments.driver.user'])->latest();
 
         if (($user->role->value ?? $user->role) === 'customer') {
             $query->where('user_id', $user->id);

@@ -47,6 +47,8 @@ function notificationTarget(data = {}) {
   if (type) params.set('notification_type', String(type))
   if (orderId) params.set('order_id', String(orderId))
   if (type === 'new_order' || type === 'dispatcher_broadcast_order') params.set('open', 'orders')
+  if (type === 'chat_message' && orderId) params.set('open', 'chat')
+  if (type === 'order_adjustment' || type === 'driver_accepted' || type === 'order_status') params.set('open', orderId ? 'order-detail' : 'orders')
 
   return params.toString() ? `/?${params.toString()}` : '/'
 }
