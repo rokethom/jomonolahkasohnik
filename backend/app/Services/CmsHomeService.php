@@ -34,7 +34,6 @@ class CmsHomeService
     {
         return Banner::query()
             ->when($onlyActive, fn ($query) => $query->activeInRange())
-            ->with('media')
             ->orderBy('order')
             ->get()
             ->map(fn (Banner $banner): array => [
