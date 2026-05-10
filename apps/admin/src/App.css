@@ -412,18 +412,25 @@
 .admin-shell.dark .order-detail-hero small,
 .admin-shell.dark .detail-item span,
 .admin-shell.dark .order-route-card span,
+.admin-shell.dark .order-content-card span,
 .admin-shell.dark .order-raw-note span {
   color: #9fb0c6;
 }
 
 .admin-shell.dark .detail-item,
-.admin-shell.dark .order-route-card {
+.admin-shell.dark .order-route-card,
+.admin-shell.dark .order-content-card {
   background: rgba(15, 23, 42, .48);
 }
 
 .admin-shell.dark .order-route-card p,
+.admin-shell.dark .order-content-card pre,
 .admin-shell.dark .order-raw-note p {
   color: #cbd5e1;
+}
+
+.admin-shell.dark .order-content-card {
+  border-color: rgba(56, 189, 248, .24);
 }
 
 .admin-shell.dark .order-raw-note {
@@ -2738,6 +2745,7 @@ tr.selected-row td {
 .order-detail-money span,
 .detail-item span,
 .order-route-card span,
+.order-content-card span,
 .order-raw-note span {
   color: #64748b;
   font-size: 11px;
@@ -2808,12 +2816,32 @@ tr.selected-row td {
 }
 
 .order-route-card p,
+.order-content-card pre,
 .order-raw-note p {
   margin: 3px 0 0;
   color: #334155;
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.order-content-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #bae6fd;
+  border-radius: 18px;
+  background: #f0f9ff;
+  padding: 12px;
+}
+
+.order-content-card pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .order-raw-note {

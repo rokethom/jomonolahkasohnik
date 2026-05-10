@@ -12,6 +12,8 @@ declare global {
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
 type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
+const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
+const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
 type AdminHistoryState = {
   jojoAdminView?: View
 }
@@ -598,7 +600,7 @@ function App() {
   }, [load])
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !adminAutoRefreshViews.has(view)) return
 
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void load(true)
@@ -609,10 +611,18 @@ function App() {
     return () => {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [load, token])
+  }, [load, token, view])
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !adminBootstrapAutoRefreshViews.has(view)) return
+
+    const interval = window.setInterval(() => void load(true), 10000)
+
+    return () => window.clearInterval(interval)
+  }, [load, token, view])
+
+  useEffect(() => {
+    if (!token || !adminAutoRefreshViews.has(view)) return
 
     const echo = makeEcho(token)
     const ordersChannel = echo.private('orders')
@@ -623,7 +633,7 @@ function App() {
     return () => {
       echo.leave('orders')
     }
-  }, [load, token])
+  }, [load, token, view])
 
   useEffect(() => {
     if (!token || !data?.me || ['admin', 'gm'].includes(data.me.role)) return
@@ -748,6 +758,7 @@ function App() {
     return text.includes(query.toLowerCase()) && (roleFilter === 'all' || user.role === roleFilter)
   })
   const pendingOperHandles = (data.oper_handles ?? []).filter((item) => item.status === 'pending')
+  const isAutoRefreshActive = adminAutoRefreshViews.has(safeView)
 
   const logout = async () => {
     try {
@@ -836,11 +847,13 @@ function App() {
                 </button>
               )}
               <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari data" /></div>
-              <div className="auto-refresh-pill" title="Data admin tersinkron otomatis tiap 5 detik">
-                <span />
-                Auto refresh
-                <small>{lastSyncedAt ? formatShortTime(lastSyncedAt.toISOString()) : 'sync'}</small>
-              </div>
+              {isAutoRefreshActive && (
+                <div className="auto-refresh-pill" title="Auto refresh aktif hanya di area operasional/chat">
+                  <span />
+                  Auto refresh
+                  <small>{lastSyncedAt ? formatShortTime(lastSyncedAt.toISOString()) : 'sync'}</small>
+                </div>
+              )}
               <button className="theme-switch" type="button" onClick={toggleDarkMode} aria-label={darkMode ? 'Switch to light theme' : 'Switch to dark theme'} title={darkMode ? 'Light theme' : 'Dark theme'}>
                 <span><Icon name={darkMode ? 'sun' : 'moon'} /></span>
               </button>
@@ -2474,6 +2487,8 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
 
   const payment = order.payment_label || paymentLabel(order.payment_method)
   const detailText = order.raw_text || order.notes || ''
+  const orderContent = orderContentText(order)
+  const shouldShowRawNote = Boolean(detailText.trim()) && detailText.trim() !== orderContent.trim()
 
   return (
     <aside className="order-detail-panel">
@@ -2506,6 +2521,12 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
         <div><span>Jemput / Pembelian</span><p>{order.pickup_address || '-'}</p></div>
         <div><span>Tujuan / Antar</span><p>{order.destination_address || '-'}</p></div>
       </div>
+      {orderContent && (
+        <div className="order-content-card">
+          <span>{order.source === 'driver_request' ? 'Format request driver' : 'Isi pesanan'}</span>
+          <pre>{orderContent}</pre>
+        </div>
+      )}
       {order.oper_handle && (
         <div className={order.oper_handle.status === 'pending' ? 'order-oper-handle-card pending' : 'order-oper-handle-card'}>
           <div>
@@ -2531,7 +2552,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
         </div>
       )}
       {order.cancel_reason && <div className="notice danger">Cancel reason: {order.cancel_reason}</div>}
-      {detailText && <div className="order-raw-note"><span>Catatan / raw order</span><p>{detailText}</p></div>}
+      {shouldShowRawNote && <div className="order-raw-note"><span>Catatan / raw order</span><p>{detailText}</p></div>}
       <div className="order-detail-actions">
         {permissions.can_edit_order_price && onEditPrice && <button className="primary-button compact" type="button" onClick={onEditPrice}>Edit harga</button>}
       </div>
@@ -2552,7 +2573,7 @@ function RequestOrdersPanel({ orders, searchQuery, permissions, onOpenDriverChat
   return (
     <section className="panel order-operations-panel request-orders-panel">
       <PanelHeader title="Request Order" action={`Driver request terbaru - ${filteredOrders.length}/${requestOrders.length}`} />
-      <div className="notice">Menu ini menampilkan order yang dibuat dari request driver. Data otomatis refresh dan diurutkan dari yang paling baru.</div>
+      <div className="notice">Menu ini menampilkan order yang dibuat dari request driver. Klik baris untuk melihat format penulisan asli dan detail pesanan.</div>
       <div className="order-operations-layout">
         <div className="table-wrap order-table-wrap request-order-table-wrap">
           <table>
@@ -5092,6 +5113,32 @@ function orderMatchesSearch(order: Order, searchQuery: string) {
   return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''} ${order.oper_handle?.status ?? ''} ${order.oper_handle?.reason ?? ''}`
     .toLowerCase()
     .includes(searchQuery.toLowerCase())
+}
+
+function orderContentText(order: Order) {
+  const rawText = (order.raw_text ?? '').trim()
+  if (rawText) return rawText
+
+  const noteText = (order.notes ?? '').trim()
+  if (noteText) return noteText
+
+  const detailKeys = ['detail', 'details', 'description', 'item', 'items', 'jenis_pembelian', 'purchase_items', 'request_text']
+  const breakdown = order.pricing_breakdown ?? {}
+  for (const key of detailKeys) {
+    const value = breakdown[key]
+    if (Array.isArray(value) && value.length > 0) return value.map((item) => `- ${String(item)}`).join('\n')
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+
+  const lines = [
+    order.customer ? `Customer: ${order.customer}` : '',
+    order.pickup_address ? `Jemput/Pembelian: ${order.pickup_address}` : '',
+    order.destination_address ? `Tujuan/Antar: ${order.destination_address}` : '',
+    `Layanan: ${order.service}`,
+    `Total: Rp ${order.total.toLocaleString('id-ID')}`,
+  ].filter(Boolean)
+
+  return lines.join('\n')
 }
 
 function operHandleStatusLabel(item: OperHandle) {
