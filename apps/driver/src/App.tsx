@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import axios from 'axios'
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
-import { BarChart3, BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
+import { BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
 import { setupDriverPush } from './push'
 
 declare global {
@@ -1597,7 +1597,6 @@ function ImagePreviewModal({ imageUrl, onClose }: { imageUrl: string; onClose: (
 
 function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onSaved: () => Promise<void> }) {
   const toast = useDriverStore((state) => state.toast)
-  const setView = useDriverStore((state) => state.setView)
   const openOperatorChat = useDriverStore((state) => state.openOperatorChat)
   const logout = useDriverStore((state) => state.logout)
   const [form, setForm] = useState({ name: driver.name, username: driver.username, password: '' })
@@ -1651,10 +1650,6 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
     <section className="page">
       <PageTitle title="Profile" subtitle="Kelola data akun driver." />
       <DriverFinanceSection />
-      <button className="panel profile-menu-button" type="button" onClick={() => setView('performance')}>
-        <BarChart3 size={20} />
-        <div><strong>Performa</strong><span>Rating, setoran, suspend history, dan oper handle</span></div>
-      </button>
       <button className="panel profile-menu-button operator-chat-button" type="button" onClick={openOperatorChat}>
         <MessageCircleMore size={20} />
         <div><strong>Chat CS / Operator</strong><span>Hubungi operator untuk bantuan akun, suspend, atau order.</span></div>
@@ -1739,9 +1734,17 @@ function DriverFinanceSection() {
     <section className="profile-finance-section">
       <SectionTitle title="Finance" action={finance?.status ?? 'sync'} />
       <article className="month-income-card panel">
-        <span>Total pendapatan bulan ini</span>
-        <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
-        <small>{performance?.period_label ?? 'Performa driver bulan ini'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+        <div className="month-income-head">
+          <span>Total pendapatan bulan ini</span>
+          <strong>Rp {formatMoney(performance?.month_revenue ?? 0)}</strong>
+          <small>{performance?.period_label ?? 'Evaluasi pribadi bulan ini'} - hari ini Rp {formatMoney(performance?.today_revenue ?? 0)}</small>
+        </div>
+        <div className="driver-income-detail-grid">
+          <span><b>{performance?.completed_orders_count ?? 0}</b><small>Order selesai</small></span>
+          <span><b>{performance?.today_completed_orders_count ?? 0}</b><small>Selesai hari ini</small></span>
+          <span><b>{performance?.cancelled_orders_count ?? 0}</b><small>Cancel bulan ini</small></span>
+          <span><b>{Number(performance?.rating ?? 0).toFixed(1)}</b><small>Rating</small></span>
+        </div>
       </article>
       <div className="profile-finance-grid">
         <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
