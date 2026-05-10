@@ -1883,6 +1883,22 @@ function RequestHistoryRow({ order }: { order: Order }) {
 
 function PerformancePage() {
   const performance = useDriverStore((state) => state.performance)
+  const orders = useDriverStore((state) => state.orders)
+  const branchRequestOrders = useDriverStore((state) => state.branchRequestOrders)
+  const driver = useDriverStore((state) => state.driver)
+  const selectOrder = useDriverStore((state) => state.selectOrder)
+  const driverName = driver?.name ?? ''
+  const acceptedOrders = orders
+    .filter((order) => order.source !== 'driver_request')
+    .filter((order) => isDriverOrderOwner(order, driverName))
+    .filter((order) => order.status !== 'pending')
+    .sort(sortNewestOrderFirst)
+    .slice(0, 10)
+  const ownRequestOrders = branchRequestOrders
+    .filter((order) => isDriverOrderOwner(order, driverName))
+    .sort(sortNewestOrderFirst)
+    .slice(0, 10)
+
   return (
     <section className="page performance-page">
       <PageTitle title="Performa" subtitle={`Evaluasi bulan ${performance?.period_label ?? 'ini'}.`} />
@@ -1909,16 +1925,38 @@ function PerformancePage() {
         <p className="note">Status: {performance?.setoran?.status ?? '-'}</p>
       </section>
       <section className="panel performance-panel">
-        <SectionTitle title="Suspend History" action={`${performance?.suspend_history?.length ?? 0}`} />
-        {(performance?.suspend_history ?? []).map((item) => <p key={item.id} className="note">{item.type ?? 'suspend'} - {item.reason} - {item.status}</p>)}
-        {(performance?.suspend_history ?? []).length === 0 && <p className="note">Belum ada suspend.</p>}
+        <SectionTitle title="Order diterima" action={`${acceptedOrders.length}`} />
+        {acceptedOrders.length === 0 && <p className="note">Belum ada order diterima yang tampil untuk driver ini.</p>}
+        <div className="performance-order-list">
+          {acceptedOrders.map((order) => <PerformanceOrderRow key={order.id} order={order} onClick={() => selectOrder(order.id)} />)}
+        </div>
       </section>
       <section className="panel performance-panel">
-        <SectionTitle title="Oper Handle" action={`${performance?.oper_handle?.length ?? 0}`} />
-        {(performance?.oper_handle ?? []).map((item) => <p key={item.id} className="note">{item.status} - {item.reason ?? '-'}</p>)}
-        {(performance?.oper_handle ?? []).length === 0 && <p className="note">Belum ada oper handle.</p>}
+        <SectionTitle title="Request order kamu" action={`${ownRequestOrders.length}`} />
+        {ownRequestOrders.length === 0 && <p className="note">Belum ada request order dari driver ini.</p>}
+        <div className="performance-order-list">
+          {ownRequestOrders.map((order) => <PerformanceOrderRow key={order.id} order={order} onClick={() => selectOrder(order.id)} />)}
+        </div>
       </section>
     </section>
+  )
+}
+
+function PerformanceOrderRow({ order, onClick }: { order: Order; onClick: () => void }) {
+  const route = routeInfoFor(order)
+
+  return (
+    <button className="performance-order-row" type="button" onClick={onClick}>
+      <div>
+        <strong>{order.code}</strong>
+        <span>{statusLabel(order.status)} - {order.service}</span>
+        <small>{shortAddress(route.pickupAddress)} menuju {shortAddress(route.destinationAddress)}</small>
+      </div>
+      <div>
+        <b>Rp {formatMoney(order.total)}</b>
+        <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
+      </div>
+    </button>
   )
 }
 function ActiveOrderRoute({ orders, max }: { orders: Order[]; max: number }) {
@@ -2349,6 +2387,14 @@ function operHandleStatusText(order: Order) {
   if (order.operHandleStatus === 'approved') return `${driver} oper handle, order dibuka lagi`
   if (order.operHandleStatus === 'rejected') return `${driver} oper handle ditolak`
   return `${driver} mengajukan oper handle`
+}
+function isDriverOrderOwner(order: Order, driverName?: string | null) {
+  const name = String(driverName ?? '').trim().toLowerCase()
+  if (!name) return false
+
+  return [order.driver, order.customer]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .some((value) => value === name)
 }
 function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
   if (!isOnline || !driver?.is_available) return false

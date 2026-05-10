@@ -995,6 +995,60 @@ input:focus, textarea:focus, select:focus {
   font-size: 13px;
 }
 
+.performance-order-list {
+  display: grid;
+  gap: 10px;
+}
+
+.performance-order-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(191, 219, 254, 0.16);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ink);
+  text-align: left;
+}
+
+.performance-order-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.performance-order-row > div:last-child {
+  flex: 0 0 auto;
+  justify-items: end;
+  text-align: right;
+}
+
+.performance-order-row strong,
+.performance-order-row small,
+.performance-order-row span {
+  overflow-wrap: anywhere;
+}
+
+.performance-order-row span,
+.performance-order-row small,
+.performance-order-row time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.performance-order-row b {
+  color: var(--green-dark);
+  font-size: 15px;
+}
+
+.performance-order-row:active {
+  transform: translateY(1px);
+}
+
 @media (max-width: 640px) {
   .detail-hero {
     flex-direction: column;
