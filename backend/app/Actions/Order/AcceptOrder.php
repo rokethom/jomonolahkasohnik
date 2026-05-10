@@ -94,11 +94,15 @@ class AcceptOrder
                 });
             }
 
+            $breakdown = $order->pricing_breakdown ?? [];
+            $breakdown['accepted_at'] = now()->toIso8601String();
+
             $order->update([
                 'driver_id' => $driver->id,
                 'direction_bearing' => $this->multiOrder->bearingFor($order),
                 'is_multi_order' => ($eligibility['active_order_count'] ?? 0) > 0,
                 'status' => OrderStatus::DriverAccepted,
+                'pricing_breakdown' => $breakdown,
             ]);
 
             $driver->update(['is_available' => (($eligibility['active_order_count'] ?? 0) + 1) < ($eligibility['max_order'] ?? 1)]);

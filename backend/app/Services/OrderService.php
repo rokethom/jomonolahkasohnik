@@ -5,9 +5,12 @@ namespace App\Services;
 use App\Enums\OrderStatus;
 use App\Events\OrderStatusUpdated;
 use App\Exceptions\OrderLimitExceededException;
+use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\NotificationService;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -99,6 +102,108 @@ class OrderService
         }
 
         return $orders->count();
+    }
+
+    public function autoCompleteForgottenDriverOrders(): int
+    {
+        $orders = Order::query()
+            ->with(['user', 'driver.user'])
+            ->whereNotNull('driver_id')
+            ->whereIn('status', [
+                OrderStatus::DriverAccepted->value,
+                OrderStatus::DriverOnTheWay->value,
+                OrderStatus::ArrivedPickup->value,
+                OrderStatus::OnGoing->value,
+            ])
+            ->where('created_at', '<=', now()->subMinutes(30))
+            ->limit(100)
+            ->get()
+            ->filter(fn (Order $order): bool => $this->acceptedAtForAutoComplete($order)?->lte(now()->subMinutes(30)) ?? false);
+
+        foreach ($orders as $order) {
+            $oldStatus = $order->status;
+
+            $completed = DB::transaction(function () use ($order): ?Order {
+                $lockedOrder = Order::query()->with(['user', 'driver.user'])->lockForUpdate()->find($order->id);
+
+                if (! $lockedOrder || $lockedOrder->status->isTerminal()) {
+                    return null;
+                }
+
+                if (! in_array($lockedOrder->status, [
+                    OrderStatus::DriverAccepted,
+                    OrderStatus::DriverOnTheWay,
+                    OrderStatus::ArrivedPickup,
+                    OrderStatus::OnGoing,
+                ], true)) {
+                    return null;
+                }
+
+                if (($this->acceptedAtForAutoComplete($lockedOrder)?->lte(now()->subMinutes(30)) ?? false) === false) {
+                    return null;
+                }
+
+                $hasPendingOperHandle = OperHandleRequest::query()
+                    ->where('order_id', $lockedOrder->id)
+                    ->where('status', 'pending')
+                    ->exists();
+
+                if ($hasPendingOperHandle) {
+                    return null;
+                }
+
+                $lockedOrder->update([
+                    'status' => OrderStatus::Completed,
+                    'notes' => trim(((string) $lockedOrder->notes)."\nAuto-complete: driver lupa klik selesai setelah 30 menit."),
+                ]);
+                $lockedOrder->driver?->update(['is_available' => true]);
+                $this->chatService->closeForOrder($lockedOrder);
+
+                return $lockedOrder->fresh(['user', 'driver.user']);
+            });
+
+            if (! $completed) {
+                continue;
+            }
+
+            try {
+                OrderStatusUpdated::dispatch($completed, $oldStatus, OrderStatus::Completed);
+                $feedback = app(OrderFeedbackService::class)->statusUpdated($completed, $oldStatus, OrderStatus::Completed);
+                $this->notifications->sendToUser(
+                    $completed->user,
+                    $feedback['title'] ?? 'Order selesai otomatis',
+                    $feedback['message'] ?? 'Order selesai otomatis setelah 30 menit.',
+                    [
+                        'type' => 'order_completed',
+                        'order_id' => $completed->id,
+                        'order_code' => $completed->order_code,
+                        'url' => '/?open=history&order_id='.$completed->id.'&notification_type=order_completed',
+                    ],
+                );
+            } catch (\Throwable $exception) {
+                Log::warning('broadcast.auto_complete_order_failed', [
+                    'order_id' => $completed->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        return $orders->count();
+    }
+
+    private function acceptedAtForAutoComplete(Order $order): ?CarbonInterface
+    {
+        $acceptedAt = data_get($order->pricing_breakdown, 'accepted_at');
+
+        if (filled($acceptedAt)) {
+            try {
+                return Carbon::parse($acceptedAt);
+            } catch (\Throwable) {
+                return $order->updated_at;
+            }
+        }
+
+        return $order->updated_at;
     }
 
     public function maxTextPoints(): int
