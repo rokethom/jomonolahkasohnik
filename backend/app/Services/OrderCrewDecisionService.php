@@ -115,7 +115,7 @@ class OrderCrewDecisionService
                 'order_crew_rule_id' => $decision['rule_id'] ?? null,
                 'label' => 'Rider',
                 'status' => 'accepted',
-                'service_charge' => (int) $order->service_charge,
+                'service_charge' => (int) $order->price,
                 'accepted_at' => now(),
             ],
         );

@@ -2381,6 +2381,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
 
 function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions, api, onChanged, onOpenDriverChat }: { orders: Order[]; operHandles: OperHandle[]; auditLogs: AuditLog[]; searchQuery: string; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void>; onOpenDriverChat: (driverUserId: number) => void }) {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
+  const [assignOrder, setAssignOrder] = useState<Order | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
   const latestOrders = useMemo(() => sortOrdersNewest(orders), [orders])
   const filteredOrders = latestOrders.filter((order) => orderMatchesSearch(order, searchQuery))
@@ -2436,9 +2437,16 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
           </table>
           {filteredOrders.length === 0 && <EmptyPanel title="Order tidak ditemukan" copy="Coba cek kode order atau hapus filter pencarian." />}
         </div>
-        <OrderDetailPanel order={selectedOrder} permissions={permissions} onOpenDriverChat={onOpenDriverChat} onEditPrice={permissions.can_edit_order_price && selectedOrder && canEditOrderPrice(selectedOrder) ? () => setEditingOrder(selectedOrder) : undefined} />
+        <OrderDetailPanel
+          order={selectedOrder}
+          permissions={permissions}
+          onOpenDriverChat={onOpenDriverChat}
+          onAssignDriver={permissions.can_assign_driver && selectedOrder && isDispatchPendingOrder(selectedOrder) ? () => setAssignOrder(selectedOrder) : undefined}
+          onEditPrice={permissions.can_edit_order_price && selectedOrder && canEditOrderPrice(selectedOrder) ? () => setEditingOrder(selectedOrder) : undefined}
+        />
       </div>
       {editingOrder && <OrderPriceModal order={editingOrder} api={api} onClose={() => setEditingOrder(null)} onSaved={async () => { await onChanged(); setEditingOrder(null) }} />}
+      {assignOrder && <AssignDriverModal order={assignOrder} api={api} onClose={() => setAssignOrder(null)} onAssigned={async () => { await onChanged(); setAssignOrder(null) }} />}
     </section>
   )
 }
@@ -2501,7 +2509,7 @@ function OperHandleQueue({ operHandles, api, permissions, onChanged, onSelectOrd
   )
 }
 
-function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }: { order: Order | null; permissions: Permissions; onEditPrice?: () => void; onOpenDriverChat?: (driverUserId: number) => void }) {
+function OrderDetailPanel({ order, permissions, onEditPrice, onAssignDriver, onOpenDriverChat }: { order: Order | null; permissions: Permissions; onEditPrice?: () => void; onAssignDriver?: () => void; onOpenDriverChat?: (driverUserId: number) => void }) {
   if (!order) {
     return (
       <aside className="order-detail-panel empty-detail">
@@ -2580,6 +2588,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onOpenDriverChat }:
       {order.cancel_reason && <div className="notice danger">Cancel reason: {order.cancel_reason}</div>}
       {shouldShowRawNote && <div className="order-raw-note"><span>Catatan / raw order</span><p>{detailText}</p></div>}
       <div className="order-detail-actions">
+        {permissions.can_assign_driver && onAssignDriver && <button className="secondary-button compact" type="button" onClick={onAssignDriver}>Assign Driver</button>}
         {permissions.can_edit_order_price && onEditPrice && <button className="primary-button compact" type="button" onClick={onEditPrice}>Edit harga</button>}
       </div>
     </aside>

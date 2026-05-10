@@ -857,7 +857,7 @@ class DriverController extends Controller
                     'label' => $crew->label,
                     'status' => $crew->status,
                     'driver' => $crew->driver?->user?->name,
-                    'service_charge' => $crew->service_charge,
+                    'service_charge' => $crew->role === 'rider' ? (int) $order->price : $crew->service_charge,
                     'accepted_at' => $crew->accepted_at?->toIso8601String(),
                 ])->values()
                 : [],
