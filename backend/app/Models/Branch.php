@@ -67,6 +67,7 @@ class Branch extends Model
         return $this->geofenceAreas()->create([
             'name' => $this->default_geofence_name,
             'description' => 'Default geofence dari titik cabang. Radius utama tetap diatur dari menu Geofence Area.',
+            'shape_type' => 'circle',
             'center_latitude' => $this->latitude,
             'center_longitude' => $this->longitude,
             'radius_meters' => 5000,

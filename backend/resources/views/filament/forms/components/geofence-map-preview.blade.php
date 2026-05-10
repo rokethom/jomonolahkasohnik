@@ -3,16 +3,19 @@
     $stateLat = is_callable($get ?? null) ? $get('center_latitude') : null;
     $stateLng = is_callable($get ?? null) ? $get('center_longitude') : null;
     $stateRadius = is_callable($get ?? null) ? $get('radius_meters') : null;
+    $stateShape = is_callable($get ?? null) ? $get('shape_type') : 'circle';
+    $statePolygon = is_callable($get ?? null) ? $get('polygon_coordinates') : null;
     $lat = is_numeric($stateLat) ? (float) $stateLat : -7.70630000;
     $lng = is_numeric($stateLng) ? (float) $stateLng : 114.00980000;
     $radius = is_numeric($stateRadius) ? max(1, (int) $stateRadius) : 5000;
+    $polygon = is_array($statePolygon) ? $statePolygon : (json_decode((string) $statePolygon, true) ?: []);
     $googleMapsKey = app(\App\Services\SettingService::class)->get('google_maps_api_key');
 @endphp
 
 <div class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-sm text-gray-600 dark:text-gray-300">
-            Ambil titik pusat geofence hanya dari Google Maps. Radius mengikuti input meter.
+            Ambil titik pusat dan polygon dari Google Maps. Radius/polygon utama tetap disimpan di Geofence Area.
         </div>
         <div class="flex flex-wrap gap-2">
             <a
@@ -55,6 +58,8 @@
         const fallbackLat = @json($lat);
         const fallbackLng = @json($lng);
         const fallbackRadius = @json($radius);
+        const fallbackShape = @json($stateShape ?: 'circle');
+        const fallbackPolygon = @json($polygon);
 
         window.jojoLoadGoogleMaps = window.jojoLoadGoogleMaps || ((apiKey) => {
             if (window.google?.maps) {
@@ -67,7 +72,7 @@
 
             window.jojoGoogleMapsPromise = new Promise((resolve, reject) => {
                 const script = document.createElement('script');
-                script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=drawing`;
                 script.async = true;
                 script.defer = true;
                 script.onload = () => resolve(window.google.maps);
@@ -90,6 +95,8 @@
             const latInput = document.getElementById('geofence_center_latitude') || document.querySelector('input[name="data[center_latitude]"]');
             const lngInput = document.getElementById('geofence_center_longitude') || document.querySelector('input[name="data[center_longitude]"]');
             const radiusInput = document.getElementById('geofence_radius_meters') || document.querySelector('input[name="data[radius_meters]"]');
+            const shapeInput = document.querySelector('select[name="data[shape_type]"], input[name="data[shape_type]"]');
+            const polygonInput = document.getElementById('geofence_polygon_coordinates') || document.querySelector('textarea[name="data[polygon_coordinates]"]');
             const locationButton = document.getElementById(@json($mapId.'-current-location'));
             const googleLink = document.getElementById(@json($mapId.'-open-google'));
             const initialLat = parseFloat(latInput?.value || fallbackLat);
@@ -114,6 +121,8 @@
             let map = null;
             let marker = null;
             let circle = null;
+            let polygon = null;
+            let drawingManager = null;
 
             const sync = (lat, lng, center = false) => {
                 setInputValue(latInput, lat.toFixed(8));
@@ -132,6 +141,45 @@
                     map.setCenter({ lat, lng });
                     map.setZoom(Math.max(map.getZoom() || 14, 15));
                 }
+            };
+
+            const polygonPathFromInput = () => {
+                try {
+                    const value = polygonInput?.value || JSON.stringify(fallbackPolygon || []);
+                    const points = JSON.parse(value || '[]');
+
+                    return Array.isArray(points)
+                        ? points.map((point) => ({ lat: parseFloat(point.lat ?? point.latitude), lng: parseFloat(point.lng ?? point.longitude) })).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng))
+                        : [];
+                } catch (error) {
+                    return [];
+                }
+            };
+
+            const syncPolygonInput = () => {
+                if (!polygon || !polygonInput) return;
+
+                const points = polygon.getPath().getArray().map((point) => ({
+                    lat: Number(point.lat().toFixed(8)),
+                    lng: Number(point.lng().toFixed(8)),
+                }));
+
+                setInputValue(polygonInput, JSON.stringify(points, null, 2));
+
+                if (points.length > 0) {
+                    const avgLat = points.reduce((sum, point) => sum + point.lat, 0) / points.length;
+                    const avgLng = points.reduce((sum, point) => sum + point.lng, 0) / points.length;
+                    sync(avgLat, avgLng);
+                }
+            };
+
+            const renderShape = () => {
+                if (!map) return;
+
+                const shape = shapeInput?.value || fallbackShape || 'circle';
+                circle?.setMap(shape === 'polygon' ? null : map);
+                polygon?.setMap(shape === 'polygon' ? map : null);
+                drawingManager?.setMap(shape === 'polygon' ? map : null);
             };
 
             updateGoogleLink(initialLat, initialLng);
@@ -165,6 +213,8 @@
                     circle.setRadius(Math.max(1, value));
                 }
             });
+
+            shapeInput?.addEventListener('change', renderShape);
 
             if (!googleMapsKey) {
                 mapElement.dataset.loaded = '1';
@@ -206,8 +256,58 @@
                 fillColor: '#22c55e',
                 fillOpacity: 0.18,
             });
+            const polygonPath = polygonPathFromInput();
+            polygon = new window.google.maps.Polygon({
+                paths: polygonPath,
+                map,
+                editable: true,
+                draggable: true,
+                strokeColor: '#f59e0b',
+                strokeOpacity: 0.95,
+                strokeWeight: 2,
+                fillColor: '#f59e0b',
+                fillOpacity: 0.2,
+            });
+            polygon.getPath().addListener('set_at', syncPolygonInput);
+            polygon.getPath().addListener('insert_at', syncPolygonInput);
+            polygon.getPath().addListener('remove_at', syncPolygonInput);
 
-            map.fitBounds(circle.getBounds());
+            if (window.google.maps.drawing) {
+                drawingManager = new window.google.maps.drawing.DrawingManager({
+                    drawingControl: true,
+                    drawingMode: polygonPath.length >= 3 ? null : window.google.maps.drawing.OverlayType.POLYGON,
+                    drawingControlOptions: {
+                        position: window.google.maps.ControlPosition.TOP_CENTER,
+                        drawingModes: [window.google.maps.drawing.OverlayType.POLYGON],
+                    },
+                    polygonOptions: {
+                        editable: true,
+                        draggable: true,
+                        strokeColor: '#f59e0b',
+                        fillColor: '#f59e0b',
+                        fillOpacity: 0.2,
+                    },
+                });
+                window.google.maps.event.addListener(drawingManager, 'polygoncomplete', (newPolygon) => {
+                    polygon?.setMap(null);
+                    polygon = newPolygon;
+                    polygon.getPath().addListener('set_at', syncPolygonInput);
+                    polygon.getPath().addListener('insert_at', syncPolygonInput);
+                    polygon.getPath().addListener('remove_at', syncPolygonInput);
+                    drawingManager.setDrawingMode(null);
+                    syncPolygonInput();
+                    renderShape();
+                });
+            }
+
+            if (polygonPath.length >= 3) {
+                const bounds = new window.google.maps.LatLngBounds();
+                polygonPath.forEach((point) => bounds.extend(point));
+                map.fitBounds(bounds);
+            } else {
+                map.fitBounds(circle.getBounds());
+            }
+            renderShape();
 
             map.addListener('click', (event) => {
                 if (!event.latLng) return;

@@ -31,6 +31,7 @@ class PricingService
         private readonly PricingKeywordRuleService $keywordRules,
         private readonly OrderOperationService $operations,
         private readonly RingPricingService $ringPricing,
+        private readonly ZonePricingService $zonePricing,
     ) {
     }
 
@@ -228,6 +229,9 @@ class PricingService
         }
         if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
             $quote = $this->ringPricing->apply($quote, $ringRule);
+        }
+        if ($zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
+            $quote = $this->zonePricing->apply($quote, $zoneRule);
         }
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
             $payload['destination_text'] ?? $payload['destination_address'] ?? '',

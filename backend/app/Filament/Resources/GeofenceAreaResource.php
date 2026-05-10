@@ -56,6 +56,17 @@ class GeofenceAreaResource extends Resource
                             ->required(),
                         Forms\Components\Textarea::make('description')
                             ->columnSpanFull(),
+                        Forms\Components\Select::make('shape_type')
+                            ->label('Bentuk area')
+                            ->options([
+                                'circle' => 'Circle / radius',
+                                'polygon' => 'Polygon / batas custom',
+                            ])
+                            ->default('circle')
+                            ->native(false)
+                            ->live()
+                            ->required()
+                            ->helperText('Circle cocok untuk radius sederhana. Polygon cocok untuk batas area cabang yang tidak bulat.'),
                         Forms\Components\TextInput::make('center_latitude')
                             ->label('Latitude pusat')
                             ->numeric()
@@ -69,13 +80,34 @@ class GeofenceAreaResource extends Resource
                             ->live(onBlur: true)
                             ->extraInputAttributes(['id' => 'geofence_center_longitude']),
                         Forms\Components\TextInput::make('radius_meters')
-                            ->label('Radius')
+                            ->label('Radius / fallback polygon')
                             ->numeric()
                             ->minValue(1)
                             ->suffix('meters')
+                            ->helperText('Untuk circle menjadi radius utama. Untuk polygon menjadi fallback/urutan luas area.')
                             ->required()
                             ->live(onBlur: true)
                             ->extraInputAttributes(['id' => 'geofence_radius_meters']),
+                        Forms\Components\Textarea::make('polygon_coordinates')
+                            ->label('Koordinat polygon')
+                            ->helperText('Format JSON: [{"lat":-7.70,"lng":114.00}, ...]. Bisa diisi dari drawing map.')
+                            ->rows(5)
+                            ->visible(fn (Forms\Get $get): bool => $get('shape_type') === 'polygon')
+                            ->required(fn (Forms\Get $get): bool => $get('shape_type') === 'polygon')
+                            ->dehydrateStateUsing(function (mixed $state): mixed {
+                                if (is_array($state)) {
+                                    return $state;
+                                }
+
+                                if (blank($state)) {
+                                    return null;
+                                }
+
+                                return json_decode((string) $state, true) ?: null;
+                            })
+                            ->formatStateUsing(fn (mixed $state): string => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : (string) $state)
+                            ->extraInputAttributes(['id' => 'geofence_polygon_coordinates'])
+                            ->columnSpanFull(),
                         Forms\Components\TextInput::make('priority')
                             ->numeric()
                             ->default(0)
@@ -104,8 +136,13 @@ class GeofenceAreaResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('center_longitude')
                     ->sortable(),
+                Tables\Columns\TextColumn::make('shape_type')
+                    ->label('Shape')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'polygon' ? 'warning' : 'success'),
                 Tables\Columns\TextColumn::make('radius_meters')
                     ->suffix(' m')
+                    ->placeholder('Polygon')
                     ->sortable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->boolean(),

@@ -15,9 +15,11 @@ class GeofenceArea extends Model
         'branch_id',
         'name',
         'description',
+        'shape_type',
         'center_latitude',
         'center_longitude',
         'radius_meters',
+        'polygon_coordinates',
         'is_active',
         'priority',
     ];
@@ -26,6 +28,7 @@ class GeofenceArea extends Model
         'center_latitude' => 'decimal:8',
         'center_longitude' => 'decimal:8',
         'radius_meters' => 'integer',
+        'polygon_coordinates' => 'array',
         'is_active' => 'boolean',
         'priority' => 'integer',
     ];

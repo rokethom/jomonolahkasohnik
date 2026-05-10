@@ -37,15 +37,10 @@ class BranchDetectionService
             ->map(fn (GeofenceArea $area): array => [
                 'area' => $area,
                 'branch' => $area->branch,
-                'distance_meters' => $this->geofenceService->distanceInMeters(
-                    $lat,
-                    $lng,
-                    (float) $area->center_latitude,
-                    (float) $area->center_longitude,
-                ),
+                'distance_meters' => $this->geofenceService->distanceToAreaCenter($lat, $lng, $area),
                 'source' => 'geofence',
             ])
-            ->first(fn (array $row): bool => $row['distance_meters'] <= (float) $row['area']->radius_meters);
+            ->first(fn (array $row): bool => $this->geofenceService->containsPoint($lat, $lng, $row['area']));
 
         return $match ?? ['branch' => null, 'area' => null, 'distance_meters' => null, 'source' => 'geofence'];
     }
