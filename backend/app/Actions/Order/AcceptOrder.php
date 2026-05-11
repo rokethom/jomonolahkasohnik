@@ -16,7 +16,6 @@ use App\Services\DriverFinanceService;
 use App\Services\ChatService;
 use App\Services\OrderCrewDecisionService;
 use App\Services\SuspendService;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -72,9 +71,9 @@ class AcceptOrder
             }
 
             $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());
-            if (($deposit->status ?? 'unpaid') !== 'paid' && Carbon::parse($deposit->due_date)->endOfDay()->isPast()) {
-                $driver->update(['is_available' => false]);
-                throw new RuntimeException('Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan tidak bisa menerima/request order.');
+            if ($this->finance->depositBlocksOrders($deposit)) {
+                $this->suspensions->suspendUnpaid($driver, DriverFinanceService::UNPAID_SUSPEND_REASON);
+                throw new RuntimeException(DriverFinanceService::UNPAID_SUSPEND_REASON);
             }
 
             if (! $driver->is_available) {

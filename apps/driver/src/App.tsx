@@ -957,7 +957,7 @@ function BranchAcceptedFeed({
   suspendHistory: BranchSuspendHistory[]
 }) {
   const [openPanel, setOpenPanel] = useState<'accepted' | 'request' | 'oper' | 'suspend' | null>(null)
-  const visible = orders.filter((order) => order.driver && order.source !== 'driver_request').slice(0, 6)
+  const visible = orders.filter((order) => order.driver && order.source !== 'driver_request')
   const requestVisible = requestOrders.slice(0, 8)
   const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 6)
   const suspendVisible = suspendHistory.slice(0, 6)
@@ -2631,7 +2631,7 @@ function historyOrderTime(order: Order) {
 }
 function suspendReasonText(driver: Driver) {
   if (driver.status === 'suspended_unpaid') {
-    return driver.suspension_reason || 'Reason: setoran driver belum lunas.'
+    return driver.suspension_reason || 'Setoran bulan sebelumnya masih unpaid per tanggal 11. Anda terkena suspend setoran, silakan bayar setoran agar akun bisa ON kembali.'
   }
 
   if (driver.suspension_reason) {
@@ -2693,7 +2693,7 @@ function setoranBreakdownRows(breakdown?: Record<string, number>, periodLabel = 
   const setoranHinggaHariIni = breakdown.setoran_hingga_hari_ini ?? ((breakdown.handle_hari_15 ?? 0) + (breakdown.handle_hari_30 ?? 0))
   const cashbackBulanSebelumnya = breakdown.cashback_bulan_sebelumnya ?? 0
   const tagihanBulanSebelumnya = breakdown.tagihan_bulan_sebelumnya ?? 0
-  const rows: Array<[string, number]> = [[mode === 'running' ? `Pendapatan sampai hari ini (${periodLabel})` : `Tagihan pada bulan ${periodLabel}`, setoranHinggaHariIni]]
+  const rows: Array<[string, number]> = [[mode === 'running' ? `Setoran sampai hari ini (${periodLabel})` : `Tagihan pada bulan ${periodLabel}`, setoranHinggaHariIni]]
 
   rows.push(['Cashback bulan sebelumnya', cashbackBulanSebelumnya > 0 ? -cashbackBulanSebelumnya : 0])
   if (tagihanBulanSebelumnya > 0) rows.push(['Sisa tagihan bulan sebelumnya', tagihanBulanSebelumnya])

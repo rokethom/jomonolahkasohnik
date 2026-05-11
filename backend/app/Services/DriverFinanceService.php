@@ -11,6 +11,9 @@ use Illuminate\Support\Carbon;
 
 class DriverFinanceService
 {
+    public const UNPAID_SUSPEND_DAY = 11;
+    public const UNPAID_SUSPEND_REASON = 'Setoran bulan sebelumnya masih unpaid per tanggal 11. Anda terkena suspend setoran, silakan bayar setoran agar akun bisa ON kembali.';
+
     private const BANSOS_BY_AREA = [
         'situbondo' => 5000,
         'asembagus' => 10000,
@@ -52,7 +55,7 @@ class DriverFinanceService
             ->first();
         $paidAmount = (int) ($existing?->paid_amount ?? 0);
         $paidAt = $existing?->paid_at;
-        $dueDate = $month->copy()->addMonthNoOverflow()->day(20);
+        $dueDate = $this->unpaidSuspendDate($month);
         $status = $this->depositStatus($total, $paidAmount, $dueDate, $existing?->status);
 
         return DriverDeposit::query()->updateOrCreate(
@@ -123,20 +126,50 @@ class DriverFinanceService
         DriverDeposit::query()
             ->with('driver.user')
             ->where('status', 'unpaid')
-            ->whereDate('due_date', '<', now()->toDateString())
             ->chunkById(100, function ($deposits) use (&$count, $suspensions): void {
                 foreach ($deposits as $deposit) {
+                    if (! $this->depositBlocksOrders($deposit)) {
+                        continue;
+                    }
+
                     if (
                         $deposit->driver
                         && ! in_array($deposit->driver->status, ['suspended_unpaid', 'permanent'], true)
                     ) {
-                        $suspensions->suspendUnpaid($deposit->driver, 'Belum bayar setoran lewat tanggal 20');
+                        $suspensions->suspendUnpaid($deposit->driver, self::UNPAID_SUSPEND_REASON);
                         $count++;
                     }
                 }
             });
 
         return $count;
+    }
+
+    public function depositBlocksOrders(?DriverDeposit $deposit, ?Carbon $now = null): bool
+    {
+        if (! $deposit || ($deposit->status ?? 'paid') === 'paid') {
+            return false;
+        }
+
+        $now ??= now();
+
+        return $now->copy()->startOfDay()->greaterThanOrEqualTo($this->unpaidSuspendDateForDeposit($deposit));
+    }
+
+    public function unpaidSuspendDateForDeposit(DriverDeposit $deposit): Carbon
+    {
+        return Carbon::create((int) $deposit->year, (int) $deposit->month, 1)
+            ->addMonthNoOverflow()
+            ->day(self::UNPAID_SUSPEND_DAY)
+            ->startOfDay();
+    }
+
+    private function unpaidSuspendDate(Carbon $month): Carbon
+    {
+        return $month->copy()
+            ->addMonthNoOverflow()
+            ->day(self::UNPAID_SUSPEND_DAY)
+            ->startOfDay();
     }
 
     private function depositStatus(int $total, int $paidAmount, Carbon $dueDate, ?string $currentStatus = null): string

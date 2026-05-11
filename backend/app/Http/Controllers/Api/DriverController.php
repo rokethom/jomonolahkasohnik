@@ -94,7 +94,6 @@ class DriverController extends Controller
                 ->where('branch_id', $branchId)
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
-                ->limit(20)
                 ->get()
             : collect();
         $branchRequestOrders = $branchId
@@ -240,7 +239,6 @@ class DriverController extends Controller
                 ->where('branch_id', $branchId)
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
-                ->limit(20)
                 ->get()
             : collect();
         $branchRequestOrders = $branchId
@@ -310,10 +308,10 @@ class DriverController extends Controller
         $deposit = $finance->monthlyDeposit($driver, now()->subMonth());
 
         if ($this->depositBlocksOrders($deposit)) {
-            $driver->update(['is_available' => false]);
+            $driver = $this->syncAvailabilityForFinance($driver, $deposit);
 
             return response()->json([
-                'message' => 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan tidak bisa menerima/request order.',
+                'message' => DriverFinanceService::UNPAID_SUSPEND_REASON,
                 'driver' => $this->driverPayload($request, $deposit),
                 'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
             ], $request->boolean('online') ? 422 : 200);
@@ -681,8 +679,20 @@ class DriverController extends Controller
 
     private function syncAvailabilityForFinance(Driver $driver, DriverDeposit $deposit): Driver
     {
-        if ($this->depositBlocksOrders($deposit) && $driver->is_available) {
-            $driver->forceFill(['is_available' => false])->save();
+        if ($this->depositBlocksOrders($deposit)) {
+            $payload = ['is_available' => false];
+
+            if (! in_array($driver->status, ['suspended_unpaid', 'permanent'], true)) {
+                $payload['status'] = 'suspended_unpaid';
+                $payload['suspended_until'] = null;
+            }
+
+            $driver->forceFill($payload)->save();
+            $driver->user?->forceFill([
+                'is_suspended' => true,
+                'suspension_reason' => DriverFinanceService::UNPAID_SUSPEND_REASON,
+                'suspended_until' => null,
+            ])->save();
             $driver->refresh();
         }
 
@@ -691,15 +701,7 @@ class DriverController extends Controller
 
     private function depositBlocksOrders(?DriverDeposit $deposit): bool
     {
-        if (! $deposit || ($deposit->status ?? 'paid') === 'paid') {
-            return false;
-        }
-
-        if (! $deposit->due_date) {
-            return true;
-        }
-
-        return Carbon::parse($deposit->due_date)->endOfDay()->isPast();
+        return app(DriverFinanceService::class)->depositBlocksOrders($deposit);
     }
 
     private function financePayload(DriverDeposit $deposit): array
@@ -757,7 +759,7 @@ class DriverController extends Controller
         }
 
         if ($this->depositBlocksOrders($deposit)) {
-            return 'Tagihan bulan sebelumnya unpaid dan sudah lewat jatuh tempo. Driver otomatis OFF dan tidak bisa menerima/request order.';
+            return DriverFinanceService::UNPAID_SUSPEND_REASON;
         }
 
         if ($driver->status !== 'active') {

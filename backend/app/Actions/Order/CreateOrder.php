@@ -171,11 +171,11 @@ class CreateOrder
                 ->where('year', now()->subMonth()->year)
                 ->where('month', now()->subMonth()->month)
                 ->where('status', 'unpaid')
-                ->whereDate('due_date', '<', now()->toDateString()))
+                ->whereDate('due_date', '<=', now()->toDateString()))
             ->get()
             ->filter(function (Driver $driver) use ($order): bool {
                 $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());
-                if (($deposit->status ?? 'unpaid') !== 'paid' && $deposit->due_date?->endOfDay()->isPast()) {
+                if ($this->finance->depositBlocksOrders($deposit)) {
                     if ($driver->is_available) {
                         $driver->forceFill(['is_available' => false])->save();
                     }

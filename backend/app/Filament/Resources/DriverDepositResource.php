@@ -134,7 +134,7 @@ class DriverDepositResource extends Resource
 
                         $notification = Notification::make()
                             ->title($isPaid ? 'Setoran driver lunas' : 'Pembayaran setoran tersimpan')
-                            ->body($isPaid ? 'Driver bisa ON kembali dari aplikasi driver.' : 'Sisa tagihan tetap tercatat dan akan dicek pada tanggal 20.');
+                            ->body($isPaid ? 'Driver bisa ON kembali dari aplikasi driver.' : 'Sisa tagihan tetap tercatat dan akan dicek pada tanggal 11.');
 
                         ($isPaid ? $notification->success() : $notification->warning())->send();
                     }),

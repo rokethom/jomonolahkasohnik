@@ -586,7 +586,7 @@ class AdminController extends Controller
         return response()->json([
             'message' => $isPaid
                 ? 'Setoran driver lunas. Driver bisa ON dari aplikasi driver.'
-                : 'Pembayaran parsial tersimpan. Sisa tagihan tetap tercatat dan akan dicek pada tanggal 20.',
+                : 'Pembayaran parsial tersimpan. Sisa tagihan tetap tercatat dan akan dicek pada tanggal 11.',
             'deposit' => $deposit->fresh(),
             'driver' => $driver->fresh(['user.branch']),
         ]);
