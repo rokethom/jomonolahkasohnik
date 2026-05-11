@@ -283,7 +283,11 @@ class HermesSafetyAssistantService
 
     private function kimiBaseUrl(): string
     {
-        return (string) (config('services.hermes_safety.base_url') ?: 'https://api.moonshot.cn/v1');
+        return (string) (
+            $this->settings->get('hermes_base_url')
+            ?: config('services.hermes_safety.base_url')
+            ?: 'https://konektika.web.id/v1'
+        );
     }
 
     private function kimiModel(): string

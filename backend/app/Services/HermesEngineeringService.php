@@ -507,13 +507,13 @@ class HermesEngineeringService
     {
         $provider = (string) $this->settings->get('hermes_provider', 'openai_compatible');
         $custom = $this->settings->get('hermes_base_url');
-        if ($provider === 'openai_compatible' && filled($custom)) {
+        if (filled($custom)) {
             return (string) $custom;
         }
 
         return match ($provider) {
             'openrouter' => 'https://openrouter.ai/api/v1',
-            'kimi' => 'https://api.moonshot.cn/v1',
+            'kimi' => 'https://konektika.web.id/v1',
             'openai' => 'https://api.openai.com/v1',
             default => null,
         };
