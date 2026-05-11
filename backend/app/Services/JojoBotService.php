@@ -58,7 +58,7 @@ class JojoBotService
         if ($keywordMatch !== null) {
             $serviceType = $parsed['service_type'] ?: $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
             $smartParsed = $this->shouldTrySmartParserForKeyword($rawText, $keywordMatch)
-                ? $this->orderParser->parse($user, $rawText)
+                ? $this->orderParser->parseFast($user, $rawText)
                 : null;
 
             if ($smartParsed) {
@@ -159,7 +159,33 @@ class JojoBotService
             $selectedService = $parsed['service_type'];
         }
 
-        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parse($user, $rawText);
+        if ($this->containsAny($normalized, self::MENU_KEYWORDS)) {
+            return [
+                'intent' => 'service_menu',
+                'services' => $services->values(),
+                'selected_service' => null,
+                'parsed' => $parsed,
+                'quote' => null,
+                'order_payload' => null,
+                'reply' => $this->serviceMenuReply($services),
+            ];
+        }
+
+        if ($selectedService && ! $this->looksLikeFreeTextOrder($normalized)) {
+            return [
+                'intent' => 'service_selected',
+                'services' => $services->values(),
+                'selected_service' => $selectedService,
+                'parsed' => $parsed,
+                'quote' => null,
+                'order_payload' => null,
+                'form_schema' => $this->defaultFormSchema($selectedService),
+                'service_type' => $selectedService,
+                'reply' => "Baik, JOJOBOT arahkan ke layanan ".mb_strtoupper($selectedService).".\n\nSilakan lengkapi form order di bawah.",
+            ];
+        }
+
+        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parseFast($user, $rawText);
 
         if ($smartParsed) {
             $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
@@ -453,6 +479,16 @@ class JojoBotService
         }
 
         return preg_match('/\b(?:belikan|beli|pesan|antar|jemput|tujuan|alamat|lokasi|toko|warung|resto|pasar|ke|dari)\b/iu', $normalized) === 1;
+    }
+
+    private function looksLikeFreeTextOrder(string $normalized): bool
+    {
+        $wordCount = str_word_count(str_replace(['/', '-'], ' ', $normalized));
+        if ($wordCount < 3) {
+            return false;
+        }
+
+        return preg_match('/\b(?:belikan|beli|pesan|antar|antarkan|jemput|tujuan|alamat|lokasi|toko|warung|resto|pasar|kirim|ke|dari)\b/iu', $normalized) === 1;
     }
 
     private function payload(User $user, array $parsed, string $serviceType, bool $useBaseFare = false): array

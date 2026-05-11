@@ -22,6 +22,11 @@ class OrderParserService
             return $aiParsed;
         }
 
+        return $this->parseFast($user, $text);
+    }
+
+    public function parseFast(User $user, string $text): ?array
+    {
         $normalizedText = $this->normalizer->normalize($text);
         $natural = $this->naturalLanguage->parse($user, $text);
         if ($natural !== null) {
@@ -30,6 +35,16 @@ class OrderParserService
             return $natural;
         }
 
+        $localParsed = $this->parseLocal($user, $text, $normalizedText);
+        if ($localParsed !== null) {
+            return $localParsed;
+        }
+
+        return $this->aiParser->parse($user, $text);
+    }
+
+    private function parseLocal(User $user, string $text, string $normalizedText): ?array
+    {
         $items = $this->items->extract($text) ?: $this->items->extract($normalizedText);
         $storeLocation = $this->storeLocation($text) ?: $this->storeLocation($normalizedText);
         $serviceType = $this->detectService($normalizedText);
@@ -102,7 +117,6 @@ class OrderParserService
             ],
         ];
     }
-
     private function detectService(string $text): ?string
     {
         if (preg_match('/joker\s+mobil|(?:^|\W)mobil(?:\W|$)|citycar/iu', $text) === 1) {

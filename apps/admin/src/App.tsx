@@ -3038,6 +3038,13 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
     await api(`/admin/ring-pricing-rules/${rule.id}`, { method: 'DELETE' })
     await onChanged()
   }
+  const toggleRing = async (rule: RingPricingRule) => {
+    await api(`/admin/ring-pricing-rules/${rule.id}/active`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: !rule.is_active }),
+    })
+    await onChanged()
+  }
   const approveSuggestion = async (suggestion: RingPricingSuggestion) => {
     await api(`/admin/ring-pricing-suggestions/${suggestion.id}/approve`, { method: 'POST' })
     await onChanged()
@@ -3100,7 +3107,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
       )}
       {showRingSection && <div className="pricing-subsection">
         <PanelHeader title="Master Ring Route" action={`${ringRules.length} rules`} />
-        <div className="pricing-list ring-pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)} · {rule.source}</span><small>{rule.pickup_area} → {rule.destination_area}{rule.is_bidirectional ? ' · dua arah' : ''}</small>{((rule.pickup_aliases?.length ?? 0) > 0 || (rule.destination_aliases?.length ?? 0) > 0) && <small className="ring-aliases">Alias: {[...(rule.pickup_aliases ?? []), ...(rule.destination_aliases ?? [])].slice(0, 5).join(', ')}</small>}</div><em>Rp {rule.price.toLocaleString('id-ID')}</em>{canManageRing && <button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button>}</article>)}</div>
+        <div className="pricing-list ring-pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)} · {rule.source}</span><small>{rule.pickup_area} → {rule.destination_area}{rule.is_bidirectional ? ' · dua arah' : ''}</small>{((rule.pickup_aliases?.length ?? 0) > 0 || (rule.destination_aliases?.length ?? 0) > 0) && <small className="ring-aliases">Alias: {[...(rule.pickup_aliases ?? []), ...(rule.destination_aliases ?? [])].slice(0, 5).join(', ')}</small>}</div><em>Rp {rule.price.toLocaleString('id-ID')}</em>{canManageRing && <div className="ring-card-actions"><button className={rule.is_active ? 'mini-button reject' : 'mini-button'} type="button" onClick={() => void toggleRing(rule)}>{rule.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button><button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button></div>}</article>)}</div>
         {ringRules.length === 0 && <EmptyPanel title="Master ring kosong" copy="Tambahkan route ring resmi agar harga tidak hanya mengandalkan jarak maps." />}
       </div>}
       {showRingSection && canManageRing && ringSuggestions.length > 0 && (

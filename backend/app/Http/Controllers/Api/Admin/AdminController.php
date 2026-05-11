@@ -1267,6 +1267,31 @@ class AdminController extends Controller
         ]);
     }
 
+    public function toggleRingPricingRule(Request $request, RingPricingRule $ringPricingRule): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+        $this->assertPricingBranchScope($request->user(), $ringPricingRule->branch_id);
+
+        $payload = $request->validate([
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        $before = (bool) $ringPricingRule->is_active;
+        $ringPricingRule->update([
+            'is_active' => (bool) $payload['is_active'],
+            'updated_by' => $request->user()->id,
+        ]);
+        $this->recordAudit($request->user(), 'toggled_ring_pricing_rule', $ringPricingRule, [
+            'before' => $before,
+            'after' => (bool) $ringPricingRule->is_active,
+        ]);
+
+        return response()->json([
+            'message' => $ringPricingRule->is_active ? 'Ring pricing rule activated' : 'Ring pricing rule deactivated',
+            'data' => $this->ringPricingRulePayload($ringPricingRule->fresh('branch')),
+        ]);
+    }
+
     public function destroyRingPricingRule(Request $request, RingPricingRule $ringPricingRule): JsonResponse
     {
         $this->authorizeRingPricing($request);

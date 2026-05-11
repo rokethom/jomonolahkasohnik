@@ -20,9 +20,9 @@ class AiOrderParserService
     ];
 
     private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503, 504];
-    private const REQUEST_TIMEOUT_SECONDS = 15;
-    private const CONNECT_TIMEOUT_SECONDS = 5;
-    private const SLOW_THRESHOLD_SECONDS = 15.0;
+    private const REQUEST_TIMEOUT_SECONDS = 8;
+    private const CONNECT_TIMEOUT_SECONDS = 2;
+    private const SLOW_THRESHOLD_SECONDS = 8.0;
     private const SLOW_CACHE_SECONDS = 600;
 
     public function __construct(
