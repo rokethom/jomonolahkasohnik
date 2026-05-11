@@ -350,12 +350,78 @@ class AdminDashboardMetricsService
         }
 
         $content = substr(File::get($path), -250000);
+        $entries = preg_split(
+            '/(?=^\[\d{4}-\d{2}-\d{2} [^\]]+\]\s+\w+\.(?:ERROR|CRITICAL|ALERT|EMERGENCY):)/m',
+            $content,
+            -1,
+            PREG_SPLIT_NO_EMPTY,
+        ) ?: [];
+        $failed = 0;
+        $fourxx = 0;
+        $fivexx = 0;
+
+        foreach ($entries as $entry) {
+            $entry = trim($entry);
+            $header = strtok($entry, "\n") ?: $entry;
+
+            if ($entry === '' || ! $this->isLaravelErrorEntry($header) || ! $this->isRecentLogEntry($header) || $this->isConsoleLogNoise($entry)) {
+                continue;
+            }
+
+            $hasFailedKeyword = preg_match('/\b(?:failed request|failed_job|request failed|http error|server error)\b/i', $entry) === 1;
+
+            if ($hasFailedKeyword || str_contains($header, '.ERROR') || str_contains($header, '.CRITICAL') || str_contains($header, '.ALERT') || str_contains($header, '.EMERGENCY')) {
+                $failed++;
+            }
+
+            $fourxx += preg_match_all('/(?:\bHTTP\s*|status(?:_code)?["\']?\s*[:=]\s*|response\s*status\s*[:=]\s*|status\s+)(4\d{2})\b/i', $entry);
+            $fivexx += preg_match_all('/(?:\bHTTP\s*|status(?:_code)?["\']?\s*[:=]\s*|response\s*status\s*[:=]\s*|status\s+)(5\d{2})\b/i', $entry);
+
+            if (! $this->hasExplicitHttpStatus($entry) && $this->looksLikeRequestException($entry)) {
+                $fivexx++;
+            }
+        }
 
         return [
-            'failed' => substr_count(strtolower($content), 'failed'),
-            '4xx' => preg_match_all('/\b4\d{2}\b/', $content),
-            '5xx' => preg_match_all('/\b5\d{2}\b/', $content),
+            'failed' => $failed,
+            '4xx' => $fourxx,
+            '5xx' => $fivexx,
         ];
+    }
+
+    private function isConsoleLogNoise(string $line): bool
+    {
+        return preg_match('/(?:artisan|TinkerCommand|Psy\\\\|Symfony\\\\Component\\\\Console|Command ".+?" is not defined|option does not exist|Parse error|syntax error|Unexpected end of input|RouteListCommand)/i', $line) === 1;
+    }
+
+    private function isLaravelErrorEntry(string $line): bool
+    {
+        return preg_match('/^\[\d{4}-\d{2}-\d{2} [^\]]+\]\s+\w+\.(?:ERROR|CRITICAL|ALERT|EMERGENCY):/', $line) === 1;
+    }
+
+    private function isRecentLogEntry(string $line): bool
+    {
+        if (preg_match('/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/', $line, $matches) !== 1) {
+            return false;
+        }
+
+        try {
+            $createdAt = Carbon::createFromFormat('Y-m-d H:i:s', $matches[1], config('app.timezone'));
+
+            return $createdAt instanceof Carbon && $createdAt->greaterThanOrEqualTo(now()->subHour());
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function hasExplicitHttpStatus(string $line): bool
+    {
+        return preg_match('/(?:\bHTTP\s*|status(?:_code)?["\']?\s*[:=]\s*|response\s*status\s*[:=]\s*|status\s+)[45]\d{2}\b/i', $line) === 1;
+    }
+
+    private function looksLikeRequestException(string $line): bool
+    {
+        return preg_match('/(?:request|route|controller|middleware|sqlstate|query exception|view exception|relationnotfound|badmethodcall|reflectionexception)/i', $line) === 1;
     }
 
     private function statusFromPercent(?int $percent, int $warning, int $critical): string
