@@ -287,6 +287,8 @@ class UserResource extends Resource
             UserRole::Admin => $query,
             UserRole::HRD => $query->whereIn('role', collect(UserRole::HRD->assignableRoles())->pluck('value')->all()),
             UserRole::SPV => $query->whereIn('role', collect(UserRole::SPV->assignableRoles())->pluck('value')->all()),
+            UserRole::Operator => $query->whereIn('role', collect(UserRole::Operator->assignableRoles())->pluck('value')->all()),
+            UserRole::Eksekutor => $query->whereIn('role', collect(UserRole::Eksekutor->assignableRoles())->pluck('value')->all()),
             UserRole::GM,
             UserRole::Manager => $query->where('role', '!=', UserRole::Admin->value),
             default => $query->whereKey($actor?->id),

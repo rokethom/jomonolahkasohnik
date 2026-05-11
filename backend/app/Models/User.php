@@ -126,14 +126,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function permissions(): array
     {
-        $permissions = $this->roles()
-            ->with('permissions:id,name')
-            ->get()
-            ->flatMap(fn (Role $role) => $role->permissions->pluck('name'))
-            ->merge($this->legacyRolePermissions())
-            ->unique()
-            ->values()
-            ->all();
+        $permissions = $this->rbacPermissions() ?? $this->legacyRolePermissions();
 
         try {
             $pricingRoles = app(RolePermissionSettingService::class);
@@ -174,6 +167,39 @@ class User extends Authenticatable implements FilamentUser
             'web_admin', 'cms_editor' => ['manage_cms'],
             default => [],
         };
+    }
+
+    private function rbacPermissions(): ?array
+    {
+        if (! Schema::hasTable('roles') || ! Schema::hasTable('permissions') || ! Schema::hasTable('role_permissions')) {
+            return null;
+        }
+
+        $primaryRoleName = $this->role?->value ?? (string) $this->role;
+        $roles = $this->roles()
+            ->with('permissions:id,name')
+            ->get();
+
+        if ($primaryRoleName !== '' && ! $roles->contains('name', $primaryRoleName)) {
+            $primaryRole = Role::query()
+                ->where('name', $primaryRoleName)
+                ->with('permissions:id,name')
+                ->first();
+
+            if ($primaryRole) {
+                $roles->push($primaryRole);
+            }
+        }
+
+        if ($roles->isEmpty()) {
+            return null;
+        }
+
+        return $roles
+            ->flatMap(fn (Role $role) => $role->permissions->pluck('name'))
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function driver(): HasOne

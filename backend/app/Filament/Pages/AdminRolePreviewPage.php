@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Enums\UserRole;
+use App\Models\Role;
 use App\Services\AdminRoleMenuOverrideService;
 use App\Services\RolePermissionSettingService;
 use Filament\Forms;
@@ -90,7 +91,15 @@ class AdminRolePreviewPage extends Page implements HasForms
 
     private function permissionsFor(string $role): array
     {
-        $permissions = match ($role) {
+        $permissions = Role::query()
+            ->where('name', $role)
+            ->with('permissions:id,name')
+            ->first()
+            ?->permissions
+            ->pluck('name')
+            ->all();
+
+        $permissions ??= match ($role) {
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
             'manager' => ['create_user', 'suspend_driver', 'view_report', 'export_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
             'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'internal_chat'],
@@ -99,6 +108,8 @@ class AdminRolePreviewPage extends Page implements HasForms
             'web_admin', 'cms_editor' => ['manage_cms', 'internal_chat'],
             default => ['internal_chat'],
         };
+
+        $permissions = array_values(array_diff($permissions, ['edit_tarif']));
 
         if (app(RolePermissionSettingService::class)->roleHasEditTarif($role)) {
             $permissions[] = 'edit_tarif';
@@ -149,7 +160,7 @@ class AdminRolePreviewPage extends Page implements HasForms
             'can_monitor_live_chat' => in_array('monitor_live_chat', $permissions, true),
             'can_use_internal_chat' => in_array('internal_chat', $permissions, true),
             'can_manage_cms' => in_array('manage_cms', $permissions, true),
-            'can_manage_system_settings' => in_array($role, ['manager', 'spv'], true),
+            'can_manage_system_settings' => in_array('manage_system_settings', $permissions, true),
         ];
     }
 

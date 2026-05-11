@@ -67,7 +67,7 @@ enum UserRole: string
 
     public function canManageUsers(): bool
     {
-        return in_array($this, [self::Admin, self::GM, self::HRD, self::Manager], true);
+        return in_array($this, [self::Admin, self::GM, self::HRD, self::Manager, self::SPV, self::Operator, self::Eksekutor], true);
     }
 
     public function assignableRoles(): array
@@ -77,6 +77,8 @@ enum UserRole: string
             self::GM => self::cases(),
             self::HRD => [self::Manager, self::SPV, self::Operator, self::Eksekutor, self::Driver],
             self::Manager => [self::SPV, self::Operator, self::Eksekutor, self::Driver, self::WebAdmin, self::CmsEditor],
+            self::SPV => [self::Operator, self::Eksekutor, self::Driver],
+            self::Operator, self::Eksekutor => [self::Driver],
             default => [],
         };
     }
