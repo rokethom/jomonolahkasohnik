@@ -224,7 +224,7 @@ type ManualOrderPreview = {
 
 type Branch = { id: number; branch_code?: string | null; name: string; area: string | null; display_name?: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number; geofence_areas?: Array<{ id: number; name: string }> }
 type ServiceRow = { id: number; name: string; code: string; outside_area_only?: boolean }
-type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
+type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; is_active?: boolean; branch?: Branch | null }
 type KeywordParser = { id: number; keyword: string; service_type: string; response_template: string; form_schema?: { fields?: Array<{ label?: string; name?: string; type?: string; required?: boolean; options?: string[] }> } | null; parser_type: 'simple' | 'advanced' | string; is_active: boolean; priority: number; created_at?: string | null; updated_at?: string | null }
 type PricingKeywordRule = { id: number; name: string; keywords: string; amount: number; service_scopes?: string[] | null; is_active: boolean; priority: number; description?: string | null; created_at?: string | null; updated_at?: string | null }
 type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; name: string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; ring: string; price: number; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
@@ -2998,11 +2998,32 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
         is_formula: isFormula,
         per_km_rate: isFormula ? Number(form.get('per_km_rate') || 0) : null,
         subtract_value: Number(form.get('subtract_value') || 0),
+        is_active: form.get('is_active') === 'on',
       }),
     })
     formElement.reset()
     setShowForm(false)
     await onChanged()
+  }
+  const updatePriceSetting = async (setting: PriceSetting, patch: Partial<PriceSetting>) => {
+    await api(`/admin/price-settings/${setting.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: patch.name ?? setting.name,
+        branch_id: patch.branch_id === undefined ? setting.branch_id : patch.branch_id,
+        min_km: patch.min_km ?? setting.min_km,
+        max_km: patch.max_km === undefined ? setting.max_km : patch.max_km,
+        price: patch.price === undefined ? setting.price : patch.price,
+        is_formula: patch.is_formula ?? setting.is_formula,
+        per_km_rate: patch.per_km_rate === undefined ? setting.per_km_rate : patch.per_km_rate,
+        subtract_value: patch.subtract_value === undefined ? setting.subtract_value : patch.subtract_value,
+        is_active: patch.is_active ?? setting.is_active ?? true,
+      }),
+    })
+    await onChanged()
+  }
+  const togglePriceSetting = async (setting: PriceSetting) => {
+    await updatePriceSetting(setting, { is_active: !(setting.is_active ?? true) })
   }
   const destroy = async (setting: PriceSetting) => {
     if (!confirm(`Delete ${setting.name}?`)) return
@@ -3054,6 +3075,9 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
     await onChanged()
   }
   const formulaCount = settings.filter((rule) => rule.is_formula).length
+  const activePriceCount = settings.filter((rule) => rule.is_active ?? true).length
+  const flatPriceCount = settings.filter((rule) => !rule.is_formula).length
+  const globalPriceCount = settings.filter((rule) => !rule.branch).length
   const canManageRing = Boolean(permissions.can_manage_ring_pricing)
   const activeRingCount = ringRules.filter((rule) => rule.is_active).length
   const learnedRingCount = ringRules.filter((rule) => rule.source === 'learned').length
@@ -3094,11 +3118,13 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
       )}
       {showPriceSection && showForm && (
         <form className="admin-inline-form pricing-create-form" onSubmit={create}>
+          <div className="ring-form-title"><strong>Tambah Distance Price</strong><span>Rule aktif langsung dipakai untuk order customer, manual order, dan JojoBot.</span></div>
           <label>Nama policy<input name="name" required placeholder="Belanja 0-3 km" /></label>
           <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
           <label>Min KM<input name="min_km" type="number" min="0" step="0.1" defaultValue="0" /></label>
           <label>Max KM<input name="max_km" type="number" min="0" step="0.1" placeholder="Kosong = unlimited" /></label>
           <label className="toggle-row inline-toggle"><input type="checkbox" checked={isFormula} onChange={(event) => setFormula(event.target.checked)} />Formula tarif</label>
+          <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
           {!isFormula && <label>Flat price<input name="price" type="number" min="0" defaultValue="10000" /></label>}
           {isFormula && <label>Rate / KM<input name="per_km_rate" type="number" min="0" defaultValue="3000" /></label>}
           <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="0" /></label>
@@ -3116,9 +3142,46 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
           <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} → {suggestion.destination_area}</strong><span className="status warning">Learn</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
         </div>
       )}
-      {showPriceSection && <div className="pricing-subsection">
-        <PanelHeader title="Tarif Jarak" action={`${formulaCount} formula`} />
-      <div className="pricing-list">{settings.map((rule) => <article className="pricing-card" key={rule.id}><div className="pricing-card-main"><strong>{rule.name}</strong><span>{rule.branch ? branchLabel(rule.branch) : 'Global'} - {rule.min_km} - {rule.max_km ?? 'unlimited'} km</span></div><span className={rule.is_formula ? 'status info' : 'status success'}>{rule.is_formula ? 'Formula' : 'Flat'}</span><em>{rule.is_formula ? `Rp ${(rule.per_km_rate ?? 0).toLocaleString('id-ID')}/km - ${rule.subtract_value ?? 0}` : `Rp ${(rule.price ?? 0).toLocaleString('id-ID')}`}</em>{permissions.can_manage_policy && <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>}</article>)}</div>
+      {showPriceSection && <div className="pricing-subsection price-settings-section">
+        <PanelHeader title="Tarif Jarak" action={`${activePriceCount}/${settings.length} aktif`} />
+        <div className="price-summary-grid">
+          <article><span>Active rules</span><strong>{activePriceCount}</strong><small>Dipakai order sekarang</small></article>
+          <article><span>Formula</span><strong>{formulaCount}</strong><small>Rate per KM</small></article>
+          <article><span>Flat</span><strong>{flatPriceCount}</strong><small>Nominal tetap</small></article>
+          <article><span>Global</span><strong>{globalPriceCount}</strong><small>Fallback semua cabang</small></article>
+        </div>
+        <div className="price-rule-list">
+          {settings.map((rule) => {
+            const active = rule.is_active ?? true
+            return (
+              <article className={`price-rule-card ${active ? '' : 'inactive'}`} key={rule.id}>
+                <div className="price-rule-main">
+                  <div className="price-rule-title">
+                    <strong>{rule.name}</strong>
+                    <span className={active ? 'status success' : 'status muted'}>{active ? 'Aktif' : 'Nonaktif'}</span>
+                  </div>
+                  <div className="price-rule-meta">
+                    <span>{rule.branch ? branchLabel(rule.branch) : 'Global'}</span>
+                    <span>{formatDistanceRange(rule)}</span>
+                    <span>{rule.is_formula ? 'Formula rate' : 'Flat price'}</span>
+                  </div>
+                </div>
+                <div className="price-rule-rate">
+                  <span>{rule.is_formula ? 'Formula' : 'Tarif'}</span>
+                  <strong>{rule.is_formula ? `Rp ${(rule.per_km_rate ?? 0).toLocaleString('id-ID')}/km` : `Rp ${(rule.price ?? 0).toLocaleString('id-ID')}`}</strong>
+                  {rule.is_formula && <small>Subtract Rp {(rule.subtract_value ?? 0).toLocaleString('id-ID')}</small>}
+                </div>
+                {permissions.can_manage_policy && (
+                  <div className="price-rule-actions">
+                    <button className={active ? 'mini-button' : 'mini-button success'} type="button" onClick={() => void togglePriceSetting(rule)}>{active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                    <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+        {settings.length === 0 && <EmptyPanel title="Distance price kosong" copy="Tambahkan minimal rule global agar order dapat menghitung tarif dasar." />}
       </div>}
     </section>
   )
@@ -3126,6 +3189,13 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
 
 function aliasList(value: FormDataEntryValue | null) {
   return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+function formatDistanceRange(rule: PriceSetting) {
+  const min = Number(rule.min_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
+  const max = rule.max_km === null ? 'unlimited' : Number(rule.max_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
+
+  return `${min} - ${max} KM`
 }
 
 function ringLabel(value: string) {
