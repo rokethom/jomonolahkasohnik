@@ -26,10 +26,17 @@ class AdminRoleMenuOverrideService
                 'internal-chat' => 'Internal Chat',
                 'sticky-notes' => 'Sticky Notes',
                 'manual-order' => 'Manual Order',
+                'order-crew-rules' => 'Order Crew Rules',
             ],
             'Management' => [
                 'users' => 'Users',
                 'drivers' => 'Driver Management',
+            ],
+            'Home CMS' => [
+                'banners' => 'Banners',
+                'home-sections' => 'Home Sections',
+                'home-items' => 'Home Items',
+                'announcements' => 'Announcements',
             ],
             'Area & System' => [
                 'locations' => 'Location Logs',
@@ -40,6 +47,7 @@ class AdminRoleMenuOverrideService
                 'pricing-keyword-rules' => 'Pricing Keyword Rules',
                 'zone-pricing' => 'Zone Pricing Rules',
                 'zone-pricing-tester' => 'Zone Pricing Tester',
+                'app-settings-cms' => 'System Settings CMS',
             ],
         ];
     }
@@ -131,6 +139,18 @@ class AdminRoleMenuOverrideService
 
         if ($permissions['can_create_manual_order'] ?? false) {
             $views[] = 'manual-order';
+        }
+
+        if ($permissions['can_manage_system_settings'] ?? false) {
+            $views[] = 'order-crew-rules';
+            $views[] = 'app-settings-cms';
+        }
+
+        if ($permissions['can_manage_cms'] ?? false) {
+            $views[] = 'banners';
+            $views[] = 'home-sections';
+            $views[] = 'home-items';
+            $views[] = 'announcements';
         }
 
         if (in_array($roleValue, [

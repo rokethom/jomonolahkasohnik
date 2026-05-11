@@ -141,6 +141,8 @@ class AdminRolePreviewPage extends Page implements HasForms
             'can_monitor_live_order' => in_array('monitor_live_order', $permissions, true),
             'can_monitor_live_chat' => in_array('monitor_live_chat', $permissions, true),
             'can_use_internal_chat' => in_array('internal_chat', $permissions, true),
+            'can_manage_cms' => in_array('manage_cms', $permissions, true),
+            'can_manage_system_settings' => in_array($role, ['manager', 'spv'], true),
         ];
     }
 

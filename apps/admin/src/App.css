@@ -183,6 +183,7 @@
 
 .admin-shell.dark .zone-help-card,
 .admin-shell.dark .master-pricing-card,
+.admin-shell.dark .backend-cms-panel,
 .admin-shell.dark .keyword-rule-card,
 .admin-shell.dark .zone-rule-card,
 .admin-shell.dark .zone-tester-result,
@@ -199,6 +200,7 @@
 .admin-shell.dark .zone-help-card span,
 .admin-shell.dark .master-pricing-card span,
 .admin-shell.dark .master-pricing-card small,
+.admin-shell.dark .backend-cms-panel p,
 .admin-shell.dark .keyword-rule-card span,
 .admin-shell.dark .keyword-rule-card small,
 .admin-shell.dark .zone-rule-main span,
@@ -3483,9 +3485,39 @@ td {
 }
 
 .master-pricing-hub,
-.keyword-cms-panel {
+.keyword-cms-panel,
+.backend-cms-panel {
   display: grid;
   gap: 16px;
+}
+
+.backend-cms-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.backend-cms-panel h2 {
+  margin: 4px 0 6px;
+}
+
+.backend-cms-panel p {
+  margin: 0;
+  max-width: 720px;
+  color: #475467;
+  font-weight: 700;
+}
+
+.primary-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 14px;
+  padding: 0 18px;
+  background: linear-gradient(135deg, #38bdf8, #22c55e);
+  color: #05111f;
+  font-weight: 950;
+  text-decoration: none;
 }
 
 .master-pricing-grid {

@@ -1931,6 +1931,7 @@ class AdminController extends Controller
             'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
                 && $user->hasPermission('suspend_driver'),
             'can_manage_system_settings' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true),
+            'can_manage_cms' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::WebAdmin, UserRole::CmsEditor], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
             'can_create_manual_order' => $user->hasPermission('manual_order'),
             'can_assign_driver' => $this->canAssignDriver($user),

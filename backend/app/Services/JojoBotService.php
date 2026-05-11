@@ -651,28 +651,29 @@ class JojoBotService
 
         return Branch::query()
             ->get(['id', 'name', 'area'])
-            ->first(function (Branch $branch) use ($needle): bool {
-                $candidates = [
-                    $branch->name,
-                    $branch->area,
+            ->flatMap(function (Branch $branch) use ($needle): array {
+                return collect([
                     trim(($branch->name ?? '').' '.($branch->area ?? '')),
                     trim(($branch->area ?? '').' '.($branch->name ?? '')),
-                ];
-
-                foreach ($candidates as $candidate) {
-                    $normalized = str((string) $candidate)
+                    $branch->area,
+                    $branch->name,
+                ])
+                    ->map(fn (mixed $candidate): string => str((string) $candidate)
                         ->lower()
                         ->replace(['-', '_', '/', ','], ' ')
                         ->squish()
-                        ->toString();
-
-                    if ($normalized !== '' && ($normalized === $needle || str_contains($needle, $normalized))) {
-                        return true;
-                    }
-                }
-
-                return false;
-            })?->id;
+                        ->toString())
+                    ->filter()
+                    ->unique()
+                    ->filter(fn (string $candidate): bool => $candidate === $needle || str_contains($needle, $candidate))
+                    ->map(fn (string $candidate): array => [
+                        'branch_id' => $branch->id,
+                        'score' => ($candidate === $needle ? 10_000 : 0) + strlen($candidate),
+                    ])
+                    ->all();
+            })
+            ->sortByDesc('score')
+            ->value('branch_id');
     }
 
     private function serviceType(string $code, string $name): string

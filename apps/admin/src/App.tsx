@@ -11,7 +11,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'app-settings-cms' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
 const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
 const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
 type AdminHistoryState = {
@@ -342,6 +342,7 @@ type Permissions = {
   can_unsuspend_drivers?: boolean
   can_manage_driver_auth?: boolean
   can_manage_system_settings: boolean
+  can_manage_cms?: boolean
   can_edit_order_price: boolean
   can_create_manual_order: boolean
   can_view_report?: boolean
@@ -449,6 +450,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
       { id: 'sticky-notes', label: 'Sticky Notes', icon: 'note' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
+      { id: 'order-crew-rules', label: 'Order Crew Rules', icon: 'settings' },
     ],
   },
   {
@@ -459,6 +461,17 @@ const menuGroups: MenuGroup[] = [
       { id: 'users', label: 'Users', icon: 'users' },
       { id: 'drivers', label: 'Driver Management', icon: 'truck' },
       { id: 'branches', label: 'Branches', icon: 'building' },
+    ],
+  },
+  {
+    id: 'home-cms',
+    label: 'Home CMS',
+    icon: 'note',
+    items: [
+      { id: 'banners', label: 'Banners', icon: 'note' },
+      { id: 'home-sections', label: 'Home Sections', icon: 'note' },
+      { id: 'home-items', label: 'Home Items', icon: 'note' },
+      { id: 'announcements', label: 'Announcements', icon: 'note' },
     ],
   },
   {
@@ -477,6 +490,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'zone-pricing', label: 'Zone Pricing Rules', icon: 'map' },
       { id: 'zone-pricing-tester', label: 'Zone Pricing Tester', icon: 'cash' },
       { id: 'settings', label: 'System Settings', icon: 'settings' },
+      { id: 'app-settings-cms', label: 'System Settings CMS', icon: 'settings' },
     ],
   },
 ]
@@ -521,6 +535,17 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_use_internal_chat) views.add('internal-chat')
   if (permissions.can_use_internal_notes) views.add('sticky-notes')
   if (permissions.can_create_manual_order) views.add('manual-order')
+  if (permissions.can_manage_system_settings) {
+    views.add('settings')
+    views.add('app-settings-cms')
+    views.add('order-crew-rules')
+  }
+  if (permissions.can_manage_cms) {
+    views.add('banners')
+    views.add('home-sections')
+    views.add('home-items')
+    views.add('announcements')
+  }
   if (['manager', 'spv', 'operator'].includes(role)) views.add('locations')
 
   return allMenus.map((item) => item.id).filter((id) => views.has(id))
@@ -869,6 +894,7 @@ function App() {
         {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {isBackendCmsView(safeView) && <BackendCmsLinkPanel view={safeView} />}
         {safeView === 'master-pricing' && <MasterPricingPanel data={data} onNavigate={setView} />}
         {(safeView === 'pricing' || safeView === 'ring-pricing' || safeView === 'price-settings') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : safeView === 'price-settings' ? 'price' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'keyword-parsers' && <KeywordParsersPanel parsers={data.keyword_parsers ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -2961,6 +2987,61 @@ function MasterPricingPanel({ data, onNavigate }: { data: Bootstrap; onNavigate:
           </button>
         ))}
       </div>
+    </section>
+  )
+}
+
+const backendCmsLinks: Partial<Record<View, { title: string; path: string; copy: string }>> = {
+  'order-crew-rules': {
+    title: 'Order Crew Rules',
+    path: '/admin/order-crew-rules',
+    copy: 'Atur rule multi crew seperti rider/helper, keyword pemicu, timeout helper, dan harga helper dari backend CMS.',
+  },
+  banners: {
+    title: 'Banners',
+    path: '/admin/banners',
+    copy: 'Kelola gambar banner home customer. Preview role memastikan menu ini bisa dibuka sesuai izin role.',
+  },
+  'home-sections': {
+    title: 'Home Sections',
+    path: '/admin/home-sections',
+    copy: 'Atur section home customer seperti slider, promo, dan susunan konten CMS.',
+  },
+  'home-items': {
+    title: 'Home Items',
+    path: '/admin/home-items',
+    copy: 'Kelola item konten home customer, termasuk jadwal tampil dan masa berlaku.',
+  },
+  announcements: {
+    title: 'Announcements',
+    path: '/admin/announcements',
+    copy: 'Kelola pengumuman/promo khusus yang tampil pada home customer.',
+  },
+  'app-settings-cms': {
+    title: 'System Settings CMS',
+    path: '/admin/app-settings-cms?tab=-operasional-order-tab',
+    copy: 'Buka pengaturan operasional order seperti jam tutup order, tarif malam, FCM, AI, dan aturan sistem lain.',
+  },
+}
+
+function isBackendCmsView(view: View) {
+  return Boolean(backendCmsLinks[view])
+}
+
+function BackendCmsLinkPanel({ view }: { view: View }) {
+  const link = backendCmsLinks[view]
+  if (!link) return null
+
+  return (
+    <section className="panel backend-cms-panel">
+      <div>
+        <span className="eyebrow">Backend CMS</span>
+        <h2>{link.title}</h2>
+        <p>{link.copy}</p>
+      </div>
+      <a className="primary-link-button" href={`${APP_BASE}${link.path}`} target="_blank" rel="noreferrer">
+        Buka di Backend
+      </a>
     </section>
   )
 }
@@ -5213,7 +5294,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'app-settings-cms': 'System Settings CMS', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
 }
 
 function internalNoteStatusLabel(status: InternalNoteStatus) {
