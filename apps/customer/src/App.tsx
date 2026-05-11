@@ -2841,7 +2841,6 @@ function ImageEditorModal({ imageUrl, onClose, onSend }: { imageUrl: string; onC
 function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTranscript: (text: string) => void; compact?: boolean; hidden?: boolean }) {
   const [listening, setListening] = useState(false)
   const [status, setStatus] = useState<'idle' | 'listening' | 'processing' | 'stopped'>('idle')
-  const [language, setLanguage] = useState('id-ID')
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const shouldListenRef = useRef(false)
   const finalTranscriptRef = useRef('')
@@ -2880,7 +2879,7 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
     recognitionRef.current?.abort?.()
 
     const recognition = new SpeechRecognitionApi()
-    recognition.lang = language
+    recognition.lang = 'id-ID'
     recognition.continuous = true
     recognition.interimResults = true
     recognition.maxAlternatives = 1
@@ -2903,11 +2902,27 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       setStatus(interimTranscript ? 'processing' : 'listening')
       emitTranscript(nextText)
     }
-    recognition.onerror = () => {
+    recognition.onerror = (event: BrowserSpeechRecognitionErrorEvent) => {
       if (!shouldListenRef.current) {
         setListening(false)
         setStatus('stopped')
+        return
       }
+
+      if (['no-speech', 'network', 'aborted'].includes(event.error)) {
+        setStatus('listening')
+        if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current)
+        restartTimerRef.current = window.setTimeout(() => {
+          restartTimerRef.current = null
+          if (shouldListenRef.current) start()
+        }, event.error === 'network' ? 700 : 420)
+        return
+      }
+
+      shouldListenRef.current = false
+      setListening(false)
+      setStatus('stopped')
+      emitTranscript(finalTranscriptRef.current)
     }
     recognition.onend = () => {
       if (!shouldListenRef.current) {
@@ -2917,9 +2932,11 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       }
 
       setStatus('processing')
+      if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current)
       restartTimerRef.current = window.setTimeout(() => {
+        restartTimerRef.current = null
         if (shouldListenRef.current) start()
-      }, 180)
+      }, 320)
     }
     recognitionRef.current = recognition
     setListening(true)
@@ -2929,7 +2946,7 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       setListening(false)
       setStatus('stopped')
     }
-  }, [emitTranscript, language, onTranscript])
+  }, [emitTranscript, onTranscript])
 
   const toggle = () => {
     if (listening) {
@@ -2950,11 +2967,6 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
 
   return (
     <div className={`voice-control ${listening ? 'recording' : ''} ${hidden && !listening ? 'is-hidden' : ''}`} data-status={status}>
-      {listening && (
-        <button type="button" className="voice-language" onClick={() => setLanguage((value) => value === 'id-ID' ? 'en-US' : 'id-ID')} aria-label="Ganti bahasa voice">
-          {language === 'id-ID' ? 'ID' : 'EN'}
-        </button>
-      )}
       <button type="button" className={`${compact ? 'input-icon voice-inline' : 'mic-button'} ${listening ? 'recording' : ''}`} onClick={toggle} aria-label={listening ? 'Stop voice input' : 'Voice input'} tabIndex={hidden && !listening ? -1 : 0} aria-hidden={hidden && !listening}>
         {listening ? (
           <span className="voice-wave" aria-hidden="true">
@@ -4586,13 +4598,17 @@ type BrowserSpeechRecognitionEvent = {
   results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>
 }
 
+type BrowserSpeechRecognitionErrorEvent = {
+  error: string
+}
+
 type BrowserSpeechRecognition = {
   lang: string
   continuous: boolean
   interimResults: boolean
   maxAlternatives?: number
   onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
-  onerror: ((event?: { error?: string }) => void) | null
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null
   onend: (() => void) | null
   start: () => void
   stop: () => void

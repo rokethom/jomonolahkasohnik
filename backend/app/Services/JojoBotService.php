@@ -58,7 +58,7 @@ class JojoBotService
         if ($keywordMatch !== null) {
             $serviceType = $parsed['service_type'] ?: $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
             $smartParsed = $this->shouldTrySmartParserForKeyword($rawText, $keywordMatch)
-                ? $this->orderParser->parseFast($user, $rawText)
+                ? $this->orderParser->parse($user, $rawText)
                 : null;
 
             if ($smartParsed) {
@@ -185,7 +185,7 @@ class JojoBotService
             ];
         }
 
-        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parseFast($user, $rawText);
+        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parse($user, $rawText);
 
         if ($smartParsed) {
             $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
