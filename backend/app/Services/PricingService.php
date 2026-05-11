@@ -263,15 +263,19 @@ class PricingService
         $baseTarifBeforeNight = (int) ($quote['tarif'] ?? $quote['price'] ?? 0);
         $night = $this->operations->nightTariff($baseTarifBeforeNight, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null);
         if ($night['amount'] > 0) {
+            $baseTotalBeforeNight = (int) ($quote['total_before_round'] ?? $quote['subtotal'] ?? $baseTarifBeforeNight);
+            $nightTotal = $this->roundUpPrice($baseTotalBeforeNight * (1 + ((int) $night['percent'] / 100)));
+            $nightAmount = max(0, $nightTotal - $baseTotalBeforeNight);
             $quote['base_tarif_before_night'] = $baseTarifBeforeNight;
-            $quote['night_tariff_charge'] = (int) $night['amount'];
+            $quote['base_total_before_night'] = $baseTotalBeforeNight;
+            $quote['night_tariff_charge'] = $nightAmount;
             $quote['night_tariff_percent'] = (int) $night['percent'];
-            $quote['tarif'] += (int) $night['amount'];
+            $quote['tarif'] += $nightAmount;
             $quote['price'] = $quote['tarif'];
             $quote['base_price'] = $quote['tarif'];
-            $quote['total_before_round'] += (int) $night['amount'];
+            $quote['total_before_round'] = $nightTotal;
             $quote['subtotal'] = $quote['total_before_round'];
-            $quote['final_price'] = $this->roundUpPrice($quote['total_before_round']);
+            $quote['final_price'] = $nightTotal;
             $quote['total_price'] = $quote['final_price'];
         }
 

@@ -150,6 +150,56 @@ class PricingServiceTest extends TestCase
         );
     }
 
+    public function test_jojobot_prefers_local_terminal_alias_before_generic_geocode(): void
+    {
+        $branch = new Branch([
+            'name' => 'Situbondo',
+            'area' => 'Kota',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeCandidates');
+        $method->setAccessible(true);
+
+        $candidates = $method->invoke($service, 'terminal', $branch);
+
+        $this->assertSame('terminal Situbondo, Indonesia', $candidates[0]);
+        $this->assertLessThan(
+            array_search('terminal', $candidates, true),
+            array_search('terminal Situbondo, Indonesia', $candidates, true),
+        );
+    }
+
+    public function test_night_tariff_rounds_from_order_subtotal(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', true);
+        app(\App\Services\SettingService::class)->set('night_tariff_rules', json_encode([
+            ['area' => '', 'start' => '00:00', 'end' => '23:59', 'percent' => 30],
+        ]));
+
+        $quote = app(PricingService::class)->calculate([
+            'service_type' => 'ojek',
+            'pickup_address' => 'Pickup',
+            'pickup_lat' => -7.70924228,
+            'pickup_lng' => 113.99408479,
+            'destination_address' => 'Destination',
+            'destination_lat' => -7.7067986,
+            'destination_lng' => 114.0120514,
+            'branch_id' => 1,
+            'distance_km' => 2,
+            'stops' => 1,
+        ]);
+
+        $this->assertSame(6000, $quote['base_tarif_before_night']);
+        $this->assertSame(7000, $quote['base_total_before_night']);
+        $this->assertSame(3000, $quote['night_tariff_charge']);
+        $this->assertSame(9000, $quote['tarif']);
+        $this->assertSame(10000, $quote['total_price']);
+    }
+
     public function test_jojobot_ignores_ambiguous_branch_area_hint(): void
     {
         Branch::query()->create([

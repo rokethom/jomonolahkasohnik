@@ -636,6 +636,12 @@ class JojoBotService
             }
         }
 
+        if (preg_match('/\bterminal\b/u', $normalized) === 1) {
+            foreach ($branchHints as $hint) {
+                $aliases[] = 'terminal '.$hint;
+            }
+        }
+
         return collect($aliases)
             ->map(fn (string $value): string => trim($value.', Indonesia'))
             ->unique()
