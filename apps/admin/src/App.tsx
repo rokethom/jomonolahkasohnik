@@ -390,6 +390,53 @@ type Bootstrap = {
   chats: Chat[]
   audit_logs: AuditLog[]
 }
+type AdminHomeBanner = {
+  id: number
+  title: string
+  image?: string | null
+  image_original?: string | null
+  link?: string | null
+  order?: number
+  start_date?: string | null
+  end_date?: string | null
+  is_active?: boolean
+}
+type AdminHomeItem = {
+  id: number
+  section_id?: number
+  title: string
+  subtitle?: string | null
+  image?: string | null
+  image_original?: string | null
+  icon?: string | null
+  link?: string | null
+  order?: number
+  start_date?: string | null
+  end_date?: string | null
+  is_active?: boolean
+}
+type AdminHomeSection = {
+  id: number
+  name: string
+  type: string
+  order?: number
+  is_active?: boolean
+  items?: AdminHomeItem[]
+}
+type AdminAnnouncement = {
+  id: number
+  title: string
+  content: string
+  start_date?: string | null
+  end_date?: string | null
+  is_active?: boolean
+}
+type AdminHomeCmsData = {
+  banners: AdminHomeBanner[]
+  sections: AdminHomeSection[]
+  items?: AdminHomeItem[]
+  announcements: AdminAnnouncement[]
+}
 
 function resolveApiBase() {
   const configured = import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -3054,20 +3101,150 @@ function isBackendCmsView(view: View) {
 
 function BackendCmsLinkPanel({ view }: { view: View }) {
   const link = backendCmsLinks[view]
+  const [cms, setCms] = useState<AdminHomeCmsData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    fetch(`${API_BASE}/home`, { headers: { Accept: 'application/json' } })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json()
+      })
+      .then((payload: AdminHomeCmsData) => {
+        if (!active) return
+        setCms({
+          banners: payload.banners ?? [],
+          sections: payload.sections ?? [],
+          items: payload.items ?? [],
+          announcements: payload.announcements ?? [],
+        })
+      })
+      .catch((fetchError) => {
+        if (!active) return
+        setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat preview CMS')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
   if (!link) return null
+  const stats = cms ? cmsStats(cms) : []
 
   return (
-    <section className="panel backend-cms-panel">
-      <div>
-        <span className="eyebrow">Backend CMS</span>
-        <h2>{link.title}</h2>
-        <p>{link.copy}</p>
+    <section className="panel backend-cms-panel home-cms-preview-panel">
+      <div className="backend-cms-head">
+        <div>
+          <span className="eyebrow">Backend CMS</span>
+          <h2>{link.title}</h2>
+          <p>{link.copy}</p>
+        </div>
+        <a className="primary-link-button" href={`${APP_BASE}${link.path}`} target="_blank" rel="noreferrer">
+          Buka di Backend
+        </a>
       </div>
-      <a className="primary-link-button" href={`${APP_BASE}${link.path}`} target="_blank" rel="noreferrer">
-        Buka di Backend
-      </a>
+      <div className="home-cms-stat-grid">
+        {stats.map((stat) => <div className={stat.active ? 'home-cms-stat active' : 'home-cms-stat'} key={stat.label}><span>{stat.label}</span><strong>{stat.value}</strong><small>{stat.copy}</small></div>)}
+      </div>
+      {loading && <div className="home-cms-empty">Memuat preview CMS...</div>}
+      {!loading && error && <div className="home-cms-empty danger">Preview belum bisa dimuat: {error}</div>}
+      {!loading && cms && <HomeCmsPreview view={view} cms={cms} />}
     </section>
   )
+}
+
+function cmsStats(cms: AdminHomeCmsData) {
+  return [
+    { label: 'Banner', value: cms.banners.length, copy: 'slide aktif di home', active: cms.banners.length > 0 },
+    { label: 'Section', value: cms.sections.length, copy: 'blok konten customer', active: cms.sections.length > 0 },
+    { label: 'Item', value: (cms.items?.length ?? cms.sections.flatMap((section) => section.items ?? []).length), copy: 'konten dalam section', active: (cms.items?.length ?? cms.sections.flatMap((section) => section.items ?? []).length) > 0 },
+    { label: 'Announcement', value: cms.announcements.length, copy: 'promo/pengumuman', active: cms.announcements.length > 0 },
+  ]
+}
+
+function HomeCmsPreview({ view, cms }: { view: View; cms: AdminHomeCmsData }) {
+  const items = cms.items?.length ? cms.items : cms.sections.flatMap((section) => section.items ?? [])
+
+  if (view === 'banners') {
+    return (
+      <div className="home-cms-preview-grid banner">
+        {cms.banners.map((banner) => <CmsImageCard key={banner.id} title={banner.title} subtitle={cmsDateRange(banner.start_date, banner.end_date)} image={banner.image_original ?? banner.image} badge={`Urutan ${banner.order ?? 0}`} />)}
+        {cms.banners.length === 0 && <HomeCmsEmpty title="Banner belum tersedia" copy="Tambahkan banner di backend agar muncul sebagai slider di home customer." />}
+      </div>
+    )
+  }
+
+  if (view === 'home-sections') {
+    return (
+      <div className="home-cms-section-list">
+        {cms.sections.map((section) => (
+          <article className="home-cms-section-card" key={section.id}>
+            <div><strong>{section.name}</strong><span>{section.type} · {section.items?.length ?? 0} item</span></div>
+            <b>{section.is_active === false ? 'Nonaktif' : 'Aktif'}</b>
+          </article>
+        ))}
+        {cms.sections.length === 0 && <HomeCmsEmpty title="Section belum tersedia" copy="Buat section untuk menentukan area slider, promo, atau pengumuman." />}
+      </div>
+    )
+  }
+
+  if (view === 'home-items') {
+    return (
+      <div className="home-cms-preview-grid">
+        {items.map((item) => <CmsImageCard key={item.id} title={item.title} subtitle={item.subtitle ?? cmsDateRange(item.start_date, item.end_date)} image={item.image_original ?? item.image ?? item.icon} badge={`Urutan ${item.order ?? 0}`} />)}
+        {items.length === 0 && <HomeCmsEmpty title="Home item belum tersedia" copy="Item akan mengisi section home customer sesuai jadwal tampilnya." />}
+      </div>
+    )
+  }
+
+  if (view === 'announcements') {
+    return (
+      <div className="home-cms-section-list">
+        {cms.announcements.map((announcement) => (
+          <article className="home-cms-announcement-card" key={announcement.id}>
+            <strong>{announcement.title}</strong>
+            <p>{announcement.content}</p>
+            <span>{cmsDateRange(announcement.start_date, announcement.end_date)}</span>
+          </article>
+        ))}
+        {cms.announcements.length === 0 && <HomeCmsEmpty title="Announcement belum tersedia" copy="Announcement tampil sebagai promo/pemberitahuan pada home customer." />}
+      </div>
+    )
+  }
+
+  return null
+}
+
+function CmsImageCard({ title, subtitle, image, badge }: { title: string; subtitle?: string | null; image?: string | null; badge?: string }) {
+  const src = image ? assetUrl(image) : ''
+
+  return (
+    <article className="home-cms-image-card">
+      {src ? <img src={src} alt={title} loading="lazy" /> : <div className="home-cms-image-placeholder"><Icon name="note" /></div>}
+      <div>
+        {badge && <span>{badge}</span>}
+        <strong>{title}</strong>
+        {subtitle && <small>{subtitle}</small>}
+      </div>
+    </article>
+  )
+}
+
+function HomeCmsEmpty({ title, copy }: { title: string; copy: string }) {
+  return <div className="home-cms-empty"><strong>{title}</strong><p>{copy}</p></div>
+}
+
+function cmsDateRange(start?: string | null, end?: string | null) {
+  if (!start && !end) return 'Selalu tampil'
+  return [start ? `Mulai ${formatShortDateTime(start)}` : null, end ? `Sampai ${formatShortDateTime(end)}` : null].filter(Boolean).join(' · ')
 }
 
 function KeywordParsersPanel({ parsers, services, permissions, api, onChanged }: { parsers: KeywordParser[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
