@@ -173,6 +173,29 @@ class PricingServiceTest extends TestCase
         );
     }
 
+    public function test_jojobot_adds_branch_name_candidate_for_free_aliases(): void
+    {
+        $branch = new Branch([
+            'name' => 'Situbondo',
+            'area' => 'Kota',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeCandidates');
+        $method->setAccessible(true);
+
+        $candidates = $method->invoke($service, 'mama marvel', $branch);
+
+        $this->assertContains('mama marvel Situbondo, Indonesia', $candidates);
+        $this->assertLessThan(
+            array_search('mama marvel', $candidates, true),
+            array_search('mama marvel Situbondo, Indonesia', $candidates, true),
+        );
+    }
+
     public function test_night_tariff_rounds_from_order_subtotal(): void
     {
         app(\App\Services\SettingService::class)->set('night_tariff_enabled', true);

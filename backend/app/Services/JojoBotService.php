@@ -590,6 +590,7 @@ class JojoBotService
     private function geocodeCandidates(string $address, ?Branch $branch): array
     {
         $localAliases = $this->localGeocodeAliases($address, $branch);
+        $localCandidates = $this->localGeocodeCandidates($address, $branch);
         $withBranchContext = implode(', ', array_values(array_unique(array_filter([
             $address,
             $branch?->area,
@@ -597,8 +598,34 @@ class JojoBotService
             'Indonesia',
         ]))));
 
-        return collect([...$localAliases, $withBranchContext, $address])
+        return collect([...$localAliases, ...$localCandidates, $withBranchContext, $address])
             ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function localGeocodeCandidates(string $address, ?Branch $branch): array
+    {
+        $address = trim($address);
+        if ($address === '' || ! $branch) {
+            return [];
+        }
+
+        $branchName = trim((string) $branch->name);
+        $branchArea = trim((string) $branch->area);
+        if ($branchName === '' && $branchArea === '') {
+            return [];
+        }
+
+        return collect([
+            $branchName !== '' ? "{$address} {$branchName}, Indonesia" : null,
+            $branchName !== '' ? "{$address}, {$branchName}, Indonesia" : null,
+            $branchArea !== '' && $branchName !== '' ? "{$address}, {$branchName}, {$branchArea}, Indonesia" : null,
+            $branchArea !== '' && $branchName !== '' ? "{$address}, {$branchArea}, {$branchName}, Indonesia" : null,
+        ])
+            ->filter()
+            ->map(fn (string $value): string => trim($value))
             ->unique()
             ->values()
             ->all();
