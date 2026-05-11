@@ -12,8 +12,8 @@ use Throwable;
 
 class AiMonitoringService
 {
-    private const OPENROUTER_FREE_MODELS = [
-        'openrouter/free',
+    private const OPENROUTER_MODELS = [
+        'openrouter/auto',
     ];
 
     public function __construct(private readonly SettingService $settings)
@@ -33,7 +33,7 @@ class AiMonitoringService
             'active_status' => [
                 'enabled' => $this->settings->bool('ai_assistant_enabled', false),
                 'provider' => strtolower((string) $this->settings->get('ai_provider', 'openai')),
-                'configured_model' => $this->settings->get('ai_model') ?: self::OPENROUTER_FREE_MODELS[0],
+                'configured_model' => $this->settings->get('ai_model') ?: self::OPENROUTER_MODELS[0],
                 'base_url' => $this->settings->get('ai_base_url') ?: 'default provider URL',
                 'mode' => 'analysis_only',
             ],
@@ -138,7 +138,7 @@ class AiMonitoringService
 
     private function monitoredModels()
     {
-        return collect([$this->settings->get('ai_model'), ...self::OPENROUTER_FREE_MODELS])
+        return collect([$this->settings->get('ai_model'), ...self::OPENROUTER_MODELS])
             ->filter()
             ->unique()
             ->values();

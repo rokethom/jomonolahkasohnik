@@ -222,10 +222,10 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->options(fn (Forms\Get $get): array => $this->aiModelOptions((string) $get('ai_provider')))
                                             ->searchable()
                                             ->native(false)
-                                            ->helperText('Untuk OpenRouter, gunakan OpenRouter Free Router atau isi custom model ID. Sistem akan mencoba model pilihan admin lebih dulu lalu fallback ke router gratis.'),
+                                            ->helperText('Untuk OpenRouter, gunakan Auto Router agar OpenRouter memilih model terbaik yang tersedia, atau isi custom model ID.'),
                                         Forms\Components\TextInput::make('ai_model_custom')
                                             ->label('Custom model ID')
-                                            ->placeholder('contoh: openrouter/free')
+                                            ->placeholder('contoh: openrouter/auto')
                                             ->helperText('Opsional. Jika diisi, nilai ini menggantikan pilihan Model parser tanpa perlu ubah kode.'),
                                         Forms\Components\TextInput::make('ai_max_tokens')
                                             ->label('Max token output')
@@ -767,7 +767,7 @@ class SystemSettingsPage extends Page implements HasForms
     {
         return match ($provider) {
             'openrouter' => [
-                'openrouter/free' => 'OpenRouter Free Router - otomatis pilih model gratis tersedia',
+                'openrouter/auto' => 'OpenRouter Auto Router - pilih model terbaik otomatis',
             ],
             'kimi' => [
                 'kimi-pro' => 'Kimi Pro',

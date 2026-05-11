@@ -243,6 +243,18 @@ function defaultVehicleForService(serviceType?: string | null): 'motor' | 'mobil
   return ['jm', 'joker_mobil', 'joker', 'mobil'].includes(value) || value.includes('mobil') ? 'mobil' : 'motor'
 }
 
+function normalizedServiceType(serviceType?: string | null) {
+  return String(serviceType ?? '').toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function hidesVehicleChoiceForService(serviceType?: string | null) {
+  return ['delivery', 'do', 'belanja', 'kurir'].includes(normalizedServiceType(serviceType))
+}
+
+function shouldSendVehiclePreference(serviceType?: string | null) {
+  return isOjekService(serviceType) || isJokerMobilService(serviceType) || !hidesVehicleChoiceForService(serviceType)
+}
+
 function passengerCountFromPayload(payload?: OrderPayload | null) {
   const raw = payload?.service_payload?.passengers ?? payload?.service_payload?.jumlah_penumpang ?? payload?.service_payload?.passenger_count
   const value = Number(String(raw ?? 1).replace(/\D+/g, ''))
@@ -596,7 +608,8 @@ function App() {
 
   const submitOrderPayload = async (payload: OrderPayload) => {
     validateOrderPayload(payload)
-    const preferredVehicle = payload.preferred_vehicle_type ?? defaultVehicleForService(payload.service_type)
+    const sendVehiclePreference = shouldSendVehiclePreference(payload.service_type)
+    const preferredVehicle = sendVehiclePreference ? (payload.preferred_vehicle_type ?? defaultVehicleForService(payload.service_type)) : undefined
     const vehicleSeatRows = preferredVehicle === 'mobil' ? (payload.vehicle_seat_rows === 3 ? 3 : 2) : undefined
     const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const passengers = passengerCountFromPayload(payload)
@@ -613,14 +626,14 @@ function App() {
           ojekDoubleOrderCount > 1 ? `Order penumpang ${index + 1} dari ${ojekDoubleOrderCount}` : null,
           crewNote,
         ].filter(Boolean).join('\n'),
-        preferred_vehicle_type: preferredVehicle,
+        ...(preferredVehicle ? { preferred_vehicle_type: preferredVehicle } : {}),
         ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
         driver_preference: driverPreference,
         service_payload: {
           ...(payload.service_payload ?? {}),
           ...(ojekDoubleOrderCount > 1 ? { passenger_order_index: index + 1, passenger_order_count: ojekDoubleOrderCount } : {}),
           ...(crewNote ? { crew_decision_hint: 'kue_tart_helper' } : {}),
-          preferred_vehicle_type: preferredVehicle,
+          ...(preferredVehicle ? { preferred_vehicle_type: preferredVehicle } : {}),
           ...(vehicleSeatRows ? { vehicle_seat_rows: vehicleSeatRows } : {}),
           driver_preference: driverPreference,
         },
@@ -2325,6 +2338,8 @@ function ChatOrderActions({
   const selectedSeatRows = pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2
   const isOjekOrder = isOjekService(pendingOrder?.service_type)
   const isJokerMobilOrder = isJokerMobilService(pendingOrder?.service_type)
+  const showVehicleChoice = !isJokerMobilOrder && !isOjekOrder && !hidesVehicleChoiceForService(pendingOrder?.service_type)
+  const showVehicleSummary = isJokerMobilOrder || isOjekOrder || showVehicleChoice
   const passengerCount = passengerCountFromPayload(pendingOrder)
   const doubleOrderConfirmed = pendingOrder?.service_payload?.confirm_double_order === true
   const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
@@ -2461,7 +2476,7 @@ function ChatOrderActions({
                 <span>Buat 2 order ojek dengan detail yang sama untuk 2 penumpang.</span>
               </label>
             )}
-            {!isJokerMobilOrder && !isOjekOrder && (
+            {showVehicleChoice && (
               <>
                 <label>
                   <span>Pilih kendaraan</span>
@@ -2473,7 +2488,7 @@ function ChatOrderActions({
                 <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
               </>
             )}
-            {selectedVehicle === 'mobil' && !isJokerMobilOrder && !isOjekOrder && (
+            {selectedVehicle === 'mobil' && showVehicleChoice && (
               <div className="vehicle-seat-choice">
                 <span>Tempat duduk</span>
                 <div>
@@ -2546,10 +2561,12 @@ function ChatOrderActions({
             <span>Pembayaran order</span>
             <strong>{selectedPaymentMethod?.label ?? selectedPayment}</strong>
           </div>
-          <div className="payment-order-note vehicle-note">
-            <span>Kendaraan</span>
-            <strong>{selectedVehicle === 'mobil' ? `Mobil ${selectedSeatRows} baris` : 'Motor'}</strong>
-          </div>
+          {showVehicleSummary && (
+            <div className="payment-order-note vehicle-note">
+              <span>Kendaraan</span>
+              <strong>{selectedVehicle === 'mobil' ? `Mobil ${selectedSeatRows} baris` : 'Motor'}</strong>
+            </div>
+          )}
           {isOjekOrder && (
             <div className="payment-order-note ladies-note">
               <span>Driver</span>

@@ -14,9 +14,8 @@ use Throwable;
 
 class AiOrderParserService
 {
-    private const OPENROUTER_FREE_MODELS = [
-        'deepseek/deepseek-chat-v3-0324:free',
-        'qwen/qwen3-32b:free',
+    private const OPENROUTER_MODELS = [
+        'openrouter/auto',
     ];
 
     private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503, 504];
@@ -251,7 +250,7 @@ class AiOrderParserService
     private function modelsForRequest(): array
     {
         $models = $this->provider() === 'openrouter'
-            ? self::OPENROUTER_FREE_MODELS
+            ? array_values(array_unique(array_filter([$this->model(), ...self::OPENROUTER_MODELS])))
             : [$this->model()];
 
         if ($this->provider() !== 'openrouter') {
@@ -535,11 +534,15 @@ PROMPT;
     {
         $custom = $this->settings->get('ai_model');
         if (filled($custom)) {
-            return (string) $custom;
+            $model = (string) $custom;
+
+            return $this->provider() === 'openrouter' && $model === 'openrouter/free'
+                ? self::OPENROUTER_MODELS[0]
+                : $model;
         }
 
         return match ($this->provider()) {
-            'openrouter' => self::OPENROUTER_FREE_MODELS[0],
+            'openrouter' => self::OPENROUTER_MODELS[0],
             'kimi' => 'kimi-pro',
             'blackbox' => 'blackboxai/openai/gpt-4o-mini',
             default => 'gpt-4o-mini',

@@ -296,17 +296,16 @@ class OrderParserServiceTest extends TestCase
         $this->assertSame('Kopi Kita Selatan Taman', $parsed['payload']['service_payload']['store_location']);
     }
 
-    public function test_openrouter_ai_parser_falls_back_to_next_free_model_when_rate_limited(): void
+    public function test_openrouter_ai_parser_uses_auto_router_model(): void
     {
         $settings = app(SettingService::class);
         $settings->set('ai_assistant_enabled', true);
         $settings->set('ai_provider', 'openrouter');
-        $settings->set('ai_model', 'custom/ignored-model:free');
+        $settings->set('ai_model', 'openrouter/auto');
         $settings->set('ai_base_url', 'https://openrouter.test/api/v1');
         $settings->set('openrouter_api_key', 'test-openrouter-key', true);
 
         Http::fakeSequence('openrouter.test/api/v1/chat/completions')
-            ->push(['error' => ['message' => 'rate limited']], 429)
             ->push([
                 'choices' => [
                     [
@@ -346,9 +345,6 @@ class OrderParserServiceTest extends TestCase
             ->values()
             ->all();
 
-        $this->assertSame([
-            'deepseek/deepseek-chat-v3-0324:free',
-            'qwen/qwen3-32b:free',
-        ], $sentModels);
+        $this->assertSame(['openrouter/auto'], $sentModels);
     }
 }
