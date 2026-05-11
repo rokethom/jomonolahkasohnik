@@ -4260,13 +4260,19 @@ async function playCustomerNotificationSound() {
 }
 
 function formatOrderTime(value?: string) {
-  if (!value) return '--:--'
-  return new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+  const date = parseJojoDate(value)
+
+  if (!date) return '--:--'
+
+  return new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
 function formatOrderDate(value?: string) {
-  if (!value) return todayLabel()
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+  const date = parseJojoDate(value)
+
+  if (!date) return 'Tanggal belum tersedia'
+
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
 function profileText(value: unknown, fallback = '') {
@@ -4286,10 +4292,34 @@ function firstProfileText(values: unknown[], fallback = '') {
 }
 
 function monthKey(value?: string | null) {
-  const date = value ? new Date(value) : new Date()
-  if (Number.isNaN(date.getTime())) return ''
+  const date = parseJojoDate(value) ?? (!value ? new Date() : null)
+  if (!date) return ''
 
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function parseJojoDate(value?: string | null) {
+  if (!value) return null
+
+  const normalized = String(value).trim()
+  const candidates = [
+    normalized,
+    normalized.replace(' ', 'T'),
+    normalized.replace(' ', 'T').replace(/(\.\d+)?$/, ''),
+  ]
+
+  for (const candidate of candidates) {
+    const date = new Date(candidate)
+    if (!Number.isNaN(date.getTime())) return date
+  }
+
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/)
+  if (!match) return null
+
+  const [, year, month, day, hour = '0', minute = '0', second = '0'] = match
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second))
+
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function recentMonthKeys(count: number) {
