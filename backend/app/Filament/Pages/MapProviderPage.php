@@ -65,7 +65,6 @@ class MapProviderPage extends Page implements HasForms
                             ->live(),
                         Forms\Components\TextInput::make('google_maps_api_key')
                             ->password()
-                            ->revealable()
                             ->maxLength(500)
                             ->required(fn (Forms\Get $get): bool => $get('map_provider') === 'google'),
                         Forms\Components\Toggle::make('google_maps_active')
@@ -73,7 +72,6 @@ class MapProviderPage extends Page implements HasForms
                             ->required(fn (Forms\Get $get): bool => $get('map_provider') === 'google'),
                         Forms\Components\TextInput::make('mapbox_api_key')
                             ->password()
-                            ->revealable()
                             ->maxLength(500)
                             ->required(fn (Forms\Get $get): bool => $get('map_provider') === 'mapbox'),
                         Forms\Components\Toggle::make('mapbox_active')
