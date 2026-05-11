@@ -2371,7 +2371,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [driverDailyPriorityWindows, setDriverDailyPriorityWindows] = useState<DailyPriorityWindow[]>(settings.driver_daily_priority_windows ?? defaultDailyPriorityWindows())
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
-  const [zonePricingEnabled, setZonePricingEnabled] = useState(settings.zone_pricing_enabled ?? false)
+  const [zonePricingEnabled, setZonePricingEnabled] = useState(settings.zone_pricing_enabled ?? true)
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
   const [editTarifAllowedRoles, setEditTarifAllowedRoles] = useState<Role[]>(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
   const [feedbackTemplates, setFeedbackTemplates] = useState({
@@ -2396,7 +2396,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setDriverDailyPriorityWindows(settings.driver_daily_priority_windows ?? defaultDailyPriorityWindows())
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
-    setZonePricingEnabled(settings.zone_pricing_enabled ?? false)
+    setZonePricingEnabled(settings.zone_pricing_enabled ?? true)
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
     setEditTarifAllowedRoles(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
     setFeedbackTemplates({
@@ -2564,7 +2564,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
         <div className="section-head">
           <div>
             <h2>Zone Pricing Customer</h2>
-            <p>Matikan saat audit agar rule zona tetap bisa dites tanpa menimpa harga dasar customer.</p>
+            <p>Atur apakah rule zona aktif ikut menghitung tarif customer.</p>
           </div>
           <span className={zonePricingEnabled ? 'status success' : 'status warning'}>{zonePricingEnabled ? 'Aktif' : 'Bypass'}</span>
         </div>
@@ -2572,7 +2572,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           <input type="checkbox" checked={zonePricingEnabled} disabled={!permissions.can_manage_system_settings} onChange={(event) => setZonePricingEnabled(event.target.checked)} />
           <span>Aktifkan zone pricing untuk order customer</span>
         </label>
-        <div className="notice">Saat bypass, Zone Pricing Rules dan tester tetap bisa dipakai untuk cek satu per satu. Order customer memakai Price Setting, Pricing Keyword Rules, tarif malam, dan fee layanan.</div>
+        <div className="notice">Jika nonaktif, Zone Pricing Rules dan tester tetap bisa dipakai, tetapi order customer tidak memakai rule zona.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">

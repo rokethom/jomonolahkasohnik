@@ -2773,7 +2773,7 @@ class AdminController extends Controller
             'driver_daily_priority_windows' => app(DriverDailyPriorityService::class)->windows(),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
-            'zone_pricing_enabled' => $settings->bool('zone_pricing_enabled', false),
+            'zone_pricing_enabled' => $settings->bool('zone_pricing_enabled', true),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'edit_tarif_allowed_roles' => app(RolePermissionSettingService::class)->editTarifAllowedRoles(),
         ];

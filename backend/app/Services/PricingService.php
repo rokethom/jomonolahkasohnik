@@ -33,7 +33,6 @@ class PricingService
         private readonly RingPricingService $ringPricing,
         private readonly ZonePricingService $zonePricing,
         private readonly OrderCrewDecisionService $crewDecisions,
-        private readonly SettingService $settings,
     ) {
     }
 
@@ -229,7 +228,10 @@ class PricingService
                 $this->calculateTarifFromDatabase($distance, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null),
             );
         }
-        if ($this->settings->bool('zone_pricing_enabled', false) && $zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
+        if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
+            $quote = $this->ringPricing->apply($quote, $ringRule);
+        }
+        if ($zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
             $quote = $this->zonePricing->apply($quote, $zoneRule);
         }
         $extraCharge = $this->extraServiceChargeForService($serviceType, [

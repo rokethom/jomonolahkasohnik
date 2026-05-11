@@ -112,7 +112,7 @@ class PricingServiceTest extends TestCase
         $this->assertSame(0, $pricing->extraServiceChargeForService('kurir', 'antar ke RS Mitra'));
     }
 
-    public function test_master_ring_is_ignored_for_customer_pricing(): void
+    public function test_master_ring_is_used_for_customer_pricing_when_active(): void
     {
         app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
 
@@ -142,9 +142,10 @@ class PricingServiceTest extends TestCase
             'stops' => 1,
         ]);
 
-        $this->assertSame(6000, $quote['tarif']);
-        $this->assertSame(7000, $quote['total_price']);
-        $this->assertArrayNotHasKey('ring_pricing_rule_id', $quote);
+        $this->assertSame(15000, $quote['tarif']);
+        $this->assertSame(16000, $quote['total_price']);
+        $this->assertSame('ring_3', $quote['ring']);
+        $this->assertArrayHasKey('ring_pricing_rule_id', $quote);
     }
 
     public function test_jojobot_rejects_pricing_geocode_outside_branch_radius(): void

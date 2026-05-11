@@ -21,6 +21,9 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::table('app_settings')->where('key', 'zone_pricing_enabled')->delete();
+        DB::table('app_settings')->where('key', 'zone_pricing_enabled')->update([
+            'value' => 'false',
+            'updated_at' => now(),
+        ]);
     }
 };
