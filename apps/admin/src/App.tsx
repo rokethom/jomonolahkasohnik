@@ -315,6 +315,7 @@ type SystemSettings = {
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
   assign_driver_allowed_roles?: Role[]
+  edit_tarif_allowed_roles?: Role[]
   feedback_templates?: {
     driver_accepted?: string
     order_auto_cancelled?: string
@@ -524,7 +525,6 @@ const menuGroups: MenuGroup[] = [
     items: [
       { id: 'users', label: 'Users', icon: 'users' },
       { id: 'drivers', label: 'Driver Management', icon: 'truck' },
-      { id: 'branches', label: 'Branches', icon: 'building' },
     ],
   },
   {
@@ -539,20 +539,43 @@ const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    id: 'area',
-    label: 'Area & System',
-    icon: 'map',
+    id: 'pricing-cms',
+    label: 'Pricing CMS',
+    icon: 'cash',
     items: [
-      { id: 'geofence', label: 'Geofence', icon: 'map' },
-      { id: 'locations', label: 'Location Logs', icon: 'pin' },
       { id: 'master-pricing', label: 'Master Pricing', icon: 'cash' },
       { id: 'price-settings', label: 'Price Settings', icon: 'cash' },
       { id: 'pricing', label: 'Pricing & Policy', icon: 'cash' },
-      { id: 'keyword-parsers', label: 'Keyword Parsers', icon: 'note' },
       { id: 'pricing-keyword-rules', label: 'Pricing Keyword Rules', icon: 'note' },
       { id: 'ring-pricing', label: 'Master Ring', icon: 'cash' },
       { id: 'zone-pricing', label: 'Zone Pricing Rules', icon: 'map' },
       { id: 'zone-pricing-tester', label: 'Zone Pricing Tester', icon: 'cash' },
+    ],
+  },
+  {
+    id: 'jojobot-cms',
+    label: 'JojoBot CMS',
+    icon: 'note',
+    items: [
+      { id: 'keyword-parsers', label: 'Keyword Parsers', icon: 'note' },
+      { id: 'order-crew-rules', label: 'Order Crew Rules', icon: 'settings' },
+    ],
+  },
+  {
+    id: 'area',
+    label: 'Area',
+    icon: 'map',
+    items: [
+      { id: 'branches', label: 'Branches', icon: 'building' },
+      { id: 'geofence', label: 'Geofence', icon: 'map' },
+      { id: 'locations', label: 'Location Logs', icon: 'pin' },
+    ],
+  },
+  {
+    id: 'system-cms',
+    label: 'System CMS',
+    icon: 'settings',
+    items: [
       { id: 'settings', label: 'System Settings', icon: 'settings' },
     ],
   },
@@ -632,7 +655,10 @@ function App() {
     overview: true,
     operations: true,
     management: true,
+    'pricing-cms': true,
+    'jojobot-cms': false,
     area: false,
+    'system-cms': false,
   })
   const [adminNotice, setAdminNotice] = useState('')
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
@@ -2331,6 +2357,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
+  const [editTarifAllowedRoles, setEditTarifAllowedRoles] = useState<Role[]>(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
   const [feedbackTemplates, setFeedbackTemplates] = useState({
     driver_accepted: settings.feedback_templates?.driver_accepted ?? '',
     order_auto_cancelled: settings.feedback_templates?.order_auto_cancelled ?? '',
@@ -2354,6 +2381,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
+    setEditTarifAllowedRoles(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
     setFeedbackTemplates({
       driver_accepted: settings.feedback_templates?.driver_accepted ?? '',
       order_auto_cancelled: settings.feedback_templates?.order_auto_cancelled ?? '',
@@ -2383,6 +2411,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
+          edit_tarif_allowed_roles: editTarifAllowedRoles,
           feedback_templates: feedbackTemplates,
         }),
       })
@@ -2532,6 +2561,29 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           ))}
         </div>
         <div className="notice">Role yang tidak dicentang tetap bisa monitor order sesuai hak aksesnya, tetapi tombol assign dan broadcast driver disembunyikan.</div>
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Role Pricing CMS</h2>
+            <p>Atur role yang boleh mengakses edit tarif, master ring, zone pricing, dan pricing policy. Admin dan GM selalu aktif.</p>
+          </div>
+          <span className="status info">CMS</span>
+        </div>
+        <div className="service-check-grid assign-role-grid">
+          {editTarifRoleOptions.map((role) => (
+            <label className="toggle-row" key={role.value}>
+              <input
+                type="checkbox"
+                checked={editTarifAllowedRoles.includes(role.value)}
+                disabled={!permissions.can_manage_system_settings}
+                onChange={() => setEditTarifAllowedRoles((current) => toggleRoleValue(current, role.value))}
+              />
+              {role.label}
+            </label>
+          ))}
+        </div>
+        <div className="notice">Default sementara: HRD, Manager, SPV, Operator, dan Eksekutor dapat menu pricing. Hapus centang jika role tidak boleh edit tarif.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">
@@ -5474,6 +5526,18 @@ const assignDriverRoleOptions: Array<{ value: Role; label: string }> = [
   { value: 'operator', label: 'Operator' },
   { value: 'eksekutor', label: 'Eksekutor' },
 ]
+
+const editTarifRoleOptions: Array<{ value: Role; label: string }> = [
+  { value: 'hrd', label: 'HRD' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'spv', label: 'SPV' },
+  { value: 'operator', label: 'Operator' },
+  { value: 'eksekutor', label: 'Eksekutor' },
+]
+
+function defaultEditTarifRoles(): Role[] {
+  return ['hrd', 'manager', 'spv', 'operator', 'eksekutor']
+}
 
 function defaultNightTariffRules(): NightTariffRule[] {
   return [

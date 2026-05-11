@@ -38,16 +38,25 @@ class AdminRoleMenuOverrideService
                 'home-items' => 'Home Items',
                 'announcements' => 'Announcements',
             ],
-            'Area & System' => [
-                'locations' => 'Location Logs',
+            'Pricing CMS' => [
                 'master-pricing' => 'Master Pricing',
                 'price-settings' => 'Price Settings',
                 'pricing' => 'Pricing & Policy',
-                'keyword-parsers' => 'Keyword Parsers',
                 'pricing-keyword-rules' => 'Pricing Keyword Rules',
                 'ring-pricing' => 'Master Ring',
                 'zone-pricing' => 'Zone Pricing Rules',
                 'zone-pricing-tester' => 'Zone Pricing Tester',
+            ],
+            'JojoBot CMS' => [
+                'keyword-parsers' => 'Keyword Parsers',
+                'order-crew-rules' => 'Order Crew Rules',
+            ],
+            'Area' => [
+                'branches' => 'Branches',
+                'geofence' => 'Geofence',
+                'locations' => 'Location Logs',
+            ],
+            'System CMS' => [
                 'settings' => 'System Settings',
             ],
         ];

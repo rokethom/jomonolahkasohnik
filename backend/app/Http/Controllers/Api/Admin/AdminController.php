@@ -45,6 +45,7 @@ use App\Services\PricingService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\RatingService;
 use App\Services\RingPricingService;
+use App\Services\RolePermissionSettingService;
 use App\Services\SettingService;
 use App\Services\SLAService;
 use App\Services\ZonePricingService;
@@ -1649,6 +1650,8 @@ class AdminController extends Controller
             'night_tariff_rules.*.percent' => ['required_with:night_tariff_rules', 'integer', 'min:0', 'max:300'],
             'assign_driver_allowed_roles' => ['sometimes', 'array'],
             'assign_driver_allowed_roles.*' => ['string', Rule::in(['manager', 'spv', 'operator', 'eksekutor'])],
+            'edit_tarif_allowed_roles' => ['sometimes', 'array'],
+            'edit_tarif_allowed_roles.*' => ['string', Rule::in(RolePermissionSettingService::CONFIGURABLE_EDIT_TARIF_ROLES)],
         ]);
 
         $settings->set('multi_order_enabled', $payload['multi_order_enabled']);
@@ -1676,6 +1679,14 @@ class AdminController extends Controller
         }
         if (array_key_exists('assign_driver_allowed_roles', $payload)) {
             $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($payload['assign_driver_allowed_roles'])));
+        }
+        if (array_key_exists('edit_tarif_allowed_roles', $payload)) {
+            $settings->set(
+                RolePermissionSettingService::EDIT_TARIF_ALLOWED_ROLES_KEY,
+                json_encode(app(RolePermissionSettingService::class)->normalizeEditTarifRoles($payload['edit_tarif_allowed_roles'])),
+                true,
+                ['type' => 'json'],
+            );
         }
 
         return response()->json([
@@ -2302,7 +2313,7 @@ class AdminController extends Controller
 
     private function canManageGlobalPricing(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM], true);
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
     }
 
     private function assertPricingBranchScope(User $actor, ?int $branchId, ?int $geofenceAreaId = null): void
@@ -2729,6 +2740,7 @@ class AdminController extends Controller
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
+            'edit_tarif_allowed_roles' => app(RolePermissionSettingService::class)->editTarifAllowedRoles(),
         ];
     }
 

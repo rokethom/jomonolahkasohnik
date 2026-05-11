@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use App\Services\RolePermissionSettingService;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -125,7 +126,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function permissions(): array
     {
-        return $this->roles()
+        $permissions = $this->roles()
             ->with('permissions:id,name')
             ->get()
             ->flatMap(fn (Role $role) => $role->permissions->pluck('name'))
@@ -133,6 +134,19 @@ class User extends Authenticatable implements FilamentUser
             ->unique()
             ->values()
             ->all();
+
+        try {
+            $pricingRoles = app(RolePermissionSettingService::class);
+            $permissions = array_values(array_diff($permissions, ['edit_tarif']));
+
+            if ($pricingRoles->roleHasEditTarif($this->role)) {
+                $permissions[] = 'edit_tarif';
+            }
+        } catch (\Throwable) {
+            // Keep legacy permissions during early bootstrap/migration when settings are unavailable.
+        }
+
+        return array_values(array_unique($permissions));
     }
 
     public function hasPermission(string $permission): bool
@@ -153,9 +167,9 @@ class User extends Authenticatable implements FilamentUser
             'admin' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat', 'manage_system_settings', 'manage_manual_order', 'manage_cms'],
             'gm' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat', 'manage_system_settings', 'manage_manual_order', 'manage_cms'],
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
-            'manager' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat', 'export_report', 'edit_tarif', 'manage_system_settings', 'manage_manual_order'],
-            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'edit_tarif', 'manage_system_settings', 'manage_manual_order'],
-            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'edit_tarif', 'manual_order'],
+            'manager' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat', 'export_report', 'manage_system_settings', 'manage_manual_order'],
+            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'manage_system_settings', 'manage_manual_order'],
+            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'manual_order'],
             'eksekutor' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'manual_order'],
             'web_admin', 'cms_editor' => ['manage_cms'],
             default => [],

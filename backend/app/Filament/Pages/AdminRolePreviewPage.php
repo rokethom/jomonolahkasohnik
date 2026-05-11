@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\UserRole;
 use App\Services\AdminRoleMenuOverrideService;
+use App\Services\RolePermissionSettingService;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
@@ -89,15 +90,21 @@ class AdminRolePreviewPage extends Page implements HasForms
 
     private function permissionsFor(string $role): array
     {
-        return match ($role) {
+        $permissions = match ($role) {
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
-            'manager' => ['create_user', 'suspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
-            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'monitor_live_chat', 'edit_tarif', 'approve_cancel_order', 'reject_cancel_order', 'internal_chat'],
-            'operator' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'edit_tarif', 'manual_order', 'internal_chat'],
+            'manager' => ['create_user', 'suspend_driver', 'view_report', 'export_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
+            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'internal_chat'],
+            'operator' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat'],
             'eksekutor' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat'],
             'web_admin', 'cms_editor' => ['manage_cms', 'internal_chat'],
             default => ['internal_chat'],
         };
+
+        if (app(RolePermissionSettingService::class)->roleHasEditTarif($role)) {
+            $permissions[] = 'edit_tarif';
+        }
+
+        return array_values(array_unique($permissions));
     }
 
     public function toggleMenu(string $view): void
@@ -180,7 +187,7 @@ class AdminRolePreviewPage extends Page implements HasForms
     private function notesFor(string $role): array
     {
         return match ($role) {
-            'hrd' => ['Fokus pada user, driver status, dan laporan HR.', 'Tidak disarankan melihat setting tarif/global.'],
+            'hrd' => ['Fokus pada user, driver status, laporan HR, dan pricing sesuai CMS.', 'Akses pricing HRD bersifat global agar tidak mentok akun tanpa cabang.'],
             'manager' => ['Melihat area/cabang sendiri dan laporan operasional.', 'Bisa evaluasi operator, driver, dan pricing policy sesuai izin.'],
             'spv' => ['Monitoring live order, suspend/release driver, dan approval cancel.', 'Tidak punya menu create user penuh.'],
             'operator' => ['Fokus live chat, manual order, order operations, dan assign driver.', 'Data mengikuti area/jadwal yang melekat pada akun.'],
