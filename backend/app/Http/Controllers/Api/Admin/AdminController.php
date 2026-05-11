@@ -1731,7 +1731,7 @@ class AdminController extends Controller
 
     private function validatePriceSetting(Request $request): array
     {
-        return $request->validate([
+        $payload = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'branch_id' => ['nullable', 'exists:branches,id'],
             'min_km' => ['required', 'numeric', 'min:0'],
@@ -1742,6 +1742,23 @@ class AdminController extends Controller
             'subtract_value' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        $payload['is_active'] = (bool) ($payload['is_active'] ?? true);
+        $payload['is_formula'] = (bool) ($payload['is_formula'] ?? false);
+        $payload['branch_id'] = $payload['branch_id'] ?? null;
+        $payload['max_km'] = $payload['max_km'] ?? null;
+
+        if ($payload['is_formula']) {
+            $payload['price'] = null;
+            $payload['per_km_rate'] = (int) ($payload['per_km_rate'] ?? 0);
+            $payload['subtract_value'] = (int) ($payload['subtract_value'] ?? 0);
+        } else {
+            $payload['price'] = (int) ($payload['price'] ?? 0);
+            $payload['per_km_rate'] = null;
+            $payload['subtract_value'] = 0;
+        }
+
+        return $payload;
     }
 
     private function validateKeywordParser(Request $request): array

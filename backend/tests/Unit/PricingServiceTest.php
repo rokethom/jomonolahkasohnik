@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\PricingKeywordRule;
 use App\Models\Branch;
+use App\Models\PriceSetting;
 use App\Models\RingPricingRule;
 use App\Services\JojoBotService;
 use App\Services\PricingKeywordRuleService;
@@ -50,6 +51,51 @@ class PricingServiceTest extends TestCase
         $this->assertSame(10000, $quote['service_charge']);
         $this->assertSame(25800, $quote['total_before_round']);
         $this->assertSame(26000, $quote['final_price']);
+    }
+
+    public function test_distance_pricing_requires_matching_active_range(): void
+    {
+        PriceSetting::query()->delete();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-ASB',
+            'name' => 'Situbondo',
+            'area' => 'Asembagus',
+            'latitude' => -7.75086000,
+            'longitude' => 114.21561000,
+            'radius_km' => 5,
+        ]);
+
+        PriceSetting::query()->create([
+            'name' => '0-5',
+            'branch_id' => $branch->id,
+            'min_km' => 0.10,
+            'max_km' => 5,
+            'price' => 6000,
+            'is_formula' => false,
+            'per_km_rate' => null,
+            'subtract_value' => 0,
+            'is_active' => true,
+        ]);
+        PriceSetting::query()->create([
+            'name' => '5-10',
+            'branch_id' => $branch->id,
+            'min_km' => 5.01,
+            'max_km' => 10,
+            'price' => 12000,
+            'is_formula' => false,
+            'per_km_rate' => 1900,
+            'subtract_value' => 7000,
+            'is_active' => true,
+        ]);
+
+        $pricing = app(PricingService::class);
+
+        $this->assertSame(6000, $pricing->calculateTarifFromDatabase(3, $branch->id));
+        $this->assertSame(12000, $pricing->calculateTarifFromDatabase(8, $branch->id));
+
+        $this->expectException(\RuntimeException::class);
+        $pricing->calculateTarifFromDatabase(12, $branch->id);
     }
 
     public function test_joker_mobil_distance_rounding_and_tarif(): void

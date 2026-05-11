@@ -10,6 +10,11 @@ class EditPriceSetting extends EditRecord
 {
     protected static string $resource = PriceSettingResource::class;
 
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        return PriceSettingResource::normalizePricingData($data);
+    }
+
     protected function getHeaderActions(): array
     {
         return [

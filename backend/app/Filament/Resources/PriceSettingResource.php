@@ -34,6 +34,26 @@ class PriceSettingResource extends Resource
         return static::shouldRegisterNavigation();
     }
 
+    public static function normalizePricingData(array $data): array
+    {
+        $data['is_active'] = (bool) ($data['is_active'] ?? true);
+        $data['is_formula'] = (bool) ($data['is_formula'] ?? false);
+        $data['branch_id'] = filled($data['branch_id'] ?? null) ? (int) $data['branch_id'] : null;
+        $data['max_km'] = filled($data['max_km'] ?? null) ? $data['max_km'] : null;
+
+        if ($data['is_formula']) {
+            $data['price'] = null;
+            $data['per_km_rate'] = (int) ($data['per_km_rate'] ?? 0);
+            $data['subtract_value'] = (int) ($data['subtract_value'] ?? 0);
+        } else {
+            $data['price'] = (int) ($data['price'] ?? 0);
+            $data['per_km_rate'] = null;
+            $data['subtract_value'] = 0;
+        }
+
+        return $data;
+    }
+
     public static function form(Form $form): Form
     {
         return $form

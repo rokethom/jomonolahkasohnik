@@ -3015,8 +3015,8 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
         max_km: patch.max_km === undefined ? setting.max_km : patch.max_km,
         price: patch.price === undefined ? setting.price : patch.price,
         is_formula: patch.is_formula ?? setting.is_formula,
-        per_km_rate: patch.per_km_rate === undefined ? setting.per_km_rate : patch.per_km_rate,
-        subtract_value: patch.subtract_value === undefined ? setting.subtract_value : patch.subtract_value,
+        per_km_rate: (patch.is_formula ?? setting.is_formula) ? (patch.per_km_rate === undefined ? setting.per_km_rate : patch.per_km_rate) : null,
+        subtract_value: (patch.is_formula ?? setting.is_formula) ? (patch.subtract_value === undefined ? setting.subtract_value : patch.subtract_value) : 0,
         is_active: patch.is_active ?? setting.is_active ?? true,
       }),
     })
@@ -3127,7 +3127,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
           <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
           {!isFormula && <label>Flat price<input name="price" type="number" min="0" defaultValue="10000" /></label>}
           {isFormula && <label>Rate / KM<input name="per_km_rate" type="number" min="0" defaultValue="3000" /></label>}
-          <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="0" /></label>
+          {isFormula && <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="0" /></label>}
           <button className="primary-button" type="submit">Save Policy</button>
         </form>
       )}

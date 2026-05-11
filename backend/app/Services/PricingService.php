@@ -102,29 +102,6 @@ class PricingService
             ->first();
 
         if (! $setting) {
-            $minimumFlat = PriceSetting::query()
-                ->active()
-                ->forBranch($branchId)
-                ->whereNotNull('price')
-                ->orderByRaw('branch_id IS NULL')
-                ->orderBy('min_km')
-                ->first();
-
-            if ($minimumFlat && $distanceKm < (float) $minimumFlat->min_km) {
-                return (int) $minimumFlat->price;
-            }
-
-            $setting = PriceSetting::query()
-                ->active()
-                ->forBranch($branchId)
-                ->whereNotNull('per_km_rate')
-                ->orderByRaw('branch_id IS NULL')
-                ->orderByDesc('max_km')
-                ->orderByDesc('min_km')
-                ->first();
-        }
-
-        if (! $setting) {
             throw new RuntimeException('Distance Price Settings aktif belum tersedia untuk jarak '.round($distanceKm, 2).' KM.');
         }
 
