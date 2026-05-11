@@ -47,7 +47,7 @@ class AdminRoleMenuOverrideService
                 'pricing-keyword-rules' => 'Pricing Keyword Rules',
                 'zone-pricing' => 'Zone Pricing Rules',
                 'zone-pricing-tester' => 'Zone Pricing Tester',
-                'app-settings-cms' => 'System Settings CMS',
+                'settings' => 'System Settings',
             ],
         ];
     }
@@ -143,7 +143,7 @@ class AdminRoleMenuOverrideService
 
         if ($permissions['can_manage_system_settings'] ?? false) {
             $views[] = 'order-crew-rules';
-            $views[] = 'app-settings-cms';
+            $views[] = 'settings';
         }
 
         if ($permissions['can_manage_cms'] ?? false) {

@@ -11,7 +11,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'app-settings-cms' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
 const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
 const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
 type AdminHistoryState = {
@@ -498,7 +498,6 @@ const menuGroups: MenuGroup[] = [
       { id: 'zone-pricing', label: 'Zone Pricing Rules', icon: 'map' },
       { id: 'zone-pricing-tester', label: 'Zone Pricing Tester', icon: 'cash' },
       { id: 'settings', label: 'System Settings', icon: 'settings' },
-      { id: 'app-settings-cms', label: 'System Settings CMS', icon: 'settings' },
     ],
   },
 ]
@@ -545,7 +544,6 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_create_manual_order) views.add('manual-order')
   if (permissions.can_manage_system_settings) {
     views.add('settings')
-    views.add('app-settings-cms')
     views.add('order-crew-rules')
   }
   if (permissions.can_manage_cms) {
@@ -3025,11 +3023,6 @@ const backendCmsLinks: Partial<Record<View, { title: string; path: string; copy:
     path: '/admin/announcements',
     copy: 'Kelola pengumuman/promo khusus yang tampil pada home customer.',
   },
-  'app-settings-cms': {
-    title: 'System Settings CMS',
-    path: '/admin/app-settings-cms?tab=-operasional-order-tab',
-    copy: 'Buka pengaturan operasional order seperti jam tutup order, tarif malam, FCM, AI, dan aturan sistem lain.',
-  },
 }
 
 function isBackendCmsView(view: View) {
@@ -5302,7 +5295,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'app-settings-cms': 'System Settings CMS', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
 }
 
 function internalNoteStatusLabel(status: InternalNoteStatus) {
