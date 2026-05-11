@@ -120,22 +120,16 @@ class HermesSafetyAssistantService
                 ->withHeaders($this->chatHeaders())
                 ->connectTimeout(8)
                 ->timeout((int) config('services.hermes_safety.timeout', 25))
-                ->post(rtrim($this->chatBaseUrl(), '/').'/chat/completions', [
-                    'model' => $this->chatModel(),
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => 'Anda adalah AI Monitoring & Security assistant untuk JojoApp. Analisa error/failed job secara read-only. Balas JSON valid dengan key: mode, summary, likely_cause, impact, safe_actions, review_actions, risky_actions, admin_note. Jangan beri instruksi destruktif, jangan meminta secret, dan jangan menyarankan perintah yang menghapus data.',
-                        ],
-                        [
-                            'role' => 'user',
-                            'content' => json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
-                        ],
+                ->post(rtrim($this->chatBaseUrl(), '/').'/chat/completions', $this->chatPayload([
+                    [
+                        'role' => 'system',
+                        'content' => 'Anda adalah AI Monitoring & Security assistant untuk JojoApp. Analisa error/failed job secara read-only. Balas JSON valid dengan key: mode, summary, likely_cause, impact, safe_actions, review_actions, risky_actions, admin_note. Jangan beri instruksi destruktif, jangan meminta secret, dan jangan menyarankan perintah yang menghapus data.',
                     ],
-                    'temperature' => 0.1,
-                    'max_tokens' => 1200,
-                    'response_format' => ['type' => 'json_object'],
-                ])
+                    [
+                        'role' => 'user',
+                        'content' => json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                    ],
+                ]))
                 ->throw()
                 ->json();
 
@@ -325,6 +319,26 @@ class HermesSafetyAssistantService
         }
 
         return $model !== '' ? $model : 'openclaw/default';
+    }
+
+    /**
+     * @param array<int, array{role: string, content: string}> $messages
+     * @return array<string, mixed>
+     */
+    private function chatPayload(array $messages): array
+    {
+        $payload = [
+            'model' => $this->chatModel(),
+            'messages' => $messages,
+        ];
+
+        if ($this->provider() !== 'kimi') {
+            $payload['temperature'] = 0.1;
+            $payload['max_tokens'] = 1200;
+            $payload['response_format'] = ['type' => 'json_object'];
+        }
+
+        return $payload;
     }
 
     /**

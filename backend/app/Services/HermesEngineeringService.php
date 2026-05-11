@@ -196,18 +196,13 @@ class HermesEngineeringService
                 ->withHeaders($this->headers())
                 ->connectTimeout(8)
                 ->timeout(90)
-                ->post(rtrim((string) $baseUrl, '/').'/chat/completions', [
-                    'model' => $model,
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => 'You are Hermes, JojoApp internal AI engineering assistant. You are read-only. Analyze code/log/schema context and produce practical engineering reports in Indonesian. Never claim you executed shell commands or changed files.',
-                        ],
-                        ['role' => 'user', 'content' => $prompt],
+                ->post(rtrim((string) $baseUrl, '/').'/chat/completions', $this->chatPayload($model, [
+                    [
+                        'role' => 'system',
+                        'content' => 'You are Hermes, JojoApp internal AI engineering assistant. You are read-only. Analyze code/log/schema context and produce practical engineering reports in Indonesian. Never claim you executed shell commands or changed files.',
                     ],
-                    'temperature' => 0.2,
-                    'max_tokens' => $this->maxTokens(),
-                ]);
+                    ['role' => 'user', 'content' => $prompt],
+                ]));
 
             $duration = (int) round((microtime(true) - $started) * 1000);
 
@@ -299,7 +294,7 @@ class HermesEngineeringService
     private function prompt(array $profile, ?string $instruction, array $context): string
     {
         $json = json_encode($context['payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $json = mb_substr((string) $json, 0, self::MAX_TOTAL_CONTEXT);
+        $json = mb_substr((string) $json, 0, $this->maxTotalContext());
 
         return implode("\n\n", [
             'Mode: Internal AI Engineering Assistant / AI DevOps Agent untuk JojoApp.',
@@ -557,6 +552,39 @@ class HermesEngineeringService
             'HTTP-Referer' => config('app.url'),
             'X-Title' => 'JojoApp Hermes Engineering Center',
         ];
+    }
+
+    /**
+     * @param array<int, array{role: string, content: string}> $messages
+     * @return array<string, mixed>
+     */
+    private function chatPayload(string $model, array $messages): array
+    {
+        $payload = [
+            'model' => $model,
+            'messages' => $messages,
+        ];
+
+        if (! $this->requiresMinimalChatPayload()) {
+            $payload['temperature'] = 0.2;
+            $payload['max_tokens'] = $this->maxTokens();
+        }
+
+        return $payload;
+    }
+
+    private function requiresMinimalChatPayload(): bool
+    {
+        return $this->settings->get('hermes_provider') === 'kimi';
+    }
+
+    private function maxTotalContext(): int
+    {
+        if ($this->requiresMinimalChatPayload()) {
+            return 24000;
+        }
+
+        return self::MAX_TOTAL_CONTEXT;
     }
 
     private function maxTokens(): int

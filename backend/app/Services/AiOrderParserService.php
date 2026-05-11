@@ -18,7 +18,7 @@ class AiOrderParserService
         'openrouter/free',
     ];
 
-    private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503];
+    private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503, 504];
     private const REQUEST_TIMEOUT_SECONDS = 15;
     private const CONNECT_TIMEOUT_SECONDS = 5;
     private const SLOW_THRESHOLD_SECONDS = 15.0;
@@ -138,7 +138,7 @@ class AiOrderParserService
             $startedAt = microtime(true);
 
             try {
-                $payload = ['model' => $model, ...$basePayload];
+                $payload = $this->chatPayload($model, $basePayload);
                 $response = $this->sendCompletionRequest($payload);
 
                 if ($response->status() === 400 && str($response->body())->lower()->contains('response_format')) {
@@ -222,6 +222,24 @@ class AiOrderParserService
             ->withHeaders($this->headers())
             ->withToken($this->apiKey())
             ->post(rtrim($this->baseUrl(), '/').'/chat/completions', $payload);
+    }
+
+    /**
+     * @param array<string, mixed> $basePayload
+     * @return array<string, mixed>
+     */
+    private function chatPayload(string $model, array $basePayload): array
+    {
+        $payload = ['model' => $model, ...$basePayload];
+
+        if ($this->provider() === 'kimi') {
+            return [
+                'model' => $model,
+                'messages' => $basePayload['messages'],
+            ];
+        }
+
+        return $payload;
     }
 
     private function shouldFallbackResponse(Response $response): bool
