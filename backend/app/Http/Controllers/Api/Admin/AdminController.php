@@ -133,6 +133,7 @@ class AdminController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
+            'password' => ['nullable', 'string', 'min:8', 'max:255'],
             'role' => ['required', new Enum(UserRole::class)],
             'branch_id' => ['nullable', 'exists:branches,id'],
             'is_active' => ['sometimes', 'boolean'],
@@ -170,7 +171,7 @@ class AdminController extends Controller
         }
         unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
-        $password = $this->generatePassword();
+        $password = filled($payload['password'] ?? null) ? (string) $payload['password'] : $this->generatePassword();
         $user = User::create([
             ...$payload,
             'password' => $password,
@@ -203,6 +204,7 @@ class AdminController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'email', 'max:255', 'unique:users,email,'.$user->id],
             'phone' => ['nullable', 'string', 'max:30'],
+            'password' => ['nullable', 'string', 'min:8', 'max:255'],
             'role' => ['sometimes', new Enum(UserRole::class)],
             'branch_id' => ['nullable', 'exists:branches,id'],
             'is_active' => ['sometimes', 'boolean'],
@@ -223,6 +225,9 @@ class AdminController extends Controller
         if (isset($payload['role'])) {
             abort_unless($this->canAssignRole($actor, UserRole::from($payload['role'])), 403);
         }
+
+        $newPassword = filled($payload['password'] ?? null) ? (string) $payload['password'] : null;
+        unset($payload['password']);
 
         $before = $user->only(array_keys($payload));
         $driverPayload = [];
@@ -252,7 +257,11 @@ class AdminController extends Controller
         }
         unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
-        $user->update($payload);
+        $user->update($newPassword ? [...$payload, 'password' => $newPassword] : $payload);
+        if ($newPassword) {
+            $user->tokens()->delete();
+            $user->deviceTokens()->update(['is_active' => false]);
+        }
         $nextRole = $payload['role'] ?? ($user->role instanceof UserRole ? $user->role->value : (string) $user->role);
         if ($nextRole === UserRole::Driver->value) {
             $driver = $user->driver()->firstOrCreate([], [

@@ -24,6 +24,7 @@ class ProfileController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'phone' => [$profileRequired ? 'required' : 'nullable', 'string', 'max:30'],
             'address' => [$profileRequired ? 'required' : 'nullable', 'string', 'max:500'],
+            'password' => ['nullable', 'string', 'min:8', 'max:255'],
             'profile_photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
@@ -37,6 +38,9 @@ class ProfileController extends Controller
 
         unset($payload['profile_photo']);
         $request->user()->update($payload);
+        if (filled($payload['password'] ?? null)) {
+            $request->user()->tokens()->where('id', '!=', $request->user()->currentAccessToken()?->id)->delete();
+        }
         $request->user()->refresh();
 
         return response()->json($this->payload($request));
