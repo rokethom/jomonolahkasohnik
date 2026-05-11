@@ -126,4 +126,27 @@ class PricingServiceTest extends TestCase
         $this->assertTrue($method->invoke($service, ['distance_from_bias_km' => 12], $branch));
         $this->assertFalse($method->invoke($service, ['distance_from_bias_km' => 4], $branch));
     }
+
+    public function test_jojobot_prefers_local_rsud_alias_before_generic_geocode(): void
+    {
+        $branch = new Branch([
+            'name' => 'Situbondo',
+            'area' => 'Kota',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeCandidates');
+        $method->setAccessible(true);
+
+        $candidates = $method->invoke($service, 'depan rsud', $branch);
+
+        $this->assertContains('rsud Situbondo, Indonesia', $candidates);
+        $this->assertLessThan(
+            array_search('depan rsud', $candidates, true),
+            array_search('rsud Situbondo, Indonesia', $candidates, true),
+        );
+    }
 }

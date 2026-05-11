@@ -589,6 +589,7 @@ class JojoBotService
 
     private function geocodeCandidates(string $address, ?Branch $branch): array
     {
+        $localAliases = $this->localGeocodeAliases($address, $branch);
         $withBranchContext = implode(', ', array_values(array_unique(array_filter([
             $address,
             $branch?->area,
@@ -596,8 +597,47 @@ class JojoBotService
             'Indonesia',
         ]))));
 
-        return collect([$withBranchContext, $address])
+        return collect([...$localAliases, $withBranchContext, $address])
             ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function localGeocodeAliases(string $address, ?Branch $branch): array
+    {
+        $normalized = str($address)
+            ->lower()
+            ->replaceMatches('/\b(?:depan|belakang|samping|seberang|dekat|dkt|arah|menuju)\b/u', ' ')
+            ->squish()
+            ->toString();
+
+        $branchHints = collect([$branch?->area, $branch?->name])
+            ->filter()
+            ->map(fn (string $value): string => trim($value))
+            ->unique()
+            ->values();
+
+        if ($branchHints->isEmpty()) {
+            return [];
+        }
+
+        $aliases = [];
+
+        if (preg_match('/\brsud\b/u', $normalized) === 1) {
+            foreach ($branchHints as $hint) {
+                $aliases[] = 'rsud '.$hint;
+            }
+        }
+
+        if (preg_match('/\brs\b/u', $normalized) === 1) {
+            foreach ($branchHints as $hint) {
+                $aliases[] = 'rumah sakit '.$hint;
+            }
+        }
+
+        return collect($aliases)
+            ->map(fn (string $value): string => trim($value.', Indonesia'))
             ->unique()
             ->values()
             ->all();
