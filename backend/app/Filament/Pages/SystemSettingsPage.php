@@ -84,6 +84,7 @@ class SystemSettingsPage extends Page implements HasForms
             'multi_crew_auto_cancel_message' => $settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.') ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.',
             'driver_daily_priority_enabled' => $settings->bool('driver_daily_priority_enabled', true),
             'driver_daily_priority_hold_minutes' => $settings->int('driver_daily_priority_hold_minutes', 3),
+            'driver_daily_priority_windows' => $this->dailyPriorityWindows($settings),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => $this->nightTariffRules($settings),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
@@ -490,6 +491,23 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->suffix('menit')
                                             ->required()
                                             ->helperText('Setelah durasi ini lewat, order kembali tampil untuk driver eligible normal agar tidak macet.'),
+                                        Forms\Components\Repeater::make('driver_daily_priority_windows')
+                                            ->label('Jam aktif prioritas')
+                                            ->schema([
+                                                Forms\Components\TimePicker::make('start')
+                                                    ->label('Mulai')
+                                                    ->seconds(false)
+                                                    ->required(),
+                                                Forms\Components\TimePicker::make('end')
+                                                    ->label('Selesai')
+                                                    ->seconds(false)
+                                                    ->required(),
+                                            ])
+                                            ->columns(2)
+                                            ->default($this->defaultDailyPriorityWindows())
+                                            ->addActionLabel('Tambah jam aktif')
+                                            ->helperText('Contoh: 05:00-11:00 dan 13:00-17:00. Di luar jam ini, prioritas harian tidak dibuat dan tidak menahan order.')
+                                            ->columnSpanFull(),
                                     ]),
                                 Forms\Components\Section::make('Tarif Jam Malam')
                                     ->description('Tambahan tarif dihitung dari tarif dasar sesuai jam dan area branch. Rule area kosong berlaku global.')
@@ -647,6 +665,7 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('multi_crew_auto_cancel_message', $data['multi_crew_auto_cancel_message'] ?? 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.');
         $settings->set('driver_daily_priority_enabled', (bool) ($data['driver_daily_priority_enabled'] ?? true));
         $settings->set('driver_daily_priority_hold_minutes', max(1, min(60, (int) ($data['driver_daily_priority_hold_minutes'] ?? 3))));
+        $settings->set('driver_daily_priority_windows', json_encode($this->normalizeDailyPriorityWindows($data['driver_daily_priority_windows'] ?? [])));
         $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
         $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
         $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($data['assign_driver_allowed_roles'] ?? self::DEFAULT_ASSIGN_DRIVER_ROLES)));
@@ -801,6 +820,14 @@ class SystemSettingsPage extends Page implements HasForms
         return $this->normalizeAssignDriverRoles(is_array($decoded) ? $decoded : self::DEFAULT_ASSIGN_DRIVER_ROLES);
     }
 
+    private function dailyPriorityWindows(SettingService $settings): array
+    {
+        $raw = $settings->get('driver_daily_priority_windows');
+        $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+
+        return $this->normalizeDailyPriorityWindows(is_array($decoded) ? $decoded : []);
+    }
+
     private function normalizeAssignDriverRoles(array $roles): array
     {
         $allowed = ['manager', 'spv', 'operator', 'eksekutor'];
@@ -911,6 +938,36 @@ class SystemSettingsPage extends Page implements HasForms
             ['area' => '', 'start' => '00:01', 'end' => '04:00', 'percent' => 50],
             ['area' => '', 'start' => '04:01', 'end' => '06:00', 'percent' => 30],
         ];
+    }
+
+    private function defaultDailyPriorityWindows(): array
+    {
+        return [
+            ['start' => '05:00', 'end' => '11:00'],
+            ['start' => '13:00', 'end' => '17:00'],
+        ];
+    }
+
+    private function normalizeDailyPriorityWindows(array $windows): array
+    {
+        $normalized = [];
+
+        foreach ($windows as $window) {
+            if (! is_array($window)) {
+                continue;
+            }
+
+            $start = $this->normalizeTime((string) ($window['start'] ?? '05:00'));
+            $end = $this->normalizeTime((string) ($window['end'] ?? '11:00'));
+
+            if ($start === $end) {
+                continue;
+            }
+
+            $normalized[] = ['start' => $start, 'end' => $end];
+        }
+
+        return $normalized === [] ? $this->defaultDailyPriorityWindows() : $normalized;
     }
 
     private function normalizeNightTariffRules(array $rules): array

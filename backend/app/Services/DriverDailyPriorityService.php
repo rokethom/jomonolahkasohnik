@@ -27,9 +27,60 @@ class DriverDailyPriorityService
         return max(1, min(60, $this->settings->int('driver_daily_priority_hold_minutes', 3)));
     }
 
+    /**
+     * @return array<int, array{start: string, end: string}>
+     */
+    public function windows(): array
+    {
+        $raw = $this->settings->get('driver_daily_priority_windows');
+        $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
+        $windows = is_array($decoded) ? $decoded : [
+            ['start' => '05:00', 'end' => '11:00'],
+            ['start' => '13:00', 'end' => '17:00'],
+        ];
+
+        return collect($windows)
+            ->map(fn (mixed $window): array => [
+                'start' => $this->normalizeTime(data_get($window, 'start', '05:00'), '05:00'),
+                'end' => $this->normalizeTime(data_get($window, 'end', '11:00'), '11:00'),
+            ])
+            ->filter(fn (array $window): bool => $window['start'] !== $window['end'])
+            ->values()
+            ->all();
+    }
+
+    public function isWithinWindow(?Carbon $time = null): bool
+    {
+        if (! $this->enabled()) {
+            return false;
+        }
+
+        $time ??= Carbon::now(self::TIMEZONE);
+        $minutes = ((int) $time->format('H')) * 60 + (int) $time->format('i');
+
+        foreach ($this->windows() as $window) {
+            $start = $this->minutes($window['start']);
+            $end = $this->minutes($window['end']);
+
+            if ($start < $end && $minutes >= $start && $minutes <= $end) {
+                return true;
+            }
+
+            if ($start > $end && ($minutes >= $start || $minutes <= $end)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function markOnline(Driver $driver, bool $wasOnline): ?string
     {
         if (! $this->enabled() || $wasOnline || $driver->status !== 'active') {
+            return null;
+        }
+
+        if (! $this->isWithinWindow()) {
             return null;
         }
 
@@ -79,6 +130,10 @@ class DriverDailyPriorityService
             return true;
         }
 
+        if (! $this->isWithinWindow()) {
+            return true;
+        }
+
         if ($this->holdExpired($order) || $this->isPriorityActive($driver)) {
             return true;
         }
@@ -94,6 +149,7 @@ class DriverDailyPriorityService
     public function isPriorityActive(Driver $driver): bool
     {
         return $this->enabled()
+            && $this->isWithinWindow()
             && (bool) $driver->daily_priority_active
             && $driver->daily_priority_date?->toDateString() === $this->today()
             && $driver->daily_priority_completed_at === null
@@ -149,5 +205,27 @@ class DriverDailyPriorityService
     private function today(): string
     {
         return Carbon::now(self::TIMEZONE)->toDateString();
+    }
+
+    private function normalizeTime(mixed $value, string $fallback): string
+    {
+        $value = trim((string) $value);
+
+        if (preg_match('/^\d{2}:\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        if (preg_match('/^\d{1}:\d{2}$/', $value) === 1) {
+            return '0'.$value;
+        }
+
+        return $fallback;
+    }
+
+    private function minutes(string $time): int
+    {
+        [$hour, $minute] = array_map('intval', explode(':', $time));
+
+        return ($hour * 60) + $minute;
     }
 }

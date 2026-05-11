@@ -29,6 +29,7 @@ use App\Services\AdminDashboardMetricsService;
 use App\Services\AdminRoleMenuOverrideService;
 use App\Services\AiParserRuleService;
 use App\Services\BranchDetectionService;
+use App\Services\DriverDailyPriorityService;
 use App\Services\DriverFinanceService;
 use App\Services\DriverManagementCsvService;
 use App\Services\DriverReportService;
@@ -1611,6 +1612,9 @@ class AdminController extends Controller
             'multi_crew_auto_cancel_message' => ['nullable', 'string', 'max:500'],
             'driver_daily_priority_enabled' => ['sometimes', 'boolean'],
             'driver_daily_priority_hold_minutes' => ['sometimes', 'integer', 'min:1', 'max:60'],
+            'driver_daily_priority_windows' => ['sometimes', 'array'],
+            'driver_daily_priority_windows.*.start' => ['required_with:driver_daily_priority_windows', 'date_format:H:i'],
+            'driver_daily_priority_windows.*.end' => ['required_with:driver_daily_priority_windows', 'date_format:H:i'],
             'night_tariff_enabled' => ['sometimes', 'boolean'],
             'night_tariff_rules' => ['sometimes', 'array'],
             'night_tariff_rules.*.area' => ['nullable', 'string', 'max:50'],
@@ -1637,6 +1641,9 @@ class AdminController extends Controller
             if (array_key_exists($key, $payload)) {
                 $settings->set($key, $payload[$key]);
             }
+        }
+        if (array_key_exists('driver_daily_priority_windows', $payload)) {
+            $settings->set('driver_daily_priority_windows', json_encode($this->normalizeDailyPriorityWindows($payload['driver_daily_priority_windows'])));
         }
         if (array_key_exists('night_tariff_rules', $payload)) {
             $settings->set('night_tariff_rules', json_encode(array_values($payload['night_tariff_rules'])));
@@ -2019,6 +2026,24 @@ class AdminController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function normalizeDailyPriorityWindows(array $windows): array
+    {
+        $normalized = collect($windows)
+            ->filter(fn (mixed $window): bool => is_array($window))
+            ->map(fn (array $window): array => [
+                'start' => (string) ($window['start'] ?? '05:00'),
+                'end' => (string) ($window['end'] ?? '11:00'),
+            ])
+            ->filter(fn (array $window): bool => $window['start'] !== $window['end'])
+            ->values()
+            ->all();
+
+        return $normalized !== [] ? $normalized : [
+            ['start' => '05:00', 'end' => '11:00'],
+            ['start' => '13:00', 'end' => '17:00'],
+        ];
     }
 
     private function authorizeDriverAuthCms(Request $request): void
@@ -2615,6 +2640,7 @@ class AdminController extends Controller
             'multi_crew_auto_cancel_message' => $settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.') ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.',
             'driver_daily_priority_enabled' => $settings->bool('driver_daily_priority_enabled', true),
             'driver_daily_priority_hold_minutes' => max(1, min(60, $settings->int('driver_daily_priority_hold_minutes', 3))),
+            'driver_daily_priority_windows' => app(DriverDailyPriorityService::class)->windows(),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),

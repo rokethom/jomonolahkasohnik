@@ -4436,6 +4436,26 @@ td {
   gap: 10px;
 }
 
+.settings-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.settings-row input {
+  width: 100%;
+}
+
 .night-rule-row {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) repeat(3, minmax(96px, 0.65fr)) auto;
@@ -4452,6 +4472,10 @@ td {
 }
 
 .admin-shell.dark .night-rule-row {
+  background: rgba(15, 23, 42, 0.34);
+}
+
+.admin-shell.dark .settings-row {
   background: rgba(15, 23, 42, 0.34);
 }
 

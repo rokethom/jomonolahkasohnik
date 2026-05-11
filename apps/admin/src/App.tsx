@@ -311,6 +311,7 @@ type SystemSettings = {
   multi_crew_auto_cancel_message?: string
   driver_daily_priority_enabled?: boolean
   driver_daily_priority_hold_minutes?: number
+  driver_daily_priority_windows?: DailyPriorityWindow[]
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
   assign_driver_allowed_roles?: Role[]
@@ -321,6 +322,7 @@ type SystemSettings = {
   }
 }
 type NightTariffRule = { area?: string | null; start: string; end: string; percent: number }
+type DailyPriorityWindow = { start: string; end: string }
 type DepositReportRow = {
   driver: string
   area: string
@@ -2271,6 +2273,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [multiCrewAutoCancelMessage, setMultiCrewAutoCancelMessage] = useState(settings.multi_crew_auto_cancel_message ?? 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.')
   const [driverDailyPriorityEnabled, setDriverDailyPriorityEnabled] = useState(settings.driver_daily_priority_enabled ?? true)
   const [driverDailyPriorityHoldMinutes, setDriverDailyPriorityHoldMinutes] = useState(settings.driver_daily_priority_hold_minutes ?? 3)
+  const [driverDailyPriorityWindows, setDriverDailyPriorityWindows] = useState<DailyPriorityWindow[]>(settings.driver_daily_priority_windows ?? defaultDailyPriorityWindows())
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
@@ -2293,6 +2296,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setMultiCrewAutoCancelMessage(settings.multi_crew_auto_cancel_message ?? 'Maaf, order {order_code} dibatalkan otomatis karena {helper_label} belum menerima dalam {minutes} menit.')
     setDriverDailyPriorityEnabled(settings.driver_daily_priority_enabled ?? true)
     setDriverDailyPriorityHoldMinutes(settings.driver_daily_priority_hold_minutes ?? 3)
+    setDriverDailyPriorityWindows(settings.driver_daily_priority_windows ?? defaultDailyPriorityWindows())
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
@@ -2321,6 +2325,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           multi_crew_auto_cancel_message: multiCrewAutoCancelMessage,
           driver_daily_priority_enabled: driverDailyPriorityEnabled,
           driver_daily_priority_hold_minutes: driverDailyPriorityHoldMinutes,
+          driver_daily_priority_windows: driverDailyPriorityWindows,
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
@@ -2376,6 +2381,17 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
             <span>Aktifkan prioritas harian driver</span>
           </label>
           <label>Durasi tahan prioritas<input type="number" min={1} max={60} value={driverDailyPriorityHoldMinutes} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityHoldMinutes(Math.max(1, Math.min(60, Number(event.target.value))))} /></label>
+        </div>
+        <div className="settings-list">
+          <strong>Jam aktif prioritas</strong>
+          {driverDailyPriorityWindows.map((window, index) => (
+            <div className="settings-row compact" key={`daily-priority-${index}`}>
+              <label>Mulai<input type="time" value={window.start} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityWindows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, start: event.target.value } : row))} /></label>
+              <label>Selesai<input type="time" value={window.end} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityWindows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, end: event.target.value } : row))} /></label>
+              <button className="ghost-button" type="button" disabled={!permissions.can_manage_system_settings || driverDailyPriorityWindows.length <= 1} onClick={() => setDriverDailyPriorityWindows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>Hapus</button>
+            </div>
+          ))}
+          <button className="secondary-button" type="button" disabled={!permissions.can_manage_system_settings} onClick={() => setDriverDailyPriorityWindows((rows) => [...rows, { start: '05:00', end: '11:00' }])}>Tambah jam aktif</button>
         </div>
         <div className="notice">Prioritas hanya 1 kali per hari berdasarkan Asia/Jakarta. Jika driver OFF lalu ON lagi di hari yang sama, prioritas tidak dibuat ulang. Setelah order accepted, driver kembali ke sistem normal.</div>
       </div>
@@ -5210,6 +5226,13 @@ function defaultNightTariffRules(): NightTariffRule[] {
     { area: '', start: '22:00', end: '00:00', percent: 30 },
     { area: '', start: '00:01', end: '04:00', percent: 50 },
     { area: '', start: '04:01', end: '06:00', percent: 30 },
+  ]
+}
+
+function defaultDailyPriorityWindows(): DailyPriorityWindow[] {
+  return [
+    { start: '05:00', end: '11:00' },
+    { start: '13:00', end: '17:00' },
   ]
 }
 
