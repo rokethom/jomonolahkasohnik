@@ -26,7 +26,6 @@ class AdminRoleMenuOverrideService
                 'internal-chat' => 'Internal Chat',
                 'sticky-notes' => 'Sticky Notes',
                 'manual-order' => 'Manual Order',
-                'order-crew-rules' => 'Order Crew Rules',
             ],
             'Management' => [
                 'users' => 'Users',
@@ -153,7 +152,6 @@ class AdminRoleMenuOverrideService
         }
 
         if ($permissions['can_manage_system_settings'] ?? false) {
-            $views[] = 'order-crew-rules';
             $views[] = 'settings';
         }
 

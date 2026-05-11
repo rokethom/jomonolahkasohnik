@@ -515,7 +515,6 @@ const menuGroups: MenuGroup[] = [
       { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
       { id: 'sticky-notes', label: 'Sticky Notes', icon: 'note' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
-      { id: 'order-crew-rules', label: 'Order Crew Rules', icon: 'settings' },
     ],
   },
   {
@@ -623,7 +622,6 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_create_manual_order) views.add('manual-order')
   if (permissions.can_manage_system_settings) {
     views.add('settings')
-    views.add('order-crew-rules')
   }
   if (permissions.can_manage_cms) {
     views.add('banners')
@@ -727,6 +725,22 @@ function App() {
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [load, token, view])
+
+  useEffect(() => {
+    if (!token) return
+
+    const refreshBootstrap = () => {
+      if (document.visibilityState === 'visible') void load(true)
+    }
+
+    window.addEventListener('focus', refreshBootstrap)
+    document.addEventListener('visibilitychange', refreshBootstrap)
+
+    return () => {
+      window.removeEventListener('focus', refreshBootstrap)
+      document.removeEventListener('visibilitychange', refreshBootstrap)
+    }
+  }, [load, token])
 
   useEffect(() => {
     if (!token || !adminBootstrapAutoRefreshViews.has(view)) return
