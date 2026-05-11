@@ -4649,15 +4649,104 @@ td {
   align-items: end;
 }
 
-.priority-window-list {
-  border-style: solid;
-  background: rgba(248, 250, 252, 0.74);
+.daily-priority-card .priority-settings-grid {
+  gap: 12px;
+  margin-bottom: 0;
 }
 
-.priority-window-list > strong {
+.priority-duration-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.priority-window-list {
+  gap: 12px;
+  padding: 14px;
+  border-style: solid;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.priority-window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.priority-window-header strong {
   color: #0f172a;
   font-size: 13px;
   letter-spacing: 0;
+}
+
+.priority-window-header span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: #0369a1;
+  background: #e0f2fe;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.priority-window-row.settings-row.compact {
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) minmax(82px, auto);
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.priority-window-row label {
+  gap: 6px;
+}
+
+.priority-window-row input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  color: #0f172a;
+  background: #fff;
+  font-weight: 900;
+}
+
+.priority-window-row .ghost-button {
+  min-height: 42px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #b91c1c;
+  background: #fff1f2;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.priority-window-row .ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.priority-add-button.secondary-button {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 14px;
+  color: #075985;
+  background: linear-gradient(135deg, #e0f2fe, #f0fdfa);
+}
+
+.priority-note.notice {
+  margin: 0;
+  border-color: #fde68a;
+  border-radius: 16px;
+  color: #92400e;
+  background: #fffbeb;
+  line-height: 1.45;
 }
 
 .feedback-cms .status.info {
@@ -4792,8 +4881,35 @@ td {
   background: rgba(15, 23, 42, 0.34);
 }
 
-.admin-shell.dark .priority-window-list > strong {
+.admin-shell.dark .priority-window-header strong {
   color: #f8fafc;
+}
+
+.admin-shell.dark .priority-window-header span {
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.18);
+}
+
+.admin-shell.dark .priority-window-row.settings-row.compact {
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.admin-shell.dark .priority-window-row .ghost-button {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(127, 29, 29, 0.28);
+}
+
+.admin-shell.dark .priority-add-button.secondary-button {
+  color: #e0f2fe;
+  border-color: rgba(14, 165, 233, 0.28);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(20, 184, 166, 0.12));
+}
+
+.admin-shell.dark .priority-note.notice {
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(120, 53, 15, 0.34);
 }
 
 .admin-shell.dark .system-settings-panel > .settings-grid,
@@ -6748,6 +6864,15 @@ textarea::placeholder {
   .settings-row,
   .settings-row.compact {
     grid-template-columns: 1fr;
+  }
+
+  .priority-window-row.settings-row.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .priority-window-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .service-check-grid {

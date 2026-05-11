@@ -2472,25 +2472,28 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           </div>
           <span className="status info">CMS</span>
         </div>
-        <div className="settings-grid">
+        <div className="settings-grid priority-settings-grid">
           <label className="admin-toggle-row">
             <input type="checkbox" checked={driverDailyPriorityEnabled} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityEnabled(event.target.checked)} />
             <span>Aktifkan prioritas harian driver</span>
           </label>
-          <label>Durasi tahan prioritas<input type="number" min={1} max={60} value={driverDailyPriorityHoldMinutes} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityHoldMinutes(Math.max(1, Math.min(60, Number(event.target.value))))} /></label>
+          <label className="priority-duration-field">Durasi tahan prioritas<input type="number" min={1} max={60} value={driverDailyPriorityHoldMinutes} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityHoldMinutes(Math.max(1, Math.min(60, Number(event.target.value))))} /></label>
         </div>
         <div className="settings-list priority-window-list">
-          <strong>Jam aktif prioritas</strong>
+          <div className="priority-window-header">
+            <strong>Jam aktif prioritas</strong>
+            <span>{driverDailyPriorityWindows.length} jadwal</span>
+          </div>
           {driverDailyPriorityWindows.map((window, index) => (
-            <div className="settings-row compact" key={`daily-priority-${index}`}>
+            <div className="settings-row compact priority-window-row" key={`daily-priority-${index}`}>
               <label>Mulai<input type="time" value={window.start} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityWindows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, start: event.target.value } : row))} /></label>
               <label>Selesai<input type="time" value={window.end} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityWindows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, end: event.target.value } : row))} /></label>
               <button className="ghost-button" type="button" disabled={!permissions.can_manage_system_settings || driverDailyPriorityWindows.length <= 1} onClick={() => setDriverDailyPriorityWindows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>Hapus</button>
             </div>
           ))}
-          <button className="secondary-button" type="button" disabled={!permissions.can_manage_system_settings} onClick={() => setDriverDailyPriorityWindows((rows) => [...rows, { start: '05:00', end: '11:00' }])}>Tambah jam aktif</button>
+          <button className="secondary-button priority-add-button" type="button" disabled={!permissions.can_manage_system_settings} onClick={() => setDriverDailyPriorityWindows((rows) => [...rows, { start: '05:00', end: '11:00' }])}>Tambah jam aktif</button>
         </div>
-        <div className="notice">Prioritas hanya 1 kali per hari berdasarkan Asia/Jakarta. Jika driver OFF lalu ON lagi di hari yang sama, prioritas tidak dibuat ulang. Setelah order accepted, driver kembali ke sistem normal.</div>
+        <div className="notice priority-note">Prioritas hanya 1 kali per hari berdasarkan Asia/Jakarta. Jika driver OFF lalu ON lagi di hari yang sama, prioritas tidak dibuat ulang. Setelah order accepted, driver kembali ke sistem normal.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">
