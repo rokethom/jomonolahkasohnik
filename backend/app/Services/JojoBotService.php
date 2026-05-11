@@ -569,10 +569,12 @@ class JojoBotService
 
         foreach ($this->geocodeCandidates($address, $branch) as $query) {
             try {
-                $result = [
-                    ...$this->geocoding->geocode($query, $this->geocodingContext($branch)),
-                    'query' => $query,
-                ];
+                $result = $branch
+                    ? $this->geocoding->geocodeNearBranch($query, $branch)
+                    : [
+                        ...$this->geocoding->geocode($query, $this->geocodingContext($branch)),
+                        'query' => $query,
+                    ];
 
                 if ($this->isGeocodeTooFarFromBranch($result, $branch)) {
                     continue;

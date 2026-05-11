@@ -304,8 +304,12 @@ class CreateOrder
 
     private function hydrateHiddenLocations(User $user, array $payload): array
     {
+        $branch = isset($payload['branch_id']) && $payload['branch_id']
+            ? Branch::query()->find((int) $payload['branch_id'])
+            : $user->branch;
+
         if (! isset($payload['pickup_lat'], $payload['pickup_lng'])) {
-            $geo = $this->geocoding->geocode($payload['pickup_address']);
+            $geo = $this->geocoding->geocodeNearBranch($payload['pickup_address'], $branch);
             $payload['pickup_lat'] = $geo['lat'];
             $payload['pickup_lng'] = $geo['lng'];
             $payload['pickup_address'] = $geo['formatted_address'] ?? $payload['pickup_address'];
@@ -313,7 +317,7 @@ class CreateOrder
         }
 
         if (! isset($payload['destination_lat'], $payload['destination_lng'])) {
-            $geo = $this->geocoding->geocode($payload['destination_address']);
+            $geo = $this->geocoding->geocodeNearBranch($payload['destination_address'], $branch);
             $payload['destination_lat'] = $geo['lat'];
             $payload['destination_lng'] = $geo['lng'];
             $payload['destination_address'] = $geo['formatted_address'] ?? $payload['destination_address'];

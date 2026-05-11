@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Branch;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -28,6 +29,33 @@ class GeocodingService
                 ?? $this->geocodeWithNominatim($query, $context)
                 ?? throw new RuntimeException('Alamat tidak ditemukan.');
         });
+    }
+
+    public function geocodeNearBranch(string $textAddress, ?Branch $branch): array
+    {
+        if (! $branch || ! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+            return $this->geocode($textAddress);
+        }
+
+        $context = $this->branchContext($branch);
+        foreach ($this->branchCandidates($textAddress, $branch) as $query) {
+            try {
+                $result = [
+                    ...$this->geocode($query, $context),
+                    'query' => $query,
+                ];
+
+                if ($this->isTooFarFromBranch($result, $branch)) {
+                    continue;
+                }
+
+                return $result;
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        throw new RuntimeException('Alamat tidak ditemukan di area cabang.');
     }
 
     public function getAddressFromLatLng(float $lat, float $lng): array
@@ -460,10 +488,94 @@ class GeocodingService
 
     private function cacheKey(string $query, array $context = []): string
     {
-        return 'geocode:v2:'.sha1(mb_strtolower($query).'|'.json_encode([
+        return 'geocode:v3:'.sha1(mb_strtolower($query).'|'.json_encode([
             'lat' => isset($context['lat']) ? round((float) $context['lat'], 4) : null,
             'lng' => isset($context['lng']) ? round((float) $context['lng'], 4) : null,
             'radius_km' => isset($context['radius_km']) ? round((float) $context['radius_km']) : null,
         ]));
+    }
+
+    private function branchContext(Branch $branch): array
+    {
+        return [
+            'lat' => (float) $branch->latitude,
+            'lng' => (float) $branch->longitude,
+            'radius_km' => is_numeric($branch->radius_km ?? null) ? min(25, max(3, (float) $branch->radius_km)) : 10,
+        ];
+    }
+
+    private function branchCandidates(string $address, Branch $branch): array
+    {
+        $address = trim($address);
+        $branchName = trim((string) $branch->name);
+        $branchArea = trim((string) $branch->area);
+        $aliases = $this->localAliases($address, $branch);
+
+        return collect([
+            ...$aliases,
+            $branchName !== '' ? "{$address} {$branchName}, Indonesia" : null,
+            $branchName !== '' ? "{$address}, {$branchName}, Indonesia" : null,
+            $branchArea !== '' && $branchName !== '' ? "{$address}, {$branchName}, {$branchArea}, Indonesia" : null,
+            $branchArea !== '' && $branchName !== '' ? "{$address}, {$branchArea}, {$branchName}, Indonesia" : null,
+            implode(', ', array_values(array_unique(array_filter([$address, $branchArea, $branchName, 'Indonesia'])))),
+            $address,
+        ])
+            ->filter()
+            ->map(fn (string $value): string => trim($value))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function localAliases(string $address, Branch $branch): array
+    {
+        $normalized = str($address)
+            ->lower()
+            ->replaceMatches('/\b(?:depan|belakang|samping|seberang|dekat|dkt|arah|menuju)\b/u', ' ')
+            ->squish()
+            ->toString();
+        $branchHints = collect([$branch->name, $branch->area])
+            ->filter()
+            ->map(fn (string $value): string => trim($value))
+            ->unique()
+            ->values();
+        $aliases = [];
+
+        if (preg_match('/\brsud\b/u', $normalized) === 1) {
+            foreach ($branchHints as $hint) {
+                $aliases[] = 'rsud '.$hint;
+            }
+        }
+
+        if (preg_match('/\brs\b/u', $normalized) === 1) {
+            foreach ($branchHints as $hint) {
+                $aliases[] = 'rumah sakit '.$hint;
+            }
+        }
+
+        if (preg_match('/\bterminal\b/u', $normalized) === 1) {
+            foreach ($branchHints as $hint) {
+                $aliases[] = 'terminal '.$hint;
+            }
+        }
+
+        return collect($aliases)
+            ->map(fn (string $value): string => trim($value.', Indonesia'))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function isTooFarFromBranch(array $result, Branch $branch): bool
+    {
+        if (! is_numeric($result['distance_from_bias_km'] ?? null)) {
+            return false;
+        }
+
+        $allowedKm = is_numeric($branch->radius_km ?? null)
+            ? max(3, (float) $branch->radius_km + 0.5)
+            : 10;
+
+        return (float) $result['distance_from_bias_km'] > min($allowedKm, 25);
     }
 }

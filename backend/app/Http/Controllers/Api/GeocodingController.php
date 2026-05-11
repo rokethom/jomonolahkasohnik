@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Services\GeocodingService;
 use App\Services\PricingService;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +26,10 @@ class GeocodingController extends Controller
         ]);
 
         try {
-            $destination = $geocoding->geocode($payload['address']);
+            $branch = isset($payload['branch_id']) && $payload['branch_id']
+                ? Branch::query()->find((int) $payload['branch_id'])
+                : $request->user()?->branch;
+            $destination = $geocoding->geocodeNearBranch($payload['address'], $branch);
         } catch (RuntimeException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
