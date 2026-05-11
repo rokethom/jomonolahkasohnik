@@ -612,8 +612,17 @@ class JojoBotService
         return [
             'lat' => (float) $branch->latitude,
             'lng' => (float) $branch->longitude,
-            'radius_km' => is_numeric($branch->radius_km ?? null) ? max(5, (float) $branch->radius_km * 3) : 25,
+            'radius_km' => $this->geocodingRadiusKm($branch),
         ];
+    }
+
+    private function geocodingRadiusKm(Branch $branch): float
+    {
+        if (! is_numeric($branch->radius_km ?? null)) {
+            return 10;
+        }
+
+        return min(25, max(3, (float) $branch->radius_km));
     }
 
     private function isCustomerAddressAlias(string $address): bool
@@ -639,10 +648,10 @@ class JojoBotService
         }
 
         $allowedKm = is_numeric($branch->radius_km ?? null)
-            ? max(25, (float) $branch->radius_km * 8)
-            : 50;
+            ? max(3, (float) $branch->radius_km + 0.5)
+            : 10;
 
-        return (float) $result['distance_from_bias_km'] > min($allowedKm, 80);
+        return (float) $result['distance_from_bias_km'] > min($allowedKm, 25);
     }
 
     private function shoppingItems(string $text): array

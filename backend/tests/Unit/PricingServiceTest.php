@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Models\PricingKeywordRule;
+use App\Models\Branch;
+use App\Services\JojoBotService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\PricingService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -107,5 +109,21 @@ class PricingServiceTest extends TestCase
         $this->assertSame(2000, $pricing->extraServiceChargeForService('kurir', 'ambil di roxy'));
         $this->assertSame(0, $pricing->extraServiceChargeForService('belanja', 'ambil di roxy'));
         $this->assertSame(0, $pricing->extraServiceChargeForService('kurir', 'antar ke RS Mitra'));
+    }
+
+    public function test_jojobot_rejects_pricing_geocode_outside_branch_radius(): void
+    {
+        $branch = new Branch([
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'isGeocodeTooFarFromBranch');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($service, ['distance_from_bias_km' => 12], $branch));
+        $this->assertFalse($method->invoke($service, ['distance_from_bias_km' => 4], $branch));
     }
 }
