@@ -515,6 +515,7 @@ class HermesEngineeringService
             'openrouter' => 'https://openrouter.ai/api/v1',
             'kimi' => 'https://konektika.web.id/v1',
             'openai' => 'https://api.openai.com/v1',
+            'openclaw' => (string) config('services.hermes_safety.openclaw_base_url', ''),
             default => null,
         };
     }
@@ -534,6 +535,10 @@ class HermesEngineeringService
 
         if ($this->settings->get('hermes_provider') === 'kimi' && ($model === '' || str_starts_with($model, 'nousresearch/'))) {
             return 'moonshot-v1-8k';
+        }
+
+        if ($this->settings->get('hermes_provider') === 'openclaw' && ($model === '' || str_starts_with($model, 'nousresearch/'))) {
+            return 'openclaw/default';
         }
 
         return $model !== '' ? $model : 'nousresearch/hermes-3-llama-3.1-405b';

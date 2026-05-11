@@ -44,6 +44,7 @@ return [
         'key' => env('HERMES_KEY'),
         'kimi_key' => env('HERMES_SAFETY_KIMI_KEY', env('KIMI_API_KEY')),
         'base_url' => env('HERMES_SAFETY_BASE_URL'),
+        'openclaw_base_url' => env('HERMES_OPENCLAW_BASE_URL'),
         'model' => env('HERMES_SAFETY_MODEL'),
         'timeout' => env('HERMES_TIMEOUT', 20),
     ],

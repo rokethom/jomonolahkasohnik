@@ -252,6 +252,7 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->label('Provider Hermes')
                                             ->options([
                                                 'openai_compatible' => 'OpenAI-compatible / self-hosted Hermes',
+                                                'openclaw' => 'OpenClaw Gateway',
                                                 'kimi' => 'Kimi / Konektika gateway',
                                                 'openrouter' => 'OpenRouter',
                                                 'openai' => 'OpenAI-compatible default OpenAI URL',
@@ -259,9 +260,9 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->native(false)
                                             ->required(),
                                         Forms\Components\TextInput::make('hermes_model')
-                                            ->label('Hermes model ID')
-                                            ->placeholder('nousresearch/hermes-3-llama-3.1-405b')
-                                            ->helperText('Gunakan model Hermes dari provider pilihan. Dibuat configurable agar tidak terkunci jika daftar model berubah.')
+                                            ->label('AI assistant model ID')
+                                            ->placeholder('openclaw/default')
+                                            ->helperText('OpenClaw biasanya memakai openclaw/default. Kimi otomatis fallback ke moonshot-v1-8k jika model lama Hermes masih terisi.')
                                             ->maxLength(180)
                                             ->required(),
                                         Forms\Components\TextInput::make('hermes_max_tokens')
@@ -271,19 +272,19 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->maxValue(4000)
                                             ->default(1800),
                                         Forms\Components\TextInput::make('hermes_base_url')
-                                            ->label('Hermes base URL')
-                                            ->placeholder('https://konektika.web.id/v1, https://openrouter.ai/api/v1, atau endpoint self-hosted')
-                                            ->helperText('Jika diisi, URL ini dipakai untuk semua provider termasuk Kimi. Kosongkan hanya jika ingin memakai default provider.')
+                                            ->label('AI assistant base URL')
+                                            ->placeholder('http://openclaw-gateway:port/v1')
+                                            ->helperText('Untuk OpenClaw isi base URL Gateway yang expose /v1/chat/completions. Kosongkan hanya untuk provider yang punya default URL.')
                                             ->columnSpanFull(),
                                         Forms\Components\Placeholder::make('hermes_current')
-                                            ->label('Hermes key tersimpan')
+                                            ->label('AI assistant key tersimpan')
                                             ->content(fn (Forms\Get $get): string => $get('hermes_current') ?: 'Belum diisi'),
                                         Forms\Components\Toggle::make('hermes_active')
-                                            ->label('Hermes key aktif'),
+                                            ->label('AI assistant key aktif'),
                                         Forms\Components\TextInput::make('hermes_api_key')
-                                            ->label('Hermes API Key baru')
+                                            ->label('AI assistant API Key baru')
                                             ->password()
-                                            ->helperText('Kosongkan jika tidak ingin mengganti key. Key Hermes sengaja dipisah dari OpenRouter parser.')
+                                            ->helperText('Kosongkan jika tidak ingin mengganti key. Untuk OpenClaw gunakan Gateway bearer token.')
                                             ->maxLength(1500)
                                             ->columnSpanFull(),
                                     ]),
