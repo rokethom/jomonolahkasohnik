@@ -1656,6 +1656,7 @@ class AdminController extends Controller
             'night_tariff_rules.*.start' => ['required_with:night_tariff_rules', 'date_format:H:i'],
             'night_tariff_rules.*.end' => ['required_with:night_tariff_rules', 'date_format:H:i'],
             'night_tariff_rules.*.percent' => ['required_with:night_tariff_rules', 'integer', 'min:0', 'max:300'],
+            'zone_pricing_enabled' => ['sometimes', 'boolean'],
             'assign_driver_allowed_roles' => ['sometimes', 'array'],
             'assign_driver_allowed_roles.*' => ['string', Rule::in(['manager', 'spv', 'operator', 'eksekutor'])],
             'edit_tarif_allowed_roles' => ['sometimes', 'array'],
@@ -1674,7 +1675,7 @@ class AdminController extends Controller
         if (array_key_exists('order_cancelled', $templates)) {
             $settings->set(OrderFeedbackService::CANCELLED_KEY, $templates['order_cancelled']);
         }
-        foreach (['order_close_enabled', 'order_close_start', 'order_close_end', 'order_close_message', 'multi_crew_auto_cancel_enabled', 'multi_crew_auto_cancel_minutes', 'multi_crew_auto_cancel_message', 'driver_daily_priority_enabled', 'driver_daily_priority_hold_minutes', 'night_tariff_enabled'] as $key) {
+        foreach (['order_close_enabled', 'order_close_start', 'order_close_end', 'order_close_message', 'multi_crew_auto_cancel_enabled', 'multi_crew_auto_cancel_minutes', 'multi_crew_auto_cancel_message', 'driver_daily_priority_enabled', 'driver_daily_priority_hold_minutes', 'night_tariff_enabled', 'zone_pricing_enabled'] as $key) {
             if (array_key_exists($key, $payload)) {
                 $settings->set($key, $payload[$key]);
             }
@@ -2747,6 +2748,7 @@ class AdminController extends Controller
             'driver_daily_priority_windows' => app(DriverDailyPriorityService::class)->windows(),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
+            'zone_pricing_enabled' => $settings->bool('zone_pricing_enabled', false),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'edit_tarif_allowed_roles' => app(RolePermissionSettingService::class)->editTarifAllowedRoles(),
         ];

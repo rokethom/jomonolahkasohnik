@@ -314,6 +314,7 @@ type SystemSettings = {
   driver_daily_priority_windows?: DailyPriorityWindow[]
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
+  zone_pricing_enabled?: boolean
   assign_driver_allowed_roles?: Role[]
   edit_tarif_allowed_roles?: Role[]
   feedback_templates?: {
@@ -2370,6 +2371,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [driverDailyPriorityWindows, setDriverDailyPriorityWindows] = useState<DailyPriorityWindow[]>(settings.driver_daily_priority_windows ?? defaultDailyPriorityWindows())
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
+  const [zonePricingEnabled, setZonePricingEnabled] = useState(settings.zone_pricing_enabled ?? false)
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
   const [editTarifAllowedRoles, setEditTarifAllowedRoles] = useState<Role[]>(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
   const [feedbackTemplates, setFeedbackTemplates] = useState({
@@ -2394,6 +2396,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setDriverDailyPriorityWindows(settings.driver_daily_priority_windows ?? defaultDailyPriorityWindows())
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
+    setZonePricingEnabled(settings.zone_pricing_enabled ?? false)
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
     setEditTarifAllowedRoles(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
     setFeedbackTemplates({
@@ -2424,6 +2427,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           driver_daily_priority_windows: driverDailyPriorityWindows,
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
+          zone_pricing_enabled: zonePricingEnabled,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
           edit_tarif_allowed_roles: editTarifAllowedRoles,
           feedback_templates: feedbackTemplates,
@@ -2555,6 +2559,20 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           ))}
         </div>
         {permissions.can_manage_system_settings && <button className="secondary-button" type="button" onClick={() => setNightTariffRules((rows) => [...rows, { area: '', start: '22:00', end: '00:00', percent: 30 }])}>Tambah Rule Tarif Malam</button>}
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Zone Pricing Customer</h2>
+            <p>Matikan saat audit agar rule zona tetap bisa dites tanpa menimpa harga dasar customer.</p>
+          </div>
+          <span className={zonePricingEnabled ? 'status success' : 'status warning'}>{zonePricingEnabled ? 'Aktif' : 'Bypass'}</span>
+        </div>
+        <label className="admin-toggle-row">
+          <input type="checkbox" checked={zonePricingEnabled} disabled={!permissions.can_manage_system_settings} onChange={(event) => setZonePricingEnabled(event.target.checked)} />
+          <span>Aktifkan zone pricing untuk order customer</span>
+        </label>
+        <div className="notice">Saat bypass, Zone Pricing Rules dan tester tetap bisa dipakai untuk cek satu per satu. Order customer memakai Price Setting, Pricing Keyword Rules, tarif malam, dan fee layanan.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">

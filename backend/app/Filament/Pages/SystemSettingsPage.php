@@ -87,6 +87,7 @@ class SystemSettingsPage extends Page implements HasForms
             'driver_daily_priority_windows' => $this->dailyPriorityWindows($settings),
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => $this->nightTariffRules($settings),
+            'zone_pricing_enabled' => $settings->bool('zone_pricing_enabled', false),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'payment_cash_enabled' => true,
             'payment_transfer_enabled' => true,
@@ -545,6 +546,13 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->reorderable()
                                             ->columnSpanFull(),
                                     ]),
+                                Forms\Components\Section::make('Zone Pricing Customer')
+                                    ->description('Sementara matikan agar rule zona bisa diaudit satu per satu dari tester tanpa menimpa harga dasar customer.')
+                                    ->schema([
+                                        Forms\Components\Toggle::make('zone_pricing_enabled')
+                                            ->label('Aktifkan zone pricing untuk order customer')
+                                            ->helperText('Jika nonaktif, menu Zone Pricing dan tester tetap bisa dipakai, tetapi kalkulasi customer memakai price setting/harga dasar.'),
+                                    ]),
                                 Forms\Components\Section::make('Assign Driver Order')
                                     ->description('Atur role manajemen yang boleh memilih driver langsung dari Order Operations. Admin dan GM selalu bisa memakai fitur ini agar CMS tidak terkunci.')
                                     ->schema([
@@ -670,6 +678,7 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('driver_daily_priority_windows', json_encode($this->normalizeDailyPriorityWindows($data['driver_daily_priority_windows'] ?? [])));
         $settings->set('night_tariff_enabled', (bool) ($data['night_tariff_enabled'] ?? true));
         $settings->set('night_tariff_rules', json_encode($this->normalizeNightTariffRules($data['night_tariff_rules'] ?? [])));
+        $settings->set('zone_pricing_enabled', (bool) ($data['zone_pricing_enabled'] ?? false));
         $settings->set('assign_driver_allowed_roles', json_encode($this->normalizeAssignDriverRoles($data['assign_driver_allowed_roles'] ?? self::DEFAULT_ASSIGN_DRIVER_ROLES)));
         $settings->set('payment_methods', json_encode($this->paymentMethods($data)));
         $settings->set('payment_transfer_account', json_encode($this->normalizeTransferAccounts($data['payment_bank_accounts'] ?? [])));
