@@ -457,9 +457,17 @@ class OrderParserService
         }
 
         $branchId = Branch::query()
-            ->get(['id', 'name', 'area', 'latitude', 'longitude'])
+            ->get(['id', 'branch_code', 'name', 'area', 'latitude', 'longitude'])
             ->flatMap(function (Branch $branch) use ($needle): array {
+                $normalizedCode = str((string) $branch->branch_code)
+                    ->lower()
+                    ->replace(['-', '_', '/', ','], ' ')
+                    ->squish()
+                    ->toString();
+
                 return collect([
+                    $branch->branch_code,
+                    trim(($branch->branch_code ?? '').' '.($branch->name ?? '').' '.($branch->area ?? '')),
                     trim(($branch->name ?? '').' '.($branch->area ?? '')),
                     trim(($branch->area ?? '').' '.($branch->name ?? '')),
                     $branch->area,
@@ -475,7 +483,7 @@ class OrderParserService
                     ->filter(fn (string $candidate): bool => $candidate === $needle || str_contains($needle, $candidate))
                     ->map(fn (string $candidate): array => [
                         'branch_id' => $branch->id,
-                        'score' => ($candidate === $needle ? 10_000 : 0) + strlen($candidate),
+                        'score' => ($candidate === $needle ? 10_000 : 0) + ($normalizedCode !== '' && str_starts_with($candidate, $normalizedCode) ? 1_000 : 0) + strlen($candidate),
                     ])
                     ->all();
             })

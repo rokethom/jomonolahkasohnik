@@ -57,6 +57,7 @@ class ProfileController extends Controller
             'phone' => $user->phone,
             'branch_id' => $user->branch_id ?? $branch?->id,
             'branch' => $branch?->name,
+            'branch_code' => $branch?->branch_code,
             'branch_name' => $branch?->name,
             'branch_area' => $branch?->area,
             'branch_display_name' => $branch?->display_name,

@@ -35,6 +35,7 @@ class UserLocationController extends Controller
                 'inside_branch' => $result['inside_branch'],
                 'branch' => $result['branch'] ? [
                     'id' => $result['branch']->id,
+                    'branch_code' => $result['branch']->branch_code,
                     'name' => $result['branch']->name,
                     'area' => $result['branch']->area,
                     'display_name' => $result['branch']->display_name,
@@ -47,6 +48,7 @@ class UserLocationController extends Controller
                 'distance_meters' => $result['distance_meters'],
                 'nearest_branch' => $result['nearest_branch'] ? [
                     'id' => $result['nearest_branch']->id,
+                    'branch_code' => $result['nearest_branch']->branch_code,
                     'name' => $result['nearest_branch']->name,
                     'area' => $result['nearest_branch']->area,
                     'display_name' => $result['nearest_branch']->display_name,
@@ -72,6 +74,7 @@ class UserLocationController extends Controller
             'phone' => $user->phone,
             'branch_id' => $user->branch_id ?? $branch?->id,
             'branch' => $branch?->name,
+            'branch_code' => $branch?->branch_code,
             'branch_name' => $branch?->name,
             'branch_area' => $branch?->area,
             'branch_display_name' => $branch?->display_name,

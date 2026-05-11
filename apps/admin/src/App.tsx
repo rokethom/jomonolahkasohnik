@@ -33,7 +33,9 @@ type User = {
   role: Role
   branch_id: number | null
   branch: string | null
+  branch_code?: string | null
   branch_area?: string | null
+  branch_display_name?: string | null
   is_active: boolean
   is_suspended: boolean
   driver_state?: 'online' | 'offline'
@@ -54,6 +56,8 @@ type UserLocationPoint = {
   address?: string | null
   accuracy?: number | null
   branch?: string | null
+  branch_code?: string | null
+  branch_display_name?: string | null
   status?: string | null
   updated_at?: string | null
   maps_url?: string | null
@@ -124,7 +128,9 @@ type Order = {
   status: string
   cancel_reason?: string | null
   branch: string | null
+  branch_code?: string | null
   branch_area?: string | null
+  branch_display_name?: string | null
   pickup_address?: string | null
   destination_address?: string | null
   distance_km?: number | string | null
@@ -161,7 +167,9 @@ type OperHandle = {
   driver?: string | null
   driver_phone?: string | null
   branch?: string | null
+  branch_code?: string | null
   branch_area?: string | null
+  branch_display_name?: string | null
   service?: string | null
   total?: number | null
   reason?: string | null
@@ -214,7 +222,7 @@ type ManualOrderPreview = {
   parsed?: Record<string, unknown> | null
 }
 
-type Branch = { id: number; name: string; area: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number; geofence_areas?: Array<{ id: number; name: string }> }
+type Branch = { id: number; branch_code?: string | null; name: string; area: string | null; display_name?: string | null; latitude: string; longitude: string; radius_km?: string | number | null; geofence_areas_count?: number; geofence_areas?: Array<{ id: number; name: string }> }
 type ServiceRow = { id: number; name: string; code: string; outside_area_only?: boolean }
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; branch?: Branch | null }
 type KeywordParser = { id: number; keyword: string; service_type: string; response_template: string; form_schema?: { fields?: Array<{ label?: string; name?: string; type?: string; required?: boolean; options?: string[] }> } | null; parser_type: 'simple' | 'advanced' | string; is_active: boolean; priority: number; created_at?: string | null; updated_at?: string | null }
@@ -1367,7 +1375,7 @@ function LiveOrders({ orders, onOpenOrder, onViewAll }: { orders: Order[]; onOpe
             <div>
               <strong>{order.code}</strong>
               <small>{order.customer || '-'} - {order.service}</small>
-              <em>{displayBranchValue(order.branch, order.branch_area)} - {shortOrderRoute(order)}</em>
+              <em>{displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} - {shortOrderRoute(order)}</em>
             </div>
             <b>Rp {Number(order.total || 0).toLocaleString('id-ID')}</b>
             <StatusBadge status={order.status} />
@@ -2540,7 +2548,7 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
                   <td>{order.customer || '-'}</td>
                   <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{order.driver}</button> : order.driver || '-'}</td>
                   <td>{order.service}</td>
-                  <td>{displayBranchValue(order.branch, order.branch_area)}</td>
+                  <td>{displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)}</td>
                   <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} · Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
                   <td><StatusBadge status={order.status} /></td>
                   {permissions.can_edit_order_price && (
@@ -2608,7 +2616,7 @@ function OperHandleQueue({ operHandles, api, permissions, onChanged, onSelectOrd
             <button className="order-code-link inline" type="button" onClick={() => onSelectOrder(item.order_id)}>{item.order_code ?? `#${item.order_id}`}</button>
             <div className="oper-handle-admin-copy">
               <strong>{item.driver || 'Driver'} mengajukan oper handle</strong>
-              <span>{displayBranchValue(item.branch, item.branch_area)} · {item.service || '-'} · {formatShortDateTime(item.created_at)}</span>
+              <span>{displayBranchValue(item.branch_display_name ?? item.branch, item.branch_area)} · {item.service || '-'} · {formatShortDateTime(item.created_at)}</span>
               <p>{item.reason || 'Tidak ada alasan tertulis.'}</p>
             </div>
             <div className="oper-handle-approval-steps">
@@ -2661,7 +2669,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onAssignDriver, onO
         <DetailItem label="Customer" value={order.customer || '-'} />
         <DetailItem label="Driver" value={order.driver_user_id && order.driver && onOpenDriverChat ? <button className="inline-action-link detail-link" type="button" onClick={() => onOpenDriverChat(order.driver_user_id!)}>{order.driver}</button> : order.driver || 'Belum diambil'} />
         <DetailItem label="Layanan" value={`${order.service_code ? `${order.service_code} · ` : ''}${order.service}`} />
-        <DetailItem label="Cabang / Area" value={displayBranchValue(order.branch, order.branch_area)} />
+        <DetailItem label="Cabang / Area" value={displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} />
         <DetailItem label="Pembayaran" value={payment} />
         <DetailItem label="Kendaraan" value={vehicleLabel(order.preferred_vehicle_type)} />
         {order.preferred_vehicle_type === 'mobil' && <DetailItem label="Seat Mobil" value={`${order.required_vehicle_seat_rows ?? 2} baris`} />}
@@ -5319,7 +5327,7 @@ function sortOrdersNewest(orders: Order[]) {
 }
 
 function orderMatchesSearch(order: Order, searchQuery: string) {
-  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''} ${order.oper_handle?.status ?? ''} ${order.oper_handle?.reason ?? ''}`
+  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''} ${order.oper_handle?.status ?? ''} ${order.oper_handle?.reason ?? ''}`
     .toLowerCase()
     .includes(searchQuery.toLowerCase())
 }
@@ -5542,8 +5550,8 @@ function shortOrderRoute(order: Order) {
 function displayBranchValue(branch: unknown, area?: string | null) {
   if (typeof branch === 'string' && branch.trim()) return [branch, area].filter(Boolean).join(' - ')
   if (branch && typeof branch === 'object') {
-    const value = branch as { name?: unknown; area?: unknown }
-    return [stringValue(value.name), stringValue(value.area) ?? area].filter(Boolean).join(' - ') || '-'
+    const value = branch as { branch_code?: unknown; name?: unknown; area?: unknown; display_name?: unknown }
+    return stringValue(value.display_name) || [stringValue(value.branch_code), stringValue(value.name), stringValue(value.area) || area].filter(Boolean).join(' - ') || '-'
   }
 
   return area || '-'
@@ -5599,7 +5607,7 @@ function formatShortDateTime(value?: string | null) {
 }
 
 function branchLabel(branch: Branch) {
-  return [branch.name, branch.area].filter(Boolean).join(' - ')
+  return branch.display_name || [branch.branch_code, branch.name, branch.area].filter(Boolean).join(' - ')
 }
 
 function branchGeofenceNames(branch: Branch) {
@@ -5612,8 +5620,9 @@ function branchLocationKey(value?: string | null) {
 }
 
 function userBranchLabel(user: User) {
+  if (user.branch_display_name) return user.branch_display_name
   if (!user.branch) return '-'
-  return [user.branch, user.branch_area].filter(Boolean).join(' - ')
+  return [user.branch_code, user.branch, user.branch_area].filter(Boolean).join(' - ')
 }
 
 function formatLocationDistance(value?: number | null) {

@@ -32,6 +32,7 @@ export type User = {
   phone?: string
   branch_id?: number
   branch?: string
+  branch_code?: string
   branch_name?: string
   branch_area?: string
   branch_display_name?: string
@@ -47,8 +48,10 @@ export type User = {
 
 export type Branch = {
   id: number
+  branch_code?: string | null
   name: string
   area?: string | null
+  display_name?: string | null
   latitude?: number | string | null
   longitude?: number | string | null
 }

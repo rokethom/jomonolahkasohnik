@@ -11,6 +11,7 @@ class Branch extends Model
     use HasFactory;
 
     protected $fillable = [
+        'branch_code',
         'name',
         'area',
         'latitude',
@@ -22,6 +23,10 @@ class Branch extends Model
         'latitude' => 'decimal:8',
         'longitude' => 'decimal:8',
         'radius_km' => 'decimal:2',
+    ];
+
+    protected $appends = [
+        'display_name',
     ];
 
     public function geofenceAreas(): HasMany
@@ -41,13 +46,19 @@ class Branch extends Model
 
     public function getDisplayNameAttribute(): string
     {
-        return collect([$this->name, $this->area])
+        return collect([$this->branch_code, $this->name, $this->area])
             ->filter()
             ->implode(' - ');
     }
 
     protected static function booted(): void
     {
+        static::saving(function (Branch $branch): void {
+            if (blank($branch->branch_code)) {
+                $branch->branch_code = static::makeBranchCode($branch->name, $branch->area);
+            }
+        });
+
         static::saved(function (Branch $branch): void {
             $branch->createPrimaryGeofenceAreaIfMissing();
         });
@@ -79,5 +90,50 @@ class Branch extends Model
     public function getDefaultGeofenceNameAttribute(): string
     {
         return $this->display_name ?: 'Area Cabang';
+    }
+
+    public static function makeBranchCode(?string $name, ?string $area): string
+    {
+        $regency = static::regencyCode((string) $name);
+        $areaCode = static::areaCode((string) $area, $regency);
+
+        return $regency.'-'.$areaCode;
+    }
+
+    private static function regencyCode(string $name): string
+    {
+        $normalized = str($name)->lower()->squish()->toString();
+
+        return match (true) {
+            str_contains($normalized, 'situbondo') => 'STB',
+            str_contains($normalized, 'bondowoso') => 'BWS',
+            str_contains($normalized, 'probolinggo') => 'PBL',
+            str_contains($normalized, 'banyuwangi') => 'BWG',
+            str_contains($normalized, 'jember') => 'JBR',
+            default => static::lettersCode($name, 'BRN'),
+        };
+    }
+
+    private static function areaCode(string $area, string $regencyCode): string
+    {
+        $normalized = str($area)->lower()->replace(['-', '_', '/', ','], ' ')->squish()->toString();
+
+        if (str_contains($normalized, 'kota')) {
+            return 'KTA';
+        }
+
+        $firstToken = strtoupper((string) str($area)->replace(['-', '_', '/', ','], ' ')->squish()->before(' '));
+        if (preg_match('/^[A-Z]{2,4}$/', $firstToken) === 1 && $firstToken !== $regencyCode) {
+            return $firstToken;
+        }
+
+        return static::lettersCode($area, 'ARE');
+    }
+
+    private static function lettersCode(string $value, string $fallback): string
+    {
+        $letters = preg_replace('/[^a-z0-9]/i', '', $value) ?: $fallback;
+
+        return strtoupper(substr($letters, 0, 3));
     }
 }

@@ -45,16 +45,18 @@ class OrderCodeGenerator
 
     private function branchCode(Branch $branch): string
     {
-        $name = $branch->area ?: $branch->name;
+        if (filled($branch->branch_code)) {
+            return $this->normalizeCode($branch->branch_code, 'APP', 6);
+        }
 
-        return $this->normalizeCode($name, 'APP');
+        return $this->normalizeCode($branch->area ?: $branch->name, 'APP');
     }
 
-    private function normalizeCode(string $value, string $fallback): string
+    private function normalizeCode(string $value, string $fallback, int $length = 3): string
     {
         $letters = preg_replace('/[^a-z0-9]/i', '', $value) ?: $fallback;
 
-        return strtoupper(substr($letters, 0, 3));
+        return strtoupper(substr($letters, 0, $length));
     }
 
     private function uniqueSuffix(): string

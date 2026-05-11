@@ -4411,7 +4411,7 @@ function mustUseGiftOrder(user: ReturnType<typeof useCustomerStore.getState>['us
 }
 
 function branchDisplayLabel(branch: Branch) {
-  return [branch.name, branch.area].filter(Boolean).join(' - ') || `Area #${branch.id}`
+  return branch.display_name || [branch.branch_code, branch.name, branch.area].filter(Boolean).join(' - ') || `Area #${branch.id}`
 }
 
 function parseShoppingItems(value: string) {

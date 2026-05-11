@@ -2028,6 +2028,8 @@ class AdminController extends Controller
                 'lng' => (float) $user->currentLocation->lng,
                 'accuracy' => $user->currentLocation->accuracy !== null ? (float) $user->currentLocation->accuracy : null,
                 'branch' => $user->currentLocation->branch?->name,
+                'branch_code' => $user->currentLocation->branch?->branch_code,
+                'branch_display_name' => $user->currentLocation->branch?->display_name,
                 'status' => $user->currentLocation->status,
                 'updated_at' => $user->currentLocation->updated_at?->toDateTimeString(),
                 'maps_url' => $this->mapsUrl((float) $user->currentLocation->lat, (float) $user->currentLocation->lng),
@@ -2039,6 +2041,8 @@ class AdminController extends Controller
                 'lng' => (float) $user->latestLocationLog->longitude,
                 'accuracy' => $user->latestLocationLog->accuracy !== null ? (float) $user->latestLocationLog->accuracy : null,
                 'branch' => $user->latestLocationLog->branch?->name,
+                'branch_code' => $user->latestLocationLog->branch?->branch_code,
+                'branch_display_name' => $user->latestLocationLog->branch?->display_name,
                 'is_suspicious' => (bool) $user->latestLocationLog->is_suspicious,
                 'is_mock_location' => (bool) $user->latestLocationLog->is_mock_location,
                 'reason' => $user->latestLocationLog->suspicion_reason,
@@ -2070,7 +2074,9 @@ class AdminController extends Controller
             'role' => $user->role->value,
             'branch_id' => $user->branch_id,
             'branch' => $user->branch?->name,
+            'branch_code' => $user->branch?->branch_code,
             'branch_area' => $user->branch?->area,
+            'branch_display_name' => $user->branch?->display_name,
             'is_active' => $user->is_active,
             'is_suspended' => $user->is_suspended,
             'driver_state' => $user->driver?->is_available ? 'online' : 'offline',
@@ -2089,6 +2095,7 @@ class AdminController extends Controller
     {
         $order->loadMissing(['user.branch', 'driver.user.branch', 'operHandleRequests.driver.user', 'crews.driver.user']);
         $operHandle = $order->operHandleRequests->sortByDesc('updated_at')->first();
+        $branch = $order->branch ?? $order->user?->branch ?? $order->driver?->user?->branch;
 
         return [
             'id' => $order->id,
@@ -2101,8 +2108,10 @@ class AdminController extends Controller
             'source' => $order->source,
             'status' => $order->status->value,
             'cancel_reason' => $this->cancelReasonFor($order),
-            'branch' => $order->branch?->name ?? $order->user?->branch?->name ?? $order->driver?->user?->branch?->name,
-            'branch_area' => $order->branch?->area ?? $order->user?->branch?->area ?? $order->driver?->user?->branch?->area,
+            'branch' => $branch?->name,
+            'branch_code' => $branch?->branch_code,
+            'branch_area' => $branch?->area,
+            'branch_display_name' => $branch?->display_name,
             'pickup_address' => $order->pickup_address,
             'destination_address' => $order->destination_address,
             'distance_km' => $order->distance_km !== null ? (float) $order->distance_km : null,
@@ -2146,6 +2155,7 @@ class AdminController extends Controller
     {
         $operHandle->loadMissing(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'driver.user.branch', 'requester']);
         $order = $operHandle->order;
+        $branch = $order?->branch ?? $order?->user?->branch ?? $operHandle->driver?->user?->branch;
 
         return [
             'id' => $operHandle->id,
@@ -2155,8 +2165,10 @@ class AdminController extends Controller
             'customer' => $order?->user?->name,
             'driver' => $operHandle->driver?->user?->name,
             'driver_phone' => $operHandle->driver?->user?->phone,
-            'branch' => $order?->branch?->name ?? $order?->user?->branch?->name ?? $operHandle->driver?->user?->branch?->name,
-            'branch_area' => $order?->branch?->area ?? $order?->user?->branch?->area ?? $operHandle->driver?->user?->branch?->area,
+            'branch' => $branch?->name,
+            'branch_code' => $branch?->branch_code,
+            'branch_area' => $branch?->area,
+            'branch_display_name' => $branch?->display_name,
             'service' => $order?->service_type,
             'total' => $order?->total_price,
             'reason' => $operHandle->reason,

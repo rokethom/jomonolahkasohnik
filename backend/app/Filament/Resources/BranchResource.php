@@ -28,10 +28,22 @@ class BranchResource extends Resource
                 Forms\Components\Section::make('Branch')
                     ->columns(2)
                     ->schema([
+                        Forms\Components\TextInput::make('branch_code')
+                            ->label('Kode branch unik')
+                            ->placeholder('STB-ASB')
+                            ->helperText('Format disarankan: KAB-AREA, contoh STB-ASB untuk Situbondo Asembagus. Kode ini dipakai parser, kode order, dan pencarian cabang agar tidak bentrok.')
+                            ->required()
+                            ->maxLength(20)
+                            ->unique(ignoreRecord: true)
+                            ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? strtoupper(trim($state)) : null),
                         Forms\Components\TextInput::make('name')
+                            ->label('Kabupaten / Kota')
+                            ->helperText('Contoh: Situbondo, Bondowoso, Probolinggo.')
                             ->required()
                             ->maxLength(255),
                         Forms\Components\TextInput::make('area')
+                            ->label('Nama area')
+                            ->helperText('Contoh: Asembagus, Kota, Besuki. Jangan isi ulang kode di sini.')
                             ->maxLength(255),
                         Forms\Components\TextInput::make('latitude')
                             ->numeric()
@@ -61,10 +73,17 @@ class BranchResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('branch_code')
+                    ->label('Kode')
+                    ->searchable()
+                    ->sortable()
+                    ->badge(),
                 Tables\Columns\TextColumn::make('name')
+                    ->label('Kab/Kota')
                     ->searchable()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('area')
+                    ->label('Area')
                     ->searchable()
                     ->placeholder('-'),
                 Tables\Columns\TextColumn::make('latitude')
@@ -97,7 +116,7 @@ class BranchResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('name');
+            ->defaultSort('branch_code');
     }
 
     public static function getPages(): array
