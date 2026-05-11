@@ -73,7 +73,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin')->middleware('role:admin,gm,hrd,manager,spv,operator,eksekutor')->group(function () {
         Route::get('/bootstrap', [AdminController::class, 'bootstrap']);
         Route::get('/monitoring', [AdminController::class, 'monitoring'])->middleware('permission:view_report');
-        Route::patch('/system-settings', [AdminController::class, 'updateSystemSettings']);
+        Route::patch('/system-settings', [AdminController::class, 'updateSystemSettings'])->middleware('permission:manage_system_settings');
         Route::get('/users', [AdminController::class, 'users'])->middleware('permission:create_user');
         Route::post('/users', [AdminController::class, 'storeUser'])->middleware('permission:create_user');
         Route::put('/users/{user}', [AdminController::class, 'updateUser'])->middleware('permission:create_user');

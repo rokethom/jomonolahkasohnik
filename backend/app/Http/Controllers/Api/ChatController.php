@@ -6,6 +6,7 @@ use App\Events\TypingIndicator;
 use App\Http\Controllers\Controller;
 use App\Models\ChatConversation;
 use App\Models\Order;
+use App\Models\User;
 use App\Services\BotService;
 use App\Services\ChatService;
 use App\Services\MessageService;
@@ -177,12 +178,22 @@ class ChatController extends Controller
 
     private function authorizeParticipant(ChatConversation $conversation, Request $request): void
     {
+        $conversation->loadMissing(['order', 'customer', 'driver']);
         $user = $request->user();
         $role = $user->role->value ?? $user->role;
 
+        if (in_array($role, ['admin', 'gm'], true)) {
+            return;
+        }
+
+        if (in_array($role, ['operator', 'eksekutor', 'manager', 'spv'], true)) {
+            abort_unless($this->staffCanAccessConversation($conversation, $user), 403);
+
+            return;
+        }
+
         abort_unless(
-            in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)
-            || in_array((int) $user->id, array_filter([
+            in_array((int) $user->id, array_filter([
                 $conversation->customer_id,
                 $conversation->driver_id,
                 $conversation->operator_id,
@@ -197,12 +208,44 @@ class ChatController extends Controller
         $user = $request->user();
         $role = $user->role->value ?? $user->role;
 
+        if (in_array($role, ['admin', 'gm'], true)) {
+            return;
+        }
+
+        if (in_array($role, ['operator', 'eksekutor', 'manager', 'spv'], true)) {
+            abort_unless($this->staffCanAccessBranch($order->branch_id, $user), 403);
+
+            return;
+        }
+
         abort_unless(
-            in_array($role, ['admin', 'operator', 'eksekutor', 'gm', 'manager', 'spv'], true)
-            || (int) $order->user_id === (int) $user->id
+            (int) $order->user_id === (int) $user->id
             || (int) optional($order->driver)->user_id === (int) $user->id,
             403,
         );
+    }
+
+    private function staffCanAccessConversation(ChatConversation $conversation, User $user): bool
+    {
+        if ((int) $conversation->operator_id === (int) $user->id) {
+            return true;
+        }
+
+        $branchId = $conversation->branch_id
+            ?? $conversation->order?->branch_id
+            ?? $conversation->customer?->branch_id
+            ?? $conversation->driver?->branch_id;
+
+        return $this->staffCanAccessBranch($branchId, $user);
+    }
+
+    private function staffCanAccessBranch(?int $branchId, User $user): bool
+    {
+        if ($branchId === null) {
+            return false;
+        }
+
+        return $user->branch_id !== null && (int) $user->branch_id === (int) $branchId;
     }
 
     private function broadcastSafely(object $event): void
