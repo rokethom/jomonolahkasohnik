@@ -35,8 +35,10 @@
     @if ($googleMapsKey)
         <div
             id="{{ $mapId }}"
-            style="height: 360px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35);"
-        ></div>
+            style="height: 360px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35); display: grid; place-items: center; color: rgb(148, 163, 184); background: rgba(15, 23, 42, .22);"
+        >
+            Memuat Google Maps...
+        </div>
     @else
         <div
             id="{{ $mapId }}"
@@ -54,7 +56,7 @@
         const fallbackLng = @json($lng);
 
         window.jojoLoadGoogleMaps = window.jojoLoadGoogleMaps || ((apiKey) => {
-            if (window.google?.maps) {
+            if (window.google?.maps?.Map) {
                 return Promise.resolve(window.google.maps);
             }
 
@@ -63,12 +65,24 @@
             }
 
             window.jojoGoogleMapsPromise = new Promise((resolve, reject) => {
+                const existingScript = document.getElementById('jojo-google-maps-sdk');
                 const script = document.createElement('script');
-                script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+                script.id = 'jojo-google-maps-sdk';
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=drawing&loading=async`;
                 script.async = true;
                 script.defer = true;
-                script.onload = () => resolve(window.google.maps);
-                script.onerror = () => reject(new Error('Google Maps gagal dimuat'));
+                script.onload = () => window.google?.maps?.Map ? resolve(window.google.maps) : reject(new Error('Google Maps tidak siap'));
+                script.onerror = () => {
+                    window.jojoGoogleMapsPromise = null;
+                    reject(new Error('Google Maps gagal dimuat'));
+                };
+
+                if (existingScript) {
+                    existingScript.addEventListener('load', script.onload, { once: true });
+                    existingScript.addEventListener('error', script.onerror, { once: true });
+                    return;
+                }
+
                 document.head.appendChild(script);
             });
 
@@ -78,7 +92,11 @@
         const init = async () => {
             const mapElement = document.getElementById(@json($mapId));
 
-            if (!mapElement || mapElement.dataset.loaded) {
+            if (!mapElement || mapElement.dataset.loaded === 'loading') {
+                return;
+            }
+
+            if (mapElement.dataset.loaded === '1' && mapElement.querySelector('.gm-style')) {
                 return;
             }
 
@@ -158,14 +176,19 @@
             try {
                 await window.jojoLoadGoogleMaps(googleMapsKey);
             } catch (error) {
+                mapElement.dataset.loaded = '';
                 mapElement.textContent = 'Google Maps gagal dimuat. Gunakan tombol Buka Google Maps untuk mengambil koordinat.';
                 return;
             }
 
             if (!window.google?.maps) {
+                mapElement.dataset.loaded = '';
+                mapElement.textContent = 'Google Maps belum siap. Refresh halaman atau gunakan tombol Buka Google Maps.';
                 return;
             }
 
+            mapElement.innerHTML = '';
+            mapElement.style.display = 'block';
             mapElement.dataset.loaded = '1';
             map = new window.google.maps.Map(mapElement, {
                 center: { lat: initialLat, lng: initialLng },
@@ -193,10 +216,15 @@
 
                 syncInputs(position.lat(), position.lng());
             });
+
+            window.setTimeout(() => {
+                window.google.maps.event.trigger(map, 'resize');
+                map.setCenter({ lat: initialLat, lng: initialLng });
+            }, 300);
         };
 
         document.addEventListener('livewire:navigated', init);
         document.addEventListener('DOMContentLoaded', init);
-        setTimeout(init, 250);
+        [150, 600, 1500].forEach((delay) => setTimeout(init, delay));
     })();
 </script>
