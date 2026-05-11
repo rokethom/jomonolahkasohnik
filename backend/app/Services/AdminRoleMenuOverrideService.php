@@ -45,6 +45,7 @@ class AdminRoleMenuOverrideService
                 'pricing' => 'Pricing & Policy',
                 'keyword-parsers' => 'Keyword Parsers',
                 'pricing-keyword-rules' => 'Pricing Keyword Rules',
+                'ring-pricing' => 'Master Ring',
                 'zone-pricing' => 'Zone Pricing Rules',
                 'zone-pricing-tester' => 'Zone Pricing Tester',
                 'settings' => 'System Settings',
@@ -117,6 +118,7 @@ class AdminRoleMenuOverrideService
             $views[] = 'pricing';
             $views[] = 'keyword-parsers';
             $views[] = 'pricing-keyword-rules';
+            $views[] = 'ring-pricing';
             $views[] = 'zone-pricing';
             $views[] = 'zone-pricing-tester';
         }

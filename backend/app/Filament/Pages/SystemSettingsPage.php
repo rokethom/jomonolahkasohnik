@@ -131,6 +131,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('google_maps_api_key')
                                             ->label('Google Maps API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
                                             ->maxLength(500)
                                             ->columnSpanFull(),
@@ -148,6 +149,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('mapbox_api_key')
                                             ->label('Mapbox API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
                                             ->maxLength(500)
                                             ->columnSpanFull(),
@@ -165,6 +167,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('fcm_server_key')
                                             ->label('Legacy FCM Server Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Legacy API lama. Jika Service Account JSON diisi, sistem memakai HTTP v1.')
                                             ->maxLength(1000)
                                             ->columnSpanFull(),
@@ -284,6 +287,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('hermes_api_key')
                                             ->label('AI assistant API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Kosongkan jika tidak ingin mengganti key. Untuk OpenClaw gunakan Gateway bearer token.')
                                             ->maxLength(1500)
                                             ->columnSpanFull(),
@@ -300,6 +304,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('openai_api_key')
                                             ->label('OpenAI API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
                                             ->maxLength(1000)
                                             ->columnSpanFull(),
@@ -316,6 +321,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('kimi_api_key')
                                             ->label('Kimi API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Default base URL: https://api.moonshot.cn/v1')
                                             ->maxLength(1000)
                                             ->columnSpanFull(),
@@ -332,6 +338,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('blackbox_api_key')
                                             ->label('Blackbox API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Jika endpoint akun berbeda, isi Base URL override di atas.')
                                             ->maxLength(1000)
                                             ->columnSpanFull(),
@@ -349,6 +356,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('openrouter_api_key')
                                             ->label('OpenRouter API Key baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Kosongkan jika tidak ingin mengganti key yang tersimpan.')
                                             ->maxLength(1000)
                                             ->columnSpanFull(),
@@ -641,6 +649,7 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\TextInput::make('google_oauth_secret')
                                             ->label('Client Secret baru')
                                             ->password()
+                                            ->revealable()
                                             ->helperText('Kosongkan jika tidak ingin mengganti secret.')
                                             ->maxLength(500)
                                             ->columnSpanFull(),

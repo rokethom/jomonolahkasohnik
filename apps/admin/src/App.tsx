@@ -1075,7 +1075,7 @@ function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
       <form className="login-card" onSubmit={submit}>
         <div className="brand"><div className="brand-mark">J</div><div><strong>Jojo Admin</strong><span>Secure Login</span></div></div>
         <label>Email<input name="email" type="email" required placeholder="admin@jojo.test" /></label>
-        <label>Password<input name="password" type="password" required /></label>
+        <PasswordInput label="Password" required autoComplete="current-password" minLength={1} />
         {error && <div className="error-text">{error}</div>}
         <button className="primary-button" type="submit">Login</button>
         <PwaInstallButton />
@@ -2421,7 +2421,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           />
         </label>
       </div>
-      <div className="feedback-cms">
+      <div className="feedback-cms daily-priority-card">
         <div className="section-head">
           <div>
             <h2>Driver Daily Priority</h2>
@@ -2436,7 +2436,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           </label>
           <label>Durasi tahan prioritas<input type="number" min={1} max={60} value={driverDailyPriorityHoldMinutes} disabled={!permissions.can_manage_system_settings} onChange={(event) => setDriverDailyPriorityHoldMinutes(Math.max(1, Math.min(60, Number(event.target.value))))} /></label>
         </div>
-        <div className="settings-list">
+        <div className="settings-list priority-window-list">
           <strong>Jam aktif prioritas</strong>
           {driverDailyPriorityWindows.map((window, index) => (
             <div className="settings-row compact" key={`daily-priority-${index}`}>
@@ -2898,7 +2898,8 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
   const [isFormula, setFormula] = useState(false)
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     await api('/admin/price-settings', {
       method: 'POST',
       body: JSON.stringify({
@@ -2912,7 +2913,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
         subtract_value: Number(form.get('subtract_value') || 0),
       }),
     })
-    event.currentTarget.reset()
+    formElement.reset()
     setShowForm(false)
     await onChanged()
   }
@@ -2923,7 +2924,8 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
   }
   const createRing = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     await api('/admin/ring-pricing-rules', {
       method: 'POST',
       body: JSON.stringify({
@@ -2940,7 +2942,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
         is_active: form.get('is_active') === 'on',
       }),
     })
-    event.currentTarget.reset()
+    formElement.reset()
     setShowRingForm(false)
     await onChanged()
   }
@@ -3255,7 +3257,8 @@ function KeywordParsersPanel({ parsers, services, permissions, api, onChanged }:
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     let schema: unknown = { fields: [] }
     const schemaText = String(form.get('form_schema') ?? '').trim()
     if (schemaText) schema = JSON.parse(schemaText)
@@ -3271,7 +3274,7 @@ function KeywordParsersPanel({ parsers, services, permissions, api, onChanged }:
         is_active: form.get('is_active') === 'on',
       }),
     })
-    event.currentTarget.reset()
+    formElement.reset()
     setShowForm(false)
     setMessage('Keyword parser berhasil disimpan.')
     await onChanged()
@@ -3325,7 +3328,8 @@ function PricingKeywordRulesPanel({ rules, services, permissions, api, onChanged
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     const scopes = form.getAll('service_scopes').map(String)
     await api('/admin/pricing-keyword-rules', {
       method: 'POST',
@@ -3339,7 +3343,7 @@ function PricingKeywordRulesPanel({ rules, services, permissions, api, onChanged
         description: form.get('description') || null,
       }),
     })
-    event.currentTarget.reset()
+    formElement.reset()
     setShowForm(false)
     setMessage('Pricing keyword rule berhasil disimpan.')
     await onChanged()
@@ -3397,7 +3401,8 @@ function ZonePricingPanel({ rules, branches, geofences, services, permissions, a
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     setSaving(true)
     setMessage('')
     try {
@@ -3419,7 +3424,7 @@ function ZonePricingPanel({ rules, branches, geofences, services, permissions, a
           notes: form.get('notes') || null,
         }),
       })
-      event.currentTarget.reset()
+      formElement.reset()
       setShowForm(false)
       setMessage('Zone pricing rule berhasil disimpan.')
       await onChanged()
@@ -3557,8 +3562,16 @@ function ZonePricingTesterPanel({ branches, geofences, services, api }: { branch
           <label>Layanan<select name="service_type" defaultValue="delivery">{serviceOptions.map((service) => <option key={service.value} value={service.value}>{service.label}</option>)}</select></label>
           <label>Pickup latitude<input name="pickup_lat" type="number" step="0.00000001" defaultValue="-7.70630000" required /></label>
           <label>Pickup longitude<input name="pickup_lng" type="number" step="0.00000001" defaultValue="114.00980000" required /></label>
+          <div className="coordinate-actions">
+            <span>Pickup map</span>
+            <button className="secondary-button compact" type="button" onClick={(event) => openMapsFromForm(event.currentTarget.form, 'pickup')}><Icon name="map" />Buka Maps</button>
+          </div>
           <label>Tujuan latitude<input name="destination_lat" type="number" step="0.00000001" defaultValue="-7.71000000" required /></label>
           <label>Tujuan longitude<input name="destination_lng" type="number" step="0.00000001" defaultValue="114.02000000" required /></label>
+          <div className="coordinate-actions">
+            <span>Tujuan map</span>
+            <button className="secondary-button compact" type="button" onClick={(event) => openMapsFromForm(event.currentTarget.form, 'destination')}><Icon name="map" />Buka Maps</button>
+          </div>
           <label>Jumlah titik<input name="stops" type="number" min="1" defaultValue="1" /></label>
           <label className="span-2">Catatan / keyword<textarea name="notes" placeholder="Contoh: depan roxy, pasar panji, kue tart" /></label>
           <button className="primary-button" type="submit" disabled={loading}>{loading ? 'Testing...' : 'Test Zone Pricing'}</button>
@@ -5135,7 +5148,8 @@ function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; m
   const canCreate = ['admin', 'gm'].includes(me.role)
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
     await api('/admin/branches', {
       method: 'POST',
       body: JSON.stringify({
@@ -5146,7 +5160,7 @@ function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; m
         radius_km: Number(form.get('radius_km') || 5),
       }),
     })
-    event.currentTarget.reset()
+    formElement.reset()
     setShowForm(false)
     await onChanged()
   }
@@ -5173,18 +5187,32 @@ function LocationLogsPanel({ logs, branches, canViewMaps }: { logs: LocationLog[
   return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{canViewMaps ? `${log.branch || '-'} - ${log.latitude}, ${log.longitude}` : `${log.branch || '-'} - titik GPS disembunyikan`}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{canViewMaps && log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'GPS tidak valid' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
 }
 
+function openMapsFromForm(form: HTMLFormElement | null, point: 'pickup' | 'destination') {
+  if (!form) return
+  const data = new FormData(form)
+  const lat = Number(data.get(`${point}_lat`))
+  const lng = Number(data.get(`${point}_lng`))
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    alert('Isi latitude dan longitude dulu.')
+    return
+  }
+
+  window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank', 'noopener,noreferrer')
+}
+
 function cleanRoleOptions(roles: Role[]) {
   return roles.filter((role): role is Role => knownRoles.includes(role))
 }
 
-function PasswordInput({ name = 'password', label = 'Password', placeholder, required = false, helper }: { name?: string; label?: string; placeholder?: string; required?: boolean; helper?: string }) {
+function PasswordInput({ name = 'password', label = 'Password', placeholder, required = false, helper, autoComplete = 'new-password', minLength = 8 }: { name?: string; label?: string; placeholder?: string; required?: boolean; helper?: string; autoComplete?: string; minLength?: number }) {
   const [visible, setVisible] = useState(false)
 
   return (
     <label>
       {label}
       <span className="password-field">
-        <input name={name} type={visible ? 'text' : 'password'} required={required} minLength={8} placeholder={placeholder} autoComplete="new-password" />
+        <input name={name} type={visible ? 'text' : 'password'} required={required} minLength={minLength} placeholder={placeholder} autoComplete={autoComplete} />
         <button type="button" aria-label={visible ? 'Sembunyikan password' : 'Lihat password'} onClick={() => setVisible((value) => !value)}>
           <Icon name={visible ? 'eye-off' : 'eye'} />
         </button>

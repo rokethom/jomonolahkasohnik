@@ -1754,7 +1754,7 @@ class AdminController extends Controller
 
     private function authorizeRingPricing(Request $request): void
     {
-        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM], true), 403);
+        abort_unless($request->user()->hasPermission('edit_tarif'), 403);
     }
 
     private function validateZonePricingRule(Request $request): array
@@ -1830,7 +1830,7 @@ class AdminController extends Controller
             ->orderByDesc('occurrence_count')
             ->latest();
 
-        if (! in_array($actor->role, [UserRole::Admin, UserRole::GM], true)) {
+        if (! $actor->hasPermission('edit_tarif')) {
             $query->whereRaw('1 = 0');
         }
 
@@ -1960,7 +1960,7 @@ class AdminController extends Controller
             'names' => $permissionNames,
             'assignable_roles' => collect($user->role->assignableRoles())->map->value->all(),
             'can_manage_policy' => $user->hasPermission('edit_tarif'),
-            'can_manage_ring_pricing' => in_array($user->role, [UserRole::Admin, UserRole::GM], true),
+            'can_manage_ring_pricing' => $user->hasPermission('edit_tarif'),
             'can_manage_users' => $user->hasPermission('create_user'),
             'can_suspend_drivers' => $user->hasPermission('suspend_driver'),
             'can_unsuspend_drivers' => $user->hasPermission('unsuspend_driver'),

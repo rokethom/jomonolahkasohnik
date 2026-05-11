@@ -61,6 +61,7 @@ class OAuthSettingsPage extends Page implements HasForms
                         Forms\Components\TextInput::make('google_oauth_secret')
                             ->label('Client Secret')
                             ->password()
+                            ->revealable()
                             ->maxLength(500),
                     ]),
             ])

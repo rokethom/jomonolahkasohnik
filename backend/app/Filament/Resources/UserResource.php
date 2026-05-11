@@ -84,7 +84,7 @@ class UserResource extends Resource
                                         Forms\Components\TextInput::make('password')
                                             ->label('Password')
                                             ->password()
-                                            ->suffixIcon('heroicon-m-eye')
+                                            ->revealable()
                                             ->minLength(8)
                                             ->maxLength(255)
                                             ->afterStateHydrated(function (Forms\Components\TextInput $component): void {
