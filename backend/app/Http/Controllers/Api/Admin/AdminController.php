@@ -1856,6 +1856,10 @@ class AdminController extends Controller
         $query = Order::query()
             ->with(['branch', 'user.branch', 'driver.user.branch', 'operHandleRequests.driver.user']);
 
+        if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
+            return $query->whereRaw('1 = 0');
+        }
+
         if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where(function (Builder $query) use ($actor): void {
                 $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id))
@@ -1870,6 +1874,10 @@ class AdminController extends Controller
     {
         $query = OperHandleRequest::query()
             ->with(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'driver.user.branch', 'requester']);
+
+        if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
+            return $query->whereRaw('1 = 0');
+        }
 
         if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->whereHas('order', function (Builder $query) use ($actor): void {
@@ -1886,6 +1894,10 @@ class AdminController extends Controller
     {
         $query = LocationLog::query()->with(['user', 'branch', 'geofenceArea'])->latest();
 
+        if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
+            return $query->whereRaw('1 = 0');
+        }
+
         if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where('branch_id', $actor->branch_id);
         }
@@ -1897,6 +1909,10 @@ class AdminController extends Controller
     {
         $query = ChatConversation::query()->with(['customer', 'driver', 'operator', 'branch', 'order', 'latestMessage'])->latest();
 
+        if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
+            return $query->whereRaw('1 = 0');
+        }
+
         if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->where('branch_id', $actor->branch_id);
         }
@@ -1907,6 +1923,10 @@ class AdminController extends Controller
     private function auditLogsQuery(User $actor): Builder
     {
         $query = AuditLog::query()->with('user')->latest();
+
+        if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
+            return $query->whereRaw('1 = 0');
+        }
 
         if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
             $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
@@ -1930,7 +1950,7 @@ class AdminController extends Controller
             'can_unsuspend_drivers' => $user->hasPermission('unsuspend_driver'),
             'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
                 && $user->hasPermission('suspend_driver'),
-            'can_manage_system_settings' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true),
+            'can_manage_system_settings' => $user->hasPermission('manage_system_settings'),
             'can_manage_cms' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::WebAdmin, UserRole::CmsEditor], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
             'can_create_manual_order' => $user->hasPermission('manual_order'),
@@ -1939,8 +1959,8 @@ class AdminController extends Controller
             'can_export_report' => $user->hasPermission('export_report'),
             'can_monitor_live_order' => $user->hasPermission('monitor_live_order'),
             'can_monitor_live_chat' => $user->hasPermission('monitor_live_chat'),
-            'can_use_internal_chat' => $user->role instanceof UserRole && $user->role->isStaff(),
-            'can_use_internal_notes' => $user->role instanceof UserRole && $user->role->isStaff(),
+            'can_use_internal_chat' => $user->hasPermission('internal_chat'),
+            'can_use_internal_notes' => $user->hasPermission('internal_chat'),
             'can_approve_cancel_order' => $user->hasPermission('approve_cancel_order'),
             'can_reject_cancel_order' => $user->hasPermission('reject_cancel_order'),
             'can_approve_oper_handle' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true),

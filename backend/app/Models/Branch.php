@@ -57,6 +57,11 @@ class Branch extends Model
             if (blank($branch->branch_code)) {
                 $branch->branch_code = static::makeBranchCode($branch->name, $branch->area);
             }
+
+            $branch->branch_code = static::uniqueBranchCode(
+                strtoupper(trim((string) $branch->branch_code)),
+                $branch->exists ? (int) $branch->id : null,
+            );
         });
 
         static::saved(function (Branch $branch): void {
@@ -135,5 +140,24 @@ class Branch extends Model
         $letters = preg_replace('/[^a-z0-9]/i', '', $value) ?: $fallback;
 
         return strtoupper(substr($letters, 0, 3));
+    }
+
+    private static function uniqueBranchCode(string $code, ?int $branchId = null): string
+    {
+        $base = $code !== '' ? substr($code, 0, 20) : 'BRN-ARE';
+        $candidate = $base;
+        $counter = 2;
+
+        while (static::query()
+            ->when($branchId, fn ($query) => $query->where('id', '!=', $branchId))
+            ->where('branch_code', $candidate)
+            ->exists()
+        ) {
+            $suffix = '-'.$counter;
+            $candidate = substr($base, 0, 20 - strlen($suffix)).$suffix;
+            $counter++;
+        }
+
+        return $candidate;
     }
 }

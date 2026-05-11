@@ -21,6 +21,10 @@ class RolePermissionSeeder extends Seeder
         'assign_driver',
         'approve_cancel_order',
         'reject_cancel_order',
+        'manual_order',
+        'internal_chat',
+        'manage_system_settings',
+        'manage_manual_order',
         'manage_cms',
     ];
 
@@ -39,6 +43,7 @@ class RolePermissionSeeder extends Seeder
             'view_report',
             'monitor_live_order',
             'monitor_live_chat',
+            'internal_chat',
         ],
         'manager' => [
             'create_user',
@@ -46,8 +51,11 @@ class RolePermissionSeeder extends Seeder
             'view_report',
             'monitor_live_order',
             'monitor_live_chat',
+            'internal_chat',
             'export_report',
             'edit_tarif',
+            'manage_system_settings',
+            'manage_manual_order',
         ],
         'spv' => [
             'suspend_driver',
@@ -56,7 +64,10 @@ class RolePermissionSeeder extends Seeder
             'approve_cancel_order',
             'reject_cancel_order',
             'monitor_live_chat',
+            'internal_chat',
             'edit_tarif',
+            'manage_system_settings',
+            'manage_manual_order',
         ],
         'operator' => [
             'monitor_live_order',
@@ -64,6 +75,8 @@ class RolePermissionSeeder extends Seeder
             'reject_cancel_order',
             'monitor_live_chat',
             'assign_driver',
+            'manual_order',
+            'internal_chat',
             'edit_tarif',
         ],
         'eksekutor' => [
@@ -72,6 +85,8 @@ class RolePermissionSeeder extends Seeder
             'approve_cancel_order',
             'reject_cancel_order',
             'monitor_live_chat',
+            'manual_order',
+            'internal_chat',
         ],
     ];
 

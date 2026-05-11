@@ -70,7 +70,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/push/device-token', [PushDeviceTokenController::class, 'store']);
     Route::delete('/push/device-token', [PushDeviceTokenController::class, 'destroy']);
 
-    Route::prefix('admin')->middleware('role:admin,gm,hrd,manager,spv,operator,eksekutor')->group(function () {
+    Route::prefix('admin')->middleware('role:admin,gm,hrd,manager,spv,operator,eksekutor,web_admin,cms_editor')->group(function () {
         Route::get('/bootstrap', [AdminController::class, 'bootstrap']);
         Route::get('/monitoring', [AdminController::class, 'monitoring'])->middleware('permission:view_report');
         Route::patch('/system-settings', [AdminController::class, 'updateSystemSettings'])->middleware('permission:manage_system_settings');
@@ -130,15 +130,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/chat/{conversation}/close', [AdminChatController::class, 'close'])->middleware('permission:monitor_live_chat');
         Route::post('/chat/cancel-requests/{cancelRequest}/approve', [AdminChatController::class, 'approveCancel'])->middleware('permission:approve_cancel_order');
         Route::post('/chat/cancel-requests/{cancelRequest}/reject', [AdminChatController::class, 'rejectCancel'])->middleware('permission:reject_cancel_order');
-        Route::get('/internal-chat/rooms', [InternalChatController::class, 'rooms']);
-        Route::post('/internal-chat/rooms', [InternalChatController::class, 'storeRoom']);
-        Route::get('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'messages']);
-        Route::post('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'sendMessage']);
-        Route::get('/internal-notes', [InternalNoteController::class, 'index']);
-        Route::post('/internal-notes', [InternalNoteController::class, 'store']);
-        Route::patch('/internal-notes/{internalNote}', [InternalNoteController::class, 'update']);
-        Route::post('/internal-notes/{internalNote}/replies', [InternalNoteController::class, 'reply']);
-        Route::delete('/internal-notes/{internalNote}', [InternalNoteController::class, 'destroy']);
+        Route::get('/internal-chat/rooms', [InternalChatController::class, 'rooms'])->middleware('permission:internal_chat');
+        Route::post('/internal-chat/rooms', [InternalChatController::class, 'storeRoom'])->middleware('permission:internal_chat');
+        Route::get('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'messages'])->middleware('permission:internal_chat');
+        Route::post('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'sendMessage'])->middleware('permission:internal_chat');
+        Route::get('/internal-notes', [InternalNoteController::class, 'index'])->middleware('permission:internal_chat');
+        Route::post('/internal-notes', [InternalNoteController::class, 'store'])->middleware('permission:internal_chat');
+        Route::patch('/internal-notes/{internalNote}', [InternalNoteController::class, 'update'])->middleware('permission:internal_chat');
+        Route::post('/internal-notes/{internalNote}/replies', [InternalNoteController::class, 'reply'])->middleware('permission:internal_chat');
+        Route::delete('/internal-notes/{internalNote}', [InternalNoteController::class, 'destroy'])->middleware('permission:internal_chat');
         Route::post('/oper-handles/{operHandle}/approve', [OperHandleApprovalController::class, 'approve']);
         Route::get('/reports', [AdminController::class, 'reports'])->middleware('permission:view_report');
         Route::get('/reports/driver-deposits', [AdminController::class, 'driverDepositReport'])->middleware('permission:view_report');

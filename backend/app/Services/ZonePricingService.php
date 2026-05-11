@@ -18,12 +18,18 @@ class ZonePricingService
             return null;
         }
 
-        $branchId = isset($payload['branch_id']) ? (int) $payload['branch_id'] : null;
+        $branchIds = $this->candidateBranchIds($payload);
 
         return ZonePricingRule::query()
             ->with(['branch', 'geofenceArea.branch'])
             ->active()
-            ->forBranch($branchId)
+            ->where(function ($query) use ($branchIds): void {
+                $query->whereNull('branch_id');
+
+                if ($branchIds !== []) {
+                    $query->orWhereIn('branch_id', $branchIds);
+                }
+            })
             ->forDistance($distanceKm)
             ->where(function ($query) use ($serviceType): void {
                 $query->whereNull('service_type')
@@ -123,5 +129,31 @@ class ZonePricingService
         }
 
         return $this->geofence->containsPoint((float) $payload[$latKey], (float) $payload[$lngKey], $area);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function candidateBranchIds(array $payload): array
+    {
+        $branchIds = [];
+
+        if (isset($payload['branch_id']) && (int) $payload['branch_id'] > 0) {
+            $branchIds[] = (int) $payload['branch_id'];
+        }
+
+        foreach ([['destination_lat', 'destination_lng'], ['pickup_lat', 'pickup_lng']] as [$latKey, $lngKey]) {
+            if (! isset($payload[$latKey], $payload[$lngKey])) {
+                continue;
+            }
+
+            $match = $this->testPoint((float) $payload[$latKey], (float) $payload[$lngKey]);
+            $branchId = data_get($match, 'branch.id');
+            if ($branchId) {
+                $branchIds[] = (int) $branchId;
+            }
+        }
+
+        return array_values(array_unique($branchIds));
     }
 }
