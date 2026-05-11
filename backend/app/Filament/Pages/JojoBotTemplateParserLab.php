@@ -268,7 +268,7 @@ class JojoBotTemplateParserLab extends Page implements HasForms
         return match ((string) ($quote['tarif_source'] ?? 'distance_hardcoded')) {
             'price_settings' => 'Distance Price Settings CMS',
             'zone_pricing' => 'Zone Pricing Rule',
-            default => 'Hardcoded distance fallback',
+            default => 'Distance pricing service',
         };
     }
 

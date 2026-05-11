@@ -21,7 +21,6 @@ class PricingService
     private const PURCHASE_AREA_KEYWORDS = ['pasar', 'roxy', 'royal', 'swalayan'];
     private const PURCHASE_CHARGE_SERVICES = ['belanja', 'gift_order', 'kurir'];
     private const GENERAL_SERVICES = ['ojek', 'kurir', 'delivery', 'do', 'belanja', 'gift', 'gift_order'];
-    private const DEFAULT_PER_KM_RATE = 4000;
 
     public function __construct(
         private readonly DistanceCalculator $distanceCalculator,
@@ -94,14 +93,17 @@ class PricingService
     public function calculateTarifFromDatabase(float $distanceKm, ?int $branchId = null): int
     {
         $setting = PriceSetting::query()
+            ->active()
             ->forBranch($branchId)
             ->forDistance($distanceKm)
             ->orderByRaw('branch_id IS NULL')
+            ->orderByRaw('max_km IS NULL')
             ->orderByDesc('min_km')
             ->first();
 
         if (! $setting) {
             $minimumFlat = PriceSetting::query()
+                ->active()
                 ->forBranch($branchId)
                 ->whereNotNull('price')
                 ->orderByRaw('branch_id IS NULL')
@@ -113,6 +115,7 @@ class PricingService
             }
 
             $setting = PriceSetting::query()
+                ->active()
                 ->forBranch($branchId)
                 ->whereNotNull('per_km_rate')
                 ->orderByRaw('branch_id IS NULL')
@@ -122,7 +125,7 @@ class PricingService
         }
 
         if (! $setting) {
-            return $this->roundUpPrice((int) ceil($distanceKm * self::DEFAULT_PER_KM_RATE));
+            throw new RuntimeException('Distance Price Settings aktif belum tersedia untuk jarak '.round($distanceKm, 2).' KM.');
         }
 
         if (! $setting->is_formula) {
@@ -220,14 +223,13 @@ class PricingService
         $stops = max(1, (int) ($payload['stops'] ?? $payload['stop_count'] ?? 1));
         $distance = $this->resolveDistance($payload);
         $route = $payload['route'] ?? $payload['travel_route'] ?? $payload['service_payload']['route'] ?? null;
+        $this->validate($serviceType, $distance, $stops);
 
-        $quote = $this->calculateByDistance($serviceType, $distance, $stops, $route);
-        if ($this->shouldUseDatabaseTarif($serviceType, $distance, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null)) {
-            $quote = $this->replaceTarif(
-                $quote,
-                $this->calculateTarifFromDatabase($distance, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null),
-            );
-        }
+        $quote = match ($serviceType) {
+            'joker_mobil' => $this->calculateJokerMobil($serviceType, $distance, $stops),
+            'travel' => $this->calculateTravel($serviceType, $distance, $stops, $route),
+            default => $this->calculateGeneral($serviceType, $distance, $stops, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null),
+        };
         if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
             $quote = $this->ringPricing->apply($quote, $ringRule);
         }
@@ -286,9 +288,9 @@ class PricingService
         return $quote;
     }
 
-    private function calculateGeneral(string $serviceType, float $distance, int $stops): array
+    private function calculateGeneral(string $serviceType, float $distance, int $stops, ?int $branchId = null): array
     {
-        $tarif = $this->generalDistanceTarif($distance);
+        $tarif = $this->calculateTarifFromDatabase($distance, $branchId);
         $serviceCharge = $this->calculateServiceFee($stops);
         $totalBeforeRound = $tarif + $serviceCharge;
         $finalPrice = $this->roundUpPrice($totalBeforeRound);
@@ -297,51 +299,13 @@ class PricingService
             'service_type' => $serviceType,
             'distance' => $distance,
             'tarif' => $tarif,
+            'tarif_source' => 'price_settings',
             'service_charge' => $serviceCharge,
             'total_before_round' => $totalBeforeRound,
             'final_price' => $finalPrice,
             'stops' => $stops,
             'service_fee_breakdown' => $this->serviceFeeBreakdown($stops),
         ]);
-    }
-
-    private function shouldUseDatabaseTarif(string $serviceType, float $distance, ?int $branchId): bool
-    {
-        if ($distance <= 0) {
-            return false;
-        }
-
-        if (in_array($serviceType, ['travel', 'joker_mobil'], true)) {
-            return false;
-        }
-
-        return PriceSetting::query()
-            ->forBranch($branchId)
-            ->forDistance($distance)
-            ->exists()
-            || PriceSetting::query()
-                ->forBranch($branchId)
-                ->whereNotNull('per_km_rate')
-                ->exists();
-    }
-
-    private function replaceTarif(array $quote, int $tarif): array
-    {
-        $serviceCharge = (int) ($quote['service_charge'] ?? $quote['service_fee'] ?? 0);
-        $totalBeforeRound = $tarif + $serviceCharge;
-        $finalPrice = $this->roundUpPrice($totalBeforeRound);
-
-        return [
-            ...$quote,
-            'tarif_source' => 'price_settings',
-            'tarif' => $tarif,
-            'price' => $tarif,
-            'base_price' => $tarif,
-            'total_before_round' => $totalBeforeRound,
-            'subtotal' => $totalBeforeRound,
-            'final_price' => $finalPrice,
-            'total_price' => $finalPrice,
-        ];
     }
 
     private function calculateJokerMobil(string $serviceType, float $distance, int $stops): array
@@ -386,19 +350,6 @@ class PricingService
             'pickup_charge' => $travel['pickup_charge'],
             'service_fee_breakdown' => [],
         ]);
-    }
-
-    private function generalDistanceTarif(float $distance): int
-    {
-        if ($distance <= 5) {
-            return 6000;
-        }
-
-        if ($distance <= 10) {
-            return 12000;
-        }
-
-        return max(0, (int) ceil(($distance * 1900) - 7000));
     }
 
     private function response(array $data): array

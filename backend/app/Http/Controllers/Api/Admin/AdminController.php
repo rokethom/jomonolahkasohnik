@@ -1740,6 +1740,7 @@ class AdminController extends Controller
             'is_formula' => ['required', 'boolean'],
             'per_km_rate' => ['nullable', 'integer', 'min:0'],
             'subtract_value' => ['nullable', 'integer', 'min:0'],
+            'is_active' => ['sometimes', 'boolean'],
         ]);
     }
 

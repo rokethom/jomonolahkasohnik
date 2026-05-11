@@ -20,6 +20,7 @@ class PriceSetting extends Model
         'is_formula',
         'per_km_rate',
         'subtract_value',
+        'is_active',
     ];
 
     protected $casts = [
@@ -30,7 +31,13 @@ class PriceSetting extends Model
         'is_formula' => 'boolean',
         'per_km_rate' => 'integer',
         'subtract_value' => 'integer',
+        'is_active' => 'boolean',
     ];
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
 
     public function scopeForDistance(Builder $query, float $distanceKm): Builder
     {

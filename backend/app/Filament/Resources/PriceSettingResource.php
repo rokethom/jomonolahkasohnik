@@ -44,6 +44,10 @@ class PriceSettingResource extends Resource
                         Forms\Components\TextInput::make('name')
                             ->required()
                             ->maxLength(255),
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Aktif')
+                            ->default(true)
+                            ->helperText('Matikan rule tanpa menghapus histori setting.'),
                         Forms\Components\Select::make('branch_id')
                             ->options(fn (): array => self::branchOptions())
                             ->searchable()
@@ -94,6 +98,9 @@ class PriceSettingResource extends Resource
                     ->formatStateUsing(fn ($record): string => $record->branch?->display_name ?? 'Global')
                     ->placeholder('Global')
                     ->sortable(),
+                Tables\Columns\ToggleColumn::make('is_active')
+                    ->label('Active')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('min_km')
                     ->suffix(' KM')
                     ->sortable(),
@@ -128,6 +135,8 @@ class PriceSettingResource extends Resource
                     ->preload(),
                 Tables\Filters\TernaryFilter::make('is_formula')
                     ->label('Formula'),
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Active'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
