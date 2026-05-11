@@ -229,6 +229,55 @@
             overflow-wrap: anywhere;
         }
 
+        .lab-price-details {
+            border: 1px solid var(--lab-border);
+            border-radius: 12px;
+            display: grid;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .lab-price-row {
+            align-items: start;
+            background: var(--lab-card);
+            display: grid;
+            gap: 10px;
+            grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr);
+            padding: 10px 12px;
+        }
+
+        .lab-price-row + .lab-price-row {
+            border-top: 1px solid var(--lab-border);
+        }
+
+        .lab-price-row span {
+            color: var(--lab-muted);
+            font-size: 0.74rem;
+            font-weight: 850;
+            text-transform: uppercase;
+        }
+
+        .lab-price-row strong {
+            color: var(--lab-text);
+            font-size: 0.86rem;
+            overflow-wrap: anywhere;
+            text-align: right;
+        }
+
+        .lab-price-row.strong strong {
+            color: var(--lab-primary);
+            font-size: 0.98rem;
+            font-weight: 950;
+        }
+
+        .lab-price-row.good strong {
+            color: var(--lab-good);
+        }
+
+        .lab-price-row.warn strong {
+            color: var(--lab-warn);
+        }
+
         @media (max-width: 1100px) {
             .lab-grid {
                 grid-template-columns: 1fr;
@@ -321,6 +370,22 @@
                                 <strong>{{ $money($preview['quote']['total_price'] ?? $preview['quote']['final_price'] ?? 0) }}</strong>
                             </div>
                         </div>
+
+                        @if (! empty($preview['price_rows']))
+                            <div class="lab-price-details">
+                                @foreach ($preview['price_rows'] as $row)
+                                    <div @class([
+                                        'lab-price-row',
+                                        'strong' => ($row['tone'] ?? null) === 'strong',
+                                        'good' => ($row['tone'] ?? null) === 'good',
+                                        'warn' => ($row['tone'] ?? null) === 'warn',
+                                    ])>
+                                        <span>{{ $row['label'] }}</span>
+                                        <strong>{{ $row['value'] }}</strong>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
                     </div>
                 @endif
 

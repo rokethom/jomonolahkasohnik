@@ -68,6 +68,7 @@ class JojoBotTemplateParserLab extends Page implements HasForms
                 'parsed' => null,
                 'payload' => null,
                 'quote' => null,
+                'price_rows' => [],
                 'reply' => null,
                 'error' => null,
             ];
@@ -101,6 +102,7 @@ class JojoBotTemplateParserLab extends Page implements HasForms
             'parsed' => $parsed,
             'payload' => $payload,
             'quote' => $quote,
+            'price_rows' => $this->pricePreviewRows($quote, $payload, $parsed),
             'reply' => $reply,
             'error' => $error,
         ];
@@ -216,5 +218,151 @@ class JojoBotTemplateParserLab extends Page implements HasForms
             preg_match('/belanja|belikan/iu', $rawText) === 1 => 'belanja',
             default => '-',
         };
+    }
+
+    private function pricePreviewRows(?array $quote, ?array $payload, ?array $parsed): array
+    {
+        if (! is_array($quote)) {
+            return [];
+        }
+
+        return array_values(array_filter([
+            $this->row('Jarak', $this->formatDistance($quote['distance_km'] ?? $quote['distance'] ?? null)),
+            $this->row('Sumber tarif', $this->tarifSourceLabel($quote)),
+            $this->row('Cabang', $this->branchLabel($payload, $parsed)),
+            $this->row('Tarif dasar', $this->money($quote['tarif'] ?? $quote['price'] ?? 0), 'strong'),
+            $this->row('Service fee', $this->money($quote['service_fee'] ?? $quote['service_charge'] ?? 0)),
+            $this->row('Tambahan keyword', $this->money($quote['keyword_charge'] ?? $quote['extra_charge'] ?? 0), (int) ($quote['keyword_charge'] ?? $quote['extra_charge'] ?? 0) > 0 ? 'warn' : null),
+            $this->row('Tarif malam', $this->nightTariffLabel($quote), filled($quote['night_tariff_charge'] ?? null) ? 'warn' : null),
+            $this->row('Helper / crew', $this->helperLabel($quote), filled($quote['crew_helper_fee'] ?? $quote['helper_service_charge'] ?? null) ? 'warn' : null),
+            $this->row('Ring pricing', $this->ringPricingLabel($quote), filled($quote['ring_pricing_rule_id'] ?? null) ? 'good' : null),
+            $this->row('Zone pricing', $this->zonePricingLabel($quote), filled($quote['zone_pricing_rule_id'] ?? null) ? 'good' : null),
+            $this->row('Subtotal sebelum pembulatan', $this->money($quote['total_before_round'] ?? $quote['subtotal'] ?? 0)),
+            $this->row('Total final', $this->money($quote['total_price'] ?? $quote['final_price'] ?? 0), 'strong'),
+        ], fn (?array $row): bool => $row !== null));
+    }
+
+    private function row(string $label, ?string $value, ?string $tone = null): ?array
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        return [
+            'label' => $label,
+            'value' => $value,
+            'tone' => $tone,
+        ];
+    }
+
+    private function tarifSourceLabel(array $quote): string
+    {
+        if (filled($quote['zone_pricing_rule_id'] ?? null)) {
+            return 'Zone Pricing Rule';
+        }
+
+        if (filled($quote['ring_pricing_rule_id'] ?? null)) {
+            return 'Master Ring Pricing';
+        }
+
+        return match ((string) ($quote['tarif_source'] ?? 'distance_hardcoded')) {
+            'price_settings' => 'Distance Price Settings CMS',
+            'zone_pricing' => 'Zone Pricing Rule',
+            default => 'Hardcoded distance fallback',
+        };
+    }
+
+    private function branchLabel(?array $payload, ?array $parsed): ?string
+    {
+        $branch = data_get($parsed, 'branch');
+        $display = data_get($branch, 'display_name')
+            ?: trim(implode(' - ', array_filter([
+                data_get($branch, 'name'),
+                data_get($branch, 'area'),
+            ])));
+
+        if (filled($display)) {
+            return (string) $display;
+        }
+
+        $branchId = data_get($payload, 'branch_id');
+
+        return filled($branchId) ? 'Branch ID '.$branchId : null;
+    }
+
+    private function ringPricingLabel(array $quote): ?string
+    {
+        if (! filled($quote['ring_pricing_rule_id'] ?? null)) {
+            return null;
+        }
+
+        $route = data_get($quote, 'ring_route');
+
+        return trim(implode(' | ', array_filter([
+            'Rule #'.$quote['ring_pricing_rule_id'],
+            $quote['ring'] ?? null,
+            filled($route) ? trim(implode(' -> ', array_filter([
+                data_get($route, 'pickup_area'),
+                data_get($route, 'destination_area'),
+            ]))) : null,
+            $quote['ring_pricing_source'] ?? null,
+        ])));
+    }
+
+    private function zonePricingLabel(array $quote): ?string
+    {
+        if (! filled($quote['zone_pricing_rule_id'] ?? null)) {
+            return null;
+        }
+
+        $adjustment = (int) ($quote['zone_pricing_adjustment'] ?? 0);
+
+        return trim(implode(' | ', array_filter([
+            $quote['zone_pricing_rule_name'] ?? 'Rule #'.$quote['zone_pricing_rule_id'],
+            $quote['zone_pricing_area_name'] ?? null,
+            $quote['zone_pricing_mode'] ?? null,
+            $adjustment !== 0 ? 'Adjust '.$this->money($adjustment) : null,
+        ])));
+    }
+
+    private function nightTariffLabel(array $quote): ?string
+    {
+        $amount = (int) ($quote['night_tariff_charge'] ?? 0);
+        if ($amount <= 0) {
+            return null;
+        }
+
+        return trim(implode(' | ', array_filter([
+            $this->money($amount),
+            filled($quote['night_tariff_percent'] ?? null) ? ((int) $quote['night_tariff_percent']).'%' : null,
+        ])));
+    }
+
+    private function helperLabel(array $quote): ?string
+    {
+        $amount = (int) ($quote['crew_helper_fee'] ?? $quote['helper_service_charge'] ?? 0);
+        if ($amount <= 0) {
+            return null;
+        }
+
+        return trim(implode(' | ', array_filter([
+            data_get($quote, 'crew_decision.helper_label', 'Helper'),
+            data_get($quote, 'crew_decision.rule_name'),
+            $this->money($amount),
+        ])));
+    }
+
+    private function formatDistance(mixed $value): ?string
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return rtrim(rtrim(number_format((float) $value, 2, ',', '.'), '0'), ',').' KM';
+    }
+
+    private function money(mixed $value): string
+    {
+        return 'Rp '.number_format((int) $value, 0, ',', '.');
     }
 }
