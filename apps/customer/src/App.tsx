@@ -3577,7 +3577,7 @@ function HistoryScreen({
   }, [selectedMonth])
 
   return (
-    <div className="simple-page">
+    <div className="simple-page history-page">
       <div className="history-head">
         <div>
           <h1>History Order</h1>
@@ -3587,52 +3587,54 @@ function HistoryScreen({
           {monthOptions.map((key) => <option key={key} value={key}>{formatMonthLabel(key)}</option>)}
         </select>
       </div>
-      {orders.length === 0 && <p>Belum ada order.</p>}
-      {orders.length > 0 && visibleOrders.length === 0 && <p>Tidak ada order pada periode ini.</p>}
-      {visibleOrders.map((order) => (
-        <article className="history-row" key={order.id}>
-          <button className="history-row-main" type="button" onClick={() => setDetailOrder(order)}>
-            <div className="history-time">
-              <strong>{formatOrderTime(order.created_at)}</strong>
-              <span>{formatOrderDate(order.created_at)}</span>
+      <div className="history-scroll">
+        {orders.length === 0 && <p className="history-empty">Belum ada order.</p>}
+        {orders.length > 0 && visibleOrders.length === 0 && <p className="history-empty">Tidak ada order pada periode ini.</p>}
+        {visibleOrders.map((order) => (
+          <article className="history-row" key={order.id}>
+            <button className="history-row-main" type="button" onClick={() => setDetailOrder(order)}>
+              <div className="history-time">
+                <strong>{formatOrderTime(order.created_at)}</strong>
+                <span>{formatOrderDate(order.created_at)}</span>
+              </div>
+              <div className="history-detail">
+                <span>{order.order_code ?? `#${order.id}`}</span>
+                <small>{order.pickup_address ?? 'Pickup'} ke {order.destination_address ?? 'Tujuan'}</small>
+                <OrderReasonNote order={order} compact />
+              </div>
+              <div className="history-price">
+                <strong>{formatRupiah(order.total_price ?? order.total)}</strong>
+                <small>{statusLabel(order.status)}</small>
+              </div>
+            </button>
+            <div className="history-actions">
+              {isAcceptedOrder(order) && (
+                <button className="history-action chat" type="button" onClick={() => onOpenDriverChat(order)}>
+                  Chat Driver
+                </button>
+              )}
+              {isCompletedStatus(order.status) && (
+                <HistoryRating
+                  order={order}
+                  onRated={async () => {
+                    const nextOrders = await fetchOrders()
+                    onOrdersChanged(nextOrders)
+                  }}
+                  onError={(message) => store.showToast('error', message)}
+                  onSuccess={(message) => store.showToast('success', message)}
+                />
+              )}
+              {isDriverTimeoutCancelledOrder(order) && (
+                <TimeoutChoiceActions
+                  order={order}
+                  onExtendWait={onExtendWait}
+                  onKeepCancelled={onKeepCancelled}
+                />
+              )}
             </div>
-            <div className="history-detail">
-              <span>{order.order_code ?? `#${order.id}`}</span>
-              <small>{order.pickup_address ?? 'Pickup'} ke {order.destination_address ?? 'Tujuan'}</small>
-              <OrderReasonNote order={order} compact />
-            </div>
-            <div className="history-price">
-              <strong>{formatRupiah(order.total_price ?? order.total)}</strong>
-              <small>{statusLabel(order.status)}</small>
-            </div>
-          </button>
-          <div className="history-actions">
-            {isAcceptedOrder(order) && (
-              <button className="history-action chat" type="button" onClick={() => onOpenDriverChat(order)}>
-                Chat Driver
-              </button>
-            )}
-            {isCompletedStatus(order.status) && (
-              <HistoryRating
-                order={order}
-                onRated={async () => {
-                  const nextOrders = await fetchOrders()
-                  onOrdersChanged(nextOrders)
-                }}
-                onError={(message) => store.showToast('error', message)}
-                onSuccess={(message) => store.showToast('success', message)}
-              />
-            )}
-            {isDriverTimeoutCancelledOrder(order) && (
-              <TimeoutChoiceActions
-                order={order}
-                onExtendWait={onExtendWait}
-                onKeepCancelled={onKeepCancelled}
-              />
-            )}
-          </div>
-        </article>
-      ))}
+          </article>
+        ))}
+      </div>
       {detailOrder && (
         <OrderDetailModal
           order={detailOrder}
