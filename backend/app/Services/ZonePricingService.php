@@ -119,7 +119,7 @@ class ZonePricingService
             'either' => $pickupMatches || $destinationMatches,
             'both' => $pickupMatches && $destinationMatches,
             default => $destinationMatches,
-        };
+        } && (! $this->isBroadBranchArea($area) || $this->ruleNameMatchesPayload($rule, $payload));
     }
 
     private function payloadPointMatches(array $payload, string $latKey, string $lngKey, GeofenceArea $area): bool
@@ -129,6 +129,90 @@ class ZonePricingService
         }
 
         return $this->geofence->containsPoint((float) $payload[$latKey], (float) $payload[$lngKey], $area);
+    }
+
+    private function isBroadBranchArea(GeofenceArea $area): bool
+    {
+        if ($area->shape_type !== 'circle' || (float) $area->radius_meters < 5000) {
+            return false;
+        }
+
+        $branch = $area->branch;
+        if (! $branch) {
+            return false;
+        }
+
+        $areaName = $this->normalizeText((string) $area->name);
+
+        return in_array($areaName, array_filter([
+            $this->normalizeText((string) $branch->name),
+            $this->normalizeText((string) $branch->area),
+            $this->normalizeText(trim(($branch->name ?? '').' '.($branch->area ?? ''))),
+        ]), true);
+    }
+
+    private function ruleNameMatchesPayload(ZonePricingRule $rule, array $payload): bool
+    {
+        $haystack = $this->normalizeText(implode(' ', [
+            $payload['pickup_address'] ?? '',
+            $payload['store_location'] ?? '',
+            $payload['purchase_address'] ?? '',
+            $payload['destination_text'] ?? $payload['destination_address'] ?? '',
+            $payload['notes'] ?? '',
+        ]));
+
+        if ($haystack === '') {
+            return false;
+        }
+
+        foreach ($this->ruleKeywords($rule) as $keyword) {
+            if ($keyword !== '' && str_contains($haystack, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function ruleKeywords(ZonePricingRule $rule): array
+    {
+        $branch = $rule->branch;
+        $words = preg_split('/\s+/', $this->normalizeText((string) $rule->name)) ?: [];
+        $ignored = array_flip(array_filter([
+            $this->normalizeText((string) $branch?->branch_code),
+            $this->normalizeText((string) $branch?->name),
+            $this->normalizeText((string) $branch?->area),
+            'stb',
+            'bws',
+            'pbl',
+            'bwg',
+            'jbr',
+            'kota',
+            'depan',
+            'belakang',
+            'barat',
+            'timur',
+            'utara',
+            'selatan',
+            'jalan',
+        ]));
+
+        return collect($words)
+            ->filter(fn (string $word): bool => strlen($word) >= 4 && ! isset($ignored[$word]))
+            ->values()
+            ->all();
+    }
+
+    private function normalizeText(string $value): string
+    {
+        return str($value)
+            ->lower()
+            ->replaceMatches('/[^a-z0-9]+/i', ' ')
+            ->squish()
+            ->toString();
     }
 
     /**

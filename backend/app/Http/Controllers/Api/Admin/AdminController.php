@@ -1487,6 +1487,13 @@ class AdminController extends Controller
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM], true), 403);
 
         $payload = $request->validate([
+            'branch_code' => [
+                'required',
+                'string',
+                'max:20',
+                'regex:/^[A-Za-z0-9][A-Za-z0-9_-]*$/',
+                Rule::unique('branches', 'branch_code'),
+            ],
             'name' => [
                 'required',
                 'string',
@@ -1499,6 +1506,7 @@ class AdminController extends Controller
             'radius_km' => ['nullable', 'numeric', 'min:0.1', 'max:100'],
         ]);
 
+        $payload['branch_code'] = strtoupper(trim((string) $payload['branch_code']));
         $payload['radius_km'] ??= 5;
 
         $branch = Branch::query()->create($payload);
