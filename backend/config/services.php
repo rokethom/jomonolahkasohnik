@@ -37,4 +37,11 @@ return [
         'redirect' => env('GOOGLE_OAUTH_REDIRECT_URI', env('APP_URL').'/api/auth/google/callback'),
     ],
 
+    'hermes_safety' => [
+        'enabled' => env('HERMES_SAFETY_ENABLED', false),
+        'url' => env('HERMES_URL'),
+        'key' => env('HERMES_KEY'),
+        'timeout' => env('HERMES_TIMEOUT', 20),
+    ],
+
 ];

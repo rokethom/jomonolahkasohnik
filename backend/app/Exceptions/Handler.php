@@ -2,7 +2,13 @@
 
 namespace App\Exceptions;
 
+use App\Services\HermesSafetyAssistantService;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 class Handler extends ExceptionHandler
@@ -41,8 +47,86 @@ class Handler extends ExceptionHandler
      */
     public function register(): void
     {
-        $this->reportable(function (Throwable $e) {
-            //
+        $this->reportable(function (Throwable $e): void {
+            if (app()->runningInConsole()) {
+                return;
+            }
+
+            try {
+                $request = request();
+
+                if (! $request instanceof Request) {
+                    return;
+                }
+
+                if (! $this->shouldReportToHermes($e, $request)) {
+                    return;
+                }
+
+                app(HermesSafetyAssistantService::class)->analyzeError([
+                    'source' => 'failed_request',
+                    'service' => config('app.name', 'jojo-backend'),
+                    'environment' => app()->environment(),
+                    'error_message' => $e->getMessage(),
+                    'stack_trace' => mb_substr($e->getTraceAsString(), 0, 8000),
+                    'request' => [
+                        'method' => $request->method(),
+                        'path' => $request->path(),
+                        'ip' => $request->ip(),
+                        'user_id' => $request->user()?->id,
+                        'input' => $this->safeRequestInput($request),
+                    ],
+                ], 'safety_failed_request');
+            } catch (Throwable $hermesException) {
+                Log::channel('hermes')->warning('hermes_safety.exception_report_failed', [
+                    'error' => $hermesException->getMessage(),
+                ]);
+            }
         });
+    }
+
+    private function shouldReportToHermes(Throwable $exception, Request $request): bool
+    {
+        if ($exception instanceof HttpExceptionInterface && $exception->getStatusCode() < 500) {
+            return false;
+        }
+
+        $fingerprint = sha1(implode('|', [
+            $request->method(),
+            $request->path(),
+            $exception::class,
+            mb_substr($exception->getMessage(), 0, 240),
+        ]));
+
+        return Cache::add("hermes_safety:failed_request:{$fingerprint}", true, now()->addMinutes(5));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function safeRequestInput(Request $request): array
+    {
+        $input = Arr::except($request->input(), [
+            'password',
+            'password_confirmation',
+            'current_password',
+            'token',
+            'credential',
+            'api_key',
+            'secret',
+            'key',
+            'authorization',
+        ]);
+
+        return collect($input)
+            ->take(20)
+            ->map(function (mixed $value): mixed {
+                if (is_scalar($value) || $value === null) {
+                    return mb_substr((string) $value, 0, 500);
+                }
+
+                return '[complex input omitted]';
+            })
+            ->all();
     }
 }
