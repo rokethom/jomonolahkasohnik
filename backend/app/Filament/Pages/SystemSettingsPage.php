@@ -252,6 +252,7 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->label('Provider Hermes')
                                             ->options([
                                                 'openai_compatible' => 'OpenAI-compatible / self-hosted Hermes',
+                                                'kimi' => 'Kimi / Moonshot API',
                                                 'openrouter' => 'OpenRouter',
                                                 'openai' => 'OpenAI-compatible default OpenAI URL',
                                             ])
@@ -271,8 +272,8 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->default(1800),
                                         Forms\Components\TextInput::make('hermes_base_url')
                                             ->label('Hermes base URL')
-                                            ->placeholder('https://openrouter.ai/api/v1 atau endpoint self-hosted')
-                                            ->helperText('Wajib untuk provider OpenAI-compatible/self-hosted. Kosongkan jika memakai provider OpenRouter/OpenAI default.')
+                                            ->placeholder('https://api.moonshot.cn/v1, https://openrouter.ai/api/v1, atau endpoint self-hosted')
+                                            ->helperText('Wajib untuk provider self-hosted. Kosongkan jika memakai provider Kimi/OpenRouter/OpenAI default.')
                                             ->columnSpanFull(),
                                         Forms\Components\Placeholder::make('hermes_current')
                                             ->label('Hermes key tersimpan')

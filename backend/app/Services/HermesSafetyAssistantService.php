@@ -10,8 +10,18 @@ use Throwable;
 
 class HermesSafetyAssistantService
 {
+    public function __construct(
+        private readonly SettingService $settings,
+    ) {
+    }
+
     public function enabled(): bool
     {
+        if ($this->provider() === 'kimi') {
+            return ((bool) config('services.hermes_safety.enabled') || $this->settings->bool('hermes_enabled', false))
+                && filled($this->kimiApiKey());
+        }
+
         return (bool) config('services.hermes_safety.enabled')
             && filled(config('services.hermes_safety.url'))
             && filled(config('services.hermes_safety.key'));
@@ -57,6 +67,10 @@ class HermesSafetyAssistantService
         ]);
 
         try {
+            if ($this->provider() === 'kimi') {
+                return $this->sendKimi($report, $started, $payload, $command);
+            }
+
             $response = Http::acceptJson()
                 ->withHeaders(['X-Hermes-Key' => (string) config('services.hermes_safety.key')])
                 ->connectTimeout(5)
@@ -89,6 +103,78 @@ class HermesSafetyAssistantService
             return $this->fail($report, $started, 'Hermes Safety HTTP error: '.$exception->getMessage());
         } catch (Throwable $exception) {
             return $this->fail($report, $started, 'Hermes Safety error: '.$exception->getMessage());
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function sendKimi(HermesReport $report, float $started, array $payload, string $command): ?HermesReport
+    {
+        try {
+            $response = Http::withToken((string) $this->kimiApiKey())
+                ->acceptJson()
+                ->connectTimeout(8)
+                ->timeout((int) config('services.hermes_safety.timeout', 25))
+                ->post(rtrim($this->kimiBaseUrl(), '/').'/chat/completions', [
+                    'model' => $this->kimiModel(),
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => 'Anda adalah AI Monitoring & Security assistant untuk JojoApp. Analisa error/failed job secara read-only. Balas JSON valid dengan key: mode, summary, likely_cause, impact, safe_actions, review_actions, risky_actions, admin_note. Jangan beri instruksi destruktif.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                        ],
+                    ],
+                    'temperature' => 0.1,
+                    'max_tokens' => 1200,
+                    'response_format' => ['type' => 'json_object'],
+                ])
+                ->throw()
+                ->json();
+
+            $content = (string) data_get($response, 'choices.0.message.content', '');
+            $decoded = json_decode($content, true);
+            $analysis = is_array($decoded) ? $decoded : [
+                'mode' => 'Kimi AI Monitoring & Security',
+                'summary' => $content ?: 'Kimi tidak mengembalikan ringkasan.',
+                'likely_cause' => '-',
+                'impact' => '-',
+                'safe_actions' => [],
+                'review_actions' => [],
+                'risky_actions' => [],
+                'admin_note' => 'Response Kimi tidak berupa JSON penuh, isi mentah disimpan sebagai summary.',
+            ];
+
+            $report->forceFill([
+                'status' => 'completed',
+                'model' => $this->kimiModel(),
+                'duration_ms' => $this->durationMs($started),
+                'context_summary' => array_merge($report->context_summary ?? [], [
+                    'provider' => 'kimi',
+                    'command' => $command,
+                    'confidence' => data_get($analysis, 'confidence'),
+                    'safe_actions_count' => count($this->actionList(data_get($analysis, 'safe_actions', []))),
+                    'review_actions_count' => count($this->actionList(data_get($analysis, 'review_actions', []))),
+                    'risky_actions_count' => count($this->actionList(data_get($analysis, 'risky_actions', []))),
+                ]),
+                'report' => $this->formatReport($analysis),
+                'error_message' => null,
+            ])->save();
+
+            Log::channel('hermes')->info('hermes_safety.kimi_completed', [
+                'command' => $command,
+                'duration_ms' => $report->duration_ms,
+                'source' => $payload['source'] ?? null,
+            ]);
+
+            return $report->fresh();
+        } catch (RequestException $exception) {
+            return $this->fail($report, $started, 'Kimi Safety HTTP error: '.$exception->getMessage());
+        } catch (Throwable $exception) {
+            return $this->fail($report, $started, 'Kimi Safety error: '.$exception->getMessage());
         }
     }
 
@@ -181,5 +267,33 @@ class HermesSafetyAssistantService
     private function durationMs(float $started): int
     {
         return (int) round((microtime(true) - $started) * 1000);
+    }
+
+    private function provider(): string
+    {
+        return strtolower((string) (config('services.hermes_safety.provider') ?: $this->settings->get('hermes_provider', 'openai_compatible')));
+    }
+
+    private function kimiApiKey(): mixed
+    {
+        return config('services.hermes_safety.kimi_key')
+            ?: $this->settings->get('kimi_api_key')
+            ?: $this->settings->get('hermes_api_key');
+    }
+
+    private function kimiBaseUrl(): string
+    {
+        return (string) (config('services.hermes_safety.base_url') ?: 'https://api.moonshot.cn/v1');
+    }
+
+    private function kimiModel(): string
+    {
+        $model = trim((string) (config('services.hermes_safety.model') ?: $this->settings->get('hermes_model') ?: ''));
+
+        if ($model === '' || str_starts_with($model, 'nousresearch/')) {
+            return 'moonshot-v1-8k';
+        }
+
+        return $model;
     }
 }

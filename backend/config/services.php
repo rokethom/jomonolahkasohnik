@@ -39,8 +39,12 @@ return [
 
     'hermes_safety' => [
         'enabled' => env('HERMES_SAFETY_ENABLED', false),
+        'provider' => env('HERMES_SAFETY_PROVIDER'),
         'url' => env('HERMES_URL'),
         'key' => env('HERMES_KEY'),
+        'kimi_key' => env('HERMES_SAFETY_KIMI_KEY', env('KIMI_API_KEY')),
+        'base_url' => env('HERMES_SAFETY_BASE_URL'),
+        'model' => env('HERMES_SAFETY_MODEL'),
         'timeout' => env('HERMES_TIMEOUT', 20),
     ],
 

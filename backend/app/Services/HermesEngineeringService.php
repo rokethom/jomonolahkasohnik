@@ -150,7 +150,8 @@ class HermesEngineeringService
     {
         return [
             'enabled' => $this->settings->bool('hermes_enabled', false),
-            'model' => $this->settings->get('hermes_model'),
+            'provider' => $this->settings->get('hermes_provider', 'openai_compatible'),
+            'model' => $this->model(),
             'base_url' => $this->baseUrl() ?: 'Belum diset',
             'reports_count' => HermesReport::query()->count(),
             'latest_report' => HermesReport::query()->latest()->first(),
@@ -165,7 +166,7 @@ class HermesEngineeringService
         $started = microtime(true);
         $options = $this->commandOptions();
         $command = array_key_exists($command, $options) ? $command : 'system_overview';
-        $model = (string) $this->settings->get('hermes_model', 'nousresearch/hermes-3-llama-3.1-405b');
+        $model = $this->model();
         $report = new HermesReport([
             'user_id' => $actor?->id,
             'command' => $command,
@@ -180,7 +181,7 @@ class HermesEngineeringService
                 return $this->failReport($report, $started, 'Hermes belum aktif. Aktifkan di System Settings > AI Assistant > Hermes Engineering Assistant.');
             }
 
-            $apiKey = $this->settings->get('hermes_api_key');
+            $apiKey = $this->apiKey();
             $baseUrl = $this->baseUrl();
 
             if (! filled($apiKey) || ! filled($baseUrl) || ! filled($model)) {
@@ -504,16 +505,38 @@ class HermesEngineeringService
 
     private function baseUrl(): ?string
     {
+        $provider = (string) $this->settings->get('hermes_provider', 'openai_compatible');
         $custom = $this->settings->get('hermes_base_url');
-        if (filled($custom)) {
+        if ($provider === 'openai_compatible' && filled($custom)) {
             return (string) $custom;
         }
 
-        return match ($this->settings->get('hermes_provider', 'openai_compatible')) {
+        return match ($provider) {
             'openrouter' => 'https://openrouter.ai/api/v1',
+            'kimi' => 'https://api.moonshot.cn/v1',
             'openai' => 'https://api.openai.com/v1',
             default => null,
         };
+    }
+
+    private function apiKey(): mixed
+    {
+        if ($this->settings->get('hermes_provider') === 'kimi') {
+            return $this->settings->get('kimi_api_key') ?: $this->settings->get('hermes_api_key');
+        }
+
+        return $this->settings->get('hermes_api_key');
+    }
+
+    private function model(): string
+    {
+        $model = trim((string) $this->settings->get('hermes_model', ''));
+
+        if ($this->settings->get('hermes_provider') === 'kimi' && ($model === '' || str_starts_with($model, 'nousresearch/'))) {
+            return 'moonshot-v1-8k';
+        }
+
+        return $model !== '' ? $model : 'nousresearch/hermes-3-llama-3.1-405b';
     }
 
     /**
