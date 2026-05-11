@@ -458,7 +458,7 @@ class OrderParserService
             return null;
         }
 
-        $branchId = Branch::query()
+        $matches = Branch::query()
             ->get(['id', 'branch_code', 'name', 'area', 'latitude', 'longitude'])
             ->flatMap(function (Branch $branch) use ($needle): array {
                 $normalizedCode = str((string) $branch->branch_code)
@@ -490,8 +490,23 @@ class OrderParserService
                     ->all();
             })
             ->sortByDesc('score')
-            ->value('branch_id');
+            ->values();
 
-        return $branchId ? Branch::query()->find((int) $branchId) : null;
+        if ($matches->isEmpty()) {
+            return null;
+        }
+
+        $topScore = (int) $matches->first()['score'];
+        $topBranchIds = $matches
+            ->filter(fn (array $match): bool => (int) $match['score'] === $topScore)
+            ->pluck('branch_id')
+            ->unique()
+            ->values();
+
+        if ($topBranchIds->count() > 1) {
+            return null;
+        }
+
+        return Branch::query()->find((int) $topBranchIds->first());
     }
 }

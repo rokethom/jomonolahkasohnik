@@ -143,10 +143,36 @@ class PricingServiceTest extends TestCase
 
         $candidates = $method->invoke($service, 'depan rsud', $branch);
 
-        $this->assertContains('rsud Situbondo, Indonesia', $candidates);
+        $this->assertSame('rsud Situbondo, Indonesia', $candidates[0]);
         $this->assertLessThan(
             array_search('depan rsud', $candidates, true),
             array_search('rsud Situbondo, Indonesia', $candidates, true),
         );
+    }
+
+    public function test_jojobot_ignores_ambiguous_branch_area_hint(): void
+    {
+        Branch::query()->create([
+            'branch_code' => 'STB-KTA',
+            'name' => 'Situbondo',
+            'area' => 'Kota',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+        Branch::query()->create([
+            'branch_code' => 'BWS-KTA',
+            'name' => 'Bondowoso',
+            'area' => 'Kota',
+            'latitude' => -7.91326642,
+            'longitude' => 113.82250071,
+            'radius_km' => 5,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'branchIdFromText');
+        $method->setAccessible(true);
+
+        $this->assertNull($method->invoke($service, 'Kota'));
     }
 }

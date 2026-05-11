@@ -612,7 +612,7 @@ class JojoBotService
             ->squish()
             ->toString();
 
-        $branchHints = collect([$branch?->area, $branch?->name])
+        $branchHints = collect([$branch?->name, $branch?->area])
             ->filter()
             ->map(fn (string $value): string => trim($value))
             ->unique()
@@ -732,7 +732,7 @@ class JojoBotService
             return null;
         }
 
-        return Branch::query()
+        $matches = Branch::query()
             ->get(['id', 'branch_code', 'name', 'area'])
             ->flatMap(function (Branch $branch) use ($needle): array {
                 $normalizedCode = str((string) $branch->branch_code)
@@ -764,7 +764,24 @@ class JojoBotService
                     ->all();
             })
             ->sortByDesc('score')
-            ->value('branch_id');
+            ->values();
+
+        if ($matches->isEmpty()) {
+            return null;
+        }
+
+        $topScore = (int) $matches->first()['score'];
+        $topBranchIds = $matches
+            ->filter(fn (array $match): bool => (int) $match['score'] === $topScore)
+            ->pluck('branch_id')
+            ->unique()
+            ->values();
+
+        if ($topBranchIds->count() > 1) {
+            return null;
+        }
+
+        return (int) $topBranchIds->first();
     }
 
     private function serviceType(string $code, string $name): string
