@@ -228,9 +228,6 @@ class PricingService
                 $this->calculateTarifFromDatabase($distance, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null),
             );
         }
-        if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
-            $quote = $this->ringPricing->apply($quote, $ringRule);
-        }
         if ($zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
             $quote = $this->zonePricing->apply($quote, $zoneRule);
         }

@@ -856,6 +856,19 @@ class JojoBotService
     private function containsAny(string $text, array $keywords): bool
     {
         foreach ($keywords as $keyword) {
+            $keyword = trim($keyword);
+            if ($keyword === '') {
+                continue;
+            }
+
+            if (mb_strlen($keyword) <= 3) {
+                if (preg_match('/(^|[^\pL\pN])'.preg_quote($keyword, '/').'([^\pL\pN]|$)/iu', $text) === 1) {
+                    return true;
+                }
+
+                continue;
+            }
+
             if (str_contains($text, $keyword)) {
                 return true;
             }

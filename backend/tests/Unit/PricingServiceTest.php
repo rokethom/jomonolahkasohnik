@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\PricingKeywordRule;
 use App\Models\Branch;
+use App\Models\RingPricingRule;
 use App\Services\JojoBotService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\PricingService;
@@ -109,6 +110,41 @@ class PricingServiceTest extends TestCase
         $this->assertSame(2000, $pricing->extraServiceChargeForService('kurir', 'ambil di roxy'));
         $this->assertSame(0, $pricing->extraServiceChargeForService('belanja', 'ambil di roxy'));
         $this->assertSame(0, $pricing->extraServiceChargeForService('kurir', 'antar ke RS Mitra'));
+    }
+
+    public function test_master_ring_is_ignored_for_customer_pricing(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+
+        RingPricingRule::query()->create([
+            'branch_id' => 1,
+            'service_type' => 'ojek',
+            'name' => 'Legacy ring terminal',
+            'pickup_area' => 'mama marvel',
+            'destination_area' => 'terminal',
+            'ring' => 'ring_3',
+            'price' => 15000,
+            'is_bidirectional' => true,
+            'source' => 'manual',
+            'is_active' => true,
+        ]);
+
+        $quote = app(PricingService::class)->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => 1,
+            'pickup_address' => 'mama marvel',
+            'pickup_lat' => -7.70924228,
+            'pickup_lng' => 113.99408479,
+            'destination_address' => 'terminal',
+            'destination_lat' => -7.7067986,
+            'destination_lng' => 114.0120514,
+            'distance_km' => 2,
+            'stops' => 1,
+        ]);
+
+        $this->assertSame(6000, $quote['tarif']);
+        $this->assertSame(7000, $quote['total_price']);
+        $this->assertArrayNotHasKey('ring_pricing_rule_id', $quote);
     }
 
     public function test_jojobot_rejects_pricing_geocode_outside_branch_radius(): void
@@ -247,5 +283,15 @@ class PricingServiceTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertNull($method->invoke($service, 'Kota'));
+    }
+
+    public function test_jojobot_menu_keyword_does_not_match_inside_terminal(): void
+    {
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'containsAny');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($service, 'antar dari mama marvel ke terminal', ['min']));
+        $this->assertTrue($method->invoke($service, 'min mau order', ['min']));
     }
 }

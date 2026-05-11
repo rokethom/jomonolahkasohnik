@@ -25,10 +25,10 @@ class TextFormatter
             '',
             ...$this->detailLines($parsed),
             $this->locationLabel($parsed['service_type']),
-            $parsed['store_location'] ?: '-',
+            $this->locationText($parsed),
             '',
             $this->destinationLabel($parsed['service_type']),
-            $parsed['destination'] ?? $parsed['address'] ?? '-',
+            $this->destinationText($parsed),
             '',
             ...$breakdown,
             '',
@@ -85,6 +85,24 @@ class TextFormatter
             'kurir' => 'Tujuan pengiriman:',
             default => 'Lokasi pembelian:',
         };
+    }
+
+    private function locationText(array $parsed): string
+    {
+        if (($parsed['service_type'] ?? null) === 'ojek') {
+            return $parsed['address'] ?? $parsed['pickup_address'] ?? $parsed['store_location'] ?? '-';
+        }
+
+        return $parsed['store_location'] ?? $parsed['pickup_address'] ?? '-';
+    }
+
+    private function destinationText(array $parsed): string
+    {
+        if (($parsed['service_type'] ?? null) === 'ojek') {
+            return $parsed['destination'] ?? $parsed['store_location'] ?? $parsed['destination_address'] ?? '-';
+        }
+
+        return $parsed['destination'] ?? $parsed['address'] ?? $parsed['destination_address'] ?? '-';
     }
 
     private function destinationLabel(string $serviceType): string

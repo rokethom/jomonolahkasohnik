@@ -117,6 +117,10 @@ class OrderParserService
             return 'ojek';
         }
 
+        if (preg_match('/(?:antar|jemput|dari)\s+.+\s+(?:ke|tujuan|antar\s+ke)\s+.+/iu', $text) === 1) {
+            return 'ojek';
+        }
+
         if (preg_match('/gift\s+order|pesanan\s+gift|(?:^|\W)(?:gift|kado|hadiah)(?:\W|$)/iu', $text) === 1) {
             return 'gift_order';
         }
