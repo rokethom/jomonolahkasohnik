@@ -17,6 +17,11 @@ class EditZonePricingRule extends EditRecord
         ];
     }
 
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        return ZonePricingRuleResource::normalizeScopedData($data);
+    }
+
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');

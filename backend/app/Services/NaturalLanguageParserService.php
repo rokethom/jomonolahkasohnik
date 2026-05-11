@@ -20,6 +20,10 @@ class NaturalLanguageParserService
             return null;
         }
 
+        if ($serviceType !== 'DO') {
+            return null;
+        }
+
         $destination = $this->addresses->destination($text, $user);
         $pickup = $this->pickupAddress($text);
         $storeLocation = $this->addresses->storeLocation($text);

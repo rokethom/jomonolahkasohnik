@@ -20,6 +20,7 @@ class EditRingPricingRule extends EditRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        $data = RingPricingRuleResource::normalizeScopedData($data);
         $data['updated_by'] = Auth::id();
 
         return $data;

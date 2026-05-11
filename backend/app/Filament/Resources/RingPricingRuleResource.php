@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\UserRole;
 use App\Filament\Resources\RingPricingRuleResource\Pages;
 use App\Models\Branch;
 use App\Models\RingPricingRule;
@@ -11,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class RingPricingRuleResource extends Resource
@@ -41,17 +43,29 @@ class RingPricingRuleResource extends Resource
 
     public static function canCreate(): bool
     {
-        return static::shouldRegisterNavigation();
+        return static::shouldRegisterNavigation()
+            && (static::actorCanManageGlobalPricing() || static::scopedBranchId() !== null);
     }
 
     public static function canEdit($record): bool
     {
-        return static::shouldRegisterNavigation();
+        return static::shouldRegisterNavigation() && static::recordInScope($record);
     }
 
     public static function canDelete($record): bool
     {
-        return static::shouldRegisterNavigation();
+        return static::shouldRegisterNavigation() && static::recordInScope($record);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (! static::actorCanManageGlobalPricing()) {
+            $query->where('branch_id', static::scopedBranchId() ?? 0);
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -74,7 +88,13 @@ class RingPricingRuleResource extends Resource
                             ->searchable()
                             ->preload()
                             ->native(false)
-                            ->helperText('Kosongkan jika berlaku global.'),
+                            ->default(fn (): ?int => self::actorCanManageGlobalPricing() ? null : self::scopedBranchId())
+                            ->disabled(fn (): bool => ! self::actorCanManageGlobalPricing())
+                            ->dehydrated()
+                            ->required(fn (): bool => ! self::actorCanManageGlobalPricing())
+                            ->helperText(fn (): string => self::actorCanManageGlobalPricing()
+                                ? 'Kosongkan jika berlaku global.'
+                                : 'Role cabang hanya boleh mengatur master ring cabangnya sendiri.'),
                         Forms\Components\Select::make('service_type')
                             ->label('Layanan')
                             ->options(fn (): array => self::serviceOptions())
@@ -218,9 +238,19 @@ class RingPricingRuleResource extends Resource
         ];
     }
 
+    public static function normalizeScopedData(array $data): array
+    {
+        if (! static::actorCanManageGlobalPricing()) {
+            $data['branch_id'] = static::scopedBranchId();
+        }
+
+        return $data;
+    }
+
     private static function branchOptions(): array
     {
         return Branch::query()
+            ->when(! self::actorCanManageGlobalPricing(), fn (Builder $query) => $query->whereKey(self::scopedBranchId() ?? 0))
             ->orderBy('name')
             ->orderBy('area')
             ->get()
@@ -236,5 +266,27 @@ class RingPricingRuleResource extends Resource
             ->get()
             ->mapWithKeys(fn (Service $service): array => [$service->code => $service->name])
             ->all();
+    }
+
+    private static function actorCanManageGlobalPricing(): bool
+    {
+        $role = Auth::user()?->role;
+
+        return in_array($role, [UserRole::Admin, UserRole::GM], true);
+    }
+
+    private static function scopedBranchId(): ?int
+    {
+        return Auth::user()?->branch_id;
+    }
+
+    private static function recordInScope(?RingPricingRule $record): bool
+    {
+        if (! $record) {
+            return false;
+        }
+
+        return static::actorCanManageGlobalPricing()
+            || ((int) $record->branch_id === (int) static::scopedBranchId() && $record->branch_id !== null);
     }
 }

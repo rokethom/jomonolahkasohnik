@@ -26,10 +26,36 @@ class JojoBotService
     {
         $services = $this->services();
         $normalized = mb_strtolower(trim($rawText));
+        $parsed = $this->parseOrderText($rawText);
+        if ($this->isStructuredFormInput($rawText) && ($parsed['service_type'] || $parsed['pickup_address'] || $parsed['destination_address'] || $parsed['store_location'])) {
+            $serviceType = $parsed['service_type'] ?: $this->detectService($normalized, $services) ?: ($this->containsAny($normalized, self::SHOPPING_KEYWORDS) ? 'belanja' : 'delivery');
+            $parsed = $this->completeParsedForPreview($user, $parsed, $serviceType);
+
+            if ($this->isPurchaseService($serviceType) && blank($parsed['store_location'] ?? null)) {
+                return $this->missingPurchaseLocationResponse($services, $serviceType, $parsed);
+            }
+
+            $payload = $this->payload($user, $parsed, $serviceType, $this->shouldUseBaseFare($parsed));
+            $quote = $this->pricing->calculate($payload);
+
+            return [
+                'intent' => 'order_preview',
+                'services' => $services->values(),
+                'selected_service' => $serviceType,
+                'parsed' => $parsed,
+                'message' => $this->orderPreviewReply($parsed, $quote),
+                'form_schema' => null,
+                'service_type' => $serviceType,
+                'quote' => $quote,
+                'order_payload' => $payload,
+                'actions' => ['add_point', 'preview_order'],
+                'reply' => $this->orderPreviewReply($parsed, $quote),
+            ];
+        }
+
         $keywordMatch = $this->keywordParsers->detect($rawText);
 
         if ($keywordMatch !== null) {
-            $parsed = $this->parseOrderText($rawText);
             $serviceType = $parsed['service_type'] ?: $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
             $smartParsed = $this->shouldTrySmartParserForKeyword($rawText, $keywordMatch)
                 ? $this->orderParser->parse($user, $rawText)
@@ -77,6 +103,10 @@ class JojoBotService
 
             $isStructuredFormInput = $this->isStructuredFormInput($rawText);
             if (($parsed['pickup_address'] ?? null) && ($parsed['destination_address'] ?? null) || $isStructuredFormInput) {
+                if ($isStructuredFormInput) {
+                    $parsed = $this->completeParsedForPreview($user, $parsed, $serviceType);
+                }
+
                 if ($this->isPurchaseService($serviceType) && blank($parsed['store_location'] ?? null)) {
                     return $this->missingPurchaseLocationResponse($services, $serviceType, $parsed, $keywordMatch['form_schema'] ?? null);
                 }
@@ -125,7 +155,6 @@ class JojoBotService
         }
 
         $selectedService = $this->detectService($normalized, $services);
-        $parsed = $this->parseOrderText($rawText);
         if ($parsed['service_type']) {
             $selectedService = $parsed['service_type'];
         }
@@ -324,7 +353,7 @@ class JojoBotService
                 if ($activeSection !== 'receiver' || blank($fields['phone'])) {
                     $fields['phone'] = $value;
                 }
-            } elseif (preg_match('/alamat\s+pembelian|lokasi\s+(?:beli|pembelian)|toko|store|warung|resto|restaurant|pasar/u', $key)) {
+            } elseif (preg_match('/alamat\s+pembelian|lokasi\s+(?:beli|pembelian|toko)|toko|store|warung|resto|restaurant|pasar/u', $key)) {
                 $fields['store_location'] = $value;
             } elseif (preg_match('/jemput|pickup|asal/u', $key)) {
                 $fields['pickup_address'] = $value;
@@ -373,6 +402,11 @@ class JojoBotService
         if ($this->isPurchaseService($serviceType)) {
             if (blank($parsed['pickup_address'] ?? null)) {
                 $parsed['pickup_address'] = $parsed['store_location'] ?: ($this->branch($user)?->name ?? 'Lokasi pembelian');
+                $parsed['used_fallback_location'] = true;
+            }
+
+            if (blank($parsed['destination_address'] ?? null)) {
+                $parsed['destination_address'] = $user->address ?: 'Alamat customer';
                 $parsed['used_fallback_location'] = true;
             }
 

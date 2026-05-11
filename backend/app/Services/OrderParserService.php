@@ -23,15 +23,15 @@ class OrderParserService
         }
 
         $normalizedText = $this->normalizer->normalize($text);
-        $natural = $this->naturalLanguage->parse($user, $normalizedText);
+        $natural = $this->naturalLanguage->parse($user, $text);
         if ($natural !== null) {
             $natural['payload']['service_payload']['raw_text'] = $text;
             $natural['payload']['service_payload']['normalized_text'] = $normalizedText;
             return $natural;
         }
 
-        $items = $this->items->extract($normalizedText);
-        $storeLocation = $this->storeLocation($normalizedText);
+        $items = $this->items->extract($text) ?: $this->items->extract($normalizedText);
+        $storeLocation = $this->storeLocation($text) ?: $this->storeLocation($normalizedText);
         $serviceType = $this->detectService($normalizedText);
         if (! $serviceType && $items !== [] && $storeLocation) {
             $serviceType = 'DO';
@@ -47,22 +47,24 @@ class OrderParserService
         $pickupLng = (float) ($branch?->longitude ?: 107.6071);
 
         if ($serviceType === 'kurir') {
-            return $this->parseCourier($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
+            return $this->parseCourier($user, $text, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
         if (in_array($serviceType, ['ojek', 'joker_mobil'], true)) {
-            return $this->parseOjek($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
+            return $this->parseOjek($user, $text, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
         if ($serviceType === 'gift_order') {
-            return $this->parseGiftOrder($user, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
+            return $this->parseGiftOrder($user, $text, $branch, $profileAddress, $pickupLat, $pickupLng, $text);
         }
 
         if ($items === [] || ! $storeLocation) {
             return null;
         }
 
-        $destinationAddress = $this->destinationAddress($normalizedText, $profileAddress);
+        $destinationAddress = $this->destinationAddress($text, $profileAddress)
+            ?: $this->destinationAddress($normalizedText, $profileAddress)
+            ?: $profileAddress;
         if (! $destinationAddress) {
             return null;
         }
@@ -126,7 +128,7 @@ class OrderParserService
     {
         $receiverBlock = $this->afterMarker($text, 'Antarkan barang ke');
         $receiverName = $this->field($receiverBlock, 'nama');
-        $receiverPhone = $this->field($receiverBlock, '(?:hp|whatsapp|wa)(?:\s*\/\s*(?:hp|whatsapp|wa))*');
+        $receiverPhone = $this->field($receiverBlock, '(?:hp|telepon|whatsapp|wa)(?:\s*\/\s*(?:hp|telepon|whatsapp|wa))*');
         $receiverAddress = $this->field($receiverBlock, 'alamat');
         $itemType = $this->field($text, 'jenis\s+barang');
         $price = $this->field($text, 'harga');
@@ -241,7 +243,7 @@ class OrderParserService
     {
         $receiverBlock = $this->afterMarker($text, 'Diantar ke');
         $receiverName = $this->field($receiverBlock, 'nama');
-        $receiverPhone = $this->field($receiverBlock, '(?:hp|whatsapp|wa)(?:\s*\/\s*(?:hp|whatsapp|wa))*');
+        $receiverPhone = $this->field($receiverBlock, '(?:hp|telepon|whatsapp|wa)(?:\s*\/\s*(?:hp|telepon|whatsapp|wa))*');
         $receiverAddress = $this->field($receiverBlock, 'alamat');
         $items = $this->items->extract($text);
         $purchaseAddress = $this->field($text, 'alamat\s+pembelian');

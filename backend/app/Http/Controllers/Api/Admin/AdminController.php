@@ -93,9 +93,9 @@ class AdminController extends Controller
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
             'keyword_parsers' => $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)),
             'pricing_keyword_rules' => $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)),
-            'ring_pricing_rules' => RingPricingRule::query()->with('branch')->latest()->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
+            'ring_pricing_rules' => $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
             'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),
-            'zone_pricing_rules' => $this->zonePricingRulesQuery()->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)),
+            'zone_pricing_rules' => $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)),
             'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
             'chats' => $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)),
@@ -1221,9 +1221,7 @@ class AdminController extends Controller
         $this->authorizeRingPricing($request);
 
         return response()->json([
-            'data' => RingPricingRule::query()
-                ->with('branch')
-                ->latest()
+            'data' => $this->ringPricingRulesQuery($request->user())
                 ->get()
                 ->map(fn (RingPricingRule $rule): array => $this->ringPricingRulePayload($rule)),
             'suggestions' => $this->ringPricingSuggestionsQuery($request->user())
@@ -1235,9 +1233,11 @@ class AdminController extends Controller
     public function storeRingPricingRule(Request $request): JsonResponse
     {
         $this->authorizeRingPricing($request);
+        $payload = $this->validateRingPricingRule($request);
+        $this->assertPricingBranchScope($request->user(), $payload['branch_id'] ?? null);
 
         $rule = RingPricingRule::create([
-            ...$this->validateRingPricingRule($request),
+            ...$payload,
             'created_by' => $request->user()->id,
             'updated_by' => $request->user()->id,
         ]);
@@ -1254,6 +1254,8 @@ class AdminController extends Controller
         $this->authorizeRingPricing($request);
 
         $payload = $this->validateRingPricingRule($request);
+        $this->assertPricingBranchScope($request->user(), $ringPricingRule->branch_id);
+        $this->assertPricingBranchScope($request->user(), $payload['branch_id'] ?? null);
         $before = $ringPricingRule->only(array_keys($payload));
         $ringPricingRule->update([...$payload, 'updated_by' => $request->user()->id]);
         $this->recordAudit($request->user(), 'updated_ring_pricing_rule', $ringPricingRule, ['before' => $before, 'after' => $payload]);
@@ -1267,6 +1269,7 @@ class AdminController extends Controller
     public function destroyRingPricingRule(Request $request, RingPricingRule $ringPricingRule): JsonResponse
     {
         $this->authorizeRingPricing($request);
+        $this->assertPricingBranchScope($request->user(), $ringPricingRule->branch_id);
 
         $this->recordAudit($request->user(), 'deleted_ring_pricing_rule', $ringPricingRule);
         $ringPricingRule->delete();
@@ -1277,6 +1280,7 @@ class AdminController extends Controller
     public function approveRingPricingSuggestion(Request $request, RingPricingSuggestion $suggestion): JsonResponse
     {
         $this->authorizeRingPricing($request);
+        $this->assertPricingBranchScope($request->user(), $suggestion->branch_id);
 
         $payload = $request->validate([
             'name' => ['nullable', 'string', 'max:255'],
@@ -1316,6 +1320,7 @@ class AdminController extends Controller
     public function rejectRingPricingSuggestion(Request $request, RingPricingSuggestion $suggestion): JsonResponse
     {
         $this->authorizeRingPricing($request);
+        $this->assertPricingBranchScope($request->user(), $suggestion->branch_id);
         $suggestion->update(['status' => 'rejected']);
         $this->recordAudit($request->user(), 'rejected_ring_pricing_suggestion', $suggestion);
 
@@ -1327,7 +1332,7 @@ class AdminController extends Controller
         $this->authorizeZonePricing($request);
 
         return response()->json([
-            'data' => $this->zonePricingRulesQuery()
+            'data' => $this->zonePricingRulesQuery($request->user())
                 ->get()
                 ->map(fn (ZonePricingRule $rule): array => $this->zonePricingRulePayload($rule)),
         ]);
@@ -1336,8 +1341,10 @@ class AdminController extends Controller
     public function storeZonePricingRule(Request $request): JsonResponse
     {
         $this->authorizeZonePricing($request);
+        $payload = $this->validateZonePricingRule($request);
+        $this->assertPricingBranchScope($request->user(), $payload['branch_id'] ?? null, $payload['geofence_area_id'] ?? null);
 
-        $rule = ZonePricingRule::query()->create($this->validateZonePricingRule($request));
+        $rule = ZonePricingRule::query()->create($payload);
         $this->recordAudit($request->user(), 'created_zone_pricing_rule', $rule);
 
         return response()->json([
@@ -1351,6 +1358,8 @@ class AdminController extends Controller
         $this->authorizeZonePricing($request);
 
         $payload = $this->validateZonePricingRule($request);
+        $this->assertPricingBranchScope($request->user(), $zonePricingRule->branch_id, $zonePricingRule->geofence_area_id);
+        $this->assertPricingBranchScope($request->user(), $payload['branch_id'] ?? null, $payload['geofence_area_id'] ?? null);
         $before = $zonePricingRule->only(array_keys($payload));
         $zonePricingRule->update($payload);
         $this->recordAudit($request->user(), 'updated_zone_pricing_rule', $zonePricingRule, ['before' => $before, 'after' => $payload]);
@@ -1364,6 +1373,7 @@ class AdminController extends Controller
     public function destroyZonePricingRule(Request $request, ZonePricingRule $zonePricingRule): JsonResponse
     {
         $this->authorizeZonePricing($request);
+        $this->assertPricingBranchScope($request->user(), $zonePricingRule->branch_id, $zonePricingRule->geofence_area_id);
 
         $this->recordAudit($request->user(), 'deleted_zone_pricing_rule', $zonePricingRule);
         $zonePricingRule->delete();
@@ -1391,11 +1401,18 @@ class AdminController extends Controller
         ]);
 
         $serviceType = app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type']);
+        if (! $this->canManageGlobalPricing($request->user())) {
+            $this->assertPricingBranchScope($request->user(), isset($payload['branch_id']) && $payload['branch_id'] ? (int) $payload['branch_id'] : $request->user()->branch_id);
+            $payload['branch_id'] = $request->user()->branch_id;
+        }
         $pickup = $zones->testPoint((float) $payload['pickup_lat'], (float) $payload['pickup_lng']);
         $destination = $zones->testPoint((float) $payload['destination_lat'], (float) $payload['destination_lng']);
         $detectedBranchId = $branches->detect((float) $payload['destination_lat'], (float) $payload['destination_lng'])['branch']?->id
             ?? $branches->detect((float) $payload['pickup_lat'], (float) $payload['pickup_lng'])['branch']?->id
-            ?? ($payload['branch_id'] ? (int) $payload['branch_id'] : null);
+            ?? (($payload['branch_id'] ?? null) ? (int) $payload['branch_id'] : null);
+        if (! $this->canManageGlobalPricing($request->user())) {
+            $detectedBranchId = $request->user()->branch_id;
+        }
 
         $quote = $pricing->calculate([
             ...$payload,
@@ -1783,6 +1800,19 @@ class AdminController extends Controller
         $payload['is_active'] = $payload['is_active'] ?? true;
         $payload['priority'] = (int) ($payload['priority'] ?? 0);
 
+        $geofence = GeofenceArea::query()->find($payload['geofence_area_id']);
+        if (($payload['branch_id'] ?? null) && $geofence && (int) $geofence->branch_id !== (int) $payload['branch_id']) {
+            throw ValidationException::withMessages([
+                'geofence_area_id' => 'Zona/geofence harus berada di cabang yang sama dengan rule pricing.',
+            ]);
+        }
+
+        if (($payload['min_km'] ?? null) !== null && ($payload['max_km'] ?? null) !== null && (float) $payload['max_km'] < (float) $payload['min_km']) {
+            throw ValidationException::withMessages([
+                'max_km' => 'Max KM tidak boleh lebih kecil dari Min KM.',
+            ]);
+        }
+
         return $payload;
     }
 
@@ -1792,16 +1822,35 @@ class AdminController extends Controller
             || $request->user()->hasPermission('edit_tarif'), 403);
     }
 
-    private function zonePricingRulesQuery(): Builder
+    private function ringPricingRulesQuery(User $actor): Builder
+    {
+        $query = RingPricingRule::query()
+            ->with('branch')
+            ->latest();
+
+        if (! $this->canManageGlobalPricing($actor)) {
+            $query->where('branch_id', $actor->branch_id ?? 0);
+        }
+
+        return $query;
+    }
+
+    private function zonePricingRulesQuery(?User $actor = null): Builder
     {
         if (! Schema::hasTable('zone_pricing_rules')) {
             return ZonePricingRule::query()->whereRaw('1 = 0');
         }
 
-        return ZonePricingRule::query()
+        $query = ZonePricingRule::query()
             ->with(['branch', 'geofenceArea.branch'])
             ->orderByDesc('priority')
             ->latest();
+
+        if ($actor !== null && ! $this->canManageGlobalPricing($actor)) {
+            $query->where('branch_id', $actor->branch_id ?? 0);
+        }
+
+        return $query;
     }
 
     private function keywordParsersQuery(): Builder
@@ -1832,6 +1881,10 @@ class AdminController extends Controller
 
         if (! $actor->hasPermission('edit_tarif')) {
             $query->whereRaw('1 = 0');
+        }
+
+        if (! $this->canManageGlobalPricing($actor)) {
+            $query->where('branch_id', $actor->branch_id ?? 0);
         }
 
         return $query;
@@ -2245,6 +2298,29 @@ class AdminController extends Controller
 
         $orderBranchId = $order->branch_id ?? $order->user?->branch_id ?? $order->driver?->user?->branch_id;
         abort_unless((int) $orderBranchId === (int) $actor->branch_id, 403, 'Order di luar area akun ini.');
+    }
+
+    private function canManageGlobalPricing(User $actor): bool
+    {
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM], true);
+    }
+
+    private function assertPricingBranchScope(User $actor, ?int $branchId, ?int $geofenceAreaId = null): void
+    {
+        if ($this->canManageGlobalPricing($actor)) {
+            return;
+        }
+
+        abort_unless($actor->branch_id !== null, 403, 'Akun ini belum memiliki area/cabang.');
+        abort_unless($branchId !== null, 403, 'Role ini hanya boleh mengatur pricing cabang sendiri.');
+        abort_unless((int) $branchId === (int) $actor->branch_id, 403, 'Pricing di luar area akun ini.');
+
+        if ($geofenceAreaId === null) {
+            return;
+        }
+
+        $geofenceBranchId = GeofenceArea::query()->whereKey($geofenceAreaId)->value('branch_id');
+        abort_unless((int) $geofenceBranchId === (int) $actor->branch_id, 403, 'Zona pricing di luar area akun ini.');
     }
 
     private function suggestedDriversForOrder(Order $order, User $actor): array

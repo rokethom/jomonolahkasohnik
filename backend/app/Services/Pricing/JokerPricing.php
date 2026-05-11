@@ -12,7 +12,7 @@ class JokerPricing
 
         if ($distance > 3) {
             $extraDistance = max(1, (int) ceil($distance - 3));
-            $tarif += $extraDistance * 4000;
+            $tarif += $extraDistance * 5000;
         }
 
         return [
@@ -20,7 +20,7 @@ class JokerPricing
             'billing_distance' => $billingDistance,
             'base_tarif' => 25000,
             'extra_distance' => $extraDistance,
-            'per_km_rate' => 4000,
+            'per_km_rate' => 5000,
             'tarif' => $tarif,
         ];
     }

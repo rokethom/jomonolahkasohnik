@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\UserRole;
 use App\Filament\Resources\ZonePricingRuleResource\Pages;
 use App\Models\Branch;
 use App\Models\GeofenceArea;
@@ -12,6 +13,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class ZonePricingRuleResource extends Resource
@@ -34,6 +36,33 @@ class ZonePricingRuleResource extends Resource
     public static function canViewAny(): bool
     {
         return static::shouldRegisterNavigation();
+    }
+
+    public static function canCreate(): bool
+    {
+        return static::shouldRegisterNavigation()
+            && (static::actorCanManageGlobalPricing() || static::scopedBranchId() !== null);
+    }
+
+    public static function canEdit($record): bool
+    {
+        return static::shouldRegisterNavigation() && static::recordInScope($record);
+    }
+
+    public static function canDelete($record): bool
+    {
+        return static::shouldRegisterNavigation() && static::recordInScope($record);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (! static::actorCanManageGlobalPricing()) {
+            $query->where('branch_id', static::scopedBranchId() ?? 0);
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -60,7 +89,13 @@ class ZonePricingRuleResource extends Resource
                             ->preload()
                             ->native(false)
                             ->live()
-                            ->helperText('Kosongkan untuk rule global. Jika diisi, daftar geofence akan mengikuti cabang.'),
+                            ->default(fn (): ?int => self::actorCanManageGlobalPricing() ? null : self::scopedBranchId())
+                            ->disabled(fn (): bool => ! self::actorCanManageGlobalPricing())
+                            ->dehydrated()
+                            ->required(fn (): bool => ! self::actorCanManageGlobalPricing())
+                            ->helperText(fn (): string => self::actorCanManageGlobalPricing()
+                                ? 'Kosongkan untuk rule global. Jika diisi, daftar geofence akan mengikuti cabang.'
+                                : 'Role cabang hanya boleh mengatur zone pricing cabangnya sendiri.'),
                         Forms\Components\Select::make('geofence_area_id')
                             ->label('Zona / Geofence')
                             ->options(fn (Forms\Get $get): array => self::geofenceOptions($get('branch_id') ? (int) $get('branch_id') : null))
@@ -210,6 +245,7 @@ class ZonePricingRuleResource extends Resource
     public static function branchOptions(): array
     {
         return Branch::query()
+            ->when(! self::actorCanManageGlobalPricing(), fn (Builder $query) => $query->whereKey(self::scopedBranchId() ?? 0))
             ->orderBy('name')
             ->orderBy('area')
             ->get()
@@ -219,6 +255,10 @@ class ZonePricingRuleResource extends Resource
 
     public static function geofenceOptions(?int $branchId = null): array
     {
+        if (! self::actorCanManageGlobalPricing()) {
+            $branchId = self::scopedBranchId();
+        }
+
         return GeofenceArea::query()
             ->with('branch')
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
@@ -244,5 +284,36 @@ class ZonePricingRuleResource extends Resource
             'gift_order' => 'Gift Order',
             'joker_mobil' => 'Joker Mobil',
         ];
+    }
+
+    public static function normalizeScopedData(array $data): array
+    {
+        if (! static::actorCanManageGlobalPricing()) {
+            $data['branch_id'] = static::scopedBranchId();
+        }
+
+        return $data;
+    }
+
+    private static function actorCanManageGlobalPricing(): bool
+    {
+        $role = Auth::user()?->role;
+
+        return in_array($role, [UserRole::Admin, UserRole::GM], true);
+    }
+
+    private static function scopedBranchId(): ?int
+    {
+        return Auth::user()?->branch_id;
+    }
+
+    private static function recordInScope(?ZonePricingRule $record): bool
+    {
+        if (! $record) {
+            return false;
+        }
+
+        return static::actorCanManageGlobalPricing()
+            || ((int) $record->branch_id === (int) static::scopedBranchId() && $record->branch_id !== null);
     }
 }

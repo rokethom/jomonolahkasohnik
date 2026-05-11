@@ -18,7 +18,7 @@ class AddressExtractor
             return $this->clean($match[1]);
         }
 
-        if (preg_match('/\b(?:beli|belikan|pesan)\s+.+?\s+(?:di|dari|ke|pak|bu|toko|warung|resto|rumah\s+makan)\s+(.+?)(?=\s+\b(?:antar|kirim|tujuan|alamat\s+antar|ke\s+alamat)\b|$)/u', $normalized, $match) === 1) {
+        if (preg_match('/\b(?:beli|belikan|pesan)\s+.+?\s+(?:di|dari|ke|pak|bu|toko|warung|resto|rumah\s+makan)\s+(.+?)(?=\s+(?:dan\s+)?\b(?:antar|kirim|tujuan|alamat\s+antar|ke\s+alamat)\b|$)/u', $normalized, $match) === 1) {
             return $this->clean($match[1]);
         }
 

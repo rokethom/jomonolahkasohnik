@@ -17,9 +17,10 @@ class KeywordParserService
             return null;
         }
 
+        $matches = [];
         foreach ($this->activeParsers() as $parser) {
             if ($this->matches($normalized, (string) $parser['keyword'])) {
-                return [
+                $matches[] = [
                     'id' => $parser['id'],
                     'keyword' => $parser['keyword'],
                     'service_type' => $parser['service_type'],
@@ -28,11 +29,27 @@ class KeywordParserService
                     'parser_mode' => $parser['parser_type'],
                     'parser_type' => $parser['parser_type'],
                     'priority' => $parser['priority'],
+                    'keyword_count' => count($this->keywords((string) $parser['keyword'])),
                 ];
             }
         }
 
-        return null;
+        if ($matches === []) {
+            return null;
+        }
+
+        $match = collect($matches)
+            ->sortBy([
+                ['priority', 'desc'],
+                ['parser_type', 'asc'],
+                ['keyword_count', 'asc'],
+                ['keyword', 'asc'],
+            ])
+            ->first();
+
+        unset($match['keyword_count']);
+
+        return $match;
     }
 
     public function allActive(): array

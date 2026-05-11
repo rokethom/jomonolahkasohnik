@@ -15,7 +15,8 @@ use Throwable;
 class AiOrderParserService
 {
     private const OPENROUTER_FREE_MODELS = [
-        'openrouter/free',
+        'deepseek/deepseek-chat-v3-0324:free',
+        'qwen/qwen3-32b:free',
     ];
 
     private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503, 504];
@@ -250,7 +251,7 @@ class AiOrderParserService
     private function modelsForRequest(): array
     {
         $models = $this->provider() === 'openrouter'
-            ? array_values(array_unique(array_filter([$this->model(), ...self::OPENROUTER_FREE_MODELS])))
+            ? self::OPENROUTER_FREE_MODELS
             : [$this->model()];
 
         if ($this->provider() !== 'openrouter') {

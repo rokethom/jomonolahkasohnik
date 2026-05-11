@@ -12,6 +12,7 @@ class CreateRingPricingRule extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        $data = RingPricingRuleResource::normalizeScopedData($data);
         $data['created_by'] = Auth::id();
         $data['updated_by'] = Auth::id();
 

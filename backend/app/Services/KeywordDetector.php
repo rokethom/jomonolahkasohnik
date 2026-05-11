@@ -7,8 +7,9 @@ class KeywordDetector
     private const SERVICE_KEYWORDS = [
         'ojek' => ['ojek'],
         'joker_mobil' => ['joker mobil', 'citycar'],
+        'gift_order' => ['gift order', 'pesanan gift', 'gift', 'kado', 'hadiah'],
         'kurir' => ['kurir', 'kirim barang', 'antar barang', 'dokumen', 'paket'],
-        'DO' => ['beli', 'belikan', 'pesan'],
+        'DO' => ['delivery order', 'beli', 'belikan', 'pesan'],
     ];
 
     public function detectService(string $text): ?string
