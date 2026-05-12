@@ -60,6 +60,57 @@
         const fallbackLng = @json($lng);
         const fallbackPolygon = @json($polygon);
 
+        const extractPolygonPoints = (value) => {
+            if (!value || typeof value !== 'object') return [];
+
+            if (value.type === 'FeatureCollection') {
+                for (const feature of value.features || []) {
+                    const points = extractPolygonPoints(feature);
+                    if (points.length) return points;
+                }
+                return [];
+            }
+
+            if (value.type === 'Feature') {
+                return extractPolygonPoints(value.geometry);
+            }
+
+            if (value.type === 'GeometryCollection') {
+                for (const geometry of value.geometries || []) {
+                    const points = extractPolygonPoints(geometry);
+                    if (points.length) return points;
+                }
+                return [];
+            }
+
+            if (value.type === 'Polygon') {
+                return Array.isArray(value.coordinates?.[0]) ? value.coordinates[0] : [];
+            }
+
+            if (value.type === 'MultiPolygon') {
+                return Array.isArray(value.coordinates?.[0]?.[0]) ? value.coordinates[0][0] : [];
+            }
+
+            return Array.isArray(value) ? value : [];
+        };
+
+        const normalizePoint = (point) => {
+            if (!point || typeof point !== 'object') return null;
+
+            let lat = point.lat ?? point.latitude;
+            let lng = point.lng ?? point.longitude;
+
+            if ((!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) && Array.isArray(point) && point.length >= 2) {
+                lng = point[0];
+                lat = point[1];
+            }
+
+            lat = Number(lat);
+            lng = Number(lng);
+
+            return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+        };
+
         window.jojoLoadLeaflet = window.jojoLoadLeaflet || (() => {
             if (window.L?.map) {
                 return Promise.resolve(window.L);
@@ -144,13 +195,11 @@
             const pointsFromInput = () => {
                 try {
                     const value = polygonInput?.value || JSON.stringify(fallbackPolygon || []);
-                    const points = JSON.parse(value || '[]');
+                    const raw = JSON.parse(value || '[]');
+                    const points = extractPolygonPoints(raw);
 
                     return Array.isArray(points)
-                        ? points.map((point) => ({
-                            lat: parseFloat(point.lat ?? point.latitude),
-                            lng: parseFloat(point.lng ?? point.longitude),
-                        })).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng))
+                        ? points.map(normalizePoint).filter(Boolean)
                         : [];
                 } catch (error) {
                     return [];

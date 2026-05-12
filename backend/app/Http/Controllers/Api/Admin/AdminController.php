@@ -1817,8 +1817,6 @@ class AdminController extends Controller
             'destination_aliases' => ['nullable', 'array'],
             'destination_aliases.*' => ['string', 'max:255'],
             'polygon_coordinates' => ['nullable', 'array'],
-            'polygon_coordinates.*.lat' => ['required_with:polygon_coordinates', 'numeric', 'between:-90,90'],
-            'polygon_coordinates.*.lng' => ['required_with:polygon_coordinates', 'numeric', 'between:-180,180'],
             'polygon_match_point' => ['nullable', Rule::in(['destination_then_pickup', 'destination', 'pickup', 'either', 'both'])],
             'ring' => ['required', 'string', 'max:40'],
             'price' => ['required', 'integer', 'min:0'],
@@ -1836,13 +1834,7 @@ class AdminController extends Controller
 
             $payload['pickup_area'] = filled($payload['pickup_area'] ?? null) ? $payload['pickup_area'] : $payload['name'];
             $payload['destination_area'] = filled($payload['destination_area'] ?? null) ? $payload['destination_area'] : $payload['name'];
-            $payload['polygon_coordinates'] = collect($payload['polygon_coordinates'] ?? [])
-                ->map(fn (array $point): array => [
-                    'lat' => round((float) $point['lat'], 8),
-                    'lng' => round((float) $point['lng'], 8),
-                ])
-                ->values()
-                ->all();
+            $payload['polygon_coordinates'] = $this->normalizeRingPolygonCoordinates($payload['polygon_coordinates'] ?? []);
 
             if (count($payload['polygon_coordinates']) < 3) {
                 throw ValidationException::withMessages([
@@ -1869,6 +1861,82 @@ class AdminController extends Controller
         $payload['is_active'] = $payload['is_active'] ?? true;
 
         return $payload;
+    }
+
+    private function normalizeRingPolygonCoordinates(mixed $value): array
+    {
+        $points = is_array($value) ? $value : [];
+        $points = $this->extractRingPolygonPoints($points);
+
+        return collect($points)
+            ->map(function (mixed $point): ?array {
+                if (! is_array($point)) {
+                    return null;
+                }
+
+                $lat = $point['lat'] ?? $point['latitude'] ?? null;
+                $lng = $point['lng'] ?? $point['longitude'] ?? null;
+
+                if ((! is_numeric($lat) || ! is_numeric($lng)) && isset($point[0], $point[1])) {
+                    $lng = $point[0];
+                    $lat = $point[1];
+                }
+
+                if (! is_numeric($lat) || ! is_numeric($lng)) {
+                    return null;
+                }
+
+                return [
+                    'lat' => round((float) $lat, 8),
+                    'lng' => round((float) $lng, 8),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function extractRingPolygonPoints(array $value): array
+    {
+        if (($value['type'] ?? null) === 'FeatureCollection') {
+            foreach ($value['features'] ?? [] as $feature) {
+                if (is_array($feature)) {
+                    $points = $this->extractRingPolygonPoints($feature);
+                    if ($points !== []) {
+                        return $points;
+                    }
+                }
+            }
+
+            return [];
+        }
+
+        if (($value['type'] ?? null) === 'Feature') {
+            return is_array($value['geometry'] ?? null) ? $this->extractRingPolygonPoints($value['geometry']) : [];
+        }
+
+        if (($value['type'] ?? null) === 'GeometryCollection') {
+            foreach ($value['geometries'] ?? [] as $geometry) {
+                if (is_array($geometry)) {
+                    $points = $this->extractRingPolygonPoints($geometry);
+                    if ($points !== []) {
+                        return $points;
+                    }
+                }
+            }
+
+            return [];
+        }
+
+        if (($value['type'] ?? null) === 'Polygon') {
+            return is_array($value['coordinates'][0] ?? null) ? $value['coordinates'][0] : [];
+        }
+
+        if (($value['type'] ?? null) === 'MultiPolygon') {
+            return is_array($value['coordinates'][0][0] ?? null) ? $value['coordinates'][0][0] : [];
+        }
+
+        return $value;
     }
 
     private function authorizeRingPricing(Request $request): void

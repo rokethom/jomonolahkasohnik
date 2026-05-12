@@ -277,6 +277,32 @@ class PricingServiceTest extends TestCase
         $this->assertArrayNotHasKey('ring_pricing_rule_id', $quoteOtherBranch);
     }
 
+    public function test_master_ring_polygon_accepts_geojson_polygon(): void
+    {
+        $method = new \ReflectionMethod(\App\Filament\Resources\RingPricingRuleResource::class, 'normalizePolygonCoordinates');
+        $method->setAccessible(true);
+
+        $points = $method->invoke(null, json_encode([
+            'type' => 'FeatureCollection',
+            'features' => [[
+                'type' => 'Feature',
+                'properties' => [],
+                'geometry' => [
+                    'type' => 'Polygon',
+                    'coordinates' => [[
+                        [114.00000001, -7.70000001],
+                        [114.02000002, -7.70000002],
+                        [114.02000003, -7.68000003],
+                        [114.00000004, -7.70000004],
+                    ]],
+                ],
+            ]],
+        ]));
+
+        $this->assertCount(4, $points);
+        $this->assertSame(['lat' => -7.70000001, 'lng' => 114.00000001], $points[0]);
+    }
+
     public function test_jojobot_rejects_pricing_geocode_outside_branch_radius(): void
     {
         $branch = new Branch([

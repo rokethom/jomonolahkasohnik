@@ -159,7 +159,7 @@ class RingPricingRuleResource extends Resource
                             ->visible(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
                             ->required(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
                             ->extraInputAttributes(['id' => 'ring_polygon_coordinates'])
-                            ->helperText('Format JSON: [{"lat":-7.70,"lng":114.00}, ...]. Gunakan map di bawah untuk menggambar.'),
+                            ->helperText('Bisa paste GeoJSON dari geojson.io (Feature/FeatureCollection/Polygon), atau format titik: [{"lat":-7.70,"lng":114.00}, ...].'),
                         Forms\Components\ViewField::make('ring_polygon_map')
                             ->label('Gambar polygon ring')
                             ->view('filament.forms.components.ring-polygon-map')
@@ -322,6 +322,8 @@ class RingPricingRuleResource extends Resource
             return [];
         }
 
+        $points = static::extractPolygonPoints($points);
+
         return collect($points)
             ->map(function (mixed $point): ?array {
                 if (! is_array($point)) {
@@ -330,6 +332,11 @@ class RingPricingRuleResource extends Resource
 
                 $lat = $point['lat'] ?? $point['latitude'] ?? null;
                 $lng = $point['lng'] ?? $point['longitude'] ?? null;
+
+                if ((! is_numeric($lat) || ! is_numeric($lng)) && isset($point[0], $point[1])) {
+                    $lng = $point[0];
+                    $lat = $point[1];
+                }
 
                 if (! is_numeric($lat) || ! is_numeric($lng)) {
                     return null;
@@ -343,6 +350,49 @@ class RingPricingRuleResource extends Resource
             ->filter()
             ->values()
             ->all();
+    }
+
+    private static function extractPolygonPoints(array $value): array
+    {
+        if (($value['type'] ?? null) === 'FeatureCollection') {
+            foreach ($value['features'] ?? [] as $feature) {
+                if (is_array($feature)) {
+                    $points = static::extractPolygonPoints($feature);
+                    if ($points !== []) {
+                        return $points;
+                    }
+                }
+            }
+
+            return [];
+        }
+
+        if (($value['type'] ?? null) === 'Feature') {
+            return is_array($value['geometry'] ?? null) ? static::extractPolygonPoints($value['geometry']) : [];
+        }
+
+        if (($value['type'] ?? null) === 'GeometryCollection') {
+            foreach ($value['geometries'] ?? [] as $geometry) {
+                if (is_array($geometry)) {
+                    $points = static::extractPolygonPoints($geometry);
+                    if ($points !== []) {
+                        return $points;
+                    }
+                }
+            }
+
+            return [];
+        }
+
+        if (($value['type'] ?? null) === 'Polygon') {
+            return is_array($value['coordinates'][0] ?? null) ? $value['coordinates'][0] : [];
+        }
+
+        if (($value['type'] ?? null) === 'MultiPolygon') {
+            return is_array($value['coordinates'][0][0] ?? null) ? $value['coordinates'][0][0] : [];
+        }
+
+        return $value;
     }
 
     private static function branchOptions(): array
