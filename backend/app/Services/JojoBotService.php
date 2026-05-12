@@ -58,7 +58,7 @@ class JojoBotService
         if ($keywordMatch !== null) {
             $serviceType = $parsed['service_type'] ?: $this->serviceType($keywordMatch['service_type'], $keywordMatch['service_type']);
             $smartParsed = $this->shouldTrySmartParserForKeyword($rawText, $keywordMatch)
-                ? $this->orderParser->parse($user, $rawText)
+                ? $this->orderParser->parseFastFirst($user, $rawText)
                 : null;
 
             if ($smartParsed) {
@@ -185,7 +185,7 @@ class JojoBotService
             ];
         }
 
-        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parse($user, $rawText);
+        $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parseFastFirst($user, $rawText);
 
         if ($smartParsed) {
             $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
@@ -603,26 +603,7 @@ class JojoBotService
             return null;
         }
 
-        foreach ($this->geocodeCandidates($address, $branch) as $query) {
-            try {
-                $result = $branch
-                    ? $this->geocoding->geocodeNearBranch($query, $branch)
-                    : [
-                        ...$this->geocoding->geocode($query, $this->geocodingContext($branch)),
-                        'query' => $query,
-                    ];
-
-                if ($this->isGeocodeTooFarFromBranch($result, $branch)) {
-                    continue;
-                }
-
-                return $result;
-            } catch (Throwable) {
-                continue;
-            }
-        }
-
-        return null;
+        return $this->geocoding->geocodeNearBranchLimited($address, $branch, 2);
     }
 
     private function geocodeCandidates(string $address, ?Branch $branch): array

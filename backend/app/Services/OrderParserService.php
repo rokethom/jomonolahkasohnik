@@ -25,6 +25,16 @@ class OrderParserService
         return $this->parseFast($user, $text, false);
     }
 
+    public function parseFastFirst(User $user, string $text): ?array
+    {
+        $fastParsed = $this->parseFast($user, $text, false);
+        if ($fastParsed !== null) {
+            return $fastParsed;
+        }
+
+        return $this->aiParser->parse($user, $text);
+    }
+
     public function parseFast(User $user, string $text, bool $allowAiFallback = true): ?array
     {
         $normalizedText = $this->normalizer->normalize($text);

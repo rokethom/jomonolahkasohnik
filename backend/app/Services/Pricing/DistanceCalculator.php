@@ -25,7 +25,7 @@ class DistanceCalculator
                     $lat2,
                 );
 
-                $response = Http::timeout(5)->retry(1, 250)->get($url, [
+                $response = Http::connectTimeout(1)->timeout(2)->get($url, [
                     'overview' => 'false',
                     'alternatives' => 'false',
                 ]);

@@ -10,6 +10,8 @@ use RuntimeException;
 class GeocodingService
 {
     private const TTL_SECONDS = 86400;
+    private const HTTP_CONNECT_TIMEOUT_SECONDS = 1;
+    private const HTTP_TIMEOUT_SECONDS = 3;
 
     public function __construct(private readonly SettingService $settings)
     {
@@ -58,6 +60,42 @@ class GeocodingService
         throw new RuntimeException('Alamat tidak ditemukan di area cabang.');
     }
 
+    public function geocodeNearBranchLimited(string $textAddress, ?Branch $branch, int $maxCandidates = 2): ?array
+    {
+        $maxCandidates = max(1, $maxCandidates);
+
+        if (! $branch || ! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+            try {
+                return [
+                    ...$this->geocode($textAddress),
+                    'query' => $textAddress,
+                ];
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        $context = $this->branchContext($branch);
+        foreach (array_slice($this->branchCandidates($textAddress, $branch), 0, $maxCandidates) as $query) {
+            try {
+                $result = [
+                    ...$this->geocode($query, $context),
+                    'query' => $query,
+                ];
+
+                if ($this->isTooFarFromBranch($result, $branch)) {
+                    continue;
+                }
+
+                return $result;
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
     public function getAddressFromLatLng(float $lat, float $lng): array
     {
         $key = sprintf('reverse-geocode:%0.8f:%0.8f', $lat, $lng);
@@ -95,7 +133,9 @@ class GeocodingService
             $params['radius'] = (int) min(max(($context['radius_km'] ?? 20) * 1000, 3000), 50000);
         }
 
-        $response = Http::timeout(6)->get('https://maps.googleapis.com/maps/api/place/textsearch/json', $params);
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
+            ->get('https://maps.googleapis.com/maps/api/place/textsearch/json', $params);
 
         if (! $response->successful() || ! in_array(data_get($response->json(), 'status'), ['OK', 'ZERO_RESULTS'], true)) {
             return null;
@@ -132,7 +172,9 @@ class GeocodingService
             $params['bounds'] = $bounds;
         }
 
-        $response = Http::timeout(6)->get('https://maps.googleapis.com/maps/api/geocode/json', $params);
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
+            ->get('https://maps.googleapis.com/maps/api/geocode/json', $params);
 
         if (! $response->successful() || data_get($response->json(), 'status') !== 'OK') {
             return null;
@@ -173,7 +215,9 @@ class GeocodingService
             $params['bbox'] = $bbox;
         }
 
-        $response = Http::timeout(6)->get('https://api.mapbox.com/geocoding/v5/mapbox.places/'.rawurlencode($query).'.json', $params);
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
+            ->get('https://api.mapbox.com/geocoding/v5/mapbox.places/'.rawurlencode($query).'.json', $params);
 
         if (! $response->successful()) {
             return null;
@@ -205,7 +249,8 @@ class GeocodingService
             $params['bounded'] = 0;
         }
 
-        $response = Http::timeout(8)
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
             ->withHeaders(['User-Agent' => config('app.name', 'Jojo App').'/1.0'])
             ->get('https://nominatim.openstreetmap.org/search', $params);
 
@@ -232,7 +277,9 @@ class GeocodingService
             return null;
         }
 
-        $response = Http::timeout(6)->get('https://maps.googleapis.com/maps/api/geocode/json', [
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
+            ->get('https://maps.googleapis.com/maps/api/geocode/json', [
             'latlng' => $lat.','.$lng,
             'key' => $key,
             'language' => 'id',
@@ -264,7 +311,9 @@ class GeocodingService
             return null;
         }
 
-        $response = Http::timeout(6)->get("https://api.mapbox.com/geocoding/v5/mapbox.places/{$lng},{$lat}.json", [
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
+            ->get("https://api.mapbox.com/geocoding/v5/mapbox.places/{$lng},{$lat}.json", [
             'access_token' => $key,
             'country' => 'id',
             'language' => 'id',
@@ -293,7 +342,8 @@ class GeocodingService
 
     private function reverseWithNominatim(float $lat, float $lng): ?array
     {
-        $response = Http::timeout(8)
+        $response = Http::connectTimeout(self::HTTP_CONNECT_TIMEOUT_SECONDS)
+            ->timeout(self::HTTP_TIMEOUT_SECONDS)
             ->withHeaders(['User-Agent' => config('app.name', 'Jojo App').'/1.0'])
             ->get('https://nominatim.openstreetmap.org/reverse', [
                 'format' => 'jsonv2',
