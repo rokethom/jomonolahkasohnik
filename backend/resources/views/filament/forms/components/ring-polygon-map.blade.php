@@ -61,14 +61,16 @@
         const fallbackPolygon = @json($polygon);
 
         const extractPolygonPoints = (value) => {
-            if (!value || typeof value !== 'object') return [];
+            if (!value || typeof value !== 'object') return { geometry: null, points: [] };
 
             if (value.type === 'FeatureCollection') {
+                const linePoints = [];
                 for (const feature of value.features || []) {
-                    const points = extractPolygonPoints(feature);
-                    if (points.length) return points;
+                    const extracted = extractPolygonPoints(feature);
+                    if (extracted.geometry === 'polygon' && extracted.points.length) return extracted;
+                    if (extracted.geometry === 'line') linePoints.push(...extracted.points);
                 }
-                return [];
+                return { geometry: linePoints.length ? 'line' : null, points: linePoints };
             }
 
             if (value.type === 'Feature') {
@@ -76,22 +78,32 @@
             }
 
             if (value.type === 'GeometryCollection') {
+                const linePoints = [];
                 for (const geometry of value.geometries || []) {
-                    const points = extractPolygonPoints(geometry);
-                    if (points.length) return points;
+                    const extracted = extractPolygonPoints(geometry);
+                    if (extracted.geometry === 'polygon' && extracted.points.length) return extracted;
+                    if (extracted.geometry === 'line') linePoints.push(...extracted.points);
                 }
-                return [];
+                return { geometry: linePoints.length ? 'line' : null, points: linePoints };
             }
 
             if (value.type === 'Polygon') {
-                return Array.isArray(value.coordinates?.[0]) ? value.coordinates[0] : [];
+                return { geometry: 'polygon', points: Array.isArray(value.coordinates?.[0]) ? value.coordinates[0] : [] };
             }
 
             if (value.type === 'MultiPolygon') {
-                return Array.isArray(value.coordinates?.[0]?.[0]) ? value.coordinates[0][0] : [];
+                return { geometry: 'polygon', points: Array.isArray(value.coordinates?.[0]?.[0]) ? value.coordinates[0][0] : [] };
             }
 
-            return Array.isArray(value) ? value : [];
+            if (value.type === 'LineString') {
+                return { geometry: 'line', points: Array.isArray(value.coordinates) ? value.coordinates : [] };
+            }
+
+            if (value.type === 'MultiLineString') {
+                return { geometry: 'line', points: Array.isArray(value.coordinates) ? value.coordinates.flat() : [] };
+            }
+
+            return { geometry: 'polygon', points: Array.isArray(value) ? value : [] };
         };
 
         const normalizePoint = (point) => {
@@ -196,14 +208,41 @@
                 try {
                     const value = polygonInput?.value || JSON.stringify(fallbackPolygon || []);
                     const raw = JSON.parse(value || '[]');
-                    const points = extractPolygonPoints(raw);
-
-                    return Array.isArray(points)
+                    const extracted = extractPolygonPoints(raw);
+                    const points = extracted.points || [];
+                    const normalized = Array.isArray(points)
                         ? points.map(normalizePoint).filter(Boolean)
                         : [];
+
+                    return extracted.geometry === 'line' ? convexHull(normalized) : normalized;
                 } catch (error) {
                     return [];
                 }
+            };
+
+            const convexHull = (rawPoints) => {
+                const unique = [...new Map(rawPoints.map((point) => [`${point.lng},${point.lat}`, point])).values()]
+                    .sort((a, b) => a.lng === b.lng ? a.lat - b.lat : a.lng - b.lng);
+
+                if (unique.length <= 3) return unique;
+
+                const cross = (origin, a, b) => ((a.lng - origin.lng) * (b.lat - origin.lat)) - ((a.lat - origin.lat) * (b.lng - origin.lng));
+                const lower = [];
+                for (const point of unique) {
+                    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+                    lower.push(point);
+                }
+
+                const upper = [];
+                for (const point of [...unique].reverse()) {
+                    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+                    upper.push(point);
+                }
+
+                lower.pop();
+                upper.pop();
+
+                return [...lower, ...upper];
             };
 
             mapElement.dataset.loaded = '1';

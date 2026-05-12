@@ -322,9 +322,10 @@ class RingPricingRuleResource extends Resource
             return [];
         }
 
-        $points = static::extractPolygonPoints($points);
+        $extracted = static::extractPolygonPoints($points);
+        $points = $extracted['points'];
 
-        return collect($points)
+        $normalized = collect($points)
             ->map(function (mixed $point): ?array {
                 if (! is_array($point)) {
                     return null;
@@ -350,49 +351,116 @@ class RingPricingRuleResource extends Resource
             ->filter()
             ->values()
             ->all();
+
+        return ($extracted['geometry'] ?? null) === 'line'
+            ? static::convexHull($normalized)
+            : $normalized;
     }
 
     private static function extractPolygonPoints(array $value): array
     {
         if (($value['type'] ?? null) === 'FeatureCollection') {
+            $linePoints = [];
+
             foreach ($value['features'] ?? [] as $feature) {
                 if (is_array($feature)) {
-                    $points = static::extractPolygonPoints($feature);
-                    if ($points !== []) {
-                        return $points;
+                    $extracted = static::extractPolygonPoints($feature);
+
+                    if (($extracted['geometry'] ?? null) === 'polygon' && $extracted['points'] !== []) {
+                        return $extracted;
+                    }
+
+                    if (($extracted['geometry'] ?? null) === 'line') {
+                        $linePoints = [...$linePoints, ...$extracted['points']];
                     }
                 }
             }
 
-            return [];
+            return ['geometry' => $linePoints !== [] ? 'line' : null, 'points' => $linePoints];
         }
 
         if (($value['type'] ?? null) === 'Feature') {
-            return is_array($value['geometry'] ?? null) ? static::extractPolygonPoints($value['geometry']) : [];
+            return is_array($value['geometry'] ?? null) ? static::extractPolygonPoints($value['geometry']) : ['geometry' => null, 'points' => []];
         }
 
         if (($value['type'] ?? null) === 'GeometryCollection') {
+            $linePoints = [];
+
             foreach ($value['geometries'] ?? [] as $geometry) {
                 if (is_array($geometry)) {
-                    $points = static::extractPolygonPoints($geometry);
-                    if ($points !== []) {
-                        return $points;
+                    $extracted = static::extractPolygonPoints($geometry);
+
+                    if (($extracted['geometry'] ?? null) === 'polygon' && $extracted['points'] !== []) {
+                        return $extracted;
+                    }
+
+                    if (($extracted['geometry'] ?? null) === 'line') {
+                        $linePoints = [...$linePoints, ...$extracted['points']];
                     }
                 }
             }
 
-            return [];
+            return ['geometry' => $linePoints !== [] ? 'line' : null, 'points' => $linePoints];
         }
 
         if (($value['type'] ?? null) === 'Polygon') {
-            return is_array($value['coordinates'][0] ?? null) ? $value['coordinates'][0] : [];
+            return ['geometry' => 'polygon', 'points' => is_array($value['coordinates'][0] ?? null) ? $value['coordinates'][0] : []];
         }
 
         if (($value['type'] ?? null) === 'MultiPolygon') {
-            return is_array($value['coordinates'][0][0] ?? null) ? $value['coordinates'][0][0] : [];
+            return ['geometry' => 'polygon', 'points' => is_array($value['coordinates'][0][0] ?? null) ? $value['coordinates'][0][0] : []];
         }
 
-        return $value;
+        if (($value['type'] ?? null) === 'LineString') {
+            return ['geometry' => 'line', 'points' => is_array($value['coordinates'] ?? null) ? $value['coordinates'] : []];
+        }
+
+        if (($value['type'] ?? null) === 'MultiLineString') {
+            return ['geometry' => 'line', 'points' => collect($value['coordinates'] ?? [])->filter(fn (mixed $line): bool => is_array($line))->flatten(1)->all()];
+        }
+
+        return ['geometry' => 'polygon', 'points' => $value];
+    }
+
+    /**
+     * @param array<int, array{lat: float, lng: float}> $points
+     * @return array<int, array{lat: float, lng: float}>
+     */
+    private static function convexHull(array $points): array
+    {
+        $points = collect($points)
+            ->unique(fn (array $point): string => $point['lng'].','.$point['lat'])
+            ->sortBy([['lng', 'asc'], ['lat', 'asc']])
+            ->values()
+            ->all();
+
+        if (count($points) <= 3) {
+            return $points;
+        }
+
+        $cross = fn (array $origin, array $a, array $b): float => (($a['lng'] - $origin['lng']) * ($b['lat'] - $origin['lat']))
+            - (($a['lat'] - $origin['lat']) * ($b['lng'] - $origin['lng']));
+
+        $lower = [];
+        foreach ($points as $point) {
+            while (count($lower) >= 2 && $cross($lower[count($lower) - 2], $lower[count($lower) - 1], $point) <= 0) {
+                array_pop($lower);
+            }
+            $lower[] = $point;
+        }
+
+        $upper = [];
+        foreach (array_reverse($points) as $point) {
+            while (count($upper) >= 2 && $cross($upper[count($upper) - 2], $upper[count($upper) - 1], $point) <= 0) {
+                array_pop($upper);
+            }
+            $upper[] = $point;
+        }
+
+        array_pop($lower);
+        array_pop($upper);
+
+        return array_values([...$lower, ...$upper]);
     }
 
     private static function branchOptions(): array

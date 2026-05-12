@@ -303,6 +303,54 @@ class PricingServiceTest extends TestCase
         $this->assertSame(['lat' => -7.70000001, 'lng' => 114.00000001], $points[0]);
     }
 
+    public function test_master_ring_polygon_accepts_geojson_linestring_collection(): void
+    {
+        $method = new \ReflectionMethod(\App\Filament\Resources\RingPricingRuleResource::class, 'normalizePolygonCoordinates');
+        $method->setAccessible(true);
+
+        $points = $method->invoke(null, json_encode([
+            'type' => 'FeatureCollection',
+            'features' => [
+                [
+                    'type' => 'Feature',
+                    'properties' => [],
+                    'geometry' => [
+                        'type' => 'LineString',
+                        'coordinates' => [
+                            [112.73158776985912, -7.314985546199608],
+                            [112.68721447118088, -7.309396276304284],
+                        ],
+                    ],
+                ],
+                [
+                    'type' => 'Feature',
+                    'properties' => [],
+                    'geometry' => [
+                        'type' => 'LineString',
+                        'coordinates' => [
+                            [112.73090272984507, -7.31431724325121],
+                            [112.77245348602054, -7.322000206176796],
+                        ],
+                    ],
+                ],
+                [
+                    'type' => 'Feature',
+                    'properties' => [],
+                    'geometry' => [
+                        'type' => 'LineString',
+                        'coordinates' => [
+                            [112.72879024735755, -7.316412480549417],
+                            [112.7140014046742, -7.357622231804314],
+                        ],
+                    ],
+                ],
+            ],
+        ]));
+
+        $this->assertGreaterThanOrEqual(3, count($points));
+        $this->assertContains(['lat' => -7.32200021, 'lng' => 112.77245349], $points);
+    }
+
     public function test_jojobot_rejects_pricing_geocode_outside_branch_radius(): void
     {
         $branch = new Branch([
