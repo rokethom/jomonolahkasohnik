@@ -6,28 +6,29 @@
     $branch = $branchId ? \App\Models\Branch::query()->find($branchId) : null;
     $lat = is_numeric($branch?->latitude) ? (float) $branch->latitude : -7.70630000;
     $lng = is_numeric($branch?->longitude) ? (float) $branch->longitude : 114.00980000;
+    $mapboxToken = app(\App\Services\SettingService::class)->get('mapbox_api_key');
 @endphp
 
 @once
-    <link
-        rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-        crossorigin=""
-    />
-    <script
-        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-        crossorigin=""
-    ></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css" rel="stylesheet">
+    <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/mapbox-gl-draw.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/mapbox-gl-draw.js"></script>
 @endonce
 
 <div class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-sm text-gray-600 dark:text-gray-300">
-            Gambar batas Ring untuk cabang terpilih. Klik map untuk menambah titik, geser marker untuk mengubah, klik marker untuk menghapus.
+            Gambar polygon ring seperti di geojson.io. Bisa juga paste GeoJSON, lalu klik Muat JSON ke Map.
         </div>
         <div class="flex flex-wrap gap-2">
+            <button
+                type="button"
+                id="{{ $mapId }}-load-json"
+                class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-700"
+            >
+                Muat JSON ke Map
+            </button>
             <button
                 type="button"
                 id="{{ $mapId }}-clear"
@@ -35,6 +36,14 @@
             >
                 Reset Polygon
             </button>
+            <a
+                href="https://geojson.io/"
+                target="_blank"
+                rel="noreferrer"
+                class="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow transition hover:bg-sky-700"
+            >
+                Buka geojson.io
+            </a>
             <a
                 id="{{ $mapId }}-open-google"
                 href="https://www.google.com/maps?q={{ $lat }},{{ $lng }}"
@@ -49,8 +58,14 @@
 
     <div
         id="{{ $mapId }}"
-        style="height: 420px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35); background: rgba(15, 23, 42, .22); display: grid; place-items: center; color: rgb(148, 163, 184);"
-    >Memuat Leaflet map...</div>
+        style="height: 460px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35); background: rgba(15, 23, 42, .22); display: grid; place-items: center; color: rgb(148, 163, 184);"
+    >Memuat Mapbox Draw...</div>
+
+    @unless($mapboxToken)
+        <div class="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-200">
+            Mapbox API key belum aktif. Isi dan aktifkan <b>mapbox_api_key</b> di System Settings agar map drawing tampil. Paste GeoJSON tetap bisa disimpan lewat field koordinat.
+        </div>
+    @endunless
 </div>
 
 <script>
@@ -59,6 +74,7 @@
         const fallbackLat = @json($lat);
         const fallbackLng = @json($lng);
         const fallbackPolygon = @json($polygon);
+        const mapboxToken = @json($mapboxToken);
 
         const extractPolygonPoints = (value) => {
             if (!value || typeof value !== 'object') return { geometry: null, points: [] };
@@ -73,9 +89,7 @@
                 return { geometry: linePoints.length ? 'line' : null, points: linePoints };
             }
 
-            if (value.type === 'Feature') {
-                return extractPolygonPoints(value.geometry);
-            }
+            if (value.type === 'Feature') return extractPolygonPoints(value.geometry);
 
             if (value.type === 'GeometryCollection') {
                 const linePoints = [];
@@ -87,21 +101,10 @@
                 return { geometry: linePoints.length ? 'line' : null, points: linePoints };
             }
 
-            if (value.type === 'Polygon') {
-                return { geometry: 'polygon', points: Array.isArray(value.coordinates?.[0]) ? value.coordinates[0] : [] };
-            }
-
-            if (value.type === 'MultiPolygon') {
-                return { geometry: 'polygon', points: Array.isArray(value.coordinates?.[0]?.[0]) ? value.coordinates[0][0] : [] };
-            }
-
-            if (value.type === 'LineString') {
-                return { geometry: 'line', points: Array.isArray(value.coordinates) ? value.coordinates : [] };
-            }
-
-            if (value.type === 'MultiLineString') {
-                return { geometry: 'line', points: Array.isArray(value.coordinates) ? value.coordinates.flat() : [] };
-            }
+            if (value.type === 'Polygon') return { geometry: 'polygon', points: Array.isArray(value.coordinates?.[0]) ? value.coordinates[0] : [] };
+            if (value.type === 'MultiPolygon') return { geometry: 'polygon', points: Array.isArray(value.coordinates?.[0]?.[0]) ? value.coordinates[0][0] : [] };
+            if (value.type === 'LineString') return { geometry: 'line', points: Array.isArray(value.coordinates) ? value.coordinates : [] };
+            if (value.type === 'MultiLineString') return { geometry: 'line', points: Array.isArray(value.coordinates) ? value.coordinates.flat() : [] };
 
             return { geometry: 'polygon', points: Array.isArray(value) ? value : [] };
         };
@@ -123,142 +126,125 @@
             return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
         };
 
-        window.jojoLoadLeaflet = window.jojoLoadLeaflet || (() => {
-            if (window.L?.map) {
-                return Promise.resolve(window.L);
+        const convexHull = (rawPoints) => {
+            const unique = [...new Map(rawPoints.map((point) => [`${point.lng},${point.lat}`, point])).values()]
+                .sort((a, b) => a.lng === b.lng ? a.lat - b.lat : a.lng - b.lng);
+
+            if (unique.length <= 3) return unique;
+
+            const cross = (origin, a, b) => ((a.lng - origin.lng) * (b.lat - origin.lat)) - ((a.lat - origin.lat) * (b.lng - origin.lng));
+            const lower = [];
+            for (const point of unique) {
+                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+                lower.push(point);
             }
 
-            if (window.jojoLeafletPromise) {
-                return window.jojoLeafletPromise;
+            const upper = [];
+            for (const point of [...unique].reverse()) {
+                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+                upper.push(point);
             }
 
-            window.jojoLeafletPromise = new Promise((resolve, reject) => {
-                const existingScript = document.getElementById('jojo-leaflet-js');
-                const finish = () => window.L?.map ? resolve(window.L) : reject(new Error('Leaflet tidak siap'));
+            lower.pop();
+            upper.pop();
 
-                const cdnReadyWait = (startedAt = Date.now()) => {
-                    if (window.L?.map) {
-                        finish();
-                        return;
-                    }
+            return [...lower, ...upper];
+        };
 
-                    if (Date.now() - startedAt > 8000) {
-                        if (existingScript) {
-                            existingScript.addEventListener('load', finish, { once: true });
-                            existingScript.addEventListener('error', () => reject(new Error('Leaflet gagal dimuat')), { once: true });
-                            return;
-                        }
+        const parsePoints = (value) => {
+            try {
+                const raw = typeof value === 'string' ? JSON.parse(value || '[]') : value;
+                const extracted = extractPolygonPoints(raw);
+                const normalized = (extracted.points || []).map(normalizePoint).filter(Boolean);
 
-                        const script = document.createElement('script');
-                        script.id = 'jojo-leaflet-js';
-                        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-                        script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-                        script.crossOrigin = '';
-                        script.async = true;
-                        script.onload = finish;
-                        script.onerror = () => reject(new Error('Leaflet gagal dimuat'));
-                        document.head.appendChild(script);
-                        return;
-                    }
+                return extracted.geometry === 'line' ? convexHull(normalized) : normalized;
+            } catch (error) {
+                return [];
+            }
+        };
 
-                    window.setTimeout(() => cdnReadyWait(startedAt), 120);
-                };
+        const waitForMapbox = (startedAt = Date.now()) => new Promise((resolve, reject) => {
+            const tick = () => {
+                if (window.mapboxgl?.Map && window.MapboxDraw) {
+                    resolve({ mapboxgl: window.mapboxgl, MapboxDraw: window.MapboxDraw });
+                    return;
+                }
 
-                cdnReadyWait();
-            });
+                if (Date.now() - startedAt > 12000) {
+                    reject(new Error('Mapbox GL JS tidak siap'));
+                    return;
+                }
 
-            return window.jojoLeafletPromise;
+                window.setTimeout(tick, 120);
+            };
+
+            tick();
         });
 
         const init = async () => {
             const mapElement = document.getElementById(mapId);
-            if (!mapElement || mapElement.dataset.loaded === '1' || mapElement.dataset.loaded === 'loading') {
+            if (!mapElement || mapElement.dataset.loaded === '1' || mapElement.dataset.loaded === 'loading') return;
+
+            if (!mapboxToken) {
+                mapElement.textContent = 'Mapbox API key belum aktif. Paste GeoJSON di field koordinat, atau aktifkan Mapbox di System Settings.';
                 return;
             }
 
             mapElement.dataset.loaded = 'loading';
 
-            let L = null;
+            let mapboxgl = null;
+            let MapboxDraw = null;
             try {
-                L = await window.jojoLoadLeaflet();
+                ({ mapboxgl, MapboxDraw } = await waitForMapbox());
             } catch (error) {
                 mapElement.dataset.loaded = '';
-                mapElement.style.display = 'grid';
-                mapElement.style.placeItems = 'center';
-                mapElement.style.color = 'rgb(148, 163, 184)';
-                mapElement.textContent = 'Leaflet map gagal dimuat. Cek koneksi CDN atau tempel JSON polygon manual.';
+                mapElement.textContent = 'Mapbox Draw gagal dimuat. Paste GeoJSON di field koordinat atau cek koneksi CDN.';
                 return;
             }
 
             const polygonInput = document.getElementById('ring_polygon_coordinates') || document.querySelector('textarea[name="data[polygon_coordinates]"]');
             const clearButton = document.getElementById(`${mapId}-clear`);
+            const loadJsonButton = document.getElementById(`${mapId}-load-json`);
             const googleLink = document.getElementById(`${mapId}-open-google`);
-            const center = [fallbackLat, fallbackLng];
 
             const setInputValue = (input, value) => {
                 if (!input) return;
-
                 input.value = value;
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
                 input.dispatchEvent(new Event('blur', { bubbles: true }));
             };
 
-            const pointsFromInput = () => {
-                try {
-                    const value = polygonInput?.value || JSON.stringify(fallbackPolygon || []);
-                    const raw = JSON.parse(value || '[]');
-                    const extracted = extractPolygonPoints(raw);
-                    const points = extracted.points || [];
-                    const normalized = Array.isArray(points)
-                        ? points.map(normalizePoint).filter(Boolean)
-                        : [];
+            const pointsToFeature = (points) => {
+                if (points.length < 3) return null;
+                const coordinates = points.map((point) => [point.lng, point.lat]);
+                const first = coordinates[0];
+                const last = coordinates[coordinates.length - 1];
+                if (first[0] !== last[0] || first[1] !== last[1]) coordinates.push(first);
 
-                    return extracted.geometry === 'line' ? convexHull(normalized) : normalized;
-                } catch (error) {
-                    return [];
-                }
+                return {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                        type: 'Polygon',
+                        coordinates: [coordinates],
+                    },
+                };
             };
 
-            const convexHull = (rawPoints) => {
-                const unique = [...new Map(rawPoints.map((point) => [`${point.lng},${point.lat}`, point])).values()]
-                    .sort((a, b) => a.lng === b.lng ? a.lat - b.lat : a.lng - b.lng);
-
-                if (unique.length <= 3) return unique;
-
-                const cross = (origin, a, b) => ((a.lng - origin.lng) * (b.lat - origin.lat)) - ((a.lat - origin.lat) * (b.lng - origin.lng));
-                const lower = [];
-                for (const point of unique) {
-                    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
-                    lower.push(point);
+            const syncFromDraw = () => {
+                const feature = draw.getAll().features.find((item) => item.geometry?.type === 'Polygon');
+                if (!feature) {
+                    setInputValue(polygonInput, '[]');
+                    return;
                 }
 
-                const upper = [];
-                for (const point of [...unique].reverse()) {
-                    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
-                    upper.push(point);
-                }
+                const ring = feature.geometry.coordinates?.[0] || [];
+                const points = ring
+                    .slice(0, -1)
+                    .map((coordinate) => ({ lng: Number(coordinate[0]), lat: Number(coordinate[1]) }))
+                    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
 
-                lower.pop();
-                upper.pop();
-
-                return [...lower, ...upper];
-            };
-
-            mapElement.dataset.loaded = '1';
-            mapElement.innerHTML = '';
-            mapElement.style.display = 'block';
-            const map = L.map(mapElement, { scrollWheelZoom: true }).setView(center, 13);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '&copy; OpenStreetMap',
-            }).addTo(map);
-
-            let points = pointsFromInput();
-            let polygonLayer = null;
-            let markers = [];
-
-            const sync = () => {
                 setInputValue(polygonInput, JSON.stringify(points.map((point) => ({
                     lat: Number(point.lat.toFixed(8)),
                     lng: Number(point.lng.toFixed(8)),
@@ -269,63 +255,56 @@
                 }
             };
 
-            const redraw = () => {
-                markers.forEach((marker) => marker.remove());
-                markers = [];
+            const loadInputToDraw = () => {
+                const points = parsePoints(polygonInput?.value || JSON.stringify(fallbackPolygon || []));
+                const feature = pointsToFeature(points);
+                draw.deleteAll();
 
-                if (polygonLayer) {
-                    polygonLayer.remove();
-                    polygonLayer = null;
-                }
+                if (!feature) return;
 
-                points.forEach((point, index) => {
-                    const marker = L.marker([point.lat, point.lng], { draggable: true }).addTo(map);
-                    marker.bindTooltip(`Titik ${index + 1}. Klik untuk hapus.`, { direction: 'top' });
-                    marker.on('dragend', () => {
-                        const next = marker.getLatLng();
-                        points[index] = { lat: next.lat, lng: next.lng };
-                        sync();
-                        redraw();
-                    });
-                    marker.on('click', () => {
-                        points.splice(index, 1);
-                        sync();
-                        redraw();
-                    });
-                    markers.push(marker);
-                });
-
-                if (points.length >= 2) {
-                    polygonLayer = L.polygon(points.map((point) => [point.lat, point.lng]), {
-                        color: '#f59e0b',
-                        fillColor: '#f59e0b',
-                        fillOpacity: 0.22,
-                        weight: 2,
-                    }).addTo(map);
-                }
+                draw.add(feature);
+                const bounds = points.reduce(
+                    (bounds, point) => bounds.extend([point.lng, point.lat]),
+                    new mapboxgl.LngLatBounds([points[0].lng, points[0].lat], [points[0].lng, points[0].lat]),
+                );
+                map.fitBounds(bounds, { padding: 42, duration: 0 });
+                syncFromDraw();
             };
 
-            map.on('click', (event) => {
-                points.push({ lat: event.latlng.lat, lng: event.latlng.lng });
-                sync();
-                redraw();
+            mapElement.dataset.loaded = '1';
+            mapElement.innerHTML = '';
+            mapElement.style.display = 'block';
+
+            mapboxgl.accessToken = mapboxToken;
+            const map = new mapboxgl.Map({
+                container: mapElement,
+                style: 'mapbox://styles/mapbox/streets-v12',
+                center: [fallbackLng, fallbackLat],
+                zoom: 13,
+            });
+            const draw = new MapboxDraw({
+                displayControlsDefault: false,
+                controls: {
+                    polygon: true,
+                    trash: true,
+                },
+                defaultMode: 'draw_polygon',
             });
 
+            map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+            map.addControl(draw, 'top-left');
+            map.on('draw.create', syncFromDraw);
+            map.on('draw.update', syncFromDraw);
+            map.on('draw.delete', syncFromDraw);
+            map.on('load', loadInputToDraw);
             clearButton?.addEventListener('click', () => {
-                points = [];
-                sync();
-                redraw();
+                draw.deleteAll();
+                setInputValue(polygonInput, '[]');
             });
+            loadJsonButton?.addEventListener('click', loadInputToDraw);
 
-            redraw();
-            sync();
-
-            if (points.length >= 3) {
-                map.fitBounds(L.latLngBounds(points.map((point) => [point.lat, point.lng])), { padding: [28, 28] });
-            }
-
-            window.setTimeout(() => map.invalidateSize(), 250);
-            window.setTimeout(() => map.invalidateSize(), 900);
+            window.setTimeout(() => map.resize(), 250);
+            window.setTimeout(() => map.resize(), 900);
         };
 
         document.addEventListener('livewire:navigated', init);
