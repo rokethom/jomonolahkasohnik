@@ -2,13 +2,8 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Widgets\AiMonitoringOverview;
 use App\Filament\Widgets\ModernStatsOverview;
-use App\Filament\Widgets\OperationsChartWidget;
-use App\Filament\Widgets\ProductionTimelineWidget;
 use App\Filament\Widgets\RecentActivityWidget;
-use App\Filament\Widgets\ServerMonitoringWidget;
-use App\Filament\Widgets\ServerUsageChartWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -181,11 +176,6 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->widgets([
                 ModernStatsOverview::class,
-                AiMonitoringOverview::class,
-                ServerMonitoringWidget::class,
-                OperationsChartWidget::class,
-                ServerUsageChartWidget::class,
-                ProductionTimelineWidget::class,
                 RecentActivityWidget::class,
                 Widgets\AccountWidget::class,
             ])

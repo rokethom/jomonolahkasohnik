@@ -8,6 +8,7 @@ use App\Models\Driver;
 use App\Models\Order;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class AiMonitoringService
@@ -62,6 +63,29 @@ class AiMonitoringService
 
     public function securityDashboard(): array
     {
+        if (! $this->driverAuthMonitoringColumnsAvailable()) {
+            return [
+                'active_status' => [
+                    'mode' => 'ai_analysis_only',
+                    'firewall_primary' => false,
+                    'model_pool' => ['DeepSeek', 'Qwen', 'Gemma'],
+                    'auto_blacklist_temporary' => false,
+                ],
+                'summary' => [
+                    'login_anomalies' => 0,
+                    'locked_auth' => 0,
+                    'spam_candidates' => 0,
+                    'bot_candidates' => 0,
+                    'temporary_blacklist' => 0,
+                    'status' => 'normal',
+                ],
+                'login_anomalies' => [],
+                'temporary_blacklist' => [],
+                'suspicious_requests' => [],
+                'fake_order_candidates' => [],
+            ];
+        }
+
         $failedDrivers = Driver::query()
             ->with('user.branch')
             ->where('auth_failed_attempts', '>', 0)
@@ -116,6 +140,17 @@ class AiMonitoringService
             'suspicious_requests' => $this->suspiciousAuditEvents(),
             'fake_order_candidates' => $fakeOrderCandidates->values()->all(),
         ];
+    }
+
+    private function driverAuthMonitoringColumnsAvailable(): bool
+    {
+        foreach (['auth_failed_attempts', 'auth_locked_until', 'last_login_ip'] as $column) {
+            if (! Schema::hasColumn('drivers', $column)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function modelCard(string $model, int $priority, array $events): array
