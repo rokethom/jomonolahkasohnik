@@ -29,6 +29,7 @@ class DriverGoogleAuthService
         $payload = $this->verifyGoogleToken($idToken);
         $email = strtolower((string) ($payload['email'] ?? ''));
         $googleId = (string) ($payload['sub'] ?? '');
+        $hasGoogleIdColumn = Schema::hasColumn('drivers', 'google_id');
 
         if ($email === '' || $googleId === '') {
             throw new DriverGoogleLoginException('Token Google tidak valid', 401, 'missing_google_identity');
@@ -60,7 +61,7 @@ class DriverGoogleAuthService
 
         $this->assertDriverMayLogin($matchedDriver, $googleId, $request);
 
-        return DB::transaction(function () use ($matchedDriver, $googleId, $request): array {
+        return DB::transaction(function () use ($matchedDriver, $googleId, $request, $hasGoogleIdColumn): array {
             /** @var Driver $driver */
             $driver = Driver::query()->with('user')->lockForUpdate()->findOrFail($matchedDriver->id);
 
@@ -68,7 +69,7 @@ class DriverGoogleAuthService
                 throw new DriverGoogleLoginException('Login driver terkunci sementara. Coba lagi nanti.', 423, 'driver_auth_locked');
             }
 
-            if ($driver->google_id && ! hash_equals($driver->google_id, $googleId)) {
+            if ($hasGoogleIdColumn && $driver->google_id && ! hash_equals($driver->google_id, $googleId)) {
                 $this->registerFailedAttempt($driver, 'google_id_mismatch', $request);
                 throw new DriverGoogleLoginException('Akun Google tidak sesuai dengan driver ini', 403, 'google_id_mismatch');
             }
@@ -78,18 +79,27 @@ class DriverGoogleAuthService
                 throw new DriverGoogleLoginException('Driver nonaktif atau sedang suspend', 403, 'driver_suspended_or_inactive');
             }
 
-            if (! $driver->google_id) {
+            if ($hasGoogleIdColumn && ! $driver->google_id) {
                 $driver->forceFill(['google_id' => $googleId])->save();
             }
 
-            $updates = [
-                'name' => $driver->name ?: $driver->user?->name,
+            $updates = [];
+
+            if (Schema::hasColumn('drivers', 'name')) {
+                $updates['name'] = $driver->name ?: $driver->user?->name;
+            }
+
+            foreach ([
                 'last_login_at' => now(),
                 'last_login_ip' => $request->ip(),
                 'last_login_device' => trim((string) $request->input('device_name', 'Driver App')) ?: null,
                 'auth_failed_attempts' => 0,
                 'auth_locked_until' => null,
-            ];
+            ] as $column => $value) {
+                if (Schema::hasColumn('drivers', $column)) {
+                    $updates[$column] = $value;
+                }
+            }
 
             if (Schema::hasColumn('drivers', 'email')) {
                 $updates['email'] = $driver->email ?: $driver->user?->email;
@@ -187,13 +197,28 @@ class DriverGoogleAuthService
 
     private function registerFailedAttempt(Driver $driver, string $reason, Request $request): void
     {
+        if (! Schema::hasColumn('drivers', 'auth_failed_attempts')) {
+            $this->logSecurityEvent('driver_google_login_failed_attempt', $driver, [
+                'reason' => $reason,
+                'ip' => $request->ip(),
+                'auth_columns_missing' => true,
+            ]);
+
+            return;
+        }
+
         $attempts = min(255, ((int) $driver->auth_failed_attempts) + 1);
         $lockedUntil = $attempts >= self::MAX_FAILED_ATTEMPTS ? now()->addMinutes(self::LOCK_MINUTES) : $driver->auth_locked_until;
 
-        $driver->forceFill([
+        $updates = [
             'auth_failed_attempts' => $attempts,
-            'auth_locked_until' => $lockedUntil,
-        ])->save();
+        ];
+
+        if (Schema::hasColumn('drivers', 'auth_locked_until')) {
+            $updates['auth_locked_until'] = $lockedUntil;
+        }
+
+        $driver->forceFill($updates)->save();
 
         $this->logSecurityEvent('driver_google_login_failed_attempt', $driver, [
             'reason' => $reason,

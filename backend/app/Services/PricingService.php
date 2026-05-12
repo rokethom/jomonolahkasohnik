@@ -92,14 +92,25 @@ class PricingService
 
     public function calculateTarifFromDatabase(float $distanceKm, ?int $branchId = null): int
     {
-        $setting = PriceSetting::query()
+        $distanceKm = max(0.0, $distanceKm);
+        $baseQuery = PriceSetting::query()
             ->active()
-            ->forBranch($branchId)
+            ->forBranch($branchId);
+
+        $setting = (clone $baseQuery)
             ->forDistance($distanceKm)
             ->orderByRaw('branch_id IS NULL')
             ->orderByRaw('max_km IS NULL')
             ->orderByDesc('min_km')
             ->first();
+
+        if (! $setting && $distanceKm <= 0) {
+            $setting = (clone $baseQuery)
+                ->where('min_km', '>', 0)
+                ->orderByRaw('branch_id IS NULL')
+                ->orderBy('min_km')
+                ->first();
+        }
 
         if (! $setting) {
             throw new RuntimeException('Distance Price Settings aktif belum tersedia untuk jarak '.round($distanceKm, 2).' KM.');

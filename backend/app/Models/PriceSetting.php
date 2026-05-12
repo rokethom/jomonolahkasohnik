@@ -41,6 +41,8 @@ class PriceSetting extends Model
 
     public function scopeForDistance(Builder $query, float $distanceKm): Builder
     {
+        $distanceKm = max(0.0, $distanceKm);
+
         return $query
             ->where('min_km', '<=', $distanceKm)
             ->where(function (Builder $query) use ($distanceKm): void {
