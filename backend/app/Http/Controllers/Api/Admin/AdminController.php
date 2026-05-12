@@ -154,6 +154,7 @@ class AdminController extends Controller
 
         $role = UserRole::from($payload['role']);
         abort_unless($this->canAssignRole($actor, $role), 403);
+        $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null);
 
         $vehicleTypes = $this->normalizeVehicleTypes($payload['vehicle_types'] ?? [$payload['vehicle_type'] ?? 'motor']);
         $driverPayload = [
@@ -225,6 +226,10 @@ class AdminController extends Controller
 
         if (isset($payload['role'])) {
             abort_unless($this->canAssignRole($actor, UserRole::from($payload['role'])), 403);
+        }
+
+        if (array_key_exists('branch_id', $payload)) {
+            $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null);
         }
 
         $newPassword = filled($payload['password'] ?? null) ? (string) $payload['password'] : null;
@@ -2282,7 +2287,32 @@ class AdminController extends Controller
             return false;
         }
 
-        return $actor->role->canManageRole($target->role);
+        if (! $actor->role->canManageRole($target->role)) {
+            return false;
+        }
+
+        return $this->canManageGlobalUsers($actor)
+            || ($actor->branch_id !== null && (int) $target->branch_id === (int) $actor->branch_id);
+    }
+
+    private function branchIdForUserWrite(User $actor, mixed $branchId): ?int
+    {
+        if ($this->canManageGlobalUsers($actor)) {
+            return filled($branchId) ? (int) $branchId : null;
+        }
+
+        abort_unless($actor->branch_id !== null, 403, 'Akun ini belum memiliki area/cabang.');
+
+        if (filled($branchId)) {
+            abort_unless((int) $branchId === (int) $actor->branch_id, 403, 'User di luar area akun ini.');
+        }
+
+        return (int) $actor->branch_id;
+    }
+
+    private function canManageGlobalUsers(User $actor): bool
+    {
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
     }
 
     private function canAssignDriver(User $user): bool
