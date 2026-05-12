@@ -3,11 +3,15 @@
 namespace App\Exceptions;
 
 use App\Services\HermesSafetyAssistantService;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -99,6 +103,15 @@ class Handler extends ExceptionHandler
         ]));
 
         return Cache::add("hermes_safety:failed_request:{$fingerprint}", true, now()->addMinutes(5));
+    }
+
+    protected function unauthenticated($request, AuthenticationException $exception): JsonResponse|Response|SymfonyResponse
+    {
+        if ($request->expectsJson() || $request->is('api/*')) {
+            return response()->json(['message' => $exception->getMessage()], 401);
+        }
+
+        return redirect()->guest(route('filament.admin.auth.login'));
     }
 
     /**
