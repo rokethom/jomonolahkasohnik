@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Auth\Middleware\Authenticate as Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 class Authenticate extends Middleware
 {
@@ -16,6 +17,8 @@ class Authenticate extends Middleware
             return null;
         }
 
-        return route('filament.admin.auth.login');
+        return route(Route::has('filament.admin.auth.login')
+            ? 'filament.admin.auth.login'
+            : 'filament.admin.auth.login.fallback');
     }
 }

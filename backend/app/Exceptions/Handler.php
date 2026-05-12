@@ -11,6 +11,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
@@ -111,7 +112,9 @@ class Handler extends ExceptionHandler
             return response()->json(['message' => $exception->getMessage()], 401);
         }
 
-        return redirect()->guest(route('filament.admin.auth.login'));
+        return redirect()->guest(route(Route::has('filament.admin.auth.login')
+            ? 'filament.admin.auth.login'
+            : 'filament.admin.auth.login.fallback'));
     }
 
     public function render($request, Throwable $e): SymfonyResponse
