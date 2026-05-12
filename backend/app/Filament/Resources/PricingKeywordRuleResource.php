@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PricingKeywordRuleResource\Pages;
+use App\Filament\Support\PricingCsvTableActions;
 use App\Models\PricingKeywordRule;
 use App\Services\PricingKeywordRuleService;
 use Filament\Forms;
@@ -108,6 +109,7 @@ class PricingKeywordRuleResource extends Resource
     {
         return $table
             ->defaultSort('priority', 'desc')
+            ->headerActions(PricingCsvTableActions::make('keyword'))
             ->columns([
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('keywords')->badge()->color('info')->searchable(),

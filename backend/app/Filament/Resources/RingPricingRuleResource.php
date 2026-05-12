@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Enums\UserRole;
 use App\Filament\Resources\RingPricingRuleResource\Pages;
+use App\Filament\Support\PricingCsvTableActions;
 use App\Models\Branch;
 use App\Models\RingPricingRule;
 use App\Models\Service;
@@ -197,6 +198,7 @@ class RingPricingRuleResource extends Resource
     {
         return $table
             ->defaultSort('updated_at', 'desc')
+            ->headerActions(PricingCsvTableActions::make('ring'))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Master')

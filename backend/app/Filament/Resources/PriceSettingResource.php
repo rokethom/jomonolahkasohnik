@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\PriceSettingResource\Pages;
+use App\Filament\Support\PricingCsvTableActions;
 use App\Models\Branch;
 use App\Models\PriceSetting;
 use Filament\Forms;
@@ -109,6 +110,7 @@ class PriceSettingResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->headerActions(PricingCsvTableActions::make('price'))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()

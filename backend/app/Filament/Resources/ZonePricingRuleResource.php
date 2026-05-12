@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Enums\UserRole;
 use App\Filament\Resources\ZonePricingRuleResource\Pages;
+use App\Filament\Support\PricingCsvTableActions;
 use App\Models\Branch;
 use App\Models\GeofenceArea;
 use App\Models\Service;
@@ -181,6 +182,7 @@ class ZonePricingRuleResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->headerActions(PricingCsvTableActions::make('zone'))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
