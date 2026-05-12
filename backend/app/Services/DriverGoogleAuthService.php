@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class DriverGoogleAuthService
 {
@@ -129,8 +130,17 @@ class DriverGoogleAuthService
         }
 
         foreach ($clientIds as $clientId) {
-            $client = new GoogleClient(['client_id' => $clientId]);
-            $payload = $client->verifyIdToken($idToken);
+            try {
+                $client = new GoogleClient(['client_id' => $clientId]);
+                $payload = $client->verifyIdToken($idToken);
+            } catch (Throwable $exception) {
+                Log::warning('driver_google_login.token_verify_failed', [
+                    'client_id_suffix' => substr($clientId, -8),
+                    'message' => $exception->getMessage(),
+                ]);
+
+                continue;
+            }
 
             if (is_array($payload) && $this->isValidPayload($payload, $clientId)) {
                 return $payload;

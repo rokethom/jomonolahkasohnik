@@ -114,6 +114,19 @@ class Handler extends ExceptionHandler
         return redirect()->guest(route('filament.admin.auth.login'));
     }
 
+    public function render($request, Throwable $e): SymfonyResponse
+    {
+        $response = parent::render($request, $e);
+
+        if ($request instanceof Request && $request->is('api/*')) {
+            $origin = (string) $request->headers->get('Origin', '*');
+            $response->headers->set('Access-Control-Allow-Origin', $origin !== '' ? $origin : '*');
+            $response->headers->set('Vary', trim($response->headers->get('Vary').' Origin'));
+        }
+
+        return $response;
+    }
+
     /**
      * @return array<string, mixed>
      */
