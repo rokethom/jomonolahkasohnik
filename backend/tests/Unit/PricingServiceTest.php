@@ -194,6 +194,89 @@ class PricingServiceTest extends TestCase
         $this->assertArrayHasKey('ring_pricing_rule_id', $quote);
     }
 
+    public function test_master_ring_polygon_matches_only_same_branch(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        $branchA = Branch::query()->create([
+            'branch_code' => 'PLY-A',
+            'name' => 'Polygon',
+            'area' => 'A',
+            'latitude' => -7.70000000,
+            'longitude' => 114.00000000,
+            'radius_km' => 5,
+        ]);
+        $branchB = Branch::query()->create([
+            'branch_code' => 'PLY-B',
+            'name' => 'Polygon',
+            'area' => 'B',
+            'latitude' => -7.80000000,
+            'longitude' => 114.10000000,
+            'radius_km' => 5,
+        ]);
+
+        foreach ([$branchA, $branchB] as $branch) {
+            PriceSetting::query()->create([
+                'name' => '0-5 '.$branch->branch_code,
+                'branch_id' => $branch->id,
+                'min_km' => 0.01,
+                'max_km' => 5,
+                'price' => 6000,
+                'is_formula' => false,
+                'is_active' => true,
+            ]);
+        }
+
+        RingPricingRule::query()->create([
+            'branch_id' => $branchA->id,
+            'service_type' => 'ojek',
+            'name' => 'Ring polygon A',
+            'area_mode' => 'polygon',
+            'pickup_area' => 'Cabang A',
+            'destination_area' => 'Ring 3 A',
+            'polygon_coordinates' => [
+                ['lat' => -7.71000000, 'lng' => 113.99000000],
+                ['lat' => -7.71000000, 'lng' => 114.03000000],
+                ['lat' => -7.68000000, 'lng' => 114.03000000],
+                ['lat' => -7.68000000, 'lng' => 113.99000000],
+            ],
+            'polygon_match_point' => 'destination',
+            'ring' => 'ring_3',
+            'price' => 15000,
+            'is_bidirectional' => true,
+            'source' => 'manual',
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'service_type' => 'ojek',
+            'pickup_address' => 'Pickup',
+            'pickup_lat' => -7.70900000,
+            'pickup_lng' => 114.00100000,
+            'destination_address' => 'Tujuan polygon',
+            'destination_lat' => -7.69500000,
+            'destination_lng' => 114.01000000,
+            'distance_km' => 2,
+            'stops' => 1,
+        ];
+
+        $quoteSameBranch = app(PricingService::class)->calculate([
+            ...$payload,
+            'branch_id' => $branchA->id,
+        ]);
+        $quoteOtherBranch = app(PricingService::class)->calculate([
+            ...$payload,
+            'branch_id' => $branchB->id,
+        ]);
+
+        $this->assertSame(15000, $quoteSameBranch['tarif']);
+        $this->assertSame('polygon', $quoteSameBranch['ring_route']['area_mode']);
+        $this->assertSame(6000, $quoteOtherBranch['tarif']);
+        $this->assertArrayNotHasKey('ring_pricing_rule_id', $quoteOtherBranch);
+    }
+
     public function test_jojobot_rejects_pricing_geocode_outside_branch_radius(): void
     {
         $branch = new Branch([

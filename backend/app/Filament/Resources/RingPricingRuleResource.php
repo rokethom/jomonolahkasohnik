@@ -14,6 +14,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class RingPricingRuleResource extends Resource
 {
@@ -91,9 +92,9 @@ class RingPricingRuleResource extends Resource
                             ->default(fn (): ?int => self::actorCanManageGlobalPricing() ? null : self::scopedBranchId())
                             ->disabled(fn (): bool => ! self::actorCanManageGlobalPricing())
                             ->dehydrated()
-                            ->required(fn (): bool => ! self::actorCanManageGlobalPricing())
+                            ->required(fn (Forms\Get $get): bool => ! self::actorCanManageGlobalPricing() || $get('area_mode') === 'polygon')
                             ->helperText(fn (): string => self::actorCanManageGlobalPricing()
-                                ? 'Kosongkan jika berlaku global.'
+                                ? 'Kosongkan jika berlaku global. Untuk polygon wajib pilih cabang agar tidak bocor antar cabang.'
                                 : 'Role cabang hanya boleh mengatur master ring cabangnya sendiri.'),
                         Forms\Components\Select::make('service_type')
                             ->label('Layanan')
@@ -109,14 +110,25 @@ class RingPricingRuleResource extends Resource
                                 'ring_2' => 'Ring 2',
                                 'ring_3' => 'Ring 3',
                             ]),
+                        Forms\Components\Select::make('area_mode')
+                            ->label('Mode area')
+                            ->required()
+                            ->native(false)
+                            ->default('text')
+                            ->live()
+                            ->options([
+                                'text' => 'Alias teks route',
+                                'polygon' => 'Polygon maps',
+                            ])
+                            ->helperText('Polygon dipakai untuk area Ring 1/2/3 yang digambar di maps. Alias teks tetap tersedia sebagai fallback.'),
                         Forms\Components\TextInput::make('pickup_area')
                             ->label('Asal Area')
-                            ->required()
+                            ->required(fn (Forms\Get $get): bool => $get('area_mode') !== 'polygon')
                             ->maxLength(255)
                             ->placeholder('Pasar Kampung Asembagus'),
                         Forms\Components\TextInput::make('destination_area')
                             ->label('Tujuan Area')
-                            ->required()
+                            ->required(fn (Forms\Get $get): bool => $get('area_mode') !== 'polygon')
                             ->maxLength(255)
                             ->placeholder('Pelabuhan Jangkar'),
                         Forms\Components\TagsInput::make('pickup_aliases')
@@ -126,6 +138,33 @@ class RingPricingRuleResource extends Resource
                         Forms\Components\TagsInput::make('destination_aliases')
                             ->label('Alias Tujuan')
                             ->placeholder('p jangkar'),
+                        Forms\Components\Select::make('polygon_match_point')
+                            ->label('Titik pengecekan polygon')
+                            ->native(false)
+                            ->default('destination_then_pickup')
+                            ->visible(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
+                            ->required(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
+                            ->options([
+                                'destination_then_pickup' => 'Tujuan, fallback pickup',
+                                'destination' => 'Tujuan saja',
+                                'pickup' => 'Pickup saja',
+                                'either' => 'Pickup atau tujuan',
+                                'both' => 'Pickup dan tujuan',
+                            ])
+                            ->helperText('Untuk ring harga area, pilihan aman biasanya tujuan lalu fallback pickup.'),
+                        Forms\Components\Textarea::make('polygon_coordinates')
+                            ->label('Koordinat polygon')
+                            ->rows(8)
+                            ->formatStateUsing(fn (mixed $state): string => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : (string) ($state ?? ''))
+                            ->visible(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
+                            ->required(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
+                            ->extraInputAttributes(['id' => 'ring_polygon_coordinates'])
+                            ->helperText('Format JSON: [{"lat":-7.70,"lng":114.00}, ...]. Gunakan map di bawah untuk menggambar.'),
+                        Forms\Components\ViewField::make('ring_polygon_map')
+                            ->label('Gambar polygon ring')
+                            ->view('filament.forms.components.ring-polygon-map')
+                            ->visible(fn (Forms\Get $get): bool => $get('area_mode') === 'polygon')
+                            ->columnSpanFull(),
                     ]),
                 Forms\Components\Section::make('Harga & Status')
                     ->columns(2)
@@ -178,6 +217,11 @@ class RingPricingRuleResource extends Resource
                         'ring_2' => 'warning',
                         default => 'info',
                     }),
+                Tables\Columns\TextColumn::make('area_mode')
+                    ->label('Mode')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => $state === 'polygon' ? 'Polygon' : 'Alias')
+                    ->color(fn (?string $state): string => $state === 'polygon' ? 'info' : 'gray'),
                 Tables\Columns\TextColumn::make('pickup_area')
                     ->label('Asal')
                     ->searchable()
@@ -244,7 +288,61 @@ class RingPricingRuleResource extends Resource
             $data['branch_id'] = static::scopedBranchId();
         }
 
+        $data['area_mode'] = $data['area_mode'] ?? 'text';
+        $data['polygon_match_point'] = $data['polygon_match_point'] ?? 'destination_then_pickup';
+
+        if (($data['area_mode'] ?? 'text') === 'polygon') {
+            if (blank($data['branch_id'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'data.branch_id' => 'Master Ring Polygon wajib memilih cabang agar tidak bocor antar cabang.',
+                ]);
+            }
+
+            $data['pickup_area'] = filled($data['pickup_area'] ?? null) ? $data['pickup_area'] : ($data['name'] ?? 'Polygon pickup');
+            $data['destination_area'] = filled($data['destination_area'] ?? null) ? $data['destination_area'] : ($data['name'] ?? 'Polygon destination');
+            $data['polygon_coordinates'] = static::normalizePolygonCoordinates($data['polygon_coordinates'] ?? null);
+
+            if (count($data['polygon_coordinates']) < 3) {
+                throw ValidationException::withMessages([
+                    'data.polygon_coordinates' => 'Polygon Master Ring minimal memiliki 3 titik.',
+                ]);
+            }
+        } else {
+            $data['polygon_coordinates'] = null;
+        }
+
         return $data;
+    }
+
+    private static function normalizePolygonCoordinates(mixed $value): array
+    {
+        $points = is_array($value) ? $value : json_decode((string) $value, true);
+
+        if (! is_array($points)) {
+            return [];
+        }
+
+        return collect($points)
+            ->map(function (mixed $point): ?array {
+                if (! is_array($point)) {
+                    return null;
+                }
+
+                $lat = $point['lat'] ?? $point['latitude'] ?? null;
+                $lng = $point['lng'] ?? $point['longitude'] ?? null;
+
+                if (! is_numeric($lat) || ! is_numeric($lng)) {
+                    return null;
+                }
+
+                return [
+                    'lat' => round((float) $lat, 8),
+                    'lng' => round((float) $lng, 8),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     private static function branchOptions(): array

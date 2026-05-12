@@ -1809,23 +1809,62 @@ class AdminController extends Controller
             'branch_id' => ['nullable', 'exists:branches,id'],
             'service_type' => ['nullable', 'string', 'max:80'],
             'name' => ['required', 'string', 'max:255'],
-            'pickup_area' => ['required', 'string', 'max:255'],
-            'destination_area' => ['required', 'string', 'max:255'],
+            'area_mode' => ['nullable', Rule::in(['text', 'polygon'])],
+            'pickup_area' => ['nullable', 'string', 'max:255'],
+            'destination_area' => ['nullable', 'string', 'max:255'],
             'pickup_aliases' => ['nullable', 'array'],
             'pickup_aliases.*' => ['string', 'max:255'],
             'destination_aliases' => ['nullable', 'array'],
             'destination_aliases.*' => ['string', 'max:255'],
+            'polygon_coordinates' => ['nullable', 'array'],
+            'polygon_coordinates.*.lat' => ['required_with:polygon_coordinates', 'numeric', 'between:-90,90'],
+            'polygon_coordinates.*.lng' => ['required_with:polygon_coordinates', 'numeric', 'between:-180,180'],
+            'polygon_match_point' => ['nullable', Rule::in(['destination_then_pickup', 'destination', 'pickup', 'either', 'both'])],
             'ring' => ['required', 'string', 'max:40'],
             'price' => ['required', 'integer', 'min:0'],
             'is_bidirectional' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
+        $payload['area_mode'] = $payload['area_mode'] ?? 'text';
+        if ($payload['area_mode'] === 'polygon') {
+            if (blank($payload['branch_id'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'Master Ring Polygon wajib memilih cabang agar tidak bocor antar cabang.',
+                ]);
+            }
+
+            $payload['pickup_area'] = filled($payload['pickup_area'] ?? null) ? $payload['pickup_area'] : $payload['name'];
+            $payload['destination_area'] = filled($payload['destination_area'] ?? null) ? $payload['destination_area'] : $payload['name'];
+            $payload['polygon_coordinates'] = collect($payload['polygon_coordinates'] ?? [])
+                ->map(fn (array $point): array => [
+                    'lat' => round((float) $point['lat'], 8),
+                    'lng' => round((float) $point['lng'], 8),
+                ])
+                ->values()
+                ->all();
+
+            if (count($payload['polygon_coordinates']) < 3) {
+                throw ValidationException::withMessages([
+                    'polygon_coordinates' => 'Polygon Master Ring minimal memiliki 3 titik.',
+                ]);
+            }
+        } else {
+            if (blank($payload['pickup_area'] ?? null) || blank($payload['destination_area'] ?? null)) {
+                throw ValidationException::withMessages([
+                    'pickup_area' => 'Asal area dan tujuan area wajib diisi untuk mode alias teks.',
+                ]);
+            }
+
+            $payload['polygon_coordinates'] = null;
+        }
+
         $payload['service_type'] = isset($payload['service_type']) && $payload['service_type'] !== ''
             ? app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type'])
             : null;
         $payload['pickup_aliases'] = array_values(array_filter($payload['pickup_aliases'] ?? []));
         $payload['destination_aliases'] = array_values(array_filter($payload['destination_aliases'] ?? []));
+        $payload['polygon_match_point'] = $payload['polygon_match_point'] ?? 'destination_then_pickup';
         $payload['is_bidirectional'] = $payload['is_bidirectional'] ?? true;
         $payload['is_active'] = $payload['is_active'] ?? true;
 
@@ -2885,10 +2924,13 @@ class AdminController extends Controller
             ] : null,
             'service_type' => $rule->service_type,
             'name' => $rule->name,
+            'area_mode' => $rule->area_mode ?? 'text',
             'pickup_area' => $rule->pickup_area,
             'destination_area' => $rule->destination_area,
             'pickup_aliases' => $rule->pickup_aliases ?? [],
             'destination_aliases' => $rule->destination_aliases ?? [],
+            'polygon_coordinates' => $rule->polygon_coordinates ?? [],
+            'polygon_match_point' => $rule->polygon_match_point ?? 'destination_then_pickup',
             'ring' => $rule->ring,
             'price' => $rule->price,
             'is_bidirectional' => (bool) $rule->is_bidirectional,

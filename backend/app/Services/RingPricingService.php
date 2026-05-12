@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\RingPricingRule;
 use App\Models\RingPricingSuggestion;
 use App\Models\User;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class RingPricingService
@@ -15,6 +16,28 @@ class RingPricingService
         $branchId = isset($payload['branch_id']) ? (int) $payload['branch_id'] : null;
         $pickupText = $this->normalize($this->pickupText($payload));
         $destinationText = $this->normalize($this->destinationText($payload));
+        $pickupPoint = $this->pointFromPayload($payload, 'pickup');
+        $destinationPoint = $this->pointFromPayload($payload, 'destination');
+
+        $hasPolygonColumns = Schema::hasColumn('ring_pricing_rules', 'area_mode')
+            && Schema::hasColumn('ring_pricing_rules', 'polygon_coordinates');
+
+        if ($hasPolygonColumns && $branchId !== null && ($pickupPoint !== null || $destinationPoint !== null)) {
+            $polygonRule = RingPricingRule::query()
+                ->with('branch')
+                ->where('is_active', true)
+                ->where('branch_id', $branchId)
+                ->where('area_mode', 'polygon')
+                ->forService($serviceType)
+                ->orderByRaw('service_type IS NULL')
+                ->latest()
+                ->get()
+                ->first(fn (RingPricingRule $rule): bool => $this->matchesPolygon($rule, $pickupPoint, $destinationPoint));
+
+            if ($polygonRule) {
+                return $polygonRule;
+            }
+        }
 
         if ($pickupText === '' || $destinationText === '') {
             return null;
@@ -23,6 +46,7 @@ class RingPricingService
         return RingPricingRule::query()
             ->with('branch')
             ->where('is_active', true)
+            ->when($hasPolygonColumns, fn ($query) => $query->where(fn ($query) => $query->whereNull('area_mode')->orWhere('area_mode', 'text')))
             ->forBranch($branchId)
             ->forService($serviceType)
             ->orderByRaw('branch_id IS NULL')
@@ -47,6 +71,8 @@ class RingPricingService
                 'pickup_area' => $rule->pickup_area,
                 'destination_area' => $rule->destination_area,
                 'branch' => $rule->branch?->name,
+                'area_mode' => $rule->area_mode ?? 'text',
+                'polygon_match_point' => $rule->polygon_match_point,
             ],
             'tarif' => (int) $rule->price,
             'price' => (int) $rule->price,
@@ -129,6 +155,125 @@ class RingPricingService
         }
 
         return $this->containsAny($pickupText, $destinationTerms) && $this->containsAny($destinationText, $pickupTerms);
+    }
+
+    private function matchesPolygon(RingPricingRule $rule, ?array $pickupPoint, ?array $destinationPoint): bool
+    {
+        $polygon = $this->polygonPoints($rule->polygon_coordinates ?? []);
+        if (count($polygon) < 3) {
+            return false;
+        }
+
+        $pickupInside = $pickupPoint !== null && $this->pointInPolygon($pickupPoint['lat'], $pickupPoint['lng'], $polygon);
+        $destinationInside = $destinationPoint !== null && $this->pointInPolygon($destinationPoint['lat'], $destinationPoint['lng'], $polygon);
+
+        return match ($rule->polygon_match_point ?: 'destination_then_pickup') {
+            'pickup' => $pickupInside,
+            'either' => $pickupInside || $destinationInside,
+            'both' => $pickupInside && $destinationInside,
+            'destination_then_pickup' => $destinationPoint !== null ? $destinationInside : $pickupInside,
+            default => $destinationInside,
+        };
+    }
+
+    /**
+     * @return array{lat: float, lng: float}|null
+     */
+    private function pointFromPayload(array $payload, string $type): ?array
+    {
+        $prefixes = match ($type) {
+            'pickup' => [
+                ['pickup_lat', 'pickup_lng'],
+                ['origin_lat', 'origin_lng'],
+                ['service_payload.pickup_lat', 'service_payload.pickup_lng'],
+                ['service_payload.origin_lat', 'service_payload.origin_lng'],
+            ],
+            default => [
+                ['destination_lat', 'destination_lng'],
+                ['dropoff_lat', 'dropoff_lng'],
+                ['service_payload.destination_lat', 'service_payload.destination_lng'],
+                ['service_payload.dropoff_lat', 'service_payload.dropoff_lng'],
+            ],
+        };
+
+        foreach ($prefixes as [$latKey, $lngKey]) {
+            $lat = data_get($payload, $latKey);
+            $lng = data_get($payload, $lngKey);
+
+            if (is_numeric($lat) && is_numeric($lng)) {
+                return ['lat' => (float) $lat, 'lng' => (float) $lng];
+            }
+        }
+
+        $points = data_get($payload, 'points', data_get($payload, 'service_payload.points', []));
+        if (is_array($points) && $points !== []) {
+            $point = $type === 'pickup' ? ($points[0] ?? null) : end($points);
+            if (is_array($point)) {
+                $lat = $point['lat'] ?? $point['latitude'] ?? null;
+                $lng = $point['lng'] ?? $point['longitude'] ?? null;
+
+                if (is_numeric($lat) && is_numeric($lng)) {
+                    return ['lat' => (float) $lat, 'lng' => (float) $lng];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<int, array{lat: float, lng: float}>
+     */
+    private function polygonPoints(mixed $value): array
+    {
+        $points = is_array($value) ? $value : json_decode((string) $value, true);
+        if (! is_array($points)) {
+            return [];
+        }
+
+        return collect($points)
+            ->map(function (mixed $point): ?array {
+                if (! is_array($point)) {
+                    return null;
+                }
+
+                $lat = $point['lat'] ?? $point['latitude'] ?? null;
+                $lng = $point['lng'] ?? $point['longitude'] ?? null;
+
+                if (! is_numeric($lat) || ! is_numeric($lng)) {
+                    return null;
+                }
+
+                return ['lat' => (float) $lat, 'lng' => (float) $lng];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<int, array{lat: float, lng: float}> $polygon
+     */
+    private function pointInPolygon(float $lat, float $lng, array $polygon): bool
+    {
+        $inside = false;
+        $count = count($polygon);
+
+        for ($i = 0, $j = $count - 1; $i < $count; $j = $i++) {
+            $xI = $polygon[$i]['lng'];
+            $yI = $polygon[$i]['lat'];
+            $xJ = $polygon[$j]['lng'];
+            $yJ = $polygon[$j]['lat'];
+
+            $intersects = (($yI > $lat) !== ($yJ > $lat))
+                && ($lng < (($xJ - $xI) * ($lat - $yI) / (($yJ - $yI) ?: 1.0)) + $xI);
+
+            if ($intersects) {
+                $inside = ! $inside;
+            }
+        }
+
+        return $inside;
     }
 
     private function pickupText(array $payload): string
