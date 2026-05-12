@@ -72,24 +72,39 @@
                 return window.jojoGoogleMapsPromise;
             }
 
+            const waitForGoogleMaps = (resolve, reject, startedAt = Date.now()) => {
+                if (window.google?.maps?.Map) {
+                    resolve(window.google.maps);
+                    return;
+                }
+
+                if (Date.now() - startedAt > 12000) {
+                    window.jojoGoogleMapsPromise = null;
+                    reject(new Error('Google Maps timeout'));
+                    return;
+                }
+
+                window.setTimeout(() => waitForGoogleMaps(resolve, reject, startedAt), 120);
+            };
+
             window.jojoGoogleMapsPromise = new Promise((resolve, reject) => {
                 const existingScript = document.getElementById('jojo-google-maps-sdk');
+
+                if (existingScript) {
+                    waitForGoogleMaps(resolve, reject);
+                    return;
+                }
+
                 const script = document.createElement('script');
                 script.id = 'jojo-google-maps-sdk';
                 script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=drawing&loading=async`;
                 script.async = true;
                 script.defer = true;
-                script.onload = () => window.google?.maps?.Map ? resolve(window.google.maps) : reject(new Error('Google Maps tidak siap'));
+                script.onload = () => waitForGoogleMaps(resolve, reject);
                 script.onerror = () => {
                     window.jojoGoogleMapsPromise = null;
                     reject(new Error('Google Maps gagal dimuat'));
                 };
-
-                if (existingScript) {
-                    existingScript.addEventListener('load', script.onload, { once: true });
-                    existingScript.addEventListener('error', script.onerror, { once: true });
-                    return;
-                }
 
                 document.head.appendChild(script);
             });
