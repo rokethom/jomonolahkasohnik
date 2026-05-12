@@ -8,6 +8,20 @@
     $lng = is_numeric($branch?->longitude) ? (float) $branch->longitude : 114.00980000;
 @endphp
 
+@once
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""
+    />
+    <script
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""
+    ></script>
+@endonce
+
 <div class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-sm text-gray-600 dark:text-gray-300">
@@ -35,8 +49,8 @@
 
     <div
         id="{{ $mapId }}"
-        style="height: 420px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35); background: rgba(15, 23, 42, .22);"
-    ></div>
+        style="height: 420px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(148, 163, 184, .35); background: rgba(15, 23, 42, .22); display: grid; place-items: center; color: rgb(148, 163, 184);"
+    >Memuat Leaflet map...</div>
 </div>
 
 <script>
@@ -56,35 +70,38 @@
             }
 
             window.jojoLeafletPromise = new Promise((resolve, reject) => {
-                const cssId = 'jojo-leaflet-css';
-                if (!document.getElementById(cssId)) {
-                    const link = document.createElement('link');
-                    link.id = cssId;
-                    link.rel = 'stylesheet';
-                    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-                    document.head.appendChild(link);
-                }
-
                 const existingScript = document.getElementById('jojo-leaflet-js');
                 const finish = () => window.L?.map ? resolve(window.L) : reject(new Error('Leaflet tidak siap'));
 
-                if (existingScript) {
+                const cdnReadyWait = (startedAt = Date.now()) => {
                     if (window.L?.map) {
                         finish();
-                    } else {
-                        existingScript.addEventListener('load', finish, { once: true });
-                        existingScript.addEventListener('error', () => reject(new Error('Leaflet gagal dimuat')), { once: true });
+                        return;
                     }
-                    return;
-                }
 
-                const script = document.createElement('script');
-                script.id = 'jojo-leaflet-js';
-                script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-                script.async = true;
-                script.onload = finish;
-                script.onerror = () => reject(new Error('Leaflet gagal dimuat'));
-                document.head.appendChild(script);
+                    if (Date.now() - startedAt > 8000) {
+                        if (existingScript) {
+                            existingScript.addEventListener('load', finish, { once: true });
+                            existingScript.addEventListener('error', () => reject(new Error('Leaflet gagal dimuat')), { once: true });
+                            return;
+                        }
+
+                        const script = document.createElement('script');
+                        script.id = 'jojo-leaflet-js';
+                        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                        script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+                        script.crossOrigin = '';
+                        script.async = true;
+                        script.onload = finish;
+                        script.onerror = () => reject(new Error('Leaflet gagal dimuat'));
+                        document.head.appendChild(script);
+                        return;
+                    }
+
+                    window.setTimeout(() => cdnReadyWait(startedAt), 120);
+                };
+
+                cdnReadyWait();
             });
 
             return window.jojoLeafletPromise;
@@ -141,6 +158,8 @@
             };
 
             mapElement.dataset.loaded = '1';
+            mapElement.innerHTML = '';
+            mapElement.style.display = 'block';
             const map = L.map(mapElement, { scrollWheelZoom: true }).setView(center, 13);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
