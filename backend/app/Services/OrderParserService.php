@@ -22,10 +22,10 @@ class OrderParserService
             return $aiParsed;
         }
 
-        return $this->parseFast($user, $text);
+        return $this->parseFast($user, $text, false);
     }
 
-    public function parseFast(User $user, string $text): ?array
+    public function parseFast(User $user, string $text, bool $allowAiFallback = true): ?array
     {
         $normalizedText = $this->normalizer->normalize($text);
         $natural = $this->naturalLanguage->parse($user, $text);
@@ -40,7 +40,7 @@ class OrderParserService
             return $localParsed;
         }
 
-        return $this->aiParser->parse($user, $text);
+        return $allowAiFallback ? $this->aiParser->parse($user, $text) : null;
     }
 
     private function parseLocal(User $user, string $text, string $normalizedText): ?array
