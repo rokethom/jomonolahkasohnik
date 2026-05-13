@@ -14,7 +14,6 @@ use Filament\Resources\Pages\ListRecords;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class ListRingPricingRules extends ListRecords
 {
@@ -32,7 +31,8 @@ class ListRingPricingRules extends ListRecords
                 ->form([
                     Forms\Components\FileUpload::make('geojson_file')
                         ->label('File GeoJSON')
-                        ->storeFiles(false)
+                        ->disk('local')
+                        ->directory('imports/ring-geojson')
                         ->helperText('FeatureCollection harus punya properties ring: 1, 2, 3 atau ring_1, ring_2, ring_3.')
                         ->required(),
                     Forms\Components\Select::make('branch_id')
@@ -71,15 +71,15 @@ class ListRingPricingRules extends ListRecords
                         ->default(false),
                 ])
                 ->action(function (array $data): void {
-                    $upload = is_array($data['geojson_file'] ?? null)
-                        ? reset($data['geojson_file'])
-                        : ($data['geojson_file'] ?? null);
-                    $filePath = static::uploadedGeojsonPath($upload);
+                    $storedPath = is_array($data['geojson_file'] ?? null)
+                        ? (string) reset($data['geojson_file'])
+                        : (string) ($data['geojson_file'] ?? '');
+                    $filePath = $storedPath !== '' ? Storage::disk('local')->path($storedPath) : null;
 
-                    if ($filePath === null) {
+                    if ($filePath === null || ! is_file($filePath)) {
                         Notification::make()
                             ->title('Import gagal')
-                            ->body('File GeoJSON belum dipilih.')
+                            ->body('File GeoJSON belum dipilih atau gagal disimpan sementara.')
                             ->danger()
                             ->send();
 
@@ -90,7 +90,7 @@ class ListRingPricingRules extends ListRecords
                         $filePath,
                         Auth::user(),
                         [
-                            'file_name' => $upload instanceof TemporaryUploadedFile ? $upload->getClientOriginalName() : basename($filePath),
+                            'file_name' => basename($storedPath ?: $filePath),
                             'branch_id' => $data['branch_id'] ?? null,
                             'service_type' => $data['service_type'] ?? null,
                             'polygon_match_point' => $data['polygon_match_point'] ?? 'destination_then_pickup',
@@ -121,19 +121,6 @@ class ListRingPricingRules extends ListRecords
     private static function canManageGlobalPricing(): bool
     {
         return in_array(Auth::user()?->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
-    }
-
-    private static function uploadedGeojsonPath(mixed $upload): ?string
-    {
-        if ($upload instanceof TemporaryUploadedFile) {
-            return $upload->getRealPath();
-        }
-
-        if (is_string($upload) && $upload !== '') {
-            return Storage::disk('local')->path($upload);
-        }
-
-        return null;
     }
 
     private static function branchOptions(): array
