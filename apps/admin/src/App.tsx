@@ -2965,6 +2965,7 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
 
 function PricingPanel({ ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showRingForm, setShowRingForm] = useState(false)
+  const [showImportForm, setShowImportForm] = useState(false)
   const [ringFormula, setRingFormula] = useState(false)
   const [importingGeojson, setImportingGeojson] = useState(false)
   const [geojsonImportMessage, setGeojsonImportMessage] = useState<string | null>(null)
@@ -3071,6 +3072,7 @@ function PricingPanel({ ringRules, ringSuggestions, branches, services, permissi
       <div className="section-head master-ring-head">
         <div><h2>Master Ring Pricing</h2><p>Min/max jarak, polygon, service fee, dan formula harga dikelola dari Master Ring.</p></div>
         <div className="section-actions">
+          {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowImportForm((value) => !value)}><Icon name="upload" />{showImportForm ? 'Tutup Import' : 'Import GeoJSON'}</button>}
           {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />{showRingForm ? 'Tutup Form' : 'Master Ring'}</button>}
         </div>
       </div>
@@ -3107,7 +3109,7 @@ function PricingPanel({ ringRules, ringSuggestions, branches, services, permissi
           <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowRingForm(false)}>Batal</button><button className="primary-button" type="submit">Simpan Master Ring</button></div>
         </form>
       )}
-      {canManageRing && (
+      {showImportForm && canManageRing && (
         <form className="admin-inline-form pricing-create-form ring-import-form" onSubmit={importGeojson}>
           <div className="ring-form-title"><strong>Import GeoJSON ke Master Ring</strong><span>File FeatureCollection dari geojson.io akan dibuat menjadi rule Master Ring. Jika cabang dikosongkan, sistem memilih cabang terdekat dari centroid polygon.</span></div>
           <label>File GeoJSON<input name="geojson_file" type="file" accept=".geojson,.json,application/geo+json,application/json" required /></label>
@@ -6080,6 +6082,7 @@ function Icon({ name }: { name: string }) {
     pin: 'M12 22s7-5.2 7-12a7 7 0 1 0-14 0c0 6.8 7 12 7 12Zm0-9a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z',
     search: 'M10 4a6 6 0 1 1-3.5 10.9l-3.2 3.2 1.4 1.4 3.2-3.2A6 6 0 0 1 10 4Zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
     plus: 'M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7V4Z',
+    upload: 'M12 3 6.5 8.5 7.9 9.9 11 6.8V16h2V6.8l3.1 3.1 1.4-1.4L12 3ZM5 18h14v2H5v-2Z',
     truck: 'M3 6h11v9H3V6Zm12 3h3l3 4v2h-2a3 3 0 0 0-6 0h-2V9h4ZM7 20a3 3 0 1 1 0-6 3 3 0 0 1 0 6Zm10 0a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z',
     shield: 'M12 2 20 5v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5l8-3Z',
     close: 'm6.4 5 12.6 12.6-1.4 1.4L5 6.4 6.4 5Zm12.6 1.4L6.4 19 5 17.6 17.6 5 19 6.4Z',
