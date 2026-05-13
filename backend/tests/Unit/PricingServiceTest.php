@@ -194,6 +194,79 @@ class PricingServiceTest extends TestCase
         $this->assertArrayHasKey('ring_pricing_rule_id', $quote);
     }
 
+    public function test_master_ring_prefers_lower_ring_when_multiple_rules_match(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-KTA-PRIO',
+            'name' => 'Situbondo',
+            'area' => 'Kota Priority',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        PriceSetting::query()->create([
+            'name' => '0-5 priority',
+            'branch_id' => $branch->id,
+            'min_km' => 0.01,
+            'max_km' => 5,
+            'price' => 6000,
+            'is_formula' => false,
+            'is_active' => true,
+        ]);
+
+        RingPricingRule::query()->create([
+            'branch_id' => $branch->id,
+            'service_type' => 'ojek',
+            'name' => 'Ring 1 terminal',
+            'pickup_area' => 'mama marvel',
+            'destination_area' => 'terminal',
+            'ring' => 'ring_1',
+            'price' => 6000,
+            'is_bidirectional' => true,
+            'source' => 'manual',
+            'is_active' => true,
+            'created_at' => now()->subMinute(),
+            'updated_at' => now()->subMinute(),
+        ]);
+
+        RingPricingRule::query()->create([
+            'branch_id' => $branch->id,
+            'service_type' => 'ojek',
+            'name' => 'Ring 3 terminal newer',
+            'pickup_area' => 'mama marvel',
+            'destination_area' => 'terminal',
+            'ring' => 'ring_3',
+            'price' => 15000,
+            'is_bidirectional' => true,
+            'source' => 'manual',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $quote = app(PricingService::class)->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'pickup_address' => 'mama marvel',
+            'pickup_lat' => -7.70924228,
+            'pickup_lng' => 113.99408479,
+            'destination_address' => 'terminal',
+            'destination_lat' => -7.7067986,
+            'destination_lng' => 114.0120514,
+            'distance_km' => 2,
+            'stops' => 1,
+        ]);
+
+        $this->assertSame(6000, $quote['tarif']);
+        $this->assertSame('ring_1', $quote['ring']);
+        $this->assertSame(7000, $quote['total_price']);
+    }
+
     public function test_master_ring_polygon_matches_only_same_branch(): void
     {
         app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);

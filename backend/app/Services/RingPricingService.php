@@ -29,13 +29,16 @@ class RingPricingService
                 ->where('branch_id', $branchId)
                 ->where('area_mode', 'polygon')
                 ->forService($serviceType)
-                ->orderByRaw('service_type IS NULL')
                 ->latest()
-                ->get()
-                ->first(fn (RingPricingRule $rule): bool => $this->matchesPolygon($rule, $pickupPoint, $destinationPoint));
+                ->get();
 
-            if ($polygonRule) {
-                return $polygonRule;
+            $bestPolygonRule = $this->bestMatchingRule(
+                $polygonRule,
+                fn (RingPricingRule $rule): bool => $this->matchesPolygon($rule, $pickupPoint, $destinationPoint),
+            );
+
+            if ($bestPolygonRule) {
+                return $bestPolygonRule;
             }
         }
 
@@ -43,17 +46,19 @@ class RingPricingService
             return null;
         }
 
-        return RingPricingRule::query()
+        $rules = RingPricingRule::query()
             ->with('branch')
             ->where('is_active', true)
             ->when($hasPolygonColumns, fn ($query) => $query->where(fn ($query) => $query->whereNull('area_mode')->orWhere('area_mode', 'text')))
             ->forBranch($branchId)
             ->forService($serviceType)
-            ->orderByRaw('branch_id IS NULL')
-            ->orderByRaw('service_type IS NULL')
             ->latest()
-            ->get()
-            ->first(fn (RingPricingRule $rule): bool => $this->matches($rule, $pickupText, $destinationText));
+            ->get();
+
+        return $this->bestMatchingRule(
+            $rules,
+            fn (RingPricingRule $rule): bool => $this->matches($rule, $pickupText, $destinationText),
+        );
     }
 
     public function apply(array $quote, RingPricingRule $rule): array
@@ -155,6 +160,56 @@ class RingPricingService
         }
 
         return $this->containsAny($pickupText, $destinationTerms) && $this->containsAny($destinationText, $pickupTerms);
+    }
+
+    private function bestMatchingRule(iterable $rules, callable $matches): ?RingPricingRule
+    {
+        return collect($rules)
+            ->filter(fn (RingPricingRule $rule): bool => $matches($rule))
+            ->sort($this->compareRules(...))
+            ->first();
+    }
+
+    private function compareRules(RingPricingRule $left, RingPricingRule $right): int
+    {
+        $leftValues = $this->rulePriorityValues($left);
+        $rightValues = $this->rulePriorityValues($right);
+
+        foreach ($leftValues as $index => $leftValue) {
+            $rightValue = $rightValues[$index] ?? 0;
+
+            if ($leftValue === $rightValue) {
+                continue;
+            }
+
+            return $rightValue <=> $leftValue;
+        }
+
+        return 0;
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function rulePriorityValues(RingPricingRule $rule): array
+    {
+        return [
+            $this->ringPriority($rule->ring),
+            $rule->branch_id !== null ? 1 : 0,
+            filled($rule->service_type) ? 1 : 0,
+            $rule->updated_at?->getTimestamp() ?? 0,
+            (int) $rule->id,
+        ];
+    }
+
+    private function ringPriority(?string $ring): int
+    {
+        return match ($ring) {
+            'ring_1' => 300,
+            'ring_2' => 200,
+            'ring_3' => 100,
+            default => 0,
+        };
     }
 
     private function matchesPolygon(RingPricingRule $rule, ?array $pickupPoint, ?array $destinationPoint): bool
