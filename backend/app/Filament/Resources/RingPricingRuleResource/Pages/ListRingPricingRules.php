@@ -33,14 +33,7 @@ class ListRingPricingRules extends ListRecords
                         ->label('File GeoJSON')
                         ->disk('local')
                         ->directory('imports/ring-geojson')
-                        ->acceptedFileTypes([
-                            'application/json',
-                            'application/geo+json',
-                            'application/octet-stream',
-                            'text/plain',
-                            '.json',
-                            '.geojson',
-                        ])
+                        ->maxSize(15360)
                         ->helperText('FeatureCollection harus punya properties ring: 1, 2, 3 atau ring_1, ring_2, ring_3.')
                         ->required(),
                     Forms\Components\Select::make('branch_id')
