@@ -14,35 +14,37 @@ class RingPricingService
 {
     public function matchMasterPolygon(array $payload, string $serviceType, ?int $branchId, ?float $distanceFromBranchKm): ?array
     {
-        if ($branchId === null || $distanceFromBranchKm === null) {
+        return $this->matchMasterDistance($payload, $serviceType, $branchId, $distanceFromBranchKm);
+    }
+
+    public function matchMasterDistance(array $payload, string $serviceType, ?int $branchId, ?float $distanceKm): ?array
+    {
+        if ($distanceKm === null) {
             return null;
         }
 
         $pickupPoint = $this->pointFromPayload($payload, 'pickup');
         $destinationPoint = $this->pointFromPayload($payload, 'destination');
-        if ($pickupPoint === null && $destinationPoint === null) {
-            return null;
-        }
 
-        $rules = $this->masterPolygonRules($branchId, $serviceType);
+        $rules = $this->masterDistanceRules($branchId, $serviceType);
         if ($rules->isEmpty()) {
             return null;
         }
 
-        $pickupRule = $pickupPoint ? $this->bestMasterRuleForPoint($rules, $pickupPoint, $distanceFromBranchKm) : null;
-        $destinationRule = $destinationPoint ? $this->bestMasterRuleForPoint($rules, $destinationPoint, $distanceFromBranchKm) : null;
-        $selectedRule = $destinationRule ?? $pickupRule;
-
+        $selectedRule = $rules
+            ->filter(fn (RingPricingRule $rule): bool => $this->matchesDistanceRange($rule, $distanceKm))
+            ->sort($this->compareRules(...))
+            ->first();
         if (! $selectedRule) {
             return null;
         }
 
         return [
             'rule' => $selectedRule,
-            'distance_from_branch_km' => round($distanceFromBranchKm, 2),
-            'pickup_ring' => $pickupRule?->ring,
-            'destination_ring' => $destinationRule?->ring,
-            'is_cross_ring' => $pickupRule && $destinationRule && $pickupRule->ring !== $destinationRule->ring,
+            'distance_from_branch_km' => round($distanceKm, 2),
+            'pickup_ring' => null,
+            'destination_ring' => $selectedRule->ring,
+            'is_cross_ring' => false,
             'branch_id' => $branchId,
         ];
     }
@@ -57,26 +59,6 @@ class RingPricingService
 
         $hasPolygonColumns = Schema::hasColumn('ring_pricing_rules', 'area_mode')
             && Schema::hasColumn('ring_pricing_rules', 'polygon_coordinates');
-
-        if ($hasPolygonColumns && $branchId !== null && ($pickupPoint !== null || $destinationPoint !== null)) {
-            $polygonRule = RingPricingRule::query()
-                ->with('branch')
-                ->where('is_active', true)
-                ->where('branch_id', $branchId)
-                ->where('area_mode', 'polygon')
-                ->forService($serviceType)
-                ->latest()
-                ->get();
-
-            $bestPolygonRule = $this->bestMatchingRule(
-                $polygonRule,
-                fn (RingPricingRule $rule): bool => $this->matchesPolygon($rule, $pickupPoint, $destinationPoint),
-            );
-
-            if ($bestPolygonRule) {
-                return $bestPolygonRule;
-            }
-        }
 
         if ($pickupText === '' || $destinationText === '') {
             return null;
@@ -222,18 +204,30 @@ class RingPricingService
      */
     private function masterPolygonRules(int $branchId, string $serviceType): Collection
     {
+        return collect();
+    }
+
+    /**
+     * @return Collection<int, RingPricingRule>
+     */
+    private function masterDistanceRules(?int $branchId, string $serviceType): Collection
+    {
         if (! Schema::hasColumn('ring_pricing_rules', 'min_km')
-            || ! Schema::hasColumn('ring_pricing_rules', 'priority')
-            || ! Schema::hasColumn('ring_pricing_rules', 'polygon_coordinates')) {
+            || ! Schema::hasColumn('ring_pricing_rules', 'priority')) {
             return collect();
         }
 
         return RingPricingRule::query()
             ->with('branch')
             ->where('is_active', true)
-            ->where('branch_id', $branchId)
-            ->where('area_mode', 'polygon')
+            ->forBranch($branchId)
             ->forService($serviceType)
+            ->when(
+                Schema::hasColumn('ring_pricing_rules', 'area_mode'),
+                fn ($query) => $query->where(fn ($query) => $query->whereNull('area_mode')->orWhere('area_mode', 'text')),
+            )
+            ->where('pickup_area', '*')
+            ->where('destination_area', '*')
             ->orderByDesc('priority')
             ->orderByDesc('updated_at')
             ->get();

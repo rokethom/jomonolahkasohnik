@@ -8,6 +8,7 @@ use App\Services\Pricing\DistanceCalculator;
 use App\Services\Pricing\JokerPricing;
 use App\Services\Pricing\ServiceFeeCalculator;
 use App\Services\Pricing\TravelPricing;
+use App\Services\Spatial\GeojsonRegionLookupService;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
@@ -33,6 +34,7 @@ class PricingService
         private readonly ZonePricingService $zonePricing,
         private readonly BranchDetectionService $branches,
         private readonly OrderCrewDecisionService $crewDecisions,
+        private readonly GeojsonRegionLookupService $geojsonRegions,
     ) {
     }
 
@@ -219,9 +221,15 @@ class PricingService
         if ($pricingBranchId !== null) {
             $payload['branch_id'] = $pricingBranchId;
         }
-        $distanceFromBranch = $pricingBranch ? $this->distanceFromBranchCenter($payload, $pricingBranch) : null;
+        $geojsonRegion = $this->detectDestinationRegion($payload);
+        if ($geojsonRegion?->branch_id) {
+            $pricingBranch = $geojsonRegion->branch;
+            $pricingBranchId = (int) $geojsonRegion->branch_id;
+            $payload['branch_id'] = $pricingBranchId;
+        }
+        $distanceFromBranch = $distance;
         $masterRingMatch = ! in_array($serviceType, ['joker_mobil', 'travel'], true)
-            ? $this->ringPricing->matchMasterPolygon($payload, $serviceType, $pricingBranchId, $distanceFromBranch)
+            ? $this->ringPricing->matchMasterDistance($payload, $serviceType, $pricingBranchId, $distanceFromBranch)
             : null;
 
         if ($masterRingMatch) {
@@ -237,6 +245,10 @@ class PricingService
                 'branch_id' => $pricingBranchId,
                 'branch_code' => $pricingBranch?->branch_code,
                 'branch_name' => $pricingBranch?->display_name,
+                'geojson_region_id' => $geojsonRegion?->id,
+                'geojson_region_name' => $geojsonRegion?->name,
+                'geojson_area_id' => $geojsonRegion?->area_id,
+                'geojson_area_name' => $geojsonRegion?->area?->name,
                 'distance_from_branch_km' => $distanceFromBranch,
                 'service_fee_breakdown' => [['point' => 1, 'label' => 'Master Ring service fee', 'fee' => (int) ($masterRingMatch['rule']->service_fee ?? 0)]],
             ]);
@@ -247,6 +259,15 @@ class PricingService
                 'travel' => $this->calculateTravel($serviceType, $distance, $stops, $route),
                 default => $this->calculateGeneral($serviceType, $distance, $stops, $pricingBranchId),
             };
+
+            if ($geojsonRegion) {
+                $quote['geojson_region_id'] = $geojsonRegion->id;
+                $quote['geojson_region_name'] = $geojsonRegion->name;
+                $quote['geojson_area_id'] = $geojsonRegion->area_id;
+                $quote['geojson_area_name'] = $geojsonRegion->area?->name;
+                $quote['branch_id'] = $pricingBranchId;
+                $quote['branch_name'] = $pricingBranch?->display_name;
+            }
 
             if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
                 $quote = $this->ringPricing->apply($quote, $ringRule);
@@ -422,6 +443,24 @@ class PricingService
         return null;
     }
 
+    private function detectDestinationRegion(array $payload): ?\App\Models\GeojsonRegion
+    {
+        foreach ([
+            ['destination_lat', 'destination_lng'],
+            ['dropoff_lat', 'dropoff_lng'],
+            ['service_payload.destination_lat', 'service_payload.destination_lng'],
+            ['service_payload.dropoff_lat', 'service_payload.dropoff_lng'],
+        ] as [$latKey, $lngKey]) {
+            $lat = data_get($payload, $latKey);
+            $lng = data_get($payload, $lngKey);
+            if (is_numeric($lat) && is_numeric($lng)) {
+                return $this->geojsonRegions->detect((float) $lat, (float) $lng);
+            }
+        }
+
+        return null;
+    }
+
     private function distanceFromBranchCenter(array $payload, Branch $branch): ?float
     {
         foreach ([
@@ -455,7 +494,7 @@ class PricingService
             return (float) $payload['distance_km'];
         }
 
-        return $this->distanceWithOsrmFallback(
+        return $this->calculateDistance(
             (float) $payload['pickup_lat'],
             (float) $payload['pickup_lng'],
             (float) $payload['destination_lat'],

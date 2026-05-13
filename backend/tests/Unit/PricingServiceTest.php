@@ -267,7 +267,7 @@ class PricingServiceTest extends TestCase
         $this->assertSame(7000, $quote['total_price']);
     }
 
-    public function test_master_ring_polygon_matches_only_same_branch(): void
+    public function test_master_ring_polygon_no_longer_controls_customer_pricing(): void
     {
         app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
         PriceSetting::query()->delete();
@@ -344,8 +344,8 @@ class PricingServiceTest extends TestCase
             'branch_id' => $branchB->id,
         ]);
 
-        $this->assertSame(15000, $quoteSameBranch['tarif']);
-        $this->assertSame('polygon', $quoteSameBranch['ring_route']['area_mode']);
+        $this->assertSame(6000, $quoteSameBranch['tarif']);
+        $this->assertArrayNotHasKey('ring_pricing_rule_id', $quoteSameBranch);
         $this->assertSame(6000, $quoteOtherBranch['tarif']);
         $this->assertArrayNotHasKey('ring_pricing_rule_id', $quoteOtherBranch);
     }

@@ -17,12 +17,14 @@ class Branch extends Model
         'latitude',
         'longitude',
         'radius_km',
+        'is_active',
     ];
 
     protected $casts = [
         'latitude' => 'decimal:8',
         'longitude' => 'decimal:8',
         'radius_km' => 'decimal:2',
+        'is_active' => 'boolean',
     ];
 
     protected $appends = [
@@ -32,6 +34,16 @@ class Branch extends Model
     public function geofenceAreas(): HasMany
     {
         return $this->hasMany(GeofenceArea::class);
+    }
+
+    public function areas(): HasMany
+    {
+        return $this->hasMany(Area::class);
+    }
+
+    public function geojsonRegions(): HasMany
+    {
+        return $this->hasMany(GeojsonRegion::class);
     }
 
     public function locationLogs(): HasMany
