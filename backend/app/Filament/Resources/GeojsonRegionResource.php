@@ -32,16 +32,8 @@ class GeojsonRegionResource extends Resource
     {
         return $form->columns(2)->schema([
             Forms\Components\TextInput::make('name')->required()->maxLength(255),
-            Forms\Components\Select::make('branch_id')
-                ->label('Cabang')
-                ->options(fn (): array => self::branchOptions())
-                ->searchable()
-                ->preload(),
-            Forms\Components\Select::make('area_id')
-                ->label('Area layanan')
-                ->options(fn (): array => self::areaOptions())
-                ->searchable()
-                ->preload(),
+            Forms\Components\Select::make('branch_id')->label('Branch')->options(fn () => Branch::query()->orderBy('name')->pluck('name', 'id'))->searchable()->preload(),
+            Forms\Components\Select::make('area_id')->label('Area')->options(fn () => Area::query()->orderBy('name')->pluck('name', 'id'))->searchable()->preload(),
             Forms\Components\TextInput::make('version')->numeric()->default(1)->required(),
             Forms\Components\Toggle::make('is_active')->default(true),
             Forms\Components\Textarea::make('geojson')
@@ -58,14 +50,8 @@ class GeojsonRegionResource extends Resource
     {
         return $table->columns([
             Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
-            Tables\Columns\TextColumn::make('branch_id')
-                ->label('Cabang')
-                ->formatStateUsing(fn (GeojsonRegion $record): string => $record->branch?->display_name ?? '-')
-                ->sortable(),
-            Tables\Columns\TextColumn::make('area_id')
-                ->label('Area')
-                ->formatStateUsing(fn (GeojsonRegion $record): string => $record->area?->name ?? '-')
-                ->sortable(),
+            Tables\Columns\TextColumn::make('branch.name')->label('Branch')->sortable(),
+            Tables\Columns\TextColumn::make('area.name')->label('Area')->sortable(),
             Tables\Columns\TextColumn::make('geometry_type')->badge(),
             Tables\Columns\TextColumn::make('version')->sortable(),
             Tables\Columns\IconColumn::make('is_active')->boolean(),
@@ -95,28 +81,5 @@ class GeojsonRegionResource extends Resource
             'create' => Pages\CreateGeojsonRegion::route('/create'),
             'edit' => Pages\EditGeojsonRegion::route('/{record}/edit'),
         ];
-    }
-
-    private static function branchOptions(): array
-    {
-        return Branch::query()
-            ->orderBy('branch_code')
-            ->orderBy('name')
-            ->orderBy('area')
-            ->get()
-            ->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])
-            ->all();
-    }
-
-    private static function areaOptions(): array
-    {
-        return Area::query()
-            ->with('branch')
-            ->orderBy('name')
-            ->get()
-            ->mapWithKeys(fn (Area $area): array => [
-                $area->id => trim(($area->branch?->display_name ? $area->branch->display_name.' - ' : '').$area->name.' ('.$area->code.')'),
-            ])
-            ->all();
     }
 }

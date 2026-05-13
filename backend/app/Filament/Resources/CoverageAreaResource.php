@@ -23,12 +23,7 @@ class CoverageAreaResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Select::make('branch_id')
-                ->label('Cabang')
-                ->options(fn (): array => self::branchOptions())
-                ->required()
-                ->searchable()
-                ->preload(),
+            Forms\Components\Select::make('branch_id')->options(fn () => Branch::query()->orderBy('name')->pluck('name', 'id'))->required()->searchable()->preload(),
             Forms\Components\TextInput::make('name')->required()->maxLength(255),
             Forms\Components\TextInput::make('code')->required()->maxLength(40),
             Forms\Components\Toggle::make('is_active')->default(true),
@@ -38,25 +33,11 @@ class CoverageAreaResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->columns([
-            Tables\Columns\TextColumn::make('branch_id')
-                ->label('Cabang')
-                ->formatStateUsing(fn (Area $record): string => $record->branch?->display_name ?? '-')
-                ->sortable(),
+            Tables\Columns\TextColumn::make('branch.name')->label('Branch')->sortable(),
             Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
             Tables\Columns\TextColumn::make('code')->searchable(),
             Tables\Columns\IconColumn::make('is_active')->boolean(),
         ])->actions([Tables\Actions\EditAction::make(), Tables\Actions\DeleteAction::make()]);
-    }
-
-    private static function branchOptions(): array
-    {
-        return Branch::query()
-            ->orderBy('branch_code')
-            ->orderBy('name')
-            ->orderBy('area')
-            ->get()
-            ->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])
-            ->all();
     }
 
     public static function getPages(): array
