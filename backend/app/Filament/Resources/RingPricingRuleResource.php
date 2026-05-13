@@ -364,8 +364,8 @@ class RingPricingRuleResource extends Resource
             $data['branch_id'] = static::scopedBranchId();
         }
 
-        $data['area_mode'] = $data['area_mode'] ?? 'text';
-        $data['polygon_match_point'] = null;
+        $data['area_mode'] = 'text';
+        $data['polygon_match_point'] = 'destination_then_pickup';
         $data['polygon_coordinates'] = null;
         $data['match_type'] = $data['match_type'] ?? 'point';
         $data['pickup_ring'] = filled($data['pickup_ring'] ?? null) ? $data['pickup_ring'] : null;
