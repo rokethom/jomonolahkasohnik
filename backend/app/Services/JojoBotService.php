@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Branch;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Spatial\GeojsonRegionLookupService;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -19,6 +20,7 @@ class JojoBotService
         private readonly GeocodingService $geocoding,
         private readonly TextFormatter $formatter,
         private readonly KeywordParserService $keywordParsers,
+        private readonly GeojsonRegionLookupService $geojsonRegions,
     ) {
     }
 
@@ -603,7 +605,12 @@ class JojoBotService
             return null;
         }
 
-        return $this->geocoding->geocodeNearBranchLimited($address, $branch, 2);
+        $geojson = $this->geojsonRegions->geocodeByName($address, $branch?->id);
+        if ($geojson !== null) {
+            return $geojson;
+        }
+
+        return $this->geocoding->geocodeNearBranchLimited($address, $branch, 4, 30);
     }
 
     private function geocodeCandidates(string $address, ?Branch $branch): array

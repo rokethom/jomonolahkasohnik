@@ -5,6 +5,7 @@ namespace App\Services\Spatial;
 use App\Models\GeojsonRegion;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class GeojsonRegionLookupService
 {
@@ -24,6 +25,58 @@ class GeojsonRegionLookupService
                 ->orderByDesc('version')
                 ->get()
                 ->first(fn (GeojsonRegion $region): bool => $this->contains($lat, $lng, $region->coordinates ?? []));
+        });
+    }
+
+    public function geocodeByName(string $address, ?int $branchId = null): ?array
+    {
+        if (! Schema::hasTable('geojson_regions')) {
+            return null;
+        }
+
+        $needle = $this->normalize($address);
+        if (mb_strlen($needle) < 3) {
+            return null;
+        }
+
+        $cacheKey = 'geojson-region-name-lookup:'.($branchId ?: 'global').':'.sha1($needle);
+
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchId): ?array {
+            $region = GeojsonRegion::query()
+                ->with(['branch', 'area'])
+                ->active()
+                ->whereNotNull('centroid_lat')
+                ->whereNotNull('centroid_lng')
+                ->when($branchId, fn ($query) => $query->where(fn ($query) => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
+                ->get()
+                ->map(fn (GeojsonRegion $region): array => [
+                    'region' => $region,
+                    'score' => $this->nameScore($needle, $region),
+                ])
+                ->filter(fn (array $candidate): bool => $candidate['score'] > 0)
+                ->sortByDesc('score')
+                ->first()['region'] ?? null;
+
+            if (! $region instanceof GeojsonRegion) {
+                return null;
+            }
+
+            return [
+                'lat' => (float) $region->centroid_lat,
+                'lng' => (float) $region->centroid_lng,
+                'formatted_address' => trim(implode(', ', array_filter([
+                    $region->name,
+                    $region->area?->name,
+                    $region->branch?->display_name,
+                ]))),
+                'provider' => 'geojson_region',
+                'confidence' => 95,
+                'geojson_region_id' => $region->id,
+                'geojson_region_name' => $region->name,
+                'geojson_area_id' => $region->area_id,
+                'geojson_area_name' => $region->area?->name,
+                'query' => $region->name,
+            ];
         });
     }
 
@@ -61,5 +114,52 @@ class GeojsonRegionLookupService
         }
 
         return $inside;
+    }
+
+    private function nameScore(string $needle, GeojsonRegion $region): int
+    {
+        $names = collect([
+            $region->name,
+            $region->area?->name,
+            $region->area?->code,
+        ])
+            ->map(fn (mixed $value): string => $this->normalize((string) $value))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $score = 0;
+        foreach ($names as $name) {
+            if ($name === $needle) {
+                $score = max($score, 10000 + mb_strlen($name));
+                continue;
+            }
+
+            if (Str::contains($needle, $name) || Str::contains($name, $needle)) {
+                $score = max($score, 5000 + mb_strlen($name));
+                continue;
+            }
+
+            $tokens = collect(preg_split('/\s+/u', $needle) ?: [])
+                ->filter(fn (string $token): bool => mb_strlen($token) >= 3);
+
+            $matchedTokens = $tokens->filter(fn (string $token): bool => Str::contains($name, $token))->count();
+            if ($matchedTokens > 0) {
+                $score = max($score, $matchedTokens * 100);
+            }
+        }
+
+        return $score;
+    }
+
+    private function normalize(string $value): string
+    {
+        return Str::of($value)
+            ->lower()
+            ->replaceMatches('/[^\pL\pN\s]+/u', ' ')
+            ->replaceMatches('/\b(?:ke|dari|di|depan|belakang|samping|arah|menuju)\b/u', ' ')
+            ->replaceMatches('/\s+/u', ' ')
+            ->trim()
+            ->toString();
     }
 }

@@ -121,6 +121,27 @@ class GeojsonRegionResource extends Resource
         ];
     }
 
+    public static function normalizeGeojsonRows(array $data): array
+    {
+        $rows = app(GeojsonParserService::class)->parseRows($data['geojson']);
+        Cache::flush();
+
+        return collect($rows)
+            ->map(function (array $row) use ($data): array {
+                $name = trim((string) ($row['name'] ?? ''));
+
+                unset($row['name']);
+
+                return [
+                    ...$data,
+                    ...$row,
+                    'name' => $name !== '' ? $name : $data['name'],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
     public static function getPages(): array
     {
         return [

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\PricingKeywordRule;
 use App\Models\Branch;
+use App\Models\GeojsonRegion;
 use App\Models\PriceSetting;
 use App\Models\RingPricingRule;
 use App\Services\JojoBotService;
@@ -484,6 +485,62 @@ class PricingServiceTest extends TestCase
             array_search('terminal', $candidates, true),
             array_search('terminal Situbondo, Indonesia', $candidates, true),
         );
+    }
+
+    public function test_geojson_region_can_be_used_as_pricing_geocode_reference(): void
+    {
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-GEO',
+            'name' => 'Situbondo',
+            'area' => 'Kota Geo',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        GeojsonRegion::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Panarukan',
+            'geojson' => [
+                'type' => 'Feature',
+                'properties' => ['name' => 'Panarukan'],
+                'geometry' => [
+                    'type' => 'Polygon',
+                    'coordinates' => [[
+                        [114.0800, -7.7100],
+                        [114.0820, -7.7100],
+                        [114.0820, -7.7080],
+                        [114.0800, -7.7080],
+                        [114.0800, -7.7100],
+                    ]],
+                ],
+            ],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [[
+                ['lat' => -7.7100, 'lng' => 114.0800],
+                ['lat' => -7.7100, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0800],
+            ]],
+            'centroid_lat' => -7.7090,
+            'centroid_lng' => 114.0810,
+            'min_lat' => -7.7100,
+            'max_lat' => -7.7080,
+            'min_lng' => 114.0800,
+            'max_lng' => 114.0820,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeForPricing');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, 'ke Panarukan', $branch);
+
+        $this->assertSame('geojson_region', $result['provider']);
+        $this->assertSame('Panarukan', $result['geojson_region_name']);
+        $this->assertSame(114.0810, $result['lng']);
     }
 
     public function test_jojobot_adds_branch_name_candidate_for_free_aliases(): void

@@ -6,6 +6,46 @@ use InvalidArgumentException;
 
 class GeojsonParserService
 {
+    /**
+     * @return array<int, array{name: ?string, geojson: array, geometry_type: string, coordinates: array, centroid_lat: float, centroid_lng: float, min_lat: float, max_lat: float, min_lng: float, max_lng: float}>
+     */
+    public function parseRows(array|string $geojson): array
+    {
+        $data = is_array($geojson) ? $geojson : json_decode($geojson, true);
+        if (! is_array($data)) {
+            throw new InvalidArgumentException('GeoJSON tidak valid.');
+        }
+
+        if (($data['type'] ?? null) !== 'FeatureCollection') {
+            return [[
+                'name' => $this->featureName($data),
+                ...$this->parse($data),
+            ]];
+        }
+
+        $rows = [];
+        foreach ($data['features'] ?? [] as $feature) {
+            if (! is_array($feature)) {
+                continue;
+            }
+
+            try {
+                $rows[] = [
+                    'name' => $this->featureName($feature),
+                    ...$this->parse($feature),
+                ];
+            } catch (InvalidArgumentException) {
+                continue;
+            }
+        }
+
+        if ($rows === []) {
+            throw new InvalidArgumentException('FeatureCollection harus berisi Polygon atau MultiPolygon yang valid.');
+        }
+
+        return $rows;
+    }
+
     public function parse(array|string $geojson): array
     {
         $data = is_array($geojson) ? $geojson : json_decode($geojson, true);
@@ -82,5 +122,19 @@ class GeojsonParserService
             ->filter(fn (array $ring): bool => count($ring) >= 3)
             ->values()
             ->all();
+    }
+
+    private function featureName(array $data): ?string
+    {
+        $properties = (array) ($data['properties'] ?? []);
+
+        foreach (['name', 'nama', 'title', 'area', 'region', 'desa', 'kelurahan'] as $key) {
+            $value = trim((string) ($properties[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 }

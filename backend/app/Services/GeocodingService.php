@@ -60,7 +60,7 @@ class GeocodingService
         throw new RuntimeException('Alamat tidak ditemukan di area cabang.');
     }
 
-    public function geocodeNearBranchLimited(string $textAddress, ?Branch $branch, int $maxCandidates = 2): ?array
+    public function geocodeNearBranchLimited(string $textAddress, ?Branch $branch, int $maxCandidates = 2, ?float $maxDistanceKm = null): ?array
     {
         $maxCandidates = max(1, $maxCandidates);
 
@@ -83,7 +83,7 @@ class GeocodingService
                     'query' => $query,
                 ];
 
-                if ($this->isTooFarFromBranch($result, $branch)) {
+                if ($this->isTooFarFromBranch($result, $branch, $maxDistanceKm)) {
                     continue;
                 }
 
@@ -616,15 +616,17 @@ class GeocodingService
             ->all();
     }
 
-    private function isTooFarFromBranch(array $result, Branch $branch): bool
+    private function isTooFarFromBranch(array $result, Branch $branch, ?float $maxDistanceKm = null): bool
     {
         if (! is_numeric($result['distance_from_bias_km'] ?? null)) {
             return false;
         }
 
-        $allowedKm = is_numeric($branch->radius_km ?? null)
-            ? max(3, (float) $branch->radius_km + 0.5)
-            : 10;
+        $allowedKm = $maxDistanceKm !== null
+            ? max(3, $maxDistanceKm)
+            : (is_numeric($branch->radius_km ?? null)
+                ? max(3, (float) $branch->radius_km + 0.5)
+                : 10);
 
         return (float) $result['distance_from_bias_km'] > min($allowedKm, 25);
     }
