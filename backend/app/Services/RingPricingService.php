@@ -58,6 +58,26 @@ class RingPricingService
         $hasPolygonColumns = Schema::hasColumn('ring_pricing_rules', 'area_mode')
             && Schema::hasColumn('ring_pricing_rules', 'polygon_coordinates');
 
+        if ($hasPolygonColumns && $branchId !== null && ($pickupPoint !== null || $destinationPoint !== null)) {
+            $polygonRule = RingPricingRule::query()
+                ->with('branch')
+                ->where('is_active', true)
+                ->where('branch_id', $branchId)
+                ->where('area_mode', 'polygon')
+                ->forService($serviceType)
+                ->latest()
+                ->get();
+
+            $bestPolygonRule = $this->bestMatchingRule(
+                $polygonRule,
+                fn (RingPricingRule $rule): bool => $this->matchesPolygon($rule, $pickupPoint, $destinationPoint),
+            );
+
+            if ($bestPolygonRule) {
+                return $bestPolygonRule;
+            }
+        }
+
         if ($pickupText === '' || $destinationText === '') {
             return null;
         }

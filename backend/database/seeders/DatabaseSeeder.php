@@ -15,7 +15,6 @@ class DatabaseSeeder extends Seeder
         // \App\Models\User::factory(10)->create();
 
         $this->call(PricingSeeder::class);
-        $this->call(AiSpatialPricingSeeder::class);
         $this->call(RolePermissionSeeder::class);
 
         // \App\Models\User::factory()->create([

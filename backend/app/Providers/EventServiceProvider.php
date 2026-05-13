@@ -12,8 +12,6 @@ use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Event;
-use App\Events\PricingCalculated;
-use App\Listeners\QueuePricingLog;
 
 class EventServiceProvider extends ServiceProvider
 {
@@ -28,9 +26,6 @@ class EventServiceProvider extends ServiceProvider
         ],
         JobFailed::class => [
             ReportFailedJobToHermes::class,
-        ],
-        PricingCalculated::class => [
-            QueuePricingLog::class,
         ],
     ];
 

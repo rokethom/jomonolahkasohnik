@@ -35,7 +35,7 @@ class RingPricingRuleResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return false;
+        return Auth::user()?->hasPermission('edit_tarif') === true;
     }
 
     public static function canViewAny(): bool

@@ -29,7 +29,6 @@ use App\Http\Controllers\Api\RatingController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\UserLocationController;
-use App\Http\Controllers\Api\V1\SpatialPricingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -62,10 +61,6 @@ Route::get('/settings', [SettingsController::class, 'publicSettings']);
 Route::get('/media/{path}', PublicMediaController::class)->where('path', '.*');
 Route::get('/services', [ServiceController::class, 'index']);
 Route::get('/keyword-parsers', [KeywordParserController::class, 'index']);
-
-Route::prefix('v1')->group(function () {
-    Route::post('/pricing/calculate', [SpatialPricingController::class, 'calculate']);
-});
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);

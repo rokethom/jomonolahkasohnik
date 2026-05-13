@@ -12,20 +12,17 @@ class Branch extends Model
 
     protected $fillable = [
         'branch_code',
-        'code',
         'name',
         'area',
         'latitude',
         'longitude',
         'radius_km',
-        'is_active',
     ];
 
     protected $casts = [
         'latitude' => 'decimal:8',
         'longitude' => 'decimal:8',
         'radius_km' => 'decimal:2',
-        'is_active' => 'boolean',
     ];
 
     protected $appends = [
@@ -35,16 +32,6 @@ class Branch extends Model
     public function geofenceAreas(): HasMany
     {
         return $this->hasMany(GeofenceArea::class);
-    }
-
-    public function areas(): HasMany
-    {
-        return $this->hasMany(Area::class);
-    }
-
-    public function geojsonRegions(): HasMany
-    {
-        return $this->hasMany(GeojsonRegion::class);
     }
 
     public function locationLogs(): HasMany
@@ -75,10 +62,6 @@ class Branch extends Model
                 strtoupper(trim((string) $branch->branch_code)),
                 $branch->exists ? (int) $branch->id : null,
             );
-
-            if (blank($branch->code)) {
-                $branch->code = $branch->branch_code;
-            }
         });
 
         static::saved(function (Branch $branch): void {

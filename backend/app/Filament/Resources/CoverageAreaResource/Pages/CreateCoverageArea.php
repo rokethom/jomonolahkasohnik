@@ -1,6 +1,0 @@
-<?php
-declare(strict_types=1);
-namespace App\Filament\Resources\CoverageAreaResource\Pages;
-use App\Filament\Resources\CoverageAreaResource;
-use Filament\Resources\Pages\CreateRecord;
-class CreateCoverageArea extends CreateRecord { protected static string $resource = CoverageAreaResource::class; }
