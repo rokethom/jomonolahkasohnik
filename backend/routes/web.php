@@ -31,7 +31,7 @@ Route::get('/admin/login', function () {
     }
 
     return view('auth.filament-fallback-login');
-})->name('filament.admin.auth.login.fallback');
+})->name('filament.admin.auth.login');
 
 Route::post('/admin/login', function (Request $request) {
     $credentials = $request->validate([
