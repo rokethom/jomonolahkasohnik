@@ -6,8 +6,10 @@ use App\Enums\OrderStatus;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
 use App\Models\Order;
+use App\Models\User;
 use App\Services\Pricing\ServiceFeeCalculator;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -61,7 +63,7 @@ class DriverReportService
         return min(10000, (int) ceil($tarif * 0.2));
     }
 
-    public function monthlyDepositRows(?int $month = null, ?int $year = null): Collection
+    public function monthlyDepositRows(?int $month = null, ?int $year = null, ?User $actor = null): Collection
     {
         $period = Carbon::create($year ?: now()->year, $month ?: now()->month, 1)->startOfMonth();
         $previous = $period->copy()->subMonth();
@@ -71,6 +73,9 @@ class DriverReportService
         return Driver::query()
             ->with(['user.branch'])
             ->whereHas('user')
+            ->when($actor !== null && $this->scopedBranchIds($actor) !== null, function (Builder $query) use ($actor): Builder {
+                return $query->whereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds($actor) ?? []));
+            })
             ->get()
             ->map(function (Driver $driver) use ($period, $previous, $start, $end): array {
                 $orders = Order::query()
@@ -171,5 +176,30 @@ class DriverReportService
         }
 
         return (int) floor($previousBaseDeposit * 0.1);
+    }
+
+    /**
+     * @return array<int, int>|null Null means global scope.
+     */
+    private function scopedBranchIds(User $actor): ?array
+    {
+        $role = $actor->role?->value ?? (string) $actor->role;
+
+        if (in_array($role, ['admin', 'gm', 'operator'], true)) {
+            return null;
+        }
+
+        $actor->loadMissing('branchScopes:id');
+
+        $branchIds = $actor->branchScopes
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($branchIds === [] && $actor->branch_id !== null) {
+            $branchIds[] = (int) $actor->branch_id;
+        }
+
+        return array_values(array_unique($branchIds));
     }
 }

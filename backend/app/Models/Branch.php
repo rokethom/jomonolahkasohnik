@@ -113,7 +113,7 @@ class Branch extends Model
             str_contains($normalized, 'situbondo') => 'STB',
             str_contains($normalized, 'bondowoso') => 'BWS',
             str_contains($normalized, 'probolinggo') => 'PBL',
-            str_contains($normalized, 'banyuwangi') => 'BWG',
+            str_contains($normalized, 'banyuwangi') => 'BWI',
             str_contains($normalized, 'jember') => 'JBR',
             default => static::lettersCode($name, 'BRN'),
         };
@@ -123,8 +123,23 @@ class Branch extends Model
     {
         $normalized = str($area)->lower()->replace(['-', '_', '/', ','], ' ')->squish()->toString();
 
-        if (str_contains($normalized, 'kota')) {
-            return 'KTA';
+        $map = [
+            'asembagus' => 'ASB',
+            'kota' => $regencyCode === 'STB' ? 'STBKT' : ($regencyCode === 'BWS' ? 'BWSKT' : 'KTA'),
+            'besuki' => 'BSK',
+            'paiton' => 'PTN',
+            'kraksaan' => 'KRK',
+            'bondowoso kota' => 'BWSKT',
+            'rogojampi' => 'RGJ',
+            'srono' => 'SRN',
+            'muncar' => 'MCR',
+            'genteng' => 'GTG',
+        ];
+
+        foreach ($map as $needle => $code) {
+            if (str_contains($normalized, $needle)) {
+                return $code;
+            }
         }
 
         $firstToken = strtoupper((string) str($area)->replace(['-', '_', '/', ','], ' ')->squish()->before(' '));

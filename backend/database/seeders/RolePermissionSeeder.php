@@ -44,6 +44,9 @@ class RolePermissionSeeder extends Seeder
             'monitor_live_order',
             'monitor_live_chat',
             'internal_chat',
+            'edit_tarif',
+            'manage_system_settings',
+            'manage_manual_order',
         ],
         'manager' => [
             'create_user',

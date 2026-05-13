@@ -185,17 +185,17 @@ class PricingCmsCsvService
         return match ($type) {
             'ring' => RingPricingRule::query()
                 ->with('branch')
-                ->when(! $this->actorCanManageGlobalPricing(), fn (Builder $query) => $query->where('branch_id', $this->scopedBranchId() ?? 0))
+                ->when(! $this->actorCanManageGlobalPricing(), fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds()))
                 ->orderBy('updated_at', 'desc'),
             'price' => PriceSetting::query()
                 ->with('branch')
-                ->when(! $this->actorCanManageGlobalPricing(), fn (Builder $query) => $query->where('branch_id', $this->scopedBranchId() ?? 0))
+                ->when(! $this->actorCanManageGlobalPricing(), fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds()))
                 ->orderBy('min_km')
                 ->orderBy('branch_id'),
             'keyword' => PricingKeywordRule::query()->orderByDesc('priority')->orderBy('name'),
             'zone' => ZonePricingRule::query()
                 ->with(['branch', 'geofenceArea'])
-                ->when(! $this->actorCanManageGlobalPricing(), fn (Builder $query) => $query->where('branch_id', $this->scopedBranchId() ?? 0))
+                ->when(! $this->actorCanManageGlobalPricing(), fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds()))
                 ->orderByDesc('priority')
                 ->orderBy('name'),
         };
@@ -419,7 +419,7 @@ class PricingCmsCsvService
     {
         $branchId = $this->resolveBranchId($data);
         if (! $this->actorCanManageGlobalPricing()) {
-            $branchId = $this->scopedBranchId();
+            $branchId = $this->scopedBranchIds()[0] ?? null;
         }
 
         $isFormula = $this->booleanValue($data['is_formula'] ?? 'no');
@@ -504,7 +504,7 @@ class PricingCmsCsvService
             'notes' => $this->nullableString($data['notes'] ?? null),
         ]);
 
-        if (! $this->actorCanManageGlobalPricing() && (int) $payload['branch_id'] !== (int) $this->scopedBranchId()) {
+        if (! $this->actorCanManageGlobalPricing() && ! in_array((int) $payload['branch_id'], $this->scopedBranchIds(), true)) {
             throw new \RuntimeException('Rule zone wajib berada di cabang akun ini.');
         }
 
@@ -584,22 +584,41 @@ class PricingCmsCsvService
         }
 
         if ($type === 'price') {
-            return $record->branch_id !== null && (int) $record->branch_id === (int) $this->scopedBranchId();
+            return $record->branch_id !== null && in_array((int) $record->branch_id, $this->scopedBranchIds(), true);
         }
 
-        return $record->branch_id !== null && (int) $record->branch_id === (int) $this->scopedBranchId();
+        return $record->branch_id !== null && in_array((int) $record->branch_id, $this->scopedBranchIds(), true);
     }
 
     private function actorCanManageGlobalPricing(): bool
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
+        return in_array($role, [UserRole::Admin, UserRole::GM], true);
     }
 
-    private function scopedBranchId(): ?int
+    /**
+     * @return array<int, int>
+     */
+    private function scopedBranchIds(): array
     {
-        return Auth::user()?->branch_id;
+        $user = Auth::user();
+        if (! $user) {
+            return [];
+        }
+
+        $user->loadMissing('branchScopes:id');
+
+        $branchIds = $user->branchScopes
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($branchIds === [] && $user->branch_id !== null) {
+            $branchIds[] = (int) $user->branch_id;
+        }
+
+        return array_values(array_unique($branchIds));
     }
 
     /**

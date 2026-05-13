@@ -72,7 +72,7 @@ class AdminController extends Controller
         $orders->cancelExpiredCreatedOrders();
         $driverSuspensions->releaseExpiredSuspensions();
 
-        $user = $request->user()->load('branch');
+        $user = $request->user()->load(['branch', 'branchScopes']);
         $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($user)));
 
         return response()->json([
@@ -137,6 +137,8 @@ class AdminController extends Controller
             'password' => ['nullable', 'string', 'min:8', 'max:255'],
             'role' => ['required', new Enum(UserRole::class)],
             'branch_id' => ['nullable', 'exists:branches,id'],
+            'branch_scope_ids' => ['nullable', 'array'],
+            'branch_scope_ids.*' => ['integer', 'exists:branches,id'],
             'is_active' => ['sometimes', 'boolean'],
             'is_suspended' => ['sometimes', 'boolean'],
             'suspension_reason' => ['nullable', 'string'],
@@ -154,7 +156,8 @@ class AdminController extends Controller
 
         $role = UserRole::from($payload['role']);
         abort_unless($this->canAssignRole($actor, $role), 403);
-        $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null);
+        $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, $role);
+        $branchScopeIds = $this->branchScopeIdsForUserWrite($actor, $role, $payload['branch_scope_ids'] ?? [], $payload['branch_id'] ?? null);
 
         $vehicleTypes = $this->normalizeVehicleTypes($payload['vehicle_types'] ?? [$payload['vehicle_type'] ?? 'motor']);
         $driverPayload = [
@@ -171,7 +174,7 @@ class AdminController extends Controller
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
         }
-        unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
+        unset($payload['branch_scope_ids'], $payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_type'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
         $password = filled($payload['password'] ?? null) ? (string) $payload['password'] : $this->generatePassword();
         $user = User::create([
@@ -187,12 +190,14 @@ class AdminController extends Controller
             ]);
         }
 
+        $user->branchScopes()->sync($branchScopeIds);
+
         $this->recordAudit($actor, 'created_user', $user, ['role' => $user->role->value]);
 
         return response()->json([
             'message' => 'User created',
             'temporary_password' => $password,
-            'data' => $this->userPayload($user->fresh('branch', 'driver')),
+            'data' => $this->userPayload($user->fresh('branch', 'branchScopes', 'driver')),
         ], 201);
     }
 
@@ -209,6 +214,8 @@ class AdminController extends Controller
             'password' => ['nullable', 'string', 'min:8', 'max:255'],
             'role' => ['sometimes', new Enum(UserRole::class)],
             'branch_id' => ['nullable', 'exists:branches,id'],
+            'branch_scope_ids' => ['nullable', 'array'],
+            'branch_scope_ids.*' => ['integer', 'exists:branches,id'],
             'is_active' => ['sometimes', 'boolean'],
             'is_suspended' => ['sometimes', 'boolean'],
             'suspension_reason' => ['nullable', 'string'],
@@ -229,11 +236,18 @@ class AdminController extends Controller
         }
 
         if (array_key_exists('branch_id', $payload)) {
-            $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null);
+            $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, isset($payload['role']) ? UserRole::from($payload['role']) : $user->role);
         }
 
+        $targetRole = isset($payload['role']) ? UserRole::from($payload['role']) : $user->role;
+        $branchScopeIds = array_key_exists('branch_scope_ids', $payload)
+            ? $this->branchScopeIdsForUserWrite($actor, $targetRole, $payload['branch_scope_ids'] ?? [], $payload['branch_id'] ?? $user->branch_id)
+            : ((array_key_exists('branch_id', $payload) || array_key_exists('role', $payload))
+                ? $this->branchScopeIdsForUserWrite($actor, $targetRole, [], $payload['branch_id'] ?? $user->branch_id)
+                : null);
+
         $newPassword = filled($payload['password'] ?? null) ? (string) $payload['password'] : null;
-        unset($payload['password']);
+        unset($payload['password'], $payload['branch_scope_ids']);
 
         $before = $user->only(array_keys($payload));
         $driverPayload = [];
@@ -279,11 +293,14 @@ class AdminController extends Controller
                 $driver->update($driverPayload);
             }
         }
+        if ($branchScopeIds !== null) {
+            $user->branchScopes()->sync($branchScopeIds);
+        }
         $this->recordAudit($actor, 'updated_user', $user, ['before' => $before, 'after' => $payload]);
 
         return response()->json([
             'message' => 'User updated',
-            'data' => $this->userPayload($user->fresh('branch', 'driver')),
+            'data' => $this->userPayload($user->fresh('branch', 'branchScopes', 'driver')),
         ]);
     }
 
@@ -933,11 +950,12 @@ class AdminController extends Controller
 
     private function assertManualOrderCustomerScope(User $actor, User $customer): void
     {
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true)) {
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds === null) {
             return;
         }
 
-        abort_unless((int) $actor->branch_id === (int) $customer->branch_id, 403, 'Customer di luar area akun ini.');
+        abort_unless($customer->branch_id !== null && in_array((int) $customer->branch_id, $branchIds, true), 403, 'Customer di luar area akun ini.');
     }
 
     private function manualOrderContactFromText(string $text): array
@@ -1119,7 +1137,9 @@ class AdminController extends Controller
             return $fromText;
         }
 
-        return $request->user()->branch_id ? (int) $request->user()->branch_id : null;
+        $branchIds = $this->operationalBranchScopeIds($request->user());
+
+        return $branchIds !== null ? ($branchIds[0] ?? null) : null;
     }
 
     private function manualOrderBranchIdFromText(string $text): ?int
@@ -1433,8 +1453,10 @@ class AdminController extends Controller
 
         $serviceType = app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type']);
         if (! $this->canManageGlobalPricing($request->user())) {
-            $this->assertPricingBranchScope($request->user(), isset($payload['branch_id']) && $payload['branch_id'] ? (int) $payload['branch_id'] : $request->user()->branch_id);
-            $payload['branch_id'] = $request->user()->branch_id;
+            $branchIds = $this->staffBranchScopeIds($request->user()) ?? [];
+            $fallbackBranchId = isset($payload['branch_id']) && $payload['branch_id'] ? (int) $payload['branch_id'] : ($branchIds[0] ?? null);
+            $this->assertPricingBranchScope($request->user(), $fallbackBranchId);
+            $payload['branch_id'] = $fallbackBranchId;
         }
         $pickup = $zones->testPoint((float) $payload['pickup_lat'], (float) $payload['pickup_lng']);
         $destination = $zones->testPoint((float) $payload['destination_lat'], (float) $payload['destination_lng']);
@@ -1442,7 +1464,10 @@ class AdminController extends Controller
             ?? $branches->detect((float) $payload['pickup_lat'], (float) $payload['pickup_lng'])['branch']?->id
             ?? (($payload['branch_id'] ?? null) ? (int) $payload['branch_id'] : null);
         if (! $this->canManageGlobalPricing($request->user())) {
-            $detectedBranchId = $request->user()->branch_id;
+            $branchIds = $this->staffBranchScopeIds($request->user()) ?? [];
+            $detectedBranchId = in_array((int) $detectedBranchId, $branchIds, true)
+                ? $detectedBranchId
+                : ($branchIds[0] ?? null);
         }
 
         $quote = $pricing->calculate([
@@ -1598,7 +1623,7 @@ class AdminController extends Controller
             'data' => [
                 'month' => $month,
                 'year' => $year,
-                'rows' => $reports->monthlyDepositRows($month, $year)->values(),
+                'rows' => $reports->monthlyDepositRows($month, $year, $request->user())->values(),
             ],
         ]);
     }
@@ -1607,7 +1632,7 @@ class AdminController extends Controller
     {
         [$month, $year] = $this->reportPeriod($request);
         $period = now()->setDate($year, $month, 1)->startOfMonth();
-        $rows = $reports->monthlyDepositRows($month, $year);
+        $rows = $reports->monthlyDepositRows($month, $year, $request->user());
         $headers = $reports->monthlyDepositHeaders($period);
         $filename = 'rekap-setoran-driver-'.$period->format('Y-m').'.xls';
 
@@ -2067,7 +2092,7 @@ class AdminController extends Controller
             ->latest();
 
         if (! $this->canManageGlobalPricing($actor)) {
-            $query->where('branch_id', $actor->branch_id ?? 0);
+            $query->whereIn('branch_id', $this->staffBranchScopeIds($actor) ?? []);
         }
 
         return $query;
@@ -2085,7 +2110,7 @@ class AdminController extends Controller
             ->latest();
 
         if ($actor !== null && ! $this->canManageGlobalPricing($actor)) {
-            $query->where('branch_id', $actor->branch_id ?? 0);
+            $query->whereIn('branch_id', $this->staffBranchScopeIds($actor) ?? []);
         }
 
         return $query;
@@ -2122,7 +2147,7 @@ class AdminController extends Controller
         }
 
         if (! $this->canManageGlobalPricing($actor)) {
-            $query->where('branch_id', $actor->branch_id ?? 0);
+            $query->whereIn('branch_id', $this->staffBranchScopeIds($actor) ?? []);
         }
 
         return $query;
@@ -2148,12 +2173,14 @@ class AdminController extends Controller
 
     private function usersQuery(User $actor): Builder
     {
-        $query = User::query()->with(['branch', 'driver', 'currentLocation.branch', 'latestLocationLog.branch']);
+        $query = User::query()->with(['branch', 'branchScopes', 'driver', 'currentLocation.branch', 'latestLocationLog.branch']);
+        $branchIds = $this->staffBranchScopeIds($actor);
 
         return match ($actor->role) {
             UserRole::Admin, UserRole::GM => $query,
-            UserRole::HRD => $query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Eksekutor->value, UserRole::Driver->value]),
-            UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor => $query->where('branch_id', $actor->branch_id)->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value]),
+            UserRole::HRD => $this->whereInStaffBranchScope($query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Eksekutor->value, UserRole::Driver->value]), $branchIds, true),
+            UserRole::Manager, UserRole::SPV, UserRole::Eksekutor => $this->whereInStaffBranchScope($query->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value, UserRole::HRD->value]), $branchIds, true),
+            UserRole::Operator => $query->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value, UserRole::HRD->value, UserRole::Manager->value]),
             default => $query->whereKey($actor->id),
         };
     }
@@ -2167,10 +2194,12 @@ class AdminController extends Controller
             return $query->whereRaw('1 = 0');
         }
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
-            $query->where(function (Builder $query) use ($actor): void {
-                $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id))
-                    ->orWhereHas('driver.user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->where(function (Builder $query) use ($branchIds): void {
+                $query->whereIn('branch_id', $branchIds)
+                    ->orWhereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds))
+                    ->orWhereHas('driver.user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
             });
         }
 
@@ -2186,11 +2215,12 @@ class AdminController extends Controller
             return $query->whereRaw('1 = 0');
         }
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
-            $query->whereHas('order', function (Builder $query) use ($actor): void {
-                $query->where('branch_id', $actor->branch_id)
-                    ->orWhereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id))
-                    ->orWhereHas('driver.user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->whereHas('order', function (Builder $query) use ($branchIds): void {
+                $query->whereIn('branch_id', $branchIds)
+                    ->orWhereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds))
+                    ->orWhereHas('driver.user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
             });
         }
 
@@ -2205,8 +2235,9 @@ class AdminController extends Controller
             return $query->whereRaw('1 = 0');
         }
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
-            $query->where('branch_id', $actor->branch_id);
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->whereIn('branch_id', $branchIds);
         }
 
         return $query;
@@ -2220,8 +2251,9 @@ class AdminController extends Controller
             return $query->whereRaw('1 = 0');
         }
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
-            $query->where('branch_id', $actor->branch_id);
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->whereIn('branch_id', $branchIds);
         }
 
         return $query;
@@ -2235,8 +2267,9 @@ class AdminController extends Controller
             return $query->whereRaw('1 = 0');
         }
 
-        if (in_array($actor->role, [UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true)) {
-            $query->whereHas('user', fn (Builder $query) => $query->where('branch_id', $actor->branch_id));
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->whereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
         }
 
         return $query;
@@ -2291,28 +2324,131 @@ class AdminController extends Controller
             return false;
         }
 
-        return $this->canManageGlobalUsers($actor)
-            || ($actor->branch_id !== null && (int) $target->branch_id === (int) $actor->branch_id);
+        if ($this->canManageGlobalUsers($actor)) {
+            return true;
+        }
+
+        $branchIds = $this->staffBranchScopeIds($actor) ?? [];
+
+        return $target->branch_id !== null && in_array((int) $target->branch_id, $branchIds, true);
     }
 
-    private function branchIdForUserWrite(User $actor, mixed $branchId): ?int
+    private function branchIdForUserWrite(User $actor, mixed $branchId, ?UserRole $targetRole = null): ?int
     {
         if ($this->canManageGlobalUsers($actor)) {
             return filled($branchId) ? (int) $branchId : null;
         }
 
-        abort_unless($actor->branch_id !== null, 403, 'Akun ini belum memiliki area/cabang.');
-
-        if (filled($branchId)) {
-            abort_unless((int) $branchId === (int) $actor->branch_id, 403, 'User di luar area akun ini.');
+        if ($targetRole === UserRole::Operator && blank($branchId)) {
+            return null;
         }
 
-        return (int) $actor->branch_id;
+        $branchIds = $this->staffBranchScopeIds($actor) ?? [];
+        abort_unless($branchIds !== [], 403, 'Akun ini belum memiliki area/cabang.');
+
+        if (filled($branchId)) {
+            abort_unless(in_array((int) $branchId, $branchIds, true), 403, 'User di luar area akun ini.');
+
+            return (int) $branchId;
+        }
+
+        return $branchIds[0];
     }
 
     private function canManageGlobalUsers(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM], true);
+    }
+
+    private function branchScopeIdsForUserWrite(User $actor, UserRole $targetRole, mixed $branchIds, mixed $fallbackBranchId = null): array
+    {
+        $branchIds = collect(is_array($branchIds) ? $branchIds : [])
+            ->filter(fn (mixed $id): bool => filled($id))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! in_array($targetRole, [UserRole::HRD, UserRole::Manager, UserRole::SPV, UserRole::Eksekutor], true)) {
+            return [];
+        }
+
+        if ($branchIds === [] && filled($fallbackBranchId)) {
+            $branchIds = [(int) $fallbackBranchId];
+        }
+
+        if ($this->canManageGlobalUsers($actor)) {
+            return $branchIds;
+        }
+
+        $allowed = $this->staffBranchScopeIds($actor) ?? [];
+        abort_unless($allowed !== [], 403, 'Akun ini belum memiliki area/cabang.');
+
+        if ($branchIds === []) {
+            return $allowed;
+        }
+
+        foreach ($branchIds as $branchId) {
+            abort_unless(in_array($branchId, $allowed, true), 403, 'Scope cabang di luar area akun ini.');
+        }
+
+        return $branchIds;
+    }
+
+    /**
+     * @return array<int, int>|null Null means global scope.
+     */
+    private function operationalBranchScopeIds(User $actor): ?array
+    {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true)) {
+            return null;
+        }
+
+        if (in_array($actor->role, [UserRole::HRD, UserRole::Manager, UserRole::SPV, UserRole::Eksekutor], true)) {
+            return $this->staffBranchScopeIds($actor) ?? [];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, int>|null Null means global scope.
+     */
+    private function staffBranchScopeIds(User $actor): ?array
+    {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM], true)) {
+            return null;
+        }
+
+        $actor->loadMissing('branchScopes:id');
+
+        $branchIds = $actor->branchScopes
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($branchIds === [] && $actor->branch_id !== null) {
+            $branchIds[] = (int) $actor->branch_id;
+        }
+
+        return array_values(array_unique($branchIds));
+    }
+
+    private function whereInStaffBranchScope(Builder $query, ?array $branchIds, bool $includeUnassignedOperators = false): Builder
+    {
+        if ($branchIds === null) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $query) use ($branchIds, $includeUnassignedOperators): void {
+            $query->whereIn('branch_id', $branchIds);
+
+            if ($includeUnassignedOperators) {
+                $query->orWhere(fn (Builder $query) => $query
+                    ->where('role', UserRole::Operator->value)
+                    ->whereNull('branch_id'));
+            }
+        });
     }
 
     private function canAssignDriver(User $user): bool
@@ -2383,7 +2519,7 @@ class AdminController extends Controller
 
     private function userPayload(User $user): array
     {
-        $user->loadMissing(['currentLocation.branch', 'latestLocationLog.branch']);
+        $user->loadMissing(['branchScopes', 'currentLocation.branch', 'latestLocationLog.branch']);
         $registrationLocation = $user->lat !== null && $user->lng !== null
             ? [
                 'lat' => (float) $user->lat,
@@ -2447,6 +2583,17 @@ class AdminController extends Controller
             'branch_code' => $user->branch?->branch_code,
             'branch_area' => $user->branch?->area,
             'branch_display_name' => $user->branch?->display_name,
+            'branch_scope_ids' => $user->branchScopes->pluck('id')->values()->all(),
+            'branch_scopes' => $user->branchScopes
+                ->map(fn (Branch $branch): array => [
+                    'id' => $branch->id,
+                    'branch_code' => $branch->branch_code,
+                    'name' => $branch->name,
+                    'area' => $branch->area,
+                    'display_name' => $branch->display_name,
+                ])
+                ->values()
+                ->all(),
             'is_active' => $user->is_active,
             'is_suspended' => $user->is_suspended,
             'driver_state' => $user->driver?->is_available ? 'online' : 'offline',
@@ -2553,19 +2700,20 @@ class AdminController extends Controller
 
     private function assertOrderAreaScope(User $actor, Order $order): void
     {
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM], true)) {
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds === null) {
             return;
         }
 
-        abort_unless($actor->branch_id !== null, 403, 'Akun ini belum memiliki area/cabang.');
+        abort_unless($branchIds !== [], 403, 'Akun ini belum memiliki area/cabang.');
 
         $orderBranchId = $order->branch_id ?? $order->user?->branch_id ?? $order->driver?->user?->branch_id;
-        abort_unless((int) $orderBranchId === (int) $actor->branch_id, 403, 'Order di luar area akun ini.');
+        abort_unless(in_array((int) $orderBranchId, $branchIds, true), 403, 'Order di luar area akun ini.');
     }
 
     private function canManageGlobalPricing(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM], true);
     }
 
     private function assertPricingBranchScope(User $actor, ?int $branchId, ?int $geofenceAreaId = null): void
@@ -2574,16 +2722,17 @@ class AdminController extends Controller
             return;
         }
 
-        abort_unless($actor->branch_id !== null, 403, 'Akun ini belum memiliki area/cabang.');
+        $branchIds = $this->staffBranchScopeIds($actor) ?? [];
+        abort_unless($branchIds !== [], 403, 'Akun ini belum memiliki area/cabang.');
         abort_unless($branchId !== null, 403, 'Role ini hanya boleh mengatur pricing cabang sendiri.');
-        abort_unless((int) $branchId === (int) $actor->branch_id, 403, 'Pricing di luar area akun ini.');
+        abort_unless(in_array((int) $branchId, $branchIds, true), 403, 'Pricing di luar area akun ini.');
 
         if ($geofenceAreaId === null) {
             return;
         }
 
         $geofenceBranchId = GeofenceArea::query()->whereKey($geofenceAreaId)->value('branch_id');
-        abort_unless((int) $geofenceBranchId === (int) $actor->branch_id, 403, 'Zona pricing di luar area akun ini.');
+        abort_unless(in_array((int) $geofenceBranchId, $branchIds, true), 403, 'Zona pricing di luar area akun ini.');
     }
 
     private function suggestedDriversForOrder(Order $order, User $actor): array
@@ -2592,7 +2741,7 @@ class AdminController extends Controller
             return [];
         }
 
-        $branchId = $actor->branch_id ?? $order->branch_id ?? $order->user?->branch_id;
+        $branchId = $order->branch_id ?? $order->user?->branch_id ?? $actor->branch_id;
         if (! $branchId) {
             return [];
         }
