@@ -2966,6 +2966,9 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
 function PricingPanel({ ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showRingForm, setShowRingForm] = useState(false)
   const [ringFormula, setRingFormula] = useState(false)
+  const [importingGeojson, setImportingGeojson] = useState(false)
+  const [geojsonImportMessage, setGeojsonImportMessage] = useState<string | null>(null)
+  const [geojsonImportError, setGeojsonImportError] = useState<string | null>(null)
   const createRing = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formElement = event.currentTarget
@@ -3011,6 +3014,34 @@ function PricingPanel({ ringRules, ringSuggestions, branches, services, permissi
     setRingFormula(false)
     setShowRingForm(false)
     await onChanged()
+  }
+  const importGeojson = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const file = form.get('geojson_file')
+    if (!(file instanceof File) || file.size === 0) {
+      setGeojsonImportError('Pilih file GeoJSON terlebih dahulu.')
+      return
+    }
+
+    setImportingGeojson(true)
+    setGeojsonImportMessage(null)
+    setGeojsonImportError(null)
+    try {
+      const payload = await api<{ message?: string; created?: number; updated?: number; skipped?: string[] }>('/admin/ring-pricing-rules/import-geojson', {
+        method: 'POST',
+        body: form,
+      })
+      const skipped = payload.skipped?.length ? `, ${payload.skipped.length} skip` : ''
+      setGeojsonImportMessage(payload.message ?? `Import selesai: ${payload.created ?? 0} baru, ${payload.updated ?? 0} update${skipped}.`)
+      formElement.reset()
+      await onChanged()
+    } catch (error) {
+      setGeojsonImportError(error instanceof Error ? error.message : 'Import GeoJSON gagal.')
+    } finally {
+      setImportingGeojson(false)
+    }
   }
   const destroyRing = async (rule: RingPricingRule) => {
     if (!confirm(`Delete master ring ${rule.name}?`)) return
@@ -3074,6 +3105,20 @@ function PricingPanel({ ringRules, ringSuggestions, branches, services, permissi
           <label className="toggle-row inline-toggle"><input name="is_bidirectional" type="checkbox" defaultChecked />Dua arah</label>
           <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
           <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowRingForm(false)}>Batal</button><button className="primary-button" type="submit">Simpan Master Ring</button></div>
+        </form>
+      )}
+      {canManageRing && (
+        <form className="admin-inline-form pricing-create-form ring-import-form" onSubmit={importGeojson}>
+          <div className="ring-form-title"><strong>Import GeoJSON ke Master Ring</strong><span>File FeatureCollection dari geojson.io akan dibuat menjadi rule Master Ring. Jika cabang dikosongkan, sistem memilih cabang terdekat dari centroid polygon.</span></div>
+          <label>File GeoJSON<input name="geojson_file" type="file" accept=".geojson,.json,application/geo+json,application/json" required /></label>
+          <label>Cabang<select name="branch_id"><option value="">Auto cabang terdekat</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
+          <label>Layanan<select name="service_type"><option value="">Semua layanan</option>{services.map((service) => <option key={service.id} value={service.code}>{service.name}</option>)}</select></label>
+          <label>Mode titik<select name="polygon_match_point" defaultValue="destination_then_pickup"><option value="destination_then_pickup">Tujuan, fallback pickup</option><option value="destination">Tujuan saja</option><option value="pickup">Pickup saja</option><option value="either">Pickup atau tujuan</option><option value="both">Pickup dan tujuan</option></select></label>
+          <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif setelah import</label>
+          <label className="toggle-row inline-toggle"><input name="replace_existing" type="checkbox" />Replace import GeoJSON lama untuk cabang ini</label>
+          <div className="ring-form-actions"><button className="primary-button" type="submit" disabled={importingGeojson}>{importingGeojson ? 'Importing...' : 'Import GeoJSON'}</button></div>
+          {geojsonImportMessage && <div className="notice success span-2">{geojsonImportMessage}</div>}
+          {geojsonImportError && <div className="notice danger span-2">{geojsonImportError}</div>}
         </form>
       )}
       <div className="pricing-subsection">

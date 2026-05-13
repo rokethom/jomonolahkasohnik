@@ -43,6 +43,7 @@ use App\Services\OrderOperationService;
 use App\Services\OrderService;
 use App\Services\PricingService;
 use App\Services\PricingKeywordRuleService;
+use App\Services\Pricing\DistanceCalculator;
 use App\Services\RatingService;
 use App\Services\RingPricingService;
 use App\Services\RolePermissionSettingService;
@@ -52,6 +53,7 @@ use App\Services\ZonePricingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -1273,6 +1275,161 @@ class AdminController extends Controller
             'message' => 'Ring pricing rule created',
             'data' => $this->ringPricingRulePayload($rule->fresh('branch')),
         ], 201);
+    }
+
+    public function importRingPricingGeojson(Request $request): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+
+        $payload = $request->validate([
+            'geojson_file' => ['required', 'file', 'max:15360'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'service_type' => ['nullable', 'string', 'max:80'],
+            'polygon_match_point' => ['nullable', Rule::in(['destination_then_pickup', 'destination', 'pickup', 'either', 'both'])],
+            'is_active' => ['sometimes', 'boolean'],
+            'replace_existing' => ['sometimes', 'boolean'],
+        ]);
+
+        if (($payload['branch_id'] ?? null) !== null) {
+            $this->assertPricingBranchScope($request->user(), (int) $payload['branch_id']);
+        }
+
+        /** @var UploadedFile $file */
+        $file = $payload['geojson_file'];
+        $decoded = json_decode((string) file_get_contents($file->getRealPath()), true);
+        if (! is_array($decoded)) {
+            throw ValidationException::withMessages([
+                'geojson_file' => 'File GeoJSON tidak valid atau bukan JSON.',
+            ]);
+        }
+
+        $serviceType = isset($payload['service_type']) && $payload['service_type'] !== ''
+            ? app(RingPricingService::class)->normalizeServiceType((string) $payload['service_type'])
+            : null;
+        $defaultBranchId = isset($payload['branch_id']) ? (int) $payload['branch_id'] : null;
+        $polygonMatchPoint = (string) ($payload['polygon_match_point'] ?? 'destination_then_pickup');
+        $isActive = array_key_exists('is_active', $payload) ? (bool) $payload['is_active'] : true;
+        $actor = $request->user();
+
+        $branches = Branch::query()
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->get(['id', 'branch_code', 'name', 'area', 'latitude', 'longitude']);
+
+        $features = $this->geojsonFeatures($decoded);
+        if ($features === []) {
+            throw ValidationException::withMessages([
+                'geojson_file' => 'GeoJSON harus berisi Feature polygon atau multipolygon.',
+            ]);
+        }
+
+        if (($payload['replace_existing'] ?? false) && $defaultBranchId !== null) {
+            RingPricingRule::query()
+                ->where('source', 'geojson')
+                ->where('branch_id', $defaultBranchId)
+                ->when($serviceType !== null, fn (Builder $query) => $query->where('service_type', $serviceType), fn (Builder $query) => $query->whereNull('service_type'))
+                ->delete();
+        }
+
+        $created = 0;
+        $updated = 0;
+        $skipped = [];
+        $featureIndex = 0;
+
+        foreach ($features as $feature) {
+            $featureIndex++;
+            $properties = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+            $polygons = $this->geojsonFeaturePolygons($feature);
+
+            if ($polygons === []) {
+                $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'bukan polygon');
+                continue;
+            }
+
+            $ring = $this->normalizeGeojsonRing($properties['ring'] ?? $properties['Ring'] ?? $properties['RING'] ?? null);
+            if ($ring === null) {
+                $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'ring tidak ditemukan');
+                continue;
+            }
+
+            foreach ($polygons as $polygonIndex => $points) {
+                if (count($points) < 3) {
+                    $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'polygon kurang dari 3 titik');
+                    continue;
+                }
+
+                $centroid = $this->geojsonCentroid($points);
+                $branchId = $defaultBranchId ?? $this->nearestBranchIdForGeojson($branches, $centroid);
+
+                if ($branchId === null) {
+                    $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'cabang tidak ditemukan');
+                    continue;
+                }
+
+                try {
+                    $this->assertPricingBranchScope($actor, $branchId);
+                } catch (\Throwable) {
+                    $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'di luar scope cabang user');
+                    continue;
+                }
+
+                $name = $this->geojsonRuleName($properties, $ring, $featureIndex, $polygonIndex, count($polygons));
+                $rule = RingPricingRule::query()
+                    ->where('source', 'geojson')
+                    ->where('branch_id', $branchId)
+                    ->where('service_type', $serviceType)
+                    ->where('name', $name)
+                    ->first();
+
+                $data = [
+                    'branch_id' => $branchId,
+                    'service_type' => $serviceType,
+                    'name' => $name,
+                    'area_mode' => 'polygon',
+                    'pickup_area' => (string) ($properties['pickup_area'] ?? $properties['name'] ?? $name),
+                    'destination_area' => (string) ($properties['destination_area'] ?? $properties['name'] ?? $name),
+                    'pickup_aliases' => [],
+                    'destination_aliases' => [],
+                    'polygon_coordinates' => $points,
+                    'polygon_match_point' => $polygonMatchPoint,
+                    'match_type' => (string) ($properties['match_type'] ?? 'point'),
+                    'pickup_ring' => $this->normalizeGeojsonRing($properties['pickup_ring'] ?? null),
+                    'destination_ring' => $this->normalizeGeojsonRing($properties['destination_ring'] ?? null),
+                    'ring' => $ring,
+                    ...$this->geojsonPricingData($properties, $ring),
+                    'is_bidirectional' => true,
+                    'source' => 'geojson',
+                    'is_active' => $isActive,
+                    'updated_by' => $actor->id,
+                ];
+
+                if ($rule) {
+                    $rule->update($data);
+                    $updated++;
+                } else {
+                    RingPricingRule::query()->create([...$data, 'created_by' => $actor->id]);
+                    $created++;
+                }
+            }
+        }
+
+        $this->recordAudit($actor, 'imported_ring_pricing_geojson', $actor, [
+            'file' => $file->getClientOriginalName(),
+            'created' => $created,
+            'updated' => $updated,
+            'skipped' => count($skipped),
+            'branch_id' => $defaultBranchId,
+        ]);
+
+        return response()->json([
+            'message' => sprintf('Import GeoJSON selesai: %d baru, %d update, %d skip.', $created, $updated, count($skipped)),
+            'created' => $created,
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'data' => $this->ringPricingRulesQuery($actor)
+                ->get()
+                ->map(fn (RingPricingRule $rule): array => $this->ringPricingRulePayload($rule)),
+        ]);
     }
 
     public function updateRingPricingRule(Request $request, RingPricingRule $ringPricingRule): JsonResponse
@@ -3231,6 +3388,181 @@ class AdminController extends Controller
     private function mapsUrl(float $lat, float $lng): string
     {
         return "https://www.google.com/maps?q={$lat},{$lng}";
+    }
+
+    private function geojsonFeatures(array $geojson): array
+    {
+        if (($geojson['type'] ?? null) === 'FeatureCollection') {
+            return array_values(array_filter($geojson['features'] ?? [], 'is_array'));
+        }
+
+        if (($geojson['type'] ?? null) === 'Feature') {
+            return [$geojson];
+        }
+
+        if (in_array($geojson['type'] ?? null, ['Polygon', 'MultiPolygon'], true)) {
+            return [['type' => 'Feature', 'properties' => [], 'geometry' => $geojson]];
+        }
+
+        return [];
+    }
+
+    private function geojsonFeaturePolygons(array $feature): array
+    {
+        $geometry = is_array($feature['geometry'] ?? null) ? $feature['geometry'] : $feature;
+        $type = $geometry['type'] ?? null;
+        $coordinates = $geometry['coordinates'] ?? null;
+
+        if ($type === 'Polygon' && is_array($coordinates)) {
+            return $this->geojsonPolygonRings($coordinates);
+        }
+
+        if ($type === 'MultiPolygon' && is_array($coordinates)) {
+            $polygons = [];
+            foreach ($coordinates as $polygon) {
+                if (is_array($polygon)) {
+                    $polygons = [...$polygons, ...$this->geojsonPolygonRings($polygon)];
+                }
+            }
+
+            return $polygons;
+        }
+
+        return [];
+    }
+
+    private function geojsonPolygonRings(array $coordinates): array
+    {
+        $outerRing = $coordinates[0] ?? [];
+        if (! is_array($outerRing)) {
+            return [];
+        }
+
+        $points = collect($outerRing)
+            ->map(function (mixed $point): ?array {
+                if (! is_array($point) || ! isset($point[0], $point[1]) || ! is_numeric($point[0]) || ! is_numeric($point[1])) {
+                    return null;
+                }
+
+                return [
+                    'lat' => round((float) $point[1], 8),
+                    'lng' => round((float) $point[0], 8),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        if (count($points) > 1 && $points[0] === $points[count($points) - 1]) {
+            array_pop($points);
+        }
+
+        return $points !== [] ? [$points] : [];
+    }
+
+    private function normalizeGeojsonRing(mixed $value): ?string
+    {
+        $normalized = strtolower(trim((string) $value));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/^(?:ring[_\s-]?)?([123])$/', $normalized, $matches) === 1) {
+            return 'ring_'.$matches[1];
+        }
+
+        return str_starts_with($normalized, 'ring_') ? $normalized : null;
+    }
+
+    private function geojsonPricingData(array $properties, string $ring): array
+    {
+        $mode = strtolower((string) ($properties['pricing_mode'] ?? ''));
+        $defaultMode = $ring === 'ring_3' ? 'formula' : 'flat';
+        $pricingMode = in_array($mode, ['flat', 'formula'], true) ? $mode : $defaultMode;
+
+        $price = $this->geojsonInt($properties['price'] ?? $properties['base_price'] ?? null);
+        $perKmRate = $this->geojsonInt($properties['per_km_rate'] ?? null);
+        $subtractValue = $this->geojsonInt($properties['subtract_value'] ?? null);
+
+        if ($pricingMode === 'formula') {
+            $price = $price ?? 0;
+            $perKmRate = $perKmRate ?? ($ring === 'ring_3' ? 1900 : 0);
+            $subtractValue = $subtractValue ?? ($ring === 'ring_3' ? 7000 : 0);
+        } else {
+            $price = $price ?? match ($ring) {
+                'ring_2' => 12000,
+                'ring_3' => 0,
+                default => 6000,
+            };
+            $perKmRate = null;
+            $subtractValue = 0;
+        }
+
+        return [
+            'min_km' => $this->geojsonFloat($properties['min_km'] ?? null) ?? $this->defaultRingMinKm($ring),
+            'max_km' => $this->geojsonFloat($properties['max_km'] ?? null) ?? $this->defaultRingMaxKm($ring),
+            'pricing_mode' => $pricingMode,
+            'price' => $price,
+            'per_km_rate' => $perKmRate,
+            'subtract_value' => $subtractValue,
+            'service_fee' => $this->geojsonInt($properties['service_fee'] ?? null) ?? $this->defaultRingServiceFee($ring),
+            'priority' => $this->geojsonInt($properties['priority'] ?? null) ?? $this->defaultRingPriority($ring),
+        ];
+    }
+
+    private function geojsonRuleName(array $properties, string $ring, int $featureIndex, int $polygonIndex, int $polygonCount): string
+    {
+        $base = trim((string) ($properties['name'] ?? $properties['Name'] ?? $properties['NAME'] ?? 'GeoJSON'));
+        $suffix = $polygonCount > 1 ? sprintf(' #%03d-%02d', $featureIndex, $polygonIndex + 1) : sprintf(' #%03d', $featureIndex);
+
+        return Str::limit(sprintf('%s %s%s', $base, str_replace('_', ' ', $ring), $suffix), 255, '');
+    }
+
+    private function geojsonCentroid(array $points): array
+    {
+        $total = max(1, count($points));
+        $lat = array_sum(array_map(fn (array $point): float => (float) $point['lat'], $points)) / $total;
+        $lng = array_sum(array_map(fn (array $point): float => (float) $point['lng'], $points)) / $total;
+
+        return ['lat' => $lat, 'lng' => $lng];
+    }
+
+    private function nearestBranchIdForGeojson($branches, array $point): ?int
+    {
+        $calculator = app(DistanceCalculator::class);
+        $nearest = null;
+        $nearestDistance = null;
+
+        foreach ($branches as $branch) {
+            if (! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+                continue;
+            }
+
+            $distance = $calculator->haversine((float) $branch->latitude, (float) $branch->longitude, (float) $point['lat'], (float) $point['lng']);
+            if ($nearestDistance === null || $distance < $nearestDistance) {
+                $nearest = (int) $branch->id;
+                $nearestDistance = $distance;
+            }
+        }
+
+        return $nearest;
+    }
+
+    private function geojsonSkipLabel(array $properties, int $featureIndex, string $reason): string
+    {
+        $name = trim((string) ($properties['name'] ?? $properties['Name'] ?? $properties['NAME'] ?? 'Feature'));
+
+        return sprintf('%s #%03d: %s', $name, $featureIndex, $reason);
+    }
+
+    private function geojsonInt(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function geojsonFloat(mixed $value): ?float
+    {
+        return is_numeric($value) ? (float) $value : null;
     }
 
     private function distanceMeters(float $latA, float $lngA, float $latB, float $lngB): int
