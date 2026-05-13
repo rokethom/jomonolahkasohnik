@@ -7,9 +7,9 @@ export default defineConfig({
   server: {
     port: 5172,
     strictPort: true,
-     allowedHosts: [
-    '.situapps.tech'
-  ]
+    allowedHosts: [
+      '.aplikasijoker.my.id',
+    ],
   },
   plugins: [
     react(),

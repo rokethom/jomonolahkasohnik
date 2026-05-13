@@ -165,7 +165,7 @@ class AuthController extends Controller
 
         return request()->getHost() === 'localhost' || request()->getHost() === '127.0.0.1'
             ? 'http://localhost:5172'
-            : 'https://app.situapps.tech';
+            : 'https://app.aplikasijoker.my.id';
     }
 
     private function tokenName(Request $request): string
