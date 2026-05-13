@@ -83,6 +83,8 @@ class ListRingPricingRules extends ListRecords
                             ->danger()
                             ->send();
 
+                        $this->redirect(RingPricingRuleResource::getUrl('index'), navigate: true);
+
                         return;
                     }
 
@@ -113,6 +115,8 @@ class ListRingPricingRules extends ListRecords
                         : $notification->success();
 
                     $notification->send();
+
+                    $this->redirect(RingPricingRuleResource::getUrl('index'), navigate: true);
                 }),
             Actions\CreateAction::make(),
         ];

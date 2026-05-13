@@ -79,6 +79,23 @@ class AdminPanelProvider extends PanelProvider
                         border-color: rgba(148, 163, 184, 0.14) !important;
                     }
 
+                    .fi-modal-window,
+                    .fi-modal-window > div,
+                    .fi-modal-content,
+                    .fi-modal-header,
+                    .fi-modal-footer {
+                        background-color: #17181c !important;
+                        color: #f8fafc !important;
+                    }
+
+                    .fi-modal-heading,
+                    .fi-modal-description,
+                    .fi-modal-window label,
+                    .fi-modal-window .fi-fo-field-wrp-label span,
+                    .fi-modal-window .fi-fo-field-wrp-helper-text {
+                        color: #e5e7eb !important;
+                    }
+
                     .fi-input-wrp,
                     .fi-select-input,
                     .fi-textarea {
