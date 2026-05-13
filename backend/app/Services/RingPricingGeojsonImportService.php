@@ -22,6 +22,12 @@ class RingPricingGeojsonImportService
 
     public function import(string $path, User $actor, array $options = []): array
     {
+        if (! is_file($path) || ! is_readable($path)) {
+            throw ValidationException::withMessages([
+                'geojson_file' => 'File GeoJSON tidak ditemukan atau tidak bisa dibaca oleh server.',
+            ]);
+        }
+
         $decoded = json_decode((string) file_get_contents($path), true);
         if (! is_array($decoded)) {
             throw ValidationException::withMessages([
