@@ -995,7 +995,7 @@ function App() {
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {isBackendCmsView(safeView) && <BackendCmsLinkPanel view={safeView} />}
         {safeView === 'master-pricing' && <MasterPricingPanel data={data} onNavigate={setView} />}
-        {(safeView === 'pricing' || safeView === 'ring-pricing' || safeView === 'price-settings') && <PricingPanel mode={safeView === 'ring-pricing' ? 'ring' : safeView === 'price-settings' ? 'price' : 'all'} settings={data.price_settings} ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'ring-pricing' && <PricingPanel ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'keyword-parsers' && <KeywordParsersPanel parsers={data.keyword_parsers ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'pricing-keyword-rules' && <PricingKeywordRulesPanel rules={data.pricing_keyword_rules ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'zone-pricing' && <ZonePricingPanel rules={data.zone_pricing_rules ?? []} branches={data.branches} geofences={data.geofences} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -2963,58 +2963,9 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
   )
 }
 
-function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { mode?: 'all' | 'ring' | 'price'; settings: PriceSetting[]; ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
-  const [showForm, setShowForm] = useState(false)
+function PricingPanel({ ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showRingForm, setShowRingForm] = useState(false)
-  const [isFormula, setFormula] = useState(false)
   const [ringFormula, setRingFormula] = useState(false)
-  const create = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const formElement = event.currentTarget
-    const form = new FormData(formElement)
-    await api('/admin/price-settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: form.get('name'),
-        branch_id: Number(form.get('branch_id')) || null,
-        min_km: Number(form.get('min_km') || 0),
-        max_km: form.get('max_km') ? Number(form.get('max_km')) : null,
-        price: isFormula ? null : Number(form.get('price') || 0),
-        is_formula: isFormula,
-        per_km_rate: isFormula ? Number(form.get('per_km_rate') || 0) : null,
-        subtract_value: Number(form.get('subtract_value') || 0),
-        is_active: form.get('is_active') === 'on',
-      }),
-    })
-    formElement.reset()
-    setShowForm(false)
-    await onChanged()
-  }
-  const updatePriceSetting = async (setting: PriceSetting, patch: Partial<PriceSetting>) => {
-    await api(`/admin/price-settings/${setting.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        name: patch.name ?? setting.name,
-        branch_id: patch.branch_id === undefined ? setting.branch_id : patch.branch_id,
-        min_km: patch.min_km ?? setting.min_km,
-        max_km: patch.max_km === undefined ? setting.max_km : patch.max_km,
-        price: patch.price === undefined ? setting.price : patch.price,
-        is_formula: patch.is_formula ?? setting.is_formula,
-        per_km_rate: (patch.is_formula ?? setting.is_formula) ? (patch.per_km_rate === undefined ? setting.per_km_rate : patch.per_km_rate) : null,
-        subtract_value: (patch.is_formula ?? setting.is_formula) ? (patch.subtract_value === undefined ? setting.subtract_value : patch.subtract_value) : 0,
-        is_active: patch.is_active ?? setting.is_active ?? true,
-      }),
-    })
-    await onChanged()
-  }
-  const togglePriceSetting = async (setting: PriceSetting) => {
-    await updatePriceSetting(setting, { is_active: !(setting.is_active ?? true) })
-  }
-  const destroy = async (setting: PriceSetting) => {
-    if (!confirm(`Delete ${setting.name}?`)) return
-    await api(`/admin/price-settings/${setting.id}`, { method: 'DELETE' })
-    await onChanged()
-  }
   const createRing = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formElement = event.currentTarget
@@ -3081,32 +3032,23 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
     await api(`/admin/ring-pricing-suggestions/${suggestion.id}/reject`, { method: 'POST' })
     await onChanged()
   }
-  const formulaCount = settings.filter((rule) => rule.is_formula).length
-  const activePriceCount = settings.filter((rule) => rule.is_active ?? true).length
-  const flatPriceCount = settings.filter((rule) => !rule.is_formula).length
-  const globalPriceCount = settings.filter((rule) => !rule.branch).length
   const canManageRing = Boolean(permissions.can_manage_ring_pricing)
   const activeRingCount = ringRules.filter((rule) => rule.is_active).length
   const learnedRingCount = ringRules.filter((rule) => rule.source === 'learned').length
-  const showRingSection = mode === 'all' || mode === 'ring'
-  const showPriceSection = mode === 'all' || mode === 'price'
   return (
-    <section className={`panel pricing-panel ${mode === 'ring' ? 'master-ring-panel' : ''}`}>
+    <section className="panel pricing-panel master-ring-panel">
       <div className="section-head master-ring-head">
-        <div><h2>{mode === 'ring' ? 'Master Ring Pricing' : mode === 'price' ? 'Price Settings' : 'Pricing & Policy'}</h2><p>Terhubung ke pricing order customer, manual order, dan AI parser melalui payload pickup/tujuan.</p></div>
+        <div><h2>Master Ring Pricing</h2><p>Min/max jarak, polygon, service fee, dan formula harga dikelola dari Master Ring.</p></div>
         <div className="section-actions">
-          {showRingSection && canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />{showRingForm ? 'Tutup Form' : 'Master Ring'}</button>}
-          {showPriceSection && permissions.can_manage_policy && <button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />Policy</button>}
+          {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />{showRingForm ? 'Tutup Form' : 'Master Ring'}</button>}
         </div>
       </div>
-      {mode === 'ring' && (
-        <div className="master-ring-summary">
-          <article><span>Total route</span><strong>{ringRules.length}</strong><small>{activeRingCount} aktif</small></article>
-          <article><span>Suggestion</span><strong>{ringSuggestions.length}</strong><small>Dari koreksi harga</small></article>
-          <article><span>Learned</span><strong>{learnedRingCount}</strong><small>Sudah jadi rule</small></article>
-        </div>
-      )}
-      {showRingForm && showRingSection && canManageRing && (
+      <div className="master-ring-summary">
+        <article><span>Total route</span><strong>{ringRules.length}</strong><small>{activeRingCount} aktif</small></article>
+        <article><span>Suggestion</span><strong>{ringSuggestions.length}</strong><small>Dari koreksi harga</small></article>
+        <article><span>Learned</span><strong>{learnedRingCount}</strong><small>Sudah jadi rule</small></article>
+      </div>
+      {showRingForm && canManageRing && (
         <form className="admin-inline-form pricing-create-form ring-create-form" onSubmit={createRing}>
           <div className="ring-form-title"><strong>Tambah Master Ring Polygon</strong><span>Polygon bisa ditempel dari geojson.io. Rule aktif langsung dipakai untuk pricing customer.</span></div>
           <label>Nama master<input name="name" required placeholder="ASB Ring 1" /></label>
@@ -3134,82 +3076,19 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
           <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowRingForm(false)}>Batal</button><button className="primary-button" type="submit">Simpan Master Ring</button></div>
         </form>
       )}
-      {showPriceSection && showForm && (
-        <form className="admin-inline-form pricing-create-form" onSubmit={create}>
-          <div className="ring-form-title"><strong>Tambah Distance Price</strong><span>Rule aktif langsung dipakai untuk order customer, manual order, dan JojoBot.</span></div>
-          <label>Nama policy<input name="name" required placeholder="Belanja 0-3 km" /></label>
-          <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
-          <label>Min KM<input name="min_km" type="number" min="0" step="0.1" defaultValue="0" /></label>
-          <label>Max KM<input name="max_km" type="number" min="0" step="0.1" placeholder="Kosong = unlimited" /></label>
-          <label className="toggle-row inline-toggle"><input type="checkbox" checked={isFormula} onChange={(event) => setFormula(event.target.checked)} />Formula tarif</label>
-          <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
-          {!isFormula && <label>Flat price<input name="price" type="number" min="0" defaultValue="10000" /></label>}
-          {isFormula && <label>Rate / KM<input name="per_km_rate" type="number" min="0" defaultValue="3000" /></label>}
-          {isFormula && <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="0" /></label>}
-          <button className="primary-button" type="submit">Save Policy</button>
-        </form>
-      )}
-      {showRingSection && <div className="pricing-subsection">
+      <div className="pricing-subsection">
         <PanelHeader title="Master Ring Route" action={`${ringRules.length} rules`} />
         <div className="pricing-list ring-pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)} · priority {rule.priority ?? 0}</span><small>{formatRingDistance(rule)} · service fee Rp {(rule.service_fee ?? 0).toLocaleString('id-ID')} · {rule.match_type === 'cross' ? `cross ${ringLabel(rule.pickup_ring ?? 'auto')} ke ${ringLabel(rule.destination_ring ?? 'auto')}` : 'single ring'}</small>{rule.area_mode === 'polygon' && <small className="ring-aliases">Polygon: {rule.polygon_coordinates?.length ?? 0} titik · {rule.polygon_match_point ?? 'destination_then_pickup'}</small>}{rule.area_mode !== 'polygon' && ((rule.pickup_aliases?.length ?? 0) > 0 || (rule.destination_aliases?.length ?? 0) > 0) && <small className="ring-aliases">Alias: {[...(rule.pickup_aliases ?? []), ...(rule.destination_aliases ?? [])].slice(0, 5).join(', ')}</small>}</div><em>{formatRingPrice(rule)}</em>{canManageRing && <div className="ring-card-actions"><button className={rule.is_active ? 'mini-button reject' : 'mini-button'} type="button" onClick={() => void toggleRing(rule)}>{rule.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button><button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button></div>}</article>)}</div>
         {ringRules.length === 0 && <EmptyPanel title="Master ring kosong" copy="Tambahkan route ring resmi agar harga tidak hanya mengandalkan jarak maps." />}
-      </div>}
-      {showRingSection && canManageRing && ringSuggestions.length > 0 && (
+      </div>
+      {canManageRing && ringSuggestions.length > 0 && (
         <div className="pricing-subsection">
           <PanelHeader title="Suggestion dari edit harga" action={`${ringSuggestions.length} pending`} />
           <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} → {suggestion.destination_area}</strong><span className="status warning">Learn</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
         </div>
       )}
-      {showPriceSection && <div className="pricing-subsection price-settings-section">
-        <PanelHeader title="Tarif Jarak" action={`${activePriceCount}/${settings.length} aktif`} />
-        <div className="price-summary-grid">
-          <article><span>Active rules</span><strong>{activePriceCount}</strong><small>Dipakai order sekarang</small></article>
-          <article><span>Formula</span><strong>{formulaCount}</strong><small>Rate per KM</small></article>
-          <article><span>Flat</span><strong>{flatPriceCount}</strong><small>Nominal tetap</small></article>
-          <article><span>Global</span><strong>{globalPriceCount}</strong><small>Fallback semua cabang</small></article>
-        </div>
-        <div className="price-rule-list">
-          {settings.map((rule) => {
-            const active = rule.is_active ?? true
-            return (
-              <article className={`price-rule-card ${active ? '' : 'inactive'}`} key={rule.id}>
-                <div className="price-rule-main">
-                  <div className="price-rule-title">
-                    <strong>{rule.name}</strong>
-                    <span className={active ? 'status success' : 'status muted'}>{active ? 'Aktif' : 'Nonaktif'}</span>
-                  </div>
-                  <div className="price-rule-meta">
-                    <span>{rule.branch ? branchLabel(rule.branch) : 'Global'}</span>
-                    <span>{formatDistanceRange(rule)}</span>
-                    <span>{rule.is_formula ? 'Formula rate' : 'Flat price'}</span>
-                  </div>
-                </div>
-                <div className="price-rule-rate">
-                  <span>{rule.is_formula ? 'Formula' : 'Tarif'}</span>
-                  <strong>{rule.is_formula ? `Rp ${(rule.per_km_rate ?? 0).toLocaleString('id-ID')}/km` : `Rp ${(rule.price ?? 0).toLocaleString('id-ID')}`}</strong>
-                  {rule.is_formula && <small>Subtract Rp {(rule.subtract_value ?? 0).toLocaleString('id-ID')}</small>}
-                </div>
-                {permissions.can_manage_policy && (
-                  <div className="price-rule-actions">
-                    <button className={active ? 'mini-button' : 'mini-button success'} type="button" onClick={() => void togglePriceSetting(rule)}>{active ? 'Nonaktifkan' : 'Aktifkan'}</button>
-                    <button className="mini-button reject" type="button" onClick={() => void destroy(rule)}>Delete</button>
-                  </div>
-                )}
-              </article>
-            )
-          })}
-        </div>
-        {settings.length === 0 && <EmptyPanel title="Distance price kosong" copy="Tambahkan minimal rule global agar order dapat menghitung tarif dasar." />}
-      </div>}
     </section>
   )
-}
-
-function formatDistanceRange(rule: PriceSetting) {
-  const min = Number(rule.min_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
-  const max = rule.max_km === null ? 'unlimited' : Number(rule.max_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
-
-  return `${min} - ${max} KM`
 }
 
 function formatRingDistance(rule: RingPricingRule) {
