@@ -110,7 +110,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/pricing-keyword-rules/{pricingKeywordRule}', [AdminController::class, 'destroyPricingKeywordRule'])->middleware('permission:edit_tarif');
         Route::get('/ring-pricing-rules', [AdminController::class, 'ringPricingRules'])->middleware('permission:edit_tarif');
         Route::post('/ring-pricing-rules', [AdminController::class, 'storeRingPricingRule'])->middleware('permission:edit_tarif');
-        Route::post('/ring-pricing-rules/import-geojson', [AdminController::class, 'importRingPricingGeojson'])->middleware('permission:edit_tarif');
         Route::put('/ring-pricing-rules/{ringPricingRule}', [AdminController::class, 'updateRingPricingRule'])->middleware('permission:edit_tarif');
         Route::patch('/ring-pricing-rules/{ringPricingRule}/active', [AdminController::class, 'toggleRingPricingRule'])->middleware('permission:edit_tarif');
         Route::delete('/ring-pricing-rules/{ringPricingRule}', [AdminController::class, 'destroyRingPricingRule'])->middleware('permission:edit_tarif');
