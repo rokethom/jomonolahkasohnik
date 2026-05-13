@@ -1848,8 +1848,18 @@ class AdminController extends Controller
             'destination_aliases.*' => ['string', 'max:255'],
             'polygon_coordinates' => ['nullable', 'array'],
             'polygon_match_point' => ['nullable', Rule::in(['destination_then_pickup', 'destination', 'pickup', 'either', 'both'])],
+            'match_type' => ['nullable', Rule::in(['point', 'cross'])],
+            'pickup_ring' => ['nullable', 'string', 'max:40'],
+            'destination_ring' => ['nullable', 'string', 'max:40'],
             'ring' => ['required', 'string', 'max:40'],
+            'min_km' => ['nullable', 'numeric', 'min:0'],
+            'max_km' => ['nullable', 'numeric', 'min:0'],
+            'pricing_mode' => ['nullable', Rule::in(['flat', 'formula'])],
             'price' => ['required', 'integer', 'min:0'],
+            'per_km_rate' => ['nullable', 'integer', 'min:0'],
+            'subtract_value' => ['nullable', 'integer', 'min:0'],
+            'service_fee' => ['nullable', 'integer', 'min:0'],
+            'priority' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
             'is_bidirectional' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
@@ -1887,10 +1897,62 @@ class AdminController extends Controller
         $payload['pickup_aliases'] = array_values(array_filter($payload['pickup_aliases'] ?? []));
         $payload['destination_aliases'] = array_values(array_filter($payload['destination_aliases'] ?? []));
         $payload['polygon_match_point'] = $payload['polygon_match_point'] ?? 'destination_then_pickup';
+        $payload['match_type'] = $payload['match_type'] ?? 'point';
+        $payload['pickup_ring'] = filled($payload['pickup_ring'] ?? null) ? $payload['pickup_ring'] : null;
+        $payload['destination_ring'] = filled($payload['destination_ring'] ?? null) ? $payload['destination_ring'] : null;
+        $payload['min_km'] = (float) ($payload['min_km'] ?? $this->defaultRingMinKm((string) $payload['ring']));
+        $payload['max_km'] = array_key_exists('max_km', $payload) && $payload['max_km'] !== null && $payload['max_km'] !== ''
+            ? (float) $payload['max_km']
+            : $this->defaultRingMaxKm((string) $payload['ring']);
+        $payload['pricing_mode'] = $payload['pricing_mode'] ?? (((int) ($payload['per_km_rate'] ?? 0) > 0) ? 'formula' : 'flat');
+        if ($payload['pricing_mode'] === 'formula') {
+            $payload['per_km_rate'] = (int) ($payload['per_km_rate'] ?? 0);
+            $payload['subtract_value'] = (int) ($payload['subtract_value'] ?? 0);
+            $payload['price'] = (int) ($payload['price'] ?? 0);
+        } else {
+            $payload['per_km_rate'] = null;
+            $payload['subtract_value'] = 0;
+            $payload['price'] = (int) ($payload['price'] ?? 0);
+        }
+        $payload['service_fee'] = (int) ($payload['service_fee'] ?? $this->defaultRingServiceFee((string) $payload['ring']));
+        $payload['priority'] = (int) ($payload['priority'] ?? $this->defaultRingPriority((string) $payload['ring']));
         $payload['is_bidirectional'] = $payload['is_bidirectional'] ?? true;
         $payload['is_active'] = $payload['is_active'] ?? true;
 
         return $payload;
+    }
+
+    private function defaultRingMinKm(string $ring): float
+    {
+        return match ($ring) {
+            'ring_2' => 4.1,
+            'ring_3' => 9.1,
+            default => 0.0,
+        };
+    }
+
+    private function defaultRingMaxKm(string $ring): ?float
+    {
+        return match ($ring) {
+            'ring_1' => 4.0,
+            'ring_2' => 9.0,
+            default => null,
+        };
+    }
+
+    private function defaultRingServiceFee(string $ring): int
+    {
+        return in_array($ring, ['ring_1', 'ring_2'], true) ? 1000 : 0;
+    }
+
+    private function defaultRingPriority(string $ring): int
+    {
+        return match ($ring) {
+            'ring_1' => 300,
+            'ring_2' => 200,
+            'ring_3' => 100,
+            default => 0,
+        };
     }
 
     private function normalizeRingPolygonCoordinates(mixed $value): array
@@ -3229,8 +3291,10 @@ class AdminController extends Controller
             'branch_id' => $rule->branch_id,
             'branch' => $rule->branch ? [
                 'id' => $rule->branch->id,
+                'branch_code' => $rule->branch->branch_code,
                 'name' => $rule->branch->name,
                 'area' => $rule->branch->area,
+                'display_name' => $rule->branch->display_name,
             ] : null,
             'service_type' => $rule->service_type,
             'name' => $rule->name,
@@ -3241,8 +3305,18 @@ class AdminController extends Controller
             'destination_aliases' => $rule->destination_aliases ?? [],
             'polygon_coordinates' => $rule->polygon_coordinates ?? [],
             'polygon_match_point' => $rule->polygon_match_point ?? 'destination_then_pickup',
+            'match_type' => $rule->match_type ?? 'point',
+            'pickup_ring' => $rule->pickup_ring,
+            'destination_ring' => $rule->destination_ring,
             'ring' => $rule->ring,
+            'min_km' => $rule->min_km,
+            'max_km' => $rule->max_km,
+            'pricing_mode' => $rule->pricing_mode ?? 'flat',
             'price' => $rule->price,
+            'per_km_rate' => $rule->per_km_rate,
+            'subtract_value' => $rule->subtract_value ?? 0,
+            'service_fee' => $rule->service_fee ?? 1000,
+            'priority' => $rule->priority ?: $this->defaultRingPriority((string) $rule->ring),
             'is_bidirectional' => (bool) $rule->is_bidirectional,
             'source' => $rule->source,
             'is_active' => (bool) $rule->is_active,

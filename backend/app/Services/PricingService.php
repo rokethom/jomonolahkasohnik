@@ -31,6 +31,7 @@ class PricingService
         private readonly OrderOperationService $operations,
         private readonly RingPricingService $ringPricing,
         private readonly ZonePricingService $zonePricing,
+        private readonly BranchDetectionService $branches,
         private readonly OrderCrewDecisionService $crewDecisions,
     ) {
     }
@@ -213,15 +214,46 @@ class PricingService
         $route = $payload['route'] ?? $payload['travel_route'] ?? $payload['service_payload']['route'] ?? null;
         $this->validate($serviceType, $distance, $stops);
 
-        $quote = match ($serviceType) {
-            'joker_mobil' => $this->calculateJokerMobil($serviceType, $distance, $stops),
-            'travel' => $this->calculateTravel($serviceType, $distance, $stops, $route),
-            default => $this->calculateGeneral($serviceType, $distance, $stops, isset($payload['branch_id']) ? (int) $payload['branch_id'] : null),
-        };
-        if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
-            $quote = $this->ringPricing->apply($quote, $ringRule);
+        $pricingBranch = $this->resolvePricingBranch($payload);
+        $pricingBranchId = $pricingBranch?->id ?? (isset($payload['branch_id']) ? (int) $payload['branch_id'] : null);
+        if ($pricingBranchId !== null) {
+            $payload['branch_id'] = $pricingBranchId;
         }
-        if ($zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
+        $distanceFromBranch = $pricingBranch ? $this->distanceFromBranchCenter($payload, $pricingBranch) : null;
+        $masterRingMatch = ! in_array($serviceType, ['joker_mobil', 'travel'], true)
+            ? $this->ringPricing->matchMasterPolygon($payload, $serviceType, $pricingBranchId, $distanceFromBranch)
+            : null;
+
+        if ($masterRingMatch) {
+            $quote = $this->response([
+                'service_type' => $serviceType,
+                'distance' => $distance,
+                'tarif' => 0,
+                'tarif_source' => 'master_ring_polygon',
+                'service_charge' => 0,
+                'total_before_round' => 0,
+                'final_price' => 0,
+                'stops' => $stops,
+                'branch_id' => $pricingBranchId,
+                'branch_code' => $pricingBranch?->branch_code,
+                'branch_name' => $pricingBranch?->display_name,
+                'distance_from_branch_km' => $distanceFromBranch,
+                'service_fee_breakdown' => [['point' => 1, 'label' => 'Master Ring service fee', 'fee' => (int) ($masterRingMatch['rule']->service_fee ?? 0)]],
+            ]);
+            $quote = $this->ringPricing->applyMaster($quote, $masterRingMatch['rule'], $masterRingMatch);
+        } else {
+            $quote = match ($serviceType) {
+                'joker_mobil' => $this->calculateJokerMobil($serviceType, $distance, $stops),
+                'travel' => $this->calculateTravel($serviceType, $distance, $stops, $route),
+                default => $this->calculateGeneral($serviceType, $distance, $stops, $pricingBranchId),
+            };
+
+            if ($ringRule = $this->ringPricing->match($payload, $serviceType)) {
+                $quote = $this->ringPricing->apply($quote, $ringRule);
+            }
+        }
+
+        if (! $masterRingMatch && $zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
             $quote = $this->zonePricing->apply($quote, $zoneRule);
         }
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
@@ -364,6 +396,56 @@ class PricingService
             'final_price' => $finalPrice,
             'total_price' => $finalPrice,
         ];
+    }
+
+    private function resolvePricingBranch(array $payload): ?Branch
+    {
+        if (isset($payload['branch_id']) && $payload['branch_id']) {
+            return Branch::query()->find((int) $payload['branch_id']);
+        }
+
+        foreach ([
+            ['destination_lat', 'destination_lng'],
+            ['dropoff_lat', 'dropoff_lng'],
+            ['pickup_lat', 'pickup_lng'],
+            ['origin_lat', 'origin_lng'],
+        ] as [$latKey, $lngKey]) {
+            $lat = data_get($payload, $latKey);
+            $lng = data_get($payload, $lngKey);
+            if (! is_numeric($lat) || ! is_numeric($lng)) {
+                continue;
+            }
+
+            $branch = $this->branches->detect((float) $lat, (float) $lng)['branch'] ?? null;
+            if ($branch instanceof Branch) {
+                return $branch;
+            }
+        }
+
+        return null;
+    }
+
+    private function distanceFromBranchCenter(array $payload, Branch $branch): ?float
+    {
+        foreach ([
+            ['destination_lat', 'destination_lng'],
+            ['dropoff_lat', 'dropoff_lng'],
+            ['pickup_lat', 'pickup_lng'],
+            ['origin_lat', 'origin_lng'],
+        ] as [$latKey, $lngKey]) {
+            $lat = data_get($payload, $latKey);
+            $lng = data_get($payload, $lngKey);
+            if (is_numeric($lat) && is_numeric($lng)) {
+                return $this->distanceCalculator->haversine(
+                    (float) $branch->latitude,
+                    (float) $branch->longitude,
+                    (float) $lat,
+                    (float) $lng,
+                );
+            }
+        }
+
+        return null;
     }
 
     private function resolveDistance(array $payload): float

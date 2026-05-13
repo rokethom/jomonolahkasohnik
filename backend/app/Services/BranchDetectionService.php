@@ -42,7 +42,24 @@ class BranchDetectionService
             ])
             ->first(fn (array $row): bool => $this->geofenceService->containsPoint($lat, $lng, $row['area']));
 
-        return $match ?? ['branch' => null, 'area' => null, 'distance_meters' => null, 'source' => 'geofence'];
+        if ($match) {
+            return $match;
+        }
+
+        $nearest = Branch::query()
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->get()
+            ->map(fn (Branch $branch): array => [
+                'area' => null,
+                'branch' => $branch,
+                'distance_meters' => $this->distanceToBranch($lat, $lng, $branch),
+                'source' => 'nearest_branch',
+            ])
+            ->sortBy('distance_meters')
+            ->first();
+
+        return $nearest ?? ['branch' => null, 'area' => null, 'distance_meters' => null, 'source' => 'geofence'];
     }
 
 }

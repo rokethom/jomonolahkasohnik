@@ -6,11 +6,47 @@ use App\Models\Order;
 use App\Models\RingPricingRule;
 use App\Models\RingPricingSuggestion;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class RingPricingService
 {
+    public function matchMasterPolygon(array $payload, string $serviceType, ?int $branchId, ?float $distanceFromBranchKm): ?array
+    {
+        if ($branchId === null || $distanceFromBranchKm === null) {
+            return null;
+        }
+
+        $pickupPoint = $this->pointFromPayload($payload, 'pickup');
+        $destinationPoint = $this->pointFromPayload($payload, 'destination');
+        if ($pickupPoint === null && $destinationPoint === null) {
+            return null;
+        }
+
+        $rules = $this->masterPolygonRules($branchId, $serviceType);
+        if ($rules->isEmpty()) {
+            return null;
+        }
+
+        $pickupRule = $pickupPoint ? $this->bestMasterRuleForPoint($rules, $pickupPoint, $distanceFromBranchKm) : null;
+        $destinationRule = $destinationPoint ? $this->bestMasterRuleForPoint($rules, $destinationPoint, $distanceFromBranchKm) : null;
+        $selectedRule = $destinationRule ?? $pickupRule;
+
+        if (! $selectedRule) {
+            return null;
+        }
+
+        return [
+            'rule' => $selectedRule,
+            'distance_from_branch_km' => round($distanceFromBranchKm, 2),
+            'pickup_ring' => $pickupRule?->ring,
+            'destination_ring' => $destinationRule?->ring,
+            'is_cross_ring' => $pickupRule && $destinationRule && $pickupRule->ring !== $destinationRule->ring,
+            'branch_id' => $branchId,
+        ];
+    }
+
     public function match(array $payload, string $serviceType): ?RingPricingRule
     {
         $branchId = isset($payload['branch_id']) ? (int) $payload['branch_id'] : null;
@@ -63,8 +99,15 @@ class RingPricingService
 
     public function apply(array $quote, RingPricingRule $rule): array
     {
-        $serviceCharge = (int) ($quote['service_charge'] ?? $quote['service_fee'] ?? 0);
-        $totalBeforeRound = (int) $rule->price + $serviceCharge;
+        return $this->applyMaster($quote, $rule, null);
+    }
+
+    public function applyMaster(array $quote, RingPricingRule $rule, ?array $meta = null): array
+    {
+        $distance = (float) ($meta['distance_from_branch_km'] ?? $quote['distance_from_branch_km'] ?? $quote['distance'] ?? 0);
+        $tarif = $this->calculateRuleTarif($rule, $distance);
+        $serviceCharge = (int) ($rule->service_fee ?? ($quote['service_charge'] ?? $quote['service_fee'] ?? 0));
+        $totalBeforeRound = $tarif + $serviceCharge;
         $finalPrice = (int) (ceil($totalBeforeRound / 1000) * 1000);
 
         return [
@@ -72,21 +115,46 @@ class RingPricingService
             'ring_pricing_rule_id' => $rule->id,
             'ring_pricing_source' => $rule->source,
             'ring' => $rule->ring,
+            'distance_from_branch_km' => $distance,
+            'pricing_mode' => $rule->pricing_mode ?? 'flat',
+            'ring_priority' => (int) ($rule->priority ?: $this->ringPriority($rule->ring)),
+            'pickup_ring' => $meta['pickup_ring'] ?? null,
+            'destination_ring' => $meta['destination_ring'] ?? $rule->ring,
+            'is_cross_ring' => (bool) ($meta['is_cross_ring'] ?? false),
+            'cross_ring' => ($meta['pickup_ring'] ?? null) && ($meta['destination_ring'] ?? null) && ($meta['pickup_ring'] !== $meta['destination_ring'])
+                ? ($meta['pickup_ring'].'_to_'.$meta['destination_ring'])
+                : null,
             'ring_route' => [
                 'pickup_area' => $rule->pickup_area,
                 'destination_area' => $rule->destination_area,
                 'branch' => $rule->branch?->name,
                 'area_mode' => $rule->area_mode ?? 'text',
                 'polygon_match_point' => $rule->polygon_match_point,
+                'match_type' => $rule->match_type ?? 'point',
+                'pickup_ring' => $meta['pickup_ring'] ?? null,
+                'destination_ring' => $meta['destination_ring'] ?? null,
             ],
-            'tarif' => (int) $rule->price,
-            'price' => (int) $rule->price,
-            'base_price' => (int) $rule->price,
+            'tarif' => $tarif,
+            'price' => $tarif,
+            'base_price' => $tarif,
+            'service_charge' => $serviceCharge,
+            'service_fee' => $serviceCharge,
             'total_before_round' => $totalBeforeRound,
             'subtotal' => $totalBeforeRound,
             'final_price' => $finalPrice,
             'total_price' => $finalPrice,
         ];
+    }
+
+    public function calculateRuleTarif(RingPricingRule $rule, float $distanceKm): int
+    {
+        if (($rule->pricing_mode ?? 'flat') !== 'formula') {
+            return (int) $rule->price;
+        }
+
+        $price = ($distanceKm * (int) ($rule->per_km_rate ?? 0)) - (int) ($rule->subtract_value ?? 0);
+
+        return max(0, (int) ceil($price));
     }
 
     public function recordPriceEdit(Order $order, User $actor, int $previousPrice, int $newPrice): ?RingPricingSuggestion
@@ -149,6 +217,59 @@ class RingPricingService
         };
     }
 
+    /**
+     * @return Collection<int, RingPricingRule>
+     */
+    private function masterPolygonRules(int $branchId, string $serviceType): Collection
+    {
+        if (! Schema::hasColumn('ring_pricing_rules', 'min_km')
+            || ! Schema::hasColumn('ring_pricing_rules', 'priority')
+            || ! Schema::hasColumn('ring_pricing_rules', 'polygon_coordinates')) {
+            return collect();
+        }
+
+        return RingPricingRule::query()
+            ->with('branch')
+            ->where('is_active', true)
+            ->where('branch_id', $branchId)
+            ->where('area_mode', 'polygon')
+            ->forService($serviceType)
+            ->orderByDesc('priority')
+            ->orderByDesc('updated_at')
+            ->get();
+    }
+
+    /**
+     * @param  Collection<int, RingPricingRule>  $rules
+     * @param  array{lat: float, lng: float}  $point
+     */
+    private function bestMasterRuleForPoint(Collection $rules, array $point, float $distanceKm): ?RingPricingRule
+    {
+        return $rules
+            ->filter(fn (RingPricingRule $rule): bool => $this->matchesDistanceRange($rule, $distanceKm)
+                && $this->matchesMasterPolygonPoint($rule, $point))
+            ->sort($this->compareRules(...))
+            ->first();
+    }
+
+    /**
+     * @param  array{lat: float, lng: float}  $point
+     */
+    private function matchesMasterPolygonPoint(RingPricingRule $rule, array $point): bool
+    {
+        $polygon = $this->polygonPoints($rule->polygon_coordinates ?? []);
+
+        return count($polygon) >= 3 && $this->pointInPolygon($point['lat'], $point['lng'], $polygon);
+    }
+
+    private function matchesDistanceRange(RingPricingRule $rule, float $distanceKm): bool
+    {
+        $min = (float) ($rule->min_km ?? 0);
+        $max = $rule->max_km !== null ? (float) $rule->max_km : null;
+
+        return $distanceKm >= $min && ($max === null || $distanceKm <= $max);
+    }
+
     private function matches(RingPricingRule $rule, string $pickupText, string $destinationText): bool
     {
         $pickupTerms = $this->terms($rule->pickup_area, $rule->pickup_aliases ?? []);
@@ -194,7 +315,7 @@ class RingPricingService
     private function rulePriorityValues(RingPricingRule $rule): array
     {
         return [
-            $this->ringPriority($rule->ring),
+            (int) ($rule->priority ?: $this->ringPriority($rule->ring)),
             $rule->branch_id !== null ? 1 : 0,
             filled($rule->service_type) ? 1 : 0,
             $rule->updated_at?->getTimestamp() ?? 0,

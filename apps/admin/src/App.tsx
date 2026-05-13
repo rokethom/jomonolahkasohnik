@@ -229,7 +229,7 @@ type ServiceRow = { id: number; name: string; code: string; outside_area_only?: 
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; is_active?: boolean; branch?: Branch | null }
 type KeywordParser = { id: number; keyword: string; service_type: string; response_template: string; form_schema?: { fields?: Array<{ label?: string; name?: string; type?: string; required?: boolean; options?: string[] }> } | null; parser_type: 'simple' | 'advanced' | string; is_active: boolean; priority: number; created_at?: string | null; updated_at?: string | null }
 type PricingKeywordRule = { id: number; name: string; keywords: string; amount: number; service_scopes?: string[] | null; is_active: boolean; priority: number; description?: string | null; created_at?: string | null; updated_at?: string | null }
-type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; name: string; area_mode?: 'text' | 'polygon' | string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; polygon_coordinates?: Array<{ lat: number; lng: number }>; polygon_match_point?: string | null; ring: string; price: number; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
+type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'branch_code' | 'name' | 'area' | 'display_name'> | null; service_type?: string | null; name: string; area_mode?: 'text' | 'polygon' | string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; polygon_coordinates?: Array<{ lat: number; lng: number }>; polygon_match_point?: string | null; match_type?: 'point' | 'cross' | string; pickup_ring?: string | null; destination_ring?: string | null; ring: string; min_km?: string | number | null; max_km?: string | number | null; pricing_mode?: 'flat' | 'formula' | string; price: number; per_km_rate?: number | null; subtract_value?: number | null; service_fee?: number | null; priority?: number | null; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
 type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggested_price: number; previous_price?: number | null; occurrence_count: number; sample_order_ids?: number[]; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; shape_type?: 'circle' | 'polygon' | string; polygon_coordinates?: Array<{ lat: number; lng: number }> | null; is_active: boolean }
 type ZonePricingRule = {
@@ -547,12 +547,8 @@ const menuGroups: MenuGroup[] = [
     icon: 'cash',
     items: [
       { id: 'master-pricing', label: 'Master Pricing', icon: 'cash' },
-      { id: 'price-settings', label: 'Price Settings', icon: 'cash' },
-      { id: 'pricing', label: 'Pricing & Policy', icon: 'cash' },
       { id: 'pricing-keyword-rules', label: 'Pricing Keyword Rules', icon: 'note' },
       { id: 'ring-pricing', label: 'Master Ring', icon: 'cash' },
-      { id: 'zone-pricing', label: 'Zone Pricing Rules', icon: 'map' },
-      { id: 'zone-pricing-tester', label: 'Zone Pricing Tester', icon: 'cash' },
     ],
   },
   {
@@ -613,9 +609,6 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_manage_ring_pricing) views.add('ring-pricing')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) {
     views.add('master-pricing')
-    views.add('price-settings')
-    views.add('zone-pricing')
-    views.add('zone-pricing-tester')
     views.add('keyword-parsers')
     views.add('pricing-keyword-rules')
   }
@@ -2568,20 +2561,6 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
       <div className="feedback-cms">
         <div className="section-head">
           <div>
-            <h2>Zone Pricing Customer</h2>
-            <p>Atur apakah rule zona aktif ikut menghitung tarif customer.</p>
-          </div>
-          <span className={zonePricingEnabled ? 'status success' : 'status warning'}>{zonePricingEnabled ? 'Aktif' : 'Bypass'}</span>
-        </div>
-        <label className="admin-toggle-row">
-          <input type="checkbox" checked={zonePricingEnabled} disabled={!permissions.can_manage_system_settings} onChange={(event) => setZonePricingEnabled(event.target.checked)} />
-          <span>Aktifkan zone pricing untuk order customer</span>
-        </label>
-        <div className="notice">Jika nonaktif, Zone Pricing Rules dan tester tetap bisa dipakai, tetapi order customer tidak memakai rule zona.</div>
-      </div>
-      <div className="feedback-cms">
-        <div className="section-head">
-          <div>
             <h2>Assign Driver Order</h2>
             <p>Atur role manajemen yang boleh memilih driver langsung di Order Operations. Admin dan GM selalu aktif.</p>
           </div>
@@ -2988,6 +2967,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
   const [showForm, setShowForm] = useState(false)
   const [showRingForm, setShowRingForm] = useState(false)
   const [isFormula, setFormula] = useState(false)
+  const [ringFormula, setRingFormula] = useState(false)
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formElement = event.currentTarget
@@ -3039,24 +3019,45 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
     event.preventDefault()
     const formElement = event.currentTarget
     const form = new FormData(formElement)
+    const polygonRaw = String(form.get('polygon_geojson') ?? '').trim()
+    let polygonCoordinates: unknown[] = []
+    if (polygonRaw) {
+      try {
+        polygonCoordinates = JSON.parse(polygonRaw)
+      } catch {
+        alert('GeoJSON polygon tidak valid. Export/copy JSON dari geojson.io lalu tempel ulang.')
+        return
+      }
+    }
     await api('/admin/ring-pricing-rules', {
       method: 'POST',
       body: JSON.stringify({
         name: form.get('name'),
         branch_id: Number(form.get('branch_id')) || null,
         service_type: form.get('service_type') || null,
-        pickup_area: form.get('pickup_area'),
-        destination_area: form.get('destination_area'),
-        area_mode: 'text',
-        pickup_aliases: aliasList(form.get('pickup_aliases')),
-        destination_aliases: aliasList(form.get('destination_aliases')),
+        pickup_area: form.get('pickup_area') || form.get('name'),
+        destination_area: form.get('destination_area') || form.get('name'),
+        area_mode: 'polygon',
+        polygon_coordinates: polygonCoordinates,
+        polygon_match_point: form.get('polygon_match_point') || 'destination_then_pickup',
+        match_type: form.get('match_type') || 'point',
+        pickup_ring: form.get('pickup_ring') || null,
+        destination_ring: form.get('destination_ring') || null,
         ring: form.get('ring'),
+        min_km: Number(form.get('min_km') || 0),
+        max_km: form.get('max_km') ? Number(form.get('max_km')) : null,
+        pricing_mode: ringFormula ? 'formula' : 'flat',
         price: Number(form.get('price') || 0),
+        per_km_rate: ringFormula ? Number(form.get('per_km_rate') || 0) : null,
+        subtract_value: ringFormula ? Number(form.get('subtract_value') || 0) : 0,
+        service_fee: Number(form.get('service_fee') || 0),
+        priority: Number(form.get('priority') || 0),
         is_bidirectional: form.get('is_bidirectional') === 'on',
         is_active: form.get('is_active') === 'on',
       }),
     })
     formElement.reset()
+    setRingFormula(false)
     setShowRingForm(false)
     await onChanged()
   }
@@ -3107,16 +3108,27 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
       )}
       {showRingForm && showRingSection && canManageRing && (
         <form className="admin-inline-form pricing-create-form ring-create-form" onSubmit={createRing}>
-          <div className="ring-form-title"><strong>Tambah Master Ring</strong><span>Simpan akan menutup form dan kembali ke list.</span></div>
-          <label>Nama master<input name="name" required placeholder="Asembagus - Jangkar Ring 1" /></label>
-          <label>Cabang<select name="branch_id"><option value="">Global</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
+          <div className="ring-form-title"><strong>Tambah Master Ring Polygon</strong><span>Polygon bisa ditempel dari geojson.io. Rule aktif langsung dipakai untuk pricing customer.</span></div>
+          <label>Nama master<input name="name" required placeholder="ASB Ring 1" /></label>
+          <label>Cabang<select name="branch_id" required><option value="">Pilih cabang/area</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select></label>
           <label>Layanan<select name="service_type"><option value="">Semua layanan</option>{services.map((service) => <option key={service.id} value={service.code}>{service.name}</option>)}</select></label>
           <label>Ring<select name="ring" defaultValue="ring_1"><option value="ring_1">Ring 1</option><option value="ring_2">Ring 2</option><option value="ring_3">Ring 3</option></select></label>
-          <label>Asal area<input name="pickup_area" required placeholder="Pasar Kampung Asembagus" /></label>
-          <label>Tujuan area<input name="destination_area" required placeholder="Pelabuhan Jangkar" /></label>
-          <label>Alias asal<input name="pickup_aliases" placeholder="pasar asembagus, kampung asembagus" /></label>
-          <label>Alias tujuan<input name="destination_aliases" placeholder="p jangkar, pelabuhan jangkar" /></label>
-          <label>Harga jasa<input name="price" type="number" min="0" step="1000" defaultValue="6000" required /></label>
+          <label>Min KM dari pusat<input name="min_km" type="number" min="0" step="0.1" defaultValue="0" /></label>
+          <label>Max KM dari pusat<input name="max_km" type="number" min="0" step="0.1" defaultValue="4" placeholder="Kosong = unlimited" /></label>
+          <label>Priority<input name="priority" type="number" step="1" defaultValue="300" /></label>
+          <label>Service fee<input name="service_fee" type="number" min="0" step="1000" defaultValue="1000" /></label>
+          <label className="toggle-row inline-toggle"><input type="checkbox" checked={ringFormula} onChange={(event) => setRingFormula(event.target.checked)} />Formula tarif</label>
+          {!ringFormula && <label>Harga jasa<input name="price" type="number" min="0" step="1000" defaultValue="6000" required /></label>}
+          {ringFormula && <label>Harga minimum<input name="price" type="number" min="0" step="1000" defaultValue="0" /></label>}
+          {ringFormula && <label>Rate / KM<input name="per_km_rate" type="number" min="0" defaultValue="1900" /></label>}
+          {ringFormula && <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="7000" /></label>}
+          <label>Mode titik<select name="polygon_match_point" defaultValue="destination_then_pickup"><option value="destination_then_pickup">Tujuan, fallback pickup</option><option value="destination">Tujuan saja</option><option value="pickup">Pickup saja</option><option value="either">Pickup atau tujuan</option><option value="both">Pickup dan tujuan</option></select></label>
+          <label>Cross ring<select name="match_type" defaultValue="point"><option value="point">Single ring</option><option value="cross">Cross ring</option></select></label>
+          <label>Pickup ring<select name="pickup_ring" defaultValue=""><option value="">Auto</option><option value="ring_1">Ring 1</option><option value="ring_2">Ring 2</option><option value="ring_3">Ring 3</option></select></label>
+          <label>Destination ring<select name="destination_ring" defaultValue=""><option value="">Auto</option><option value="ring_1">Ring 1</option><option value="ring_2">Ring 2</option><option value="ring_3">Ring 3</option></select></label>
+          <label>Nama pickup<input name="pickup_area" placeholder="Opsional, default nama master" /></label>
+          <label>Nama tujuan<input name="destination_area" placeholder="Opsional, default nama master" /></label>
+          <label className="span-2">GeoJSON polygon<textarea name="polygon_geojson" required rows={7} placeholder='Tempel Feature/FeatureCollection/Polygon dari geojson.io' /></label>
           <label className="toggle-row inline-toggle"><input name="is_bidirectional" type="checkbox" defaultChecked />Dua arah</label>
           <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
           <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowRingForm(false)}>Batal</button><button className="primary-button" type="submit">Simpan Master Ring</button></div>
@@ -3139,7 +3151,7 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
       )}
       {showRingSection && <div className="pricing-subsection">
         <PanelHeader title="Master Ring Route" action={`${ringRules.length} rules`} />
-        <div className="pricing-list ring-pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)} · {rule.area_mode === 'polygon' ? 'polygon' : rule.source}</span><small>{rule.pickup_area} → {rule.destination_area}{rule.is_bidirectional ? ' · dua arah' : ''}</small>{rule.area_mode === 'polygon' && <small className="ring-aliases">Polygon: {rule.polygon_coordinates?.length ?? 0} titik · {rule.polygon_match_point ?? 'destination_then_pickup'}</small>}{rule.area_mode !== 'polygon' && ((rule.pickup_aliases?.length ?? 0) > 0 || (rule.destination_aliases?.length ?? 0) > 0) && <small className="ring-aliases">Alias: {[...(rule.pickup_aliases ?? []), ...(rule.destination_aliases ?? [])].slice(0, 5).join(', ')}</small>}</div><em>Rp {rule.price.toLocaleString('id-ID')}</em>{canManageRing && <div className="ring-card-actions"><button className={rule.is_active ? 'mini-button reject' : 'mini-button'} type="button" onClick={() => void toggleRing(rule)}>{rule.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button><button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button></div>}</article>)}</div>
+        <div className="pricing-list ring-pricing-list">{ringRules.map((rule) => <article className="pricing-card ring-card" key={rule.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{rule.name}</strong><span className={rule.is_active ? 'status success' : 'status muted'}>{rule.is_active ? 'Aktif' : 'Nonaktif'}</span></div><span>{rule.branch ? branchLabel(rule.branch as Branch) : 'Global'} · {rule.service_type ?? 'semua layanan'} · {ringLabel(rule.ring)} · priority {rule.priority ?? 0}</span><small>{formatRingDistance(rule)} · service fee Rp {(rule.service_fee ?? 0).toLocaleString('id-ID')} · {rule.match_type === 'cross' ? `cross ${ringLabel(rule.pickup_ring ?? 'auto')} ke ${ringLabel(rule.destination_ring ?? 'auto')}` : 'single ring'}</small>{rule.area_mode === 'polygon' && <small className="ring-aliases">Polygon: {rule.polygon_coordinates?.length ?? 0} titik · {rule.polygon_match_point ?? 'destination_then_pickup'}</small>}{rule.area_mode !== 'polygon' && ((rule.pickup_aliases?.length ?? 0) > 0 || (rule.destination_aliases?.length ?? 0) > 0) && <small className="ring-aliases">Alias: {[...(rule.pickup_aliases ?? []), ...(rule.destination_aliases ?? [])].slice(0, 5).join(', ')}</small>}</div><em>{formatRingPrice(rule)}</em>{canManageRing && <div className="ring-card-actions"><button className={rule.is_active ? 'mini-button reject' : 'mini-button'} type="button" onClick={() => void toggleRing(rule)}>{rule.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button><button className="mini-button reject" type="button" onClick={() => void destroyRing(rule)}>Delete</button></div>}</article>)}</div>
         {ringRules.length === 0 && <EmptyPanel title="Master ring kosong" copy="Tambahkan route ring resmi agar harga tidak hanya mengandalkan jarak maps." />}
       </div>}
       {showRingSection && canManageRing && ringSuggestions.length > 0 && (
@@ -3193,15 +3205,26 @@ function PricingPanel({ mode = 'all', settings, ringRules, ringSuggestions, bran
   )
 }
 
-function aliasList(value: FormDataEntryValue | null) {
-  return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean)
-}
-
 function formatDistanceRange(rule: PriceSetting) {
   const min = Number(rule.min_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
   const max = rule.max_km === null ? 'unlimited' : Number(rule.max_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
 
   return `${min} - ${max} KM`
+}
+
+function formatRingDistance(rule: RingPricingRule) {
+  const min = Number(rule.min_km ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 2 })
+  const max = rule.max_km === null || rule.max_km === undefined ? 'unlimited' : Number(rule.max_km).toLocaleString('id-ID', { maximumFractionDigits: 2 })
+
+  return `${min} - ${max} KM dari pusat cabang`
+}
+
+function formatRingPrice(rule: RingPricingRule) {
+  if (rule.pricing_mode === 'formula') {
+    return `(${(rule.per_km_rate ?? 0).toLocaleString('id-ID')} x KM) - ${(rule.subtract_value ?? 0).toLocaleString('id-ID')}`
+  }
+
+  return `Rp ${rule.price.toLocaleString('id-ID')}`
 }
 
 function ringLabel(value: string) {
@@ -3210,12 +3233,9 @@ function ringLabel(value: string) {
 
 function MasterPricingPanel({ data, onNavigate }: { data: Bootstrap; onNavigate: (view: View) => void }) {
   const cards: Array<{ view: View; title: string; value: string; copy: string }> = [
-    { view: 'price-settings', title: 'Price Settings', value: `${data.price_settings.length}`, copy: 'Tarif dasar berdasarkan jarak dan cabang.' },
-    { view: 'ring-pricing', title: 'Master Ring', value: `${data.ring_pricing_rules?.length ?? 0}`, copy: 'Route ring resmi untuk koreksi harga area.' },
+    { view: 'ring-pricing', title: 'Master Ring', value: `${data.ring_pricing_rules?.length ?? 0}`, copy: 'Polygon, jarak pusat cabang, service fee, formula, dan cross ring.' },
     { view: 'pricing-keyword-rules', title: 'Pricing Keyword Rules', value: `${data.pricing_keyword_rules?.length ?? 0}`, copy: 'Tambahan jasa dari keyword dan sub keyword.' },
     { view: 'keyword-parsers', title: 'Keyword Parsers', value: `${data.keyword_parsers?.length ?? 0}`, copy: 'Keyword JojoBot dan schema form order.' },
-    { view: 'zone-pricing', title: 'Zone Pricing Rules', value: `${data.zone_pricing_rules?.length ?? 0}`, copy: 'Tarif berbasis geofence circle/polygon.' },
-    { view: 'zone-pricing-tester', title: 'Zone Pricing Tester', value: 'Test', copy: 'Simulasi titik pickup/tujuan sebelum dipakai.' },
   ]
 
   return (
