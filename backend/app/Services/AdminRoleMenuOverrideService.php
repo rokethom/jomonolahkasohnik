@@ -38,9 +38,7 @@ class AdminRoleMenuOverrideService
                 'announcements' => 'Announcements',
             ],
             'Pricing CMS' => [
-                'master-pricing' => 'Master Pricing',
                 'pricing-keyword-rules' => 'Pricing Keyword Rules',
-                'ring-pricing' => 'Master Ring',
             ],
             'JojoBot CMS' => [
                 'keyword-parsers' => 'Keyword Parsers',
@@ -117,10 +115,8 @@ class AdminRoleMenuOverrideService
         }
 
         if (($permissions['can_edit_order_price'] ?? false) || ($permissions['can_manage_policy'] ?? false)) {
-            $views[] = 'master-pricing';
             $views[] = 'keyword-parsers';
             $views[] = 'pricing-keyword-rules';
-            $views[] = 'ring-pricing';
         }
 
         if ($permissions['can_view_report'] ?? false) {

@@ -35,10 +35,14 @@ class ZonePricingTesterPage extends Page implements HasForms
 
     public ?array $result = null;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public static function canAccess(): bool
     {
-        return in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true)
-            || auth()->user()?->hasPermission('edit_tarif') === true;
+        return false;
     }
 
     public function mount(): void

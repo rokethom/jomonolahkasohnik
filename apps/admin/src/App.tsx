@@ -546,9 +546,7 @@ const menuGroups: MenuGroup[] = [
     label: 'Pricing CMS',
     icon: 'cash',
     items: [
-      { id: 'master-pricing', label: 'Master Pricing', icon: 'cash' },
       { id: 'pricing-keyword-rules', label: 'Pricing Keyword Rules', icon: 'note' },
-      { id: 'ring-pricing', label: 'Master Ring', icon: 'cash' },
     ],
   },
   {
@@ -606,9 +604,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_manage_users) views.add('users')
   if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers) views.add('drivers')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
-  if (permissions.can_manage_ring_pricing) views.add('ring-pricing')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) {
-    views.add('master-pricing')
     views.add('keyword-parsers')
     views.add('pricing-keyword-rules')
   }
@@ -994,8 +990,6 @@ function App() {
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {isBackendCmsView(safeView) && <BackendCmsLinkPanel view={safeView} />}
-        {safeView === 'master-pricing' && <MasterPricingPanel data={data} onNavigate={setView} />}
-        {safeView === 'ring-pricing' && <PricingPanel ringRules={data.ring_pricing_rules ?? []} ringSuggestions={data.ring_pricing_suggestions ?? []} branches={data.branches} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'keyword-parsers' && <KeywordParsersPanel parsers={data.keyword_parsers ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'pricing-keyword-rules' && <PricingKeywordRulesPanel rules={data.pricing_keyword_rules ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'zone-pricing' && <ZonePricingPanel rules={data.zone_pricing_rules ?? []} branches={data.branches} geofences={data.geofences} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -2963,7 +2957,7 @@ function OrderPriceModal({ order, api, onClose, onSaved }: { order: Order; api: 
   )
 }
 
-function PricingPanel({ ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+export function PricingPanel({ ringRules, ringSuggestions, branches, services, permissions, api, onChanged }: { ringRules: RingPricingRule[]; ringSuggestions: RingPricingSuggestion[]; branches: Branch[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showRingForm, setShowRingForm] = useState(false)
   const [showImportForm, setShowImportForm] = useState(false)
   const [ringFormula, setRingFormula] = useState(false)
@@ -3157,7 +3151,7 @@ function ringLabel(value: string) {
   return value.replace(/_/g, ' ').replace(/\bring\b/i, 'Ring').replace(/\b(\d)\b/, '$1')
 }
 
-function MasterPricingPanel({ data, onNavigate }: { data: Bootstrap; onNavigate: (view: View) => void }) {
+export function MasterPricingPanel({ data, onNavigate }: { data: Bootstrap; onNavigate: (view: View) => void }) {
   const cards: Array<{ view: View; title: string; value: string; copy: string }> = [
     { view: 'ring-pricing', title: 'Master Ring', value: `${data.ring_pricing_rules?.length ?? 0}`, copy: 'Polygon, jarak pusat cabang, service fee, formula, dan cross ring.' },
     { view: 'pricing-keyword-rules', title: 'Pricing Keyword Rules', value: `${data.pricing_keyword_rules?.length ?? 0}`, copy: 'Tambahan jasa dari keyword dan sub keyword.' },

@@ -253,9 +253,6 @@ class PricingService
             }
         }
 
-        if (! $masterRingMatch && $zoneRule = $this->zonePricing->match($payload, $serviceType, $distance)) {
-            $quote = $this->zonePricing->apply($quote, $zoneRule);
-        }
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
             $payload['pickup_address'] ?? '',
             $payload['store_location'] ?? '',

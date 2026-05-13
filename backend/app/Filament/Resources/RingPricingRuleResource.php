@@ -106,11 +106,48 @@ class RingPricingRuleResource extends Resource
                         Forms\Components\Select::make('ring')
                             ->required()
                             ->native(false)
+                            ->live()
+                            ->default('ring_1')
                             ->options([
                                 'ring_1' => 'Ring 1',
                                 'ring_2' => 'Ring 2',
                                 'ring_3' => 'Ring 3',
-                            ]),
+                            ])
+                            ->afterStateUpdated(function (Forms\Set $set, ?string $state): void {
+                                $set('min_km', self::defaultRingMinKm((string) $state));
+                                $set('max_km', self::defaultRingMaxKm((string) $state));
+                                $set('service_fee', self::defaultRingServiceFee((string) $state));
+                                $set('priority', self::defaultRingPriority((string) $state));
+
+                                if ($state === 'ring_3') {
+                                    $set('pricing_mode', 'formula');
+                                    $set('price', 0);
+                                    $set('per_km_rate', 1900);
+                                    $set('subtract_value', 7000);
+                                } else {
+                                    $set('pricing_mode', 'flat');
+                                    $set('price', $state === 'ring_2' ? 12000 : 6000);
+                                    $set('per_km_rate', null);
+                                    $set('subtract_value', 0);
+                                }
+                            }),
+                        Forms\Components\TextInput::make('min_km')
+                            ->label('Min KM dari pusat cabang')
+                            ->numeric()
+                            ->minValue(0)
+                            ->default(0)
+                            ->required(),
+                        Forms\Components\TextInput::make('max_km')
+                            ->label('Max KM dari pusat cabang')
+                            ->numeric()
+                            ->minValue(0)
+                            ->helperText('Kosongkan untuk unlimited.'),
+                        Forms\Components\TextInput::make('priority')
+                            ->label('Priority')
+                            ->numeric()
+                            ->default(300)
+                            ->required()
+                            ->helperText('Priority tertinggi dipilih ketika polygon overlap. Ring 1 default 300, Ring 2 200, Ring 3 100.'),
                         Forms\Components\Select::make('area_mode')
                             ->label('Mode area')
                             ->required()
@@ -153,6 +190,35 @@ class RingPricingRuleResource extends Resource
                                 'both' => 'Pickup dan tujuan',
                             ])
                             ->helperText('Untuk ring harga area, pilihan aman biasanya tujuan lalu fallback pickup.'),
+                        Forms\Components\Select::make('match_type')
+                            ->label('Cross ring')
+                            ->native(false)
+                            ->live()
+                            ->default('point')
+                            ->options([
+                                'point' => 'Single ring',
+                                'cross' => 'Cross ring',
+                            ]),
+                        Forms\Components\Select::make('pickup_ring')
+                            ->label('Pickup ring')
+                            ->native(false)
+                            ->options([
+                                'ring_1' => 'Ring 1',
+                                'ring_2' => 'Ring 2',
+                                'ring_3' => 'Ring 3',
+                            ])
+                            ->placeholder('Auto')
+                            ->visible(fn (Forms\Get $get): bool => $get('match_type') === 'cross'),
+                        Forms\Components\Select::make('destination_ring')
+                            ->label('Destination ring')
+                            ->native(false)
+                            ->options([
+                                'ring_1' => 'Ring 1',
+                                'ring_2' => 'Ring 2',
+                                'ring_3' => 'Ring 3',
+                            ])
+                            ->placeholder('Auto')
+                            ->visible(fn (Forms\Get $get): bool => $get('match_type') === 'cross'),
                         Forms\Components\Textarea::make('polygon_coordinates')
                             ->label('Koordinat polygon')
                             ->rows(8)
@@ -170,11 +236,40 @@ class RingPricingRuleResource extends Resource
                 Forms\Components\Section::make('Harga & Status')
                     ->columns(2)
                     ->schema([
+                        Forms\Components\Select::make('pricing_mode')
+                            ->label('Mode harga')
+                            ->native(false)
+                            ->live()
+                            ->default('flat')
+                            ->required()
+                            ->options([
+                                'flat' => 'Flat / harga tetap',
+                                'formula' => 'Formula KM',
+                            ]),
                         Forms\Components\TextInput::make('price')
-                            ->label('Harga Jasa')
+                            ->label(fn (Forms\Get $get): string => $get('pricing_mode') === 'formula' ? 'Harga minimum' : 'Harga Jasa')
                             ->required()
                             ->numeric()
                             ->minValue(0)
+                            ->default(6000)
+                            ->prefix('Rp'),
+                        Forms\Components\TextInput::make('per_km_rate')
+                            ->label('Rate / KM')
+                            ->numeric()
+                            ->minValue(0)
+                            ->prefix('Rp')
+                            ->visible(fn (Forms\Get $get): bool => $get('pricing_mode') === 'formula'),
+                        Forms\Components\TextInput::make('subtract_value')
+                            ->label('Subtract')
+                            ->numeric()
+                            ->minValue(0)
+                            ->prefix('Rp')
+                            ->visible(fn (Forms\Get $get): bool => $get('pricing_mode') === 'formula'),
+                        Forms\Components\TextInput::make('service_fee')
+                            ->label('Service fee')
+                            ->numeric()
+                            ->minValue(0)
+                            ->default(1000)
                             ->prefix('Rp'),
                         Forms\Components\Toggle::make('is_bidirectional')
                             ->label('Berlaku dua arah')
@@ -188,6 +283,7 @@ class RingPricingRuleResource extends Resource
                             ->default('manual')
                             ->options([
                                 'manual' => 'Manual',
+                                'geojson' => 'GeoJSON',
                                 'learned' => 'Learned dari koreksi',
                             ]),
                     ]),
@@ -233,8 +329,26 @@ class RingPricingRuleResource extends Resource
                     ->searchable()
                     ->wrap(),
                 Tables\Columns\TextColumn::make('price')
+                    ->label('Harga')
                     ->money('IDR')
                     ->sortable(),
+                Tables\Columns\TextColumn::make('min_km')
+                    ->label('Min KM')
+                    ->sortable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('max_km')
+                    ->label('Max KM')
+                    ->placeholder('Unlimited')
+                    ->sortable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('service_fee')
+                    ->label('Service fee')
+                    ->money('IDR')
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('priority')
+                    ->label('Priority')
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\IconColumn::make('is_bidirectional')
                     ->boolean()
                     ->label('Dua arah'),
@@ -292,6 +406,25 @@ class RingPricingRuleResource extends Resource
 
         $data['area_mode'] = $data['area_mode'] ?? 'text';
         $data['polygon_match_point'] = $data['polygon_match_point'] ?? 'destination_then_pickup';
+        $data['match_type'] = $data['match_type'] ?? 'point';
+        $data['pickup_ring'] = filled($data['pickup_ring'] ?? null) ? $data['pickup_ring'] : null;
+        $data['destination_ring'] = filled($data['destination_ring'] ?? null) ? $data['destination_ring'] : null;
+        $data['min_km'] = (float) ($data['min_km'] ?? static::defaultRingMinKm((string) ($data['ring'] ?? 'ring_1')));
+        $data['max_km'] = array_key_exists('max_km', $data) && $data['max_km'] !== null && $data['max_km'] !== ''
+            ? (float) $data['max_km']
+            : static::defaultRingMaxKm((string) ($data['ring'] ?? 'ring_1'));
+        $data['pricing_mode'] = $data['pricing_mode'] ?? (((int) ($data['per_km_rate'] ?? 0) > 0) ? 'formula' : 'flat');
+        if ($data['pricing_mode'] === 'formula') {
+            $data['per_km_rate'] = (int) ($data['per_km_rate'] ?? 0);
+            $data['subtract_value'] = (int) ($data['subtract_value'] ?? 0);
+            $data['price'] = (int) ($data['price'] ?? 0);
+        } else {
+            $data['per_km_rate'] = null;
+            $data['subtract_value'] = 0;
+            $data['price'] = (int) ($data['price'] ?? 0);
+        }
+        $data['service_fee'] = (int) ($data['service_fee'] ?? static::defaultRingServiceFee((string) ($data['ring'] ?? 'ring_1')));
+        $data['priority'] = (int) ($data['priority'] ?? static::defaultRingPriority((string) ($data['ring'] ?? 'ring_1')));
 
         if (($data['area_mode'] ?? 'text') === 'polygon') {
             if (blank($data['branch_id'] ?? null)) {
@@ -314,6 +447,39 @@ class RingPricingRuleResource extends Resource
         }
 
         return $data;
+    }
+
+    private static function defaultRingMinKm(string $ring): float
+    {
+        return match ($ring) {
+            'ring_2' => 4.1,
+            'ring_3' => 9.1,
+            default => 0.0,
+        };
+    }
+
+    private static function defaultRingMaxKm(string $ring): ?float
+    {
+        return match ($ring) {
+            'ring_1' => 4.0,
+            'ring_2' => 9.0,
+            default => null,
+        };
+    }
+
+    private static function defaultRingServiceFee(string $ring): int
+    {
+        return in_array($ring, ['ring_1', 'ring_2'], true) ? 1000 : 0;
+    }
+
+    private static function defaultRingPriority(string $ring): int
+    {
+        return match ($ring) {
+            'ring_1' => 300,
+            'ring_2' => 200,
+            'ring_3' => 100,
+            default => 0,
+        };
     }
 
     private static function normalizePolygonCoordinates(mixed $value): array
