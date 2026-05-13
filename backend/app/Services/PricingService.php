@@ -220,9 +220,7 @@ class PricingService
             $payload['branch_id'] = $pricingBranchId;
         }
         $distanceFromBranch = $pricingBranch ? $this->distanceFromBranchCenter($payload, $pricingBranch) : null;
-        $masterRingMatch = ! in_array($serviceType, ['joker_mobil', 'travel'], true)
-            ? $this->ringPricing->matchMasterPolygon($payload, $serviceType, $pricingBranchId, $distanceFromBranch)
-            : null;
+        $masterRingMatch = null;
 
         if ($masterRingMatch) {
             $quote = $this->response([
