@@ -6,6 +6,7 @@ use App\Filament\Resources\GeojsonRegionResource\Pages;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
+use App\Services\Geojson\BoundaryGeojsonRegionService;
 use App\Services\Geojson\GeojsonParserService;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -59,9 +60,37 @@ class GeojsonRegionResource extends Resource
             Forms\Components\Toggle::make('is_active')
                 ->label('Aktif')
                 ->default(true),
+            Forms\Components\Section::make('Generate otomatis dari batas')
+                ->description('Opsional. Isi 4 batas, sistem ambil lat/lng dari Maps, membentuk polygon, lalu memasukkan region/desa yang centroid-nya berada di dalam polygon.')
+                ->columns(2)
+                ->schema([
+                    Forms\Components\TextInput::make('boundary_north')
+                        ->label('Batas utara')
+                        ->placeholder('Contoh: Griya Panji Mulya')
+                        ->dehydrated(),
+                    Forms\Components\TextInput::make('boundary_south')
+                        ->label('Batas selatan')
+                        ->placeholder('Contoh: SDN 2 Sumberkolak')
+                        ->dehydrated(),
+                    Forms\Components\TextInput::make('boundary_west')
+                        ->label('Batas barat')
+                        ->placeholder('Contoh: PG Wringin Anom')
+                        ->dehydrated(),
+                    Forms\Components\TextInput::make('boundary_east')
+                        ->label('Batas timur')
+                        ->placeholder('Contoh: SMPN 2 Panji')
+                        ->dehydrated(),
+                ])
+                ->hiddenOn('edit')
+                ->columnSpanFull(),
             Forms\Components\Textarea::make('geojson')
                 ->label('GeoJSON Polygon / MultiPolygon')
-                ->required()
+                ->required(fn (Forms\Get $get): bool => ! self::hasBoundaryInput([
+                    'boundary_north' => $get('boundary_north'),
+                    'boundary_south' => $get('boundary_south'),
+                    'boundary_west' => $get('boundary_west'),
+                    'boundary_east' => $get('boundary_east'),
+                ]))
                 ->rows(14)
                 ->columnSpanFull()
                 ->formatStateUsing(fn (mixed $state): string => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : (string) ($state ?? ''))
@@ -139,14 +168,17 @@ class GeojsonRegionResource extends Resource
         Cache::flush();
 
         return [
-            ...$data,
+            ...self::modelData($data),
             ...$parsed,
         ];
     }
 
     public static function normalizeGeojsonRows(array $data): array
     {
-        $rows = app(GeojsonParserService::class)->parseRows($data['geojson']);
+        $rows = self::hasBoundaryInput($data)
+            ? app(BoundaryGeojsonRegionService::class)->generateRows($data)
+            : app(GeojsonParserService::class)->parseRows($data['geojson']);
+
         Cache::flush();
 
         return collect($rows)
@@ -154,14 +186,27 @@ class GeojsonRegionResource extends Resource
                 $name = trim((string) ($row['name'] ?? ''));
 
                 unset($row['name']);
+                $base = self::modelData($data);
 
                 return [
-                    ...$data,
+                    ...$base,
                     ...$row,
                     'name' => $name !== '' ? $name : $data['name'],
                 ];
             })
             ->values()
+            ->all();
+    }
+
+    public static function hasBoundaryInput(array $data): bool
+    {
+        return app(BoundaryGeojsonRegionService::class)->hasBoundaryInput($data);
+    }
+
+    private static function modelData(array $data): array
+    {
+        return collect($data)
+            ->except(['boundary_north', 'boundary_south', 'boundary_west', 'boundary_east'])
             ->all();
     }
 
