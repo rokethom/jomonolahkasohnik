@@ -144,6 +144,10 @@ class AiAliasMapService
                 continue;
             }
 
+            if ($this->isBroadContextTerm($term, $map)) {
+                continue;
+            }
+
             if (Str::contains($needle, $term) || Str::contains($term, $needle)) {
                 $best = max($best, 50000 + mb_strlen($term));
                 continue;
@@ -270,5 +274,25 @@ class AiAliasMapService
             ->reject(fn (string $alias): bool => in_array($this->normalize($alias), $blocked, true))
             ->values()
             ->all();
+    }
+
+    private function isBroadContextTerm(string $term, AiAliasMap $map): bool
+    {
+        $branch = $map->branch ?? $map->geojsonRegion?->branch;
+        $area = $map->area ?? $map->geojsonRegion?->area;
+
+        $broadTerms = collect([
+            'kota',
+            $branch?->name,
+            $branch?->area,
+            $branch?->branch_code,
+            $area?->code,
+        ])
+            ->map(fn (mixed $value): string => $this->normalize((string) $value))
+            ->filter()
+            ->unique()
+            ->all();
+
+        return in_array($term, $broadTerms, true);
     }
 }
