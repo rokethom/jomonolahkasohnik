@@ -15,6 +15,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class GeojsonRegionResource extends Resource
 {
@@ -59,6 +60,31 @@ class GeojsonRegionResource extends Resource
             Forms\Components\Toggle::make('is_active')
                 ->label('Aktif')
                 ->default(true),
+            Forms\Components\FileUpload::make('geojson_file')
+                ->label('Upload file GeoJSON')
+                ->acceptedFileTypes([
+                    'application/json',
+                    'application/geo+json',
+                    'application/octet-stream',
+                    'text/plain',
+                    'text/json',
+                    'geojson',
+                ])
+                ->storeFiles(false)
+                ->dehydrated(false)
+                ->live()
+                ->afterStateUpdated(function (Forms\Set $set, mixed $state): void {
+                    $file = is_array($state) ? reset($state) : $state;
+                    if (! $file instanceof TemporaryUploadedFile) {
+                        return;
+                    }
+
+                    $path = $file->getRealPath();
+                    if (is_string($path) && is_readable($path)) {
+                        $set('geojson', (string) file_get_contents($path));
+                    }
+                })
+                ->helperText('Upload FeatureCollection dari geojson.io akan otomatis dipecah menjadi baris tabel per feature.'),
             Forms\Components\Textarea::make('geojson')
                 ->label('GeoJSON Polygon / MultiPolygon')
                 ->required()
