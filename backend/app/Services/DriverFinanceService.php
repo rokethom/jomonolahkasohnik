@@ -31,6 +31,35 @@ class DriverFinanceService
         $month ??= now();
         $start = $month->copy()->startOfMonth();
         $end = $month->copy()->endOfMonth();
+        if ($this->periodIsBeforeDriverJoined($driver, $end)) {
+            return DriverDeposit::query()->updateOrCreate(
+                ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
+                [
+                    'handle_day_15' => 0,
+                    'handle_day_30' => 0,
+                    'bansos' => 0,
+                    'bpjs' => 0,
+                    'bpjs_jht' => 0,
+                    'total' => 0,
+                    'due_date' => $this->unpaidSuspendDate($month)->toDateString(),
+                    'paid_amount' => 0,
+                    'paid_at' => null,
+                    'status' => 'paid',
+                    'breakdown' => [
+                        'handle_hari_15' => 0,
+                        'handle_hari_30' => 0,
+                        'setoran_hingga_hari_ini' => 0,
+                        'tagihan_bulan_sebelumnya' => 0,
+                        'cashback_bulan_sebelumnya' => 0,
+                        'bansos' => 0,
+                        'bpjs' => 0,
+                        'bpjs_jht' => 0,
+                        'note' => 'Driver belum terdaftar pada periode setoran ini.',
+                    ],
+                ],
+            );
+        }
+
         $previousPeriod = $month->copy()->subMonth();
         $handleDay15 = $this->handleTotal($driver, $start, $month->copy()->day(min(15, $end->day))->endOfDay());
         $handleDay30 = $this->handleTotal($driver, $month->copy()->day(min(16, $end->day))->startOfDay(), $end);
@@ -170,6 +199,14 @@ class DriverFinanceService
             ->addMonthNoOverflow()
             ->day(self::UNPAID_SUSPEND_DAY)
             ->startOfDay();
+    }
+
+    private function periodIsBeforeDriverJoined(Driver $driver, Carbon $periodEnd): bool
+    {
+        $joinedAt = $driver->created_at ?? $driver->user?->created_at;
+
+        return $joinedAt instanceof Carbon
+            && $joinedAt->copy()->startOfDay()->greaterThan($periodEnd->copy()->endOfDay());
     }
 
     private function depositStatus(int $total, int $paidAmount, Carbon $dueDate, ?string $currentStatus = null): string

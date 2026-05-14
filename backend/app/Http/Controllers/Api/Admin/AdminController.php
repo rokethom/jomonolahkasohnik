@@ -161,6 +161,11 @@ class AdminController extends Controller
         abort_unless($this->canAssignRole($actor, $role), 403);
         $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, $role);
         $branchScopeIds = $this->branchScopeIdsForUserWrite($actor, $role, $payload['branch_scope_ids'] ?? [], $payload['branch_id'] ?? null);
+        if ($role === UserRole::Driver) {
+            $payload['is_suspended'] = false;
+            $payload['suspension_reason'] = null;
+            $payload['suspended_until'] = null;
+        }
 
         $vehicleTypes = $this->normalizeVehicleTypes($payload['vehicle_types'] ?? [$payload['vehicle_type'] ?? 'motor']);
         $driverPayload = [
@@ -292,6 +297,13 @@ class AdminController extends Controller
                 'status' => 'active',
                 ...$driverPayload,
             ]);
+            if ($driver->wasRecentlyCreated) {
+                $user->forceFill([
+                    'is_suspended' => false,
+                    'suspension_reason' => null,
+                    'suspended_until' => null,
+                ])->save();
+            }
             if ($driverPayload !== []) {
                 $driver->update($driverPayload);
             }
