@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Branch;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class GeocodingService
@@ -140,8 +141,28 @@ class GeocodingService
     {
         $cacheKey = 'google-geocode-only:'.sha1(mb_strtolower($query).'|'.json_encode($context));
 
-        return Cache::remember($cacheKey, self::TTL_SECONDS, fn (): ?array => $this->geocodeWithGooglePlaces($query, $context)
-            ?? $this->geocodeWithGoogle($query, $context));
+        try {
+            return Cache::remember($cacheKey, self::TTL_SECONDS, function () use ($query, $context): ?array {
+                try {
+                    return $this->geocodeWithGooglePlaces($query, $context)
+                        ?? $this->geocodeWithGoogle($query, $context);
+                } catch (\Throwable $exception) {
+                    Log::warning('geocoding.google_only_exception', [
+                        'query' => $query,
+                        'message' => $exception->getMessage(),
+                    ]);
+
+                    return null;
+                }
+            });
+        } catch (\Throwable $exception) {
+            Log::warning('geocoding.google_only_cache_exception', [
+                'query' => $query,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     public function getAddressFromLatLng(float $lat, float $lng): array
