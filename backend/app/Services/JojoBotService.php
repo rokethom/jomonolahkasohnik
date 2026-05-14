@@ -1046,6 +1046,14 @@ class JojoBotService
 
         $helperFee = (int) ($quote['crew_helper_fee'] ?? $quote['helper_service_charge'] ?? data_get($quote, 'crew_decision.helper_fee', data_get($quote, 'crew_decision.helper_service_charge', 0)));
         $helperLabel = (string) data_get($quote, 'crew_decision.helper_label', 'Jasa helper');
+        $distance = $quote['distance_km'] ?? $quote['distance'] ?? null;
+        $distanceLabel = is_numeric($distance)
+            ? number_format((float) $distance, 2, ',', '.').' km'
+            : '-';
+        $ringLabel = filled($quote['ring'] ?? null)
+            ? strtoupper(str_replace('_', ' ', (string) $quote['ring']))
+            : null;
+
         $breakdown = [
             'Pesanan Anda:',
             '- Nama: '.($parsed['name'] ?: '-'),
@@ -1053,6 +1061,15 @@ class JojoBotService
             '- '.$destinationLabel.': '.($parsed['destination_address'] ?: '-'),
             '',
             'Breakdown:',
+            '- Jarak hitung: '.$distanceLabel,
+        ];
+
+        if ($ringLabel !== null) {
+            $breakdown[] = '- Ring: '.$ringLabel;
+        }
+
+        $breakdown = [
+            ...$breakdown,
             '- Tarif: '.$money($quote['tarif'] ?? $quote['price'] ?? 0),
             '- Service fee: '.$money($quote['service_fee'] ?? $quote['service_charge'] ?? 0),
             '- Tambahan: '.$money($quote['extra_charge'] ?? 0),
