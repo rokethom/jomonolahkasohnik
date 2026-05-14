@@ -352,6 +352,7 @@ type Permissions = {
   can_manage_policy: boolean
   can_manage_ring_pricing?: boolean
   can_manage_users: boolean
+  can_manage_all_branches?: boolean
   can_suspend_drivers: boolean
   can_unsuspend_drivers?: boolean
   can_manage_driver_auth?: boolean
@@ -5344,7 +5345,7 @@ function PasswordInput({ name = 'password', label = 'Password', placeholder, req
 function UserEditModal({ me, user, branches, permissions, api, onClose, onSaved }: { me: User; user: User; branches: Branch[]; permissions: Permissions; api: ApiClient; onClose: () => void; onSaved: () => void }) {
   const [role, setRole] = useState<Role>(user.role)
   const [saving, setSaving] = useState(false)
-  const canPickAnyBranch = ['admin', 'gm', 'hrd'].includes(me.role)
+  const canPickAnyBranch = permissions.can_manage_all_branches === true
   const branchOptions = useMemo(() => canPickAnyBranch ? branches : branches.filter((branch) => branch.id === me.branch_id), [branches, canPickAnyBranch, me.branch_id])
   const defaultBranchId = canPickAnyBranch ? String(user.branch_id ?? '') : String(me.branch_id ?? '')
   const defaultScopeIds = branchScopeRoles.has(user.role) && (user.branch_scope_ids?.length ?? 0) > 0
@@ -5404,7 +5405,7 @@ function UserFormModal({ me, permissions, branches, services, api, onClose, onCr
   const [role, setRole] = useState<Role>(roleOptions[0] ?? 'operator')
   const [vehicleType, setVehicleType] = useState<'motor' | 'mobil'>('motor')
   const [allowedServices, setAllowedServices] = useState<string[]>([])
-  const canPickAnyBranch = ['admin', 'gm', 'hrd'].includes(me.role)
+  const canPickAnyBranch = permissions.can_manage_all_branches === true
   const branchOptions = useMemo(() => canPickAnyBranch ? branches : branches.filter((branch) => branch.id === me.branch_id), [branches, canPickAnyBranch, me.branch_id])
   const defaultBranchId = canPickAnyBranch ? '' : String(me.branch_id ?? '')
   const defaultScopeIds = !canPickAnyBranch && defaultBranchId ? [defaultBranchId] : []

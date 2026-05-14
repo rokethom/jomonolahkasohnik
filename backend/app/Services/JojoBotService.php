@@ -428,12 +428,6 @@ class JojoBotService
 
     private function completeParsedForPreview(User $user, array $parsed, string $serviceType): array
     {
-        foreach (['pickup_address', 'destination_address'] as $key) {
-            if ($this->isCustomerAddressAlias((string) ($parsed[$key] ?? '')) && filled($user->address)) {
-                $parsed[$key] = (string) $user->address;
-            }
-        }
-
         if ($this->isPurchaseService($serviceType)) {
             if (blank($parsed['pickup_address'] ?? null)) {
                 $parsed['pickup_address'] = $parsed['store_location'] ?: ($this->branch($user)?->name ?? 'Lokasi pembelian');
@@ -575,7 +569,8 @@ class JojoBotService
         $pickupAddress = trim((string) ($payload['pickup_address'] ?? ''));
         $destinationAddress = trim((string) ($payload['destination_address'] ?? $payload['destination_text'] ?? ''));
 
-        $pickupGeo = $this->geocodeForPricing($pickupAddress, $branch, $user);
+        $pickupGeo = $this->geocodeForPricing($pickupAddress, $branch, $user)
+            ?? $this->pickupPointFromPayload($payload, $pickupAddress, $user);
         $destinationGeo = $this->geocodeForPricing($destinationAddress, $branch, $user);
         $resolved = $pickupGeo !== null && $destinationGeo !== null;
 
@@ -647,6 +642,33 @@ class JojoBotService
             self::PRICING_GEOCODE_CANDIDATES,
             120,
         );
+    }
+
+    private function pickupPointFromPayload(array $payload, string $address, ?User $user): ?array
+    {
+        $lat = $payload['pickup_lat'] ?? null;
+        $lng = $payload['pickup_lng'] ?? null;
+
+        if (! is_numeric($lat) || ! is_numeric($lng)) {
+            return null;
+        }
+
+        $normalizedAddress = $this->locationPois->normalize($address);
+        $normalizedUserAddress = $this->locationPois->normalize((string) ($user?->address ?? ''));
+        $isUserAddress = $normalizedUserAddress !== '' && $normalizedAddress === $normalizedUserAddress;
+
+        if (($payload['service_payload']['source'] ?? null) !== 'smart_parser' || (! $this->isCustomerHomeAddress($address) && ! $isUserAddress)) {
+            return null;
+        }
+
+        return [
+            'lat' => (float) $lat,
+            'lng' => (float) $lng,
+            'formatted_address' => $address,
+            'provider' => 'payload_pickup_point',
+            'confidence' => 80,
+            'query' => $address,
+        ];
     }
 
     private function customerHomeGeocode(string $address, User $user): ?array
@@ -789,22 +811,6 @@ class JojoBotService
         }
 
         return min(25, max(3, (float) $branch->radius_km));
-    }
-
-    private function isCustomerAddressAlias(string $address): bool
-    {
-        $normalized = mb_strtolower(trim($address));
-
-        return in_array($normalized, [
-            'rumah',
-            'rumah saya',
-            'alamat saya',
-            'lokasi saya',
-            'tempat saya',
-            'alamat rumah',
-            'dari rumah',
-            'jemput rumah',
-        ], true);
     }
 
     private function isGeocodeTooFarFromBranch(array $result, ?Branch $branch): bool

@@ -2526,6 +2526,7 @@ class AdminController extends Controller
             'can_unsuspend_drivers' => $user->hasPermission('unsuspend_driver'),
             'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
                 && $user->hasPermission('suspend_driver'),
+            'can_manage_all_branches' => app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($user->role),
             'can_manage_system_settings' => $user->hasPermission('manage_system_settings'),
             'can_manage_cms' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::WebAdmin, UserRole::CmsEditor], true),
             'can_edit_order_price' => $user->hasPermission('edit_tarif'),
