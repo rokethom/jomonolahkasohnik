@@ -67,6 +67,9 @@ class SystemSettingsPage extends Page implements HasForms
             'hermes_active' => $settings->raw('hermes_api_key')?->is_active ?? false,
             'map_provider' => $settings->get('map_provider', 'osm'),
             'map_active' => $settings->raw('map_provider')?->is_active ?? true,
+            'osrm_base_url' => $settings->get('osrm_base_url', 'https://router.project-osrm.org'),
+            'osrm_active' => $settings->raw('osrm_base_url')?->is_active ?? true,
+            'google_maps_distance_enabled' => $settings->bool('google_maps_distance_enabled', false),
             'location_log_cleanup_enabled' => $settings->bool('location_log_cleanup_enabled', true),
             'location_log_retention_days' => $settings->int('location_log_retention_days', 14),
             'location_log_suspicious_retention_days' => $settings->int('location_log_suspicious_retention_days', 30),
@@ -375,6 +378,22 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\Toggle::make('map_active')
                                             ->label('Status aktif')
                                             ->helperText('Matikan untuk memakai fallback .env/default.'),
+                                    ]),
+                                Forms\Components\Section::make('Routing & Pricing Distance')
+                                    ->description('Harga customer dihitung dari jarak rute jalan. OSRM dipakai sebagai utama; Google Distance hanya cadangan jika switch aktif dan API key valid.')
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\TextInput::make('osrm_base_url')
+                                            ->label('OSRM Base URL')
+                                            ->placeholder('http://127.0.0.1:5000')
+                                            ->helperText('Untuk OSRM lokal isi http://127.0.0.1:5000. Sementara bisa memakai https://router.project-osrm.org.')
+                                            ->maxLength(500),
+                                        Forms\Components\Toggle::make('osrm_active')
+                                            ->label('OSRM aktif')
+                                            ->helperText('Jika mati, sistem memakai fallback/env default.'),
+                                        Forms\Components\Toggle::make('google_maps_distance_enabled')
+                                            ->label('Google Distance fallback aktif')
+                                            ->helperText('Matikan jika belum punya API key Google aktif. Jika aktif, Google hanya dipakai setelah OSRM gagal.'),
                                     ]),
                                 Forms\Components\Section::make('Auto Cleanup Location Logs')
                                     ->description('Menghapus riwayat GPS lama secara bertahap agar tabel location_logs tidak membebani server. Data lokasi terakhir user/driver tetap tersimpan di profile/log terbaru.')
@@ -718,6 +737,8 @@ class SystemSettingsPage extends Page implements HasForms
             $this->saveSecret($settings, 'hermes_api_key', $data['hermes_api_key'] ?? null, (bool) ($data['hermes_active'] ?? false));
 
             $settings->set('map_provider', $data['map_provider'] ?? 'osm', (bool) ($data['map_active'] ?? true));
+            $settings->set('osrm_base_url', $data['osrm_base_url'] ?? 'https://router.project-osrm.org', (bool) ($data['osrm_active'] ?? true));
+            $settings->set('google_maps_distance_enabled', (bool) ($data['google_maps_distance_enabled'] ?? false), true);
             $normalLocationLogRetention = max(1, min(365, (int) ($data['location_log_retention_days'] ?? 14)));
             $settings->set('location_log_cleanup_enabled', (bool) ($data['location_log_cleanup_enabled'] ?? true));
             $settings->set('location_log_retention_days', $normalLocationLogRetention);

@@ -22,8 +22,8 @@ class DistanceCalculator
         $cacheKey = sprintf('route-distance:driving:%0.5f,%0.5f:%0.5f,%0.5f', $lat1, $lng1, $lat2, $lng2);
 
         return Cache::remember($cacheKey, self::ROUTE_TTL_SECONDS, function () use ($lat1, $lng1, $lat2, $lng2): float {
-            return $this->googleDistance($lat1, $lng1, $lat2, $lng2)
-                ?? $this->osrmDistance($lat1, $lng1, $lat2, $lng2)
+            return $this->osrmDistance($lat1, $lng1, $lat2, $lng2)
+                ?? ($this->settings->bool('google_maps_distance_enabled', false) ? $this->googleDistance($lat1, $lng1, $lat2, $lng2) : null)
                 ?? throw new RuntimeException('Jarak rute tidak berhasil dihitung dari Google Maps maupun OSRM. Cek alamat atau koneksi API.');
         });
     }
@@ -76,8 +76,10 @@ class DistanceCalculator
     private function osrmDistance(float $lat1, float $lng1, float $lat2, float $lng2): ?float
     {
         try {
+            $baseUrl = rtrim((string) $this->settings->get('osrm_base_url', 'https://router.project-osrm.org'), '/');
             $url = sprintf(
-                'https://router.project-osrm.org/route/v1/driving/%F,%F;%F,%F',
+                '%s/route/v1/driving/%F,%F;%F,%F',
+                $baseUrl,
                 $lng1,
                 $lat1,
                 $lng2,

@@ -26,6 +26,7 @@ class JojoBotService
         private readonly TextFormatter $formatter,
         private readonly KeywordParserService $keywordParsers,
         private readonly GeojsonRegionLookupService $geojsonRegions,
+        private readonly LocationPoiService $locationPois,
     ) {
     }
 
@@ -621,6 +622,10 @@ class JojoBotService
         $memoKey = sha1($normalized.'|'.($branch?->id ?? 'none'));
         if (array_key_exists($memoKey, $this->pricingGeocodeMemo)) {
             return $this->pricingGeocodeMemo[$memoKey];
+        }
+
+        if ($poi = $this->locationPois->resolve($address, $branch?->id)) {
+            return $this->pricingGeocodeMemo[$memoKey] = $this->locationPois->geocodeResult($poi);
         }
 
         return $this->pricingGeocodeMemo[$memoKey] = $this->geocoding->geocodeNearBranchGoogleOnly(
