@@ -2,7 +2,9 @@
 
 namespace App\Services\Pricing;
 
+use App\Models\PriceSetting;
 use InvalidArgumentException;
+use RuntimeException;
 
 class TravelPricing
 {
@@ -70,14 +72,33 @@ class TravelPricing
 
     private function generalDistanceTarif(float $distance): int
     {
-        if ($distance <= 5) {
-            return 6000;
+        $distance = max(0.0, $distance);
+        $setting = PriceSetting::query()
+            ->active()
+            ->whereNull('branch_id')
+            ->forDistance($distance)
+            ->orderByRaw('max_km IS NULL')
+            ->orderByDesc('min_km')
+            ->first();
+
+        if (! $setting) {
+            throw new RuntimeException('Distance Price Settings aktif belum tersedia untuk jarak pickup travel '.round($distance, 2).' KM.');
         }
 
-        if ($distance <= 10) {
-            return 12000;
+        if (! $setting->is_formula) {
+            if ($setting->price === null) {
+                throw new RuntimeException('Price setting requires price when is_formula is false.');
+            }
+
+            return (int) $setting->price;
         }
 
-        return max(0, (int) ceil(($distance * 1900) - 7000));
+        if ($setting->per_km_rate === null) {
+            throw new RuntimeException('Price setting requires per_km_rate when is_formula is true.');
+        }
+
+        $price = ($distance * (int) $setting->per_km_rate) - (int) $setting->subtract_value;
+
+        return max(0, (int) ceil($price));
     }
 }

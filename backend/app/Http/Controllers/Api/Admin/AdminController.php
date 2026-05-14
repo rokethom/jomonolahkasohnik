@@ -3486,14 +3486,10 @@ class AdminController extends Controller
 
         if ($pricingMode === 'formula') {
             $price = $price ?? 0;
-            $perKmRate = $perKmRate ?? ($ring === 'ring_3' ? 1900 : 0);
-            $subtractValue = $subtractValue ?? ($ring === 'ring_3' ? 7000 : 0);
+            $perKmRate = $perKmRate ?? 0;
+            $subtractValue = $subtractValue ?? 0;
         } else {
-            $price = $price ?? match ($ring) {
-                'ring_2' => 12000,
-                'ring_3' => 0,
-                default => 6000,
-            };
+            $price = $price ?? 0;
             $perKmRate = null;
             $subtractValue = 0;
         }

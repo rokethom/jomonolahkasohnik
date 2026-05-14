@@ -3087,10 +3087,10 @@ export function PricingPanel({ ringRules, ringSuggestions, branches, services, p
           <label>Priority<input name="priority" type="number" step="1" defaultValue="300" /></label>
           <label>Service fee<input name="service_fee" type="number" min="0" step="1000" defaultValue="1000" /></label>
           <label className="toggle-row inline-toggle"><input type="checkbox" checked={ringFormula} onChange={(event) => setRingFormula(event.target.checked)} />Formula tarif</label>
-          {!ringFormula && <label>Harga jasa<input name="price" type="number" min="0" step="1000" defaultValue="6000" required /></label>}
+          {!ringFormula && <label>Harga jasa<input name="price" type="number" min="0" step="1000" required /></label>}
           {ringFormula && <label>Harga minimum<input name="price" type="number" min="0" step="1000" defaultValue="0" /></label>}
-          {ringFormula && <label>Rate / KM<input name="per_km_rate" type="number" min="0" defaultValue="1900" /></label>}
-          {ringFormula && <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="7000" /></label>}
+          {ringFormula && <label>Rate / KM<input name="per_km_rate" type="number" min="0" /></label>}
+          {ringFormula && <label>Subtract<input name="subtract_value" type="number" min="0" defaultValue="0" /></label>}
           <label>Mode titik<select name="polygon_match_point" defaultValue="destination_then_pickup"><option value="destination_then_pickup">Tujuan, fallback pickup</option><option value="destination">Tujuan saja</option><option value="pickup">Pickup saja</option><option value="either">Pickup atau tujuan</option><option value="both">Pickup dan tujuan</option></select></label>
           <label>Cross ring<select name="match_type" defaultValue="point"><option value="point">Single ring</option><option value="cross">Cross ring</option></select></label>
           <label>Pickup ring<select name="pickup_ring" defaultValue=""><option value="">Auto</option><option value="ring_1">Ring 1</option><option value="ring_2">Ring 2</option><option value="ring_3">Ring 3</option></select></label>

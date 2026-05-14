@@ -121,11 +121,11 @@ class RingPricingRuleResource extends Resource
                                 if ($state === 'ring_3') {
                                     $set('pricing_mode', 'formula');
                                     $set('price', 0);
-                                    $set('per_km_rate', 1900);
-                                    $set('subtract_value', 7000);
+                                    $set('per_km_rate', null);
+                                    $set('subtract_value', 0);
                                 } else {
                                     $set('pricing_mode', 'flat');
-                                    $set('price', $state === 'ring_2' ? 12000 : 6000);
+                                    $set('price', null);
                                     $set('per_km_rate', null);
                                     $set('subtract_value', 0);
                                 }
@@ -212,7 +212,6 @@ class RingPricingRuleResource extends Resource
                             ->required()
                             ->numeric()
                             ->minValue(0)
-                            ->default(6000)
                             ->prefix('Rp'),
                         Forms\Components\TextInput::make('per_km_rate')
                             ->label('Rate / KM')

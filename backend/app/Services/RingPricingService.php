@@ -148,8 +148,6 @@ class RingPricingService
         $pickupArea = $this->areaName($order->pickup_address);
         $destinationArea = $this->areaName($order->destination_address);
         $serviceType = $this->normalizeServiceType((string) ($order->service_type ?? $order->service_code ?? ''));
-        $ring = $this->ringFromPrice($newPrice);
-
         $suggestion = RingPricingSuggestion::query()
             ->where('status', 'pending')
             ->where('branch_id', $order->branch_id)
@@ -169,7 +167,7 @@ class RingPricingService
             'service_type' => $serviceType ?: null,
             'pickup_area' => $pickupArea,
             'destination_area' => $destinationArea,
-            'ring' => $ring,
+            'ring' => null,
             'suggested_price' => $newPrice,
             'previous_price' => $previousPrice,
             'sample_order_ids' => array_slice($samples, -10),
@@ -523,15 +521,6 @@ class RingPricingService
         $candidate = trim((string) ($parts[0] ?? $address));
 
         return Str::limit($candidate !== '' ? $candidate : $address, 120, '');
-    }
-
-    private function ringFromPrice(int $price): ?string
-    {
-        return match (true) {
-            $price > 0 && $price <= 7000 => 'ring_1',
-            $price <= 12000 => 'ring_2',
-            default => null,
-        };
     }
 
     private function normalize(mixed $value): string
