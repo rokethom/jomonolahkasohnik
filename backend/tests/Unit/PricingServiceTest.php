@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\PricingKeywordRule;
+use App\Models\AiAliasMap;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
 use App\Models\PriceSetting;
@@ -541,6 +542,74 @@ class PricingServiceTest extends TestCase
         $this->assertSame('geojson_region', $result['provider']);
         $this->assertSame('Panarukan', $result['geojson_region_name']);
         $this->assertSame(114.0810, $result['lng']);
+    }
+
+    public function test_ai_alias_map_resolves_local_alias_to_geojson_region(): void
+    {
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-ALIAS',
+            'name' => 'Situbondo',
+            'area' => 'Kota Alias',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $region = GeojsonRegion::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Kelurahan Mimbaan',
+            'geojson' => [
+                'type' => 'Feature',
+                'properties' => ['name' => 'Kelurahan Mimbaan'],
+                'geometry' => [
+                    'type' => 'Polygon',
+                    'coordinates' => [[
+                        [114.0500, -7.7100],
+                        [114.0520, -7.7100],
+                        [114.0520, -7.7080],
+                        [114.0500, -7.7080],
+                        [114.0500, -7.7100],
+                    ]],
+                ],
+            ],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [[
+                ['lat' => -7.7100, 'lng' => 114.0500],
+                ['lat' => -7.7100, 'lng' => 114.0520],
+                ['lat' => -7.7080, 'lng' => 114.0520],
+                ['lat' => -7.7080, 'lng' => 114.0500],
+            ]],
+            'centroid_lat' => -7.7090,
+            'centroid_lng' => 114.0510,
+            'min_lat' => -7.7100,
+            'max_lat' => -7.7080,
+            'min_lng' => 114.0500,
+            'max_lng' => 114.0520,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        AiAliasMap::query()->create([
+            'branch_id' => $branch->id,
+            'geojson_region_id' => $region->id,
+            'canonical_name' => 'Kelurahan Mimbaan',
+            'aliases' => ['mimbaan barat', 'dekat mimbaan', 'mimbaan'],
+            'source' => 'manual',
+            'confidence' => 95,
+            'priority' => 20,
+            'is_active' => true,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeForPricing');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, 'Mimbaan Barat', $branch);
+
+        $this->assertSame('ai_alias_map', $result['provider']);
+        $this->assertSame('Kelurahan Mimbaan', $result['ai_alias_canonical_name']);
+        $this->assertSame($region->id, $result['geojson_region_id']);
+        $this->assertSame(114.0510, $result['lng']);
     }
 
     public function test_jojobot_adds_branch_name_candidate_for_free_aliases(): void

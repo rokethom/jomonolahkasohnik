@@ -3,12 +3,17 @@
 namespace App\Services\Spatial;
 
 use App\Models\GeojsonRegion;
+use App\Services\AiAliasMapService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class GeojsonRegionLookupService
 {
+    public function __construct(private readonly AiAliasMapService $aliasMaps)
+    {
+    }
+
     public function detect(float $lat, float $lng): ?GeojsonRegion
     {
         if (! Schema::hasTable('geojson_regions')) {
@@ -32,6 +37,11 @@ class GeojsonRegionLookupService
     {
         if (! Schema::hasTable('geojson_regions')) {
             return null;
+        }
+
+        $aliasMap = $this->aliasMaps->resolve($address, $branchId);
+        if ($aliasMap !== null) {
+            return $this->aliasMaps->geocodeResult($aliasMap);
         }
 
         $needle = $this->normalize($address);
