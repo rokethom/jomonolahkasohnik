@@ -7,6 +7,8 @@ use App\Models\GeojsonRegion;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 class CreateGeojsonRegion extends CreateRecord
 {
@@ -16,8 +18,14 @@ class CreateGeojsonRegion extends CreateRecord
 
     protected function handleRecordCreation(array $data): Model
     {
-        $records = collect(GeojsonRegionResource::normalizeGeojsonRows($data))
-            ->map(fn (array $row): GeojsonRegion => GeojsonRegion::query()->create($row));
+        try {
+            $records = collect(GeojsonRegionResource::normalizeGeojsonRows($data))
+                ->map(fn (array $row): GeojsonRegion => GeojsonRegion::query()->create($row));
+        } catch (RuntimeException $exception) {
+            throw ValidationException::withMessages([
+                'geojson' => $exception->getMessage(),
+            ]);
+        }
 
         $this->createdRows = $records->count();
 
