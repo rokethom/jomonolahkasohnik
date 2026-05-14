@@ -185,6 +185,10 @@ class GeocodingService
 
     private function geocodeWithGooglePlaces(string $query, array $context = []): ?array
     {
+        if (! $this->settings->bool('google_maps_geocode_enabled', false)) {
+            return null;
+        }
+
         $key = $this->settings->get('google_maps_api_key');
         if (! filled($key)) {
             return null;
@@ -224,6 +228,10 @@ class GeocodingService
 
     private function geocodeWithGoogle(string $query, array $context = []): ?array
     {
+        if (! $this->settings->bool('google_maps_geocode_enabled', false)) {
+            return null;
+        }
+
         $key = $this->settings->get('google_maps_api_key');
         if (! filled($key)) {
             return null;

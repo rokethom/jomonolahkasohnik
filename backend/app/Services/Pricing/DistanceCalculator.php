@@ -75,6 +75,10 @@ class DistanceCalculator
 
     private function osrmDistance(float $lat1, float $lng1, float $lat2, float $lng2): ?float
     {
+        if (! $this->settings->bool('osrm_active', true)) {
+            return null;
+        }
+
         try {
             $baseUrl = rtrim((string) $this->settings->get('osrm_base_url', 'https://router.project-osrm.org'), '/');
             $url = sprintf(

@@ -632,11 +632,20 @@ class JojoBotService
             return $this->pricingGeocodeMemo[$memoKey] = $regionGeocode;
         }
 
-        if (! $this->settings->bool('google_maps_geocode_enabled', false)) {
-            return $this->pricingGeocodeMemo[$memoKey] = null;
+        if ($this->settings->bool('google_maps_geocode_enabled', false)) {
+            $googleResult = $this->geocoding->geocodeNearBranchGoogleOnly(
+                $address,
+                $branch,
+                self::PRICING_GEOCODE_CANDIDATES,
+                120,
+            );
+
+            if ($googleResult !== null) {
+                return $this->pricingGeocodeMemo[$memoKey] = $googleResult;
+            }
         }
 
-        return $this->pricingGeocodeMemo[$memoKey] = $this->geocoding->geocodeNearBranchGoogleOnly(
+        return $this->pricingGeocodeMemo[$memoKey] = $this->geocoding->geocodeNearBranchLimited(
             $address,
             $branch,
             self::PRICING_GEOCODE_CANDIDATES,

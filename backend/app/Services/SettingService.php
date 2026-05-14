@@ -37,6 +37,7 @@ class SettingService
         'google_maps_distance_enabled' => 'GOOGLE_MAPS_DISTANCE_ENABLED',
         'google_maps_geocode_enabled' => 'GOOGLE_MAPS_GEOCODE_ENABLED',
         'osrm_base_url' => 'OSRM_BASE_URL',
+        'osrm_active' => 'OSRM_ACTIVE',
         'google_oauth_enabled' => 'GOOGLE_OAUTH_ENABLED',
             'google_oauth_client_id' => 'GOOGLE_OAUTH_CLIENT_ID',
             'google_oauth_secret' => 'GOOGLE_OAUTH_SECRET',
