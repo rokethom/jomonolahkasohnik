@@ -78,19 +78,23 @@ class GeojsonRegionResource extends Resource
                 ->schema([
                     Forms\Components\TextInput::make('boundary_north')
                         ->label('Batas utara')
-                        ->placeholder('Contoh: Griya Panji Mulya')
+                        ->placeholder('Contoh: -7.7000, 114.0100 atau Griya Panji Mulya')
+                        ->helperText('Paling akurat isi koordinat lat,lng dari Google Maps. Link Google Maps juga bisa ditempel.')
                         ->dehydrated(),
                     Forms\Components\TextInput::make('boundary_south')
                         ->label('Batas selatan')
-                        ->placeholder('Contoh: SDN 2 Sumberkolak')
+                        ->placeholder('Contoh: -7.7300, 114.0100 atau SDN 2 Sumberkolak')
+                        ->helperText('Jika alamat tidak ditemukan, pakai koordinat lat,lng.')
                         ->dehydrated(),
                     Forms\Components\TextInput::make('boundary_west')
                         ->label('Batas barat')
-                        ->placeholder('Contoh: PG Wringin Anom')
+                        ->placeholder('Contoh: -7.7150, 113.9900 atau PG Wringin Anom')
+                        ->helperText('Format koordinat: latitude, longitude.')
                         ->dehydrated(),
                     Forms\Components\TextInput::make('boundary_east')
                         ->label('Batas timur')
-                        ->placeholder('Contoh: SMPN 2 Panji')
+                        ->placeholder('Contoh: -7.7150, 114.0300 atau SMPN 2 Panji')
+                        ->helperText('Bisa paste URL Google Maps yang mengandung koordinat.')
                         ->dehydrated(),
                 ])
                 ->hidden(fn (Forms\Get $get, string $operation): bool => $operation === 'edit' || $get('input_mode') === 'geojson')

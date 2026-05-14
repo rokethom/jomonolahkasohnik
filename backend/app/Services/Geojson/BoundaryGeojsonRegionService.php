@@ -105,9 +105,20 @@ class BoundaryGeojsonRegionService
      */
     private function geocodeBoundary(string $address, ?Branch $branch): array
     {
-        $result = $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, 120)
-            ?? $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, null)
-            ?? throw new RuntimeException('Batas tidak ditemukan di Google Maps: '.$address.'. Coba isi nama lebih lengkap, misalnya tambah kecamatan/kabupaten.');
+        $address = trim($address);
+        $result = $this->coordinateBoundary($address);
+        foreach ($result === null ? $this->boundaryCandidates($address, $branch) : [] as $candidate) {
+            $result = $this->geocoding->geocodeNearBranchLimited($candidate, $branch, 3, 120)
+                ?? $this->geocoding->geocodeNearBranchLimited($candidate, $branch, 3, null);
+
+            if ($result !== null) {
+                break;
+            }
+        }
+
+        if ($result === null) {
+            throw new RuntimeException('Batas tidak ditemukan: '.$address.'. Isi alamat lebih lengkap atau pakai koordinat lat,lng, contoh -7.7068, 114.0120.');
+        }
 
         return [
             'lat' => (float) $result['lat'],
@@ -115,6 +126,95 @@ class BoundaryGeojsonRegionService
             'query' => (string) ($result['query'] ?? $address),
             'formatted_address' => (string) ($result['formatted_address'] ?? $address),
         ];
+    }
+
+    private function coordinateBoundary(string $value): ?array
+    {
+        $pairs = [
+            '/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/',
+            '/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/',
+            '/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/',
+        ];
+
+        foreach ($pairs as $pattern) {
+            if (preg_match($pattern, $value, $match) !== 1) {
+                continue;
+            }
+
+            $first = (float) $match[1];
+            $second = (float) $match[2];
+            $lat = $first;
+            $lng = $second;
+
+            if (abs($first) > 90 && abs($second) <= 90) {
+                $lat = $second;
+                $lng = $first;
+            }
+
+            if (abs($lat) > 90 || abs($lng) > 180) {
+                continue;
+            }
+
+            return [
+                'lat' => $lat,
+                'lng' => $lng,
+                'query' => $value,
+                'formatted_address' => 'Koordinat '.$lat.', '.$lng,
+            ];
+        }
+
+        return null;
+    }
+
+    private function boundaryCandidates(string $address, ?Branch $branch): array
+    {
+        $clean = trim(preg_replace('/\s+/u', ' ', $address) ?? $address);
+        $withoutPostal = trim(preg_replace('/\b\d{5}\b/u', ' ', $clean) ?? $clean);
+        $parts = collect(explode(',', $withoutPostal))
+            ->map(fn (string $part): string => trim(preg_replace('/\s+/u', ' ', $part) ?? $part))
+            ->map(fn (string $part): string => trim(preg_replace('/\b(?:Kec\.?|Kecamatan|Kab\.?|Kabupaten|Regency|Jawa Timur|Jawa|Indonesia)\b\.?/iu', ' ', $part) ?? $part))
+            ->map(fn (string $part): string => trim(preg_replace('/\s+/u', ' ', $part) ?? $part))
+            ->filter(fn (string $part): bool => mb_strlen($part) >= 3)
+            ->reject(fn (string $part): bool => preg_match('/^(?:jalan|jl\.?|no\.?|km\.?|rt|rw)\b/iu', $part) === 1)
+            ->values();
+
+        $district = null;
+        if (preg_match('/\b(?:Kec\.?|Kecamatan)\s*([^,]+)/iu', $address, $match) === 1) {
+            $district = trim($match[1]);
+        }
+
+        $branchHints = collect([$branch?->area, $branch?->name, 'Situbondo'])
+            ->filter()
+            ->map(fn (string $value): string => trim($value))
+            ->unique()
+            ->values()
+            ->all();
+
+        $placeParts = $parts
+            ->reject(fn (string $part): bool => preg_match('/\b(?:situbondo|jawa|indonesia|jalan|raya)\b/iu', $part) === 1)
+            ->values();
+
+        $candidates = collect([
+            $district ? $district.' Situbondo' : null,
+            $placeParts->slice(-1)->implode(' ').' Situbondo',
+            $placeParts->slice(-2)->implode(' ').' Situbondo',
+            $parts->slice(-2)->implode(' '),
+            $clean,
+        ]);
+
+        foreach ($placeParts->reverse()->take(3) as $part) {
+            foreach ($branchHints as $hint) {
+                $candidates->push($part.' '.$hint);
+            }
+        }
+
+        return $candidates
+            ->map(fn (?string $value): string => trim((string) $value))
+            ->filter(fn (string $value): bool => mb_strlen($value) >= 3)
+            ->unique(fn (string $value): string => mb_strtolower($value))
+            ->take(8)
+            ->values()
+            ->all();
     }
 
     private function boundaryFeature(array $data, array $polygon, array $points): array
