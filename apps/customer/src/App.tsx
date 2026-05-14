@@ -42,10 +42,8 @@ import {
   extendOrderWait,
   getApiErrorMessage,
   googleLoginUrl,
-  login,
   logout,
   previewJojoBot,
-  register,
   requestCancelOrder,
   sendChatMessage,
   sendOrderMessage,
@@ -95,16 +93,6 @@ const DEFAULT_CUSTOMER_NOTIFICATION_SOUND = '/customernotif.mpeg'
 const CUSTOMER_SOUND_DB = 'jojo-customer-settings'
 const CUSTOMER_SOUND_STORE = 'notification-sound'
 const CUSTOMER_SOUND_KEY = 'custom'
-
-type RegistrationLocation = {
-  lat: number
-  lng: number
-  location_lat: number
-  location_lng: number
-  location_accuracy?: number
-  gps_timestamp: string
-}
-
 
 type ReplyTarget = {
   id: string
@@ -3947,118 +3935,20 @@ function ProfileField({ icon, label, hint, children }: { icon: ReactNode; label:
   )
 }
 
-function CustomerLoginScreen({ onDone }: { onDone: () => void }) {
-  const store = useCustomerStore()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [gpsStatus, setGpsStatus] = useState('')
-  const [locationLoading, setLocationLoading] = useState(false)
-  const [locationError, setLocationError] = useState('')
-  const [registrationLocation, setRegistrationLocation] = useState<RegistrationLocation | null>(null)
-
-  useEffect(() => {
-    if (mode !== 'register') return
-
-    let active = true
-    setLocationLoading(true)
-    setLocationError('')
-    setGpsStatus('Mendeteksi lokasi Anda...')
-
-    void getRegistrationLocation(setGpsStatus)
-      .then((location) => {
-        if (!active) return
-        setRegistrationLocation(location)
-        if (!location) setLocationError('Aktifkan GPS untuk melanjutkan')
-      })
-      .finally(() => {
-        if (active) setLocationLoading(false)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [mode])
-
+function CustomerLoginScreen(_props: { onDone: () => void }) {
   return (
     <div className="simple-page login-page">
       <div className="login-heading">
-        <h1>Login</h1>
+        <h1>Login Customer</h1>
+        <p>Masuk atau daftar customer cukup menggunakan akun Google.</p>
       </div>
       <PwaInstallButton />
-      <div className="login-tabs">
-        <button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')} type="button">Login</button>
-        <button className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')} type="button">Register</button>
-      </div>
-      <form
-        className="profile-edit-form"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          if (mode === 'register' && !registrationLocation) {
-            setLocationError('Aktifkan GPS untuk melanjutkan')
-            store.showToast('error', 'Aktifkan GPS untuk melanjutkan register.')
-            return
-          }
-          setLoading(true)
-          try {
-            const response = mode === 'login'
-              ? await login({ email, password })
-              : await register({
-                name,
-                phone,
-                email,
-                username: email,
-                password,
-                password_confirmation: password,
-                ...(registrationLocation as RegistrationLocation),
-              })
-            store.setUserSession(response.user, response.token)
-            window.history.replaceState({}, document.title, '/')
-            if (mode === 'register' && !response.user.branch_id) {
-              store.showToast('info', 'Area cabang belum diset silahkan hubungi CS')
-            }
-            onDone()
-          } catch (error) {
-            store.showToast('error', mode === 'login' ? getLoginErrorMessage(error) : getApiErrorMessage(error, 'Register gagal'))
-          } finally {
-            setLoading(false)
-          }
-        }}
-      >
-        {mode === 'register' && (
-          <>
-            <label>
-              Nama
-              <input value={name} onChange={(event) => setName(event.target.value)} required />
-            </label>
-            <label>
-              Nomor HP
-              <input value={phone} onChange={(event) => setPhone(event.target.value)} required />
-            </label>
-            <div className="gps-register-note">
-              {locationLoading
-                ? 'Mendeteksi lokasi Anda...'
-                : locationError || gpsStatus || 'Lokasi GPS dipakai untuk menentukan area cabang otomatis saat register.'}
-            </div>
-            {registrationLocation && <div className="gps-register-note success">Lokasi ditemukan</div>}
-          </>
-        )}
-        <label>
-          Email
-          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-        </label>
-        <label>
-          Password
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-        </label>
-        <button disabled={loading || (mode === 'register' && (!registrationLocation || locationLoading))}>{loading ? 'Memproses...' : mode === 'login' ? 'Masuk & lanjut order' : 'Daftar & lanjut order'}</button>
+      <div className="profile-edit-form">
         <button type="button" className="google-login-button" onClick={() => { window.location.href = googleLoginUrl() }}>
-          Login by Google
+          Login / Register by Google
         </button>
-      </form>
+        <small>Akun customer baru akan dibuat otomatis setelah Google berhasil diverifikasi.</small>
+      </div>
     </div>
   )
 }
@@ -4103,11 +3993,6 @@ function PwaInstallButton() {
       <span>Install Aplikasi</span>
     </button>
   )
-}
-
-function getLoginErrorMessage(error: unknown) {
-  const message = getApiErrorMessage(error, 'Login gagal')
-  return message === 'Unauthorized' || /401|unauthorized/i.test(message) ? 'Email atau password salah.' : message
 }
 
 function orderClosedMessageFromError(error: unknown) {
@@ -4162,39 +4047,6 @@ async function getBrowserLocation() {
       gps_timestamp: new Date(position.timestamp).toISOString(),
     }
   } catch {
-    return null
-  }
-}
-
-async function getRegistrationLocation(setStatus: (status: string) => void) {
-  if (!('geolocation' in navigator)) {
-    setStatus('GPS browser tidak tersedia. Cabang bisa diset oleh CS.')
-    return null
-  }
-
-  setStatus('Mengambil lokasi GPS untuk menentukan cabang...')
-
-  try {
-    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 9000,
-        maximumAge: 0,
-      })
-    })
-
-    setStatus('Lokasi GPS diterima. Cabang akan dipilih otomatis.')
-
-    return {
-      lat: position.coords.latitude,
-      lng: position.coords.longitude,
-      location_lat: position.coords.latitude,
-      location_lng: position.coords.longitude,
-      location_accuracy: position.coords.accuracy,
-      gps_timestamp: new Date(position.timestamp).toISOString(),
-    }
-  } catch {
-    setStatus('GPS tidak diizinkan. Area cabang belum diset silahkan hubungi CS.')
     return null
   }
 }

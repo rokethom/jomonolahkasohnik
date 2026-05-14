@@ -76,7 +76,7 @@ class JojoBotService
                     $smartParsed['payload']['service_type'] = $parsed['service_type'];
                 }
 
-                $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
+                $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user), $user);
                 $quote = $this->pricing->calculate($payload);
                 $reply = $this->formatter->smartParserReply($smartParsed, $quote);
 
@@ -197,7 +197,7 @@ class JojoBotService
         $smartParsed = $this->isStructuredFormInput($rawText) ? null : $this->orderParser->parseFastFirst($user, $rawText);
 
         if ($smartParsed) {
-            $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user));
+            $payload = $this->hydratePayloadCoordinates($smartParsed['payload'], $smartParsed['branch'] ?? $this->branch($user), $user);
             $quote = $this->pricing->calculate($payload);
 
             return [
@@ -560,10 +560,10 @@ class JojoBotService
             return $payload;
         }
 
-        return $this->hydratePayloadCoordinates($payload, $branch);
+        return $this->hydratePayloadCoordinates($payload, $branch, $user);
     }
 
-    private function hydratePayloadCoordinates(array $payload, ?Branch $branch = null): array
+    private function hydratePayloadCoordinates(array $payload, ?Branch $branch = null, ?User $user = null): array
     {
         if (isset($payload['distance']) || isset($payload['distance_km'])) {
             return $payload;
@@ -575,8 +575,8 @@ class JojoBotService
         $pickupAddress = trim((string) ($payload['pickup_address'] ?? ''));
         $destinationAddress = trim((string) ($payload['destination_address'] ?? $payload['destination_text'] ?? ''));
 
-        $pickupGeo = $this->geocodeForPricing($pickupAddress, $branch);
-        $destinationGeo = $this->geocodeForPricing($destinationAddress, $branch);
+        $pickupGeo = $this->geocodeForPricing($pickupAddress, $branch, $user);
+        $destinationGeo = $this->geocodeForPricing($destinationAddress, $branch, $user);
         $resolved = $pickupGeo !== null && $destinationGeo !== null;
 
         if (! $resolved) {
@@ -611,7 +611,7 @@ class JojoBotService
         return $payload;
     }
 
-    private function geocodeForPricing(string $address, ?Branch $branch): ?array
+    private function geocodeForPricing(string $address, ?Branch $branch, ?User $user = null): ?array
     {
         $address = trim($address);
         $normalized = mb_strtolower($address);
@@ -620,13 +620,21 @@ class JojoBotService
             return null;
         }
 
-        $memoKey = sha1($normalized.'|'.($branch?->id ?? 'none'));
+        $memoKey = sha1($normalized.'|'.($branch?->id ?? 'none').'|'.($user?->id ?? 'guest'));
         if (array_key_exists($memoKey, $this->pricingGeocodeMemo)) {
             return $this->pricingGeocodeMemo[$memoKey];
         }
 
+        if ($user && $homeGeocode = $this->customerHomeGeocode($address, $user)) {
+            return $this->pricingGeocodeMemo[$memoKey] = $homeGeocode;
+        }
+
         if ($poi = $this->locationPois->resolve($address, $branch?->id)) {
             return $this->pricingGeocodeMemo[$memoKey] = $this->locationPois->geocodeResult($poi);
+        }
+
+        if ($regionGeocode = $this->geojsonRegions->geocodeByName($address, $branch?->id)) {
+            return $this->pricingGeocodeMemo[$memoKey] = $regionGeocode;
         }
 
         if (! $this->settings->bool('google_maps_geocode_enabled', false)) {
@@ -639,6 +647,37 @@ class JojoBotService
             self::PRICING_GEOCODE_CANDIDATES,
             120,
         );
+    }
+
+    private function customerHomeGeocode(string $address, User $user): ?array
+    {
+        $lat = $user->lat ?? $user->currentLocation?->lat;
+        $lng = $user->lng ?? $user->currentLocation?->lng;
+
+        if (! $this->isCustomerHomeAddress($address) || ! is_numeric($lat) || ! is_numeric($lng)) {
+            return null;
+        }
+
+        return [
+            'lat' => (float) $lat,
+            'lng' => (float) $lng,
+            'formatted_address' => $user->address ?: 'Rumah saya',
+            'provider' => 'customer_profile_home',
+            'confidence' => 95,
+            'query' => $address,
+        ];
+    }
+
+    private function isCustomerHomeAddress(string $address): bool
+    {
+        $normalized = $this->locationPois->normalize($address);
+
+        if (in_array($normalized, ['rumah', 'rumah saya', 'rumahku', 'alamat saya', 'alamat rumah', 'lokasi saya', 'lokasi rumah', 'lokasi jemput saya', 'home'], true)) {
+            return true;
+        }
+
+        return preg_match('/\b(?:rumah|home)\b/u', $normalized) === 1
+            && preg_match('/\b(?:saya|ku|sendiri)\b/u', $normalized) === 1;
     }
 
     private function geocodeCandidates(string $address, ?Branch $branch): array

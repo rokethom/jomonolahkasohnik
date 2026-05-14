@@ -105,7 +105,7 @@ class DriverReportService
 
                 $tagihanBulanLalu = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
                 $previousBaseDeposit = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
-                $rewardCashbackBulanLalu = $this->cashbackForPreviousDeposit($previousDeposit, $period, $previousBaseDeposit);
+                $rewardCashbackBulanLalu = $this->cashbackForPreviousDeposit($previousDeposit, $previousBaseDeposit);
                 $totalTagihan = max(0, $setoranJasaDasar + $tagihanBulanLalu + (int) ($deposit?->bpjs_jht ?? 0) + (int) ($deposit?->bpjs ?? 0) + (int) ($deposit?->bansos ?? 0) - $rewardCashbackBulanLalu);
                 $terbayar = (int) ($deposit?->paid_amount ?? 0);
 
@@ -125,7 +125,7 @@ class DriverReportService
                     'paid_amount' => $terbayar,
                     'remaining_bill' => max(0, $totalTagihan - $terbayar),
                     'paid_at' => $deposit?->paid_at?->format('n/j/Y'),
-                    'next_cashback' => (int) floor(($setoranJasaDasar * 10) / 100),
+                    'next_cashback' => $this->cashbackForPreviousDeposit($deposit, $setoranJasaDasar),
                 ];
             })
             ->sortBy('driver')
@@ -159,7 +159,7 @@ class DriverReportService
         return app(DriverFinanceService::class)->depositAmount($order);
     }
 
-    private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, Carbon $period, int $previousBaseDeposit): int
+    private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int
     {
         if (! $previousDeposit || $previousBaseDeposit <= 0) {
             return 0;
@@ -169,9 +169,7 @@ class DriverReportService
             return 0;
         }
 
-        $deadline = $period->copy()->day(7)->endOfDay();
-
-        if ($previousDeposit->paid_at->greaterThan($deadline)) {
+        if ((int) $previousDeposit->paid_at->day >= 7) {
             return 0;
         }
 
