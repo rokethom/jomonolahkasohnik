@@ -15,7 +15,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class GeojsonRegionResource extends Resource
 {
@@ -60,38 +59,13 @@ class GeojsonRegionResource extends Resource
             Forms\Components\Toggle::make('is_active')
                 ->label('Aktif')
                 ->default(true),
-            Forms\Components\FileUpload::make('geojson_file')
-                ->label('Upload file GeoJSON')
-                ->acceptedFileTypes([
-                    'application/json',
-                    'application/geo+json',
-                    'application/octet-stream',
-                    'text/plain',
-                    'text/json',
-                    'geojson',
-                ])
-                ->storeFiles(false)
-                ->dehydrated(false)
-                ->live()
-                ->afterStateUpdated(function (Forms\Set $set, mixed $state): void {
-                    $file = is_array($state) ? reset($state) : $state;
-                    if (! $file instanceof TemporaryUploadedFile) {
-                        return;
-                    }
-
-                    $path = $file->getRealPath();
-                    if (is_string($path) && is_readable($path)) {
-                        $set('geojson', (string) file_get_contents($path));
-                    }
-                })
-                ->helperText('Upload FeatureCollection dari geojson.io akan otomatis dipecah menjadi baris tabel per feature.'),
             Forms\Components\Textarea::make('geojson')
                 ->label('GeoJSON Polygon / MultiPolygon')
                 ->required()
                 ->rows(14)
                 ->columnSpanFull()
                 ->formatStateUsing(fn (mixed $state): string => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : (string) ($state ?? ''))
-                ->helperText('GeoJSON hanya untuk pembacaan area, cabang, coverage, lat/long, dan geofence. Harga tetap dikontrol dari Master Ring.'),
+                ->helperText('Paste GeoJSON dari geojson.io di sini. Jika berisi FeatureCollection, sistem otomatis membuat baris tabel per feature. Harga tetap dikontrol dari Master Ring.'),
         ]);
     }
 
