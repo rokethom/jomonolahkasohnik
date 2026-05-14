@@ -1692,7 +1692,7 @@ class AdminController extends Controller
 
     public function destroyPriceSetting(Request $request, PriceSetting $priceSetting): JsonResponse
     {
-        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true), 403);
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true), 403);
         $this->recordAudit($request->user(), 'deleted_price_policy', $priceSetting);
         $priceSetting->delete();
 
@@ -2413,8 +2413,8 @@ class AdminController extends Controller
 
         return match ($actor->role) {
             UserRole::Admin, UserRole::GM => $query,
-            UserRole::HRD => $this->whereInStaffBranchScope($query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Eksekutor->value, UserRole::Driver->value]), $branchIds, true),
-            UserRole::Manager, UserRole::SPV, UserRole::Eksekutor => $this->whereInStaffBranchScope($query->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value, UserRole::HRD->value]), $branchIds, true),
+            UserRole::HRD, UserRole::Manager => $this->whereInStaffBranchScope($query->whereIn('role', [UserRole::Manager->value, UserRole::SPV->value, UserRole::Operator->value, UserRole::Eksekutor->value, UserRole::Driver->value]), $branchIds, true),
+            UserRole::SPV, UserRole::Eksekutor => $this->whereInStaffBranchScope($query->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value, UserRole::HRD->value, UserRole::Manager->value]), $branchIds, true),
             UserRole::Operator => $query->whereNotIn('role', [UserRole::Admin->value, UserRole::GM->value, UserRole::HRD->value, UserRole::Manager->value]),
             default => $query->whereKey($actor->id),
         };
@@ -2592,7 +2592,7 @@ class AdminController extends Controller
 
     private function canManageGlobalUsers(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM], true);
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
     }
 
     private function branchScopeIdsForUserWrite(User $actor, UserRole $targetRole, mixed $branchIds, mixed $fallbackBranchId = null): array
@@ -2635,11 +2635,11 @@ class AdminController extends Controller
      */
     private function operationalBranchScopeIds(User $actor): ?array
     {
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator], true)) {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::Operator], true)) {
             return null;
         }
 
-        if (in_array($actor->role, [UserRole::HRD, UserRole::Manager, UserRole::SPV, UserRole::Eksekutor], true)) {
+        if (in_array($actor->role, [UserRole::SPV, UserRole::Eksekutor], true)) {
             return $this->staffBranchScopeIds($actor) ?? [];
         }
 
@@ -2651,7 +2651,7 @@ class AdminController extends Controller
      */
     private function staffBranchScopeIds(User $actor): ?array
     {
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM], true)) {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)) {
             return null;
         }
 
@@ -2948,7 +2948,7 @@ class AdminController extends Controller
 
     private function canManageGlobalPricing(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM], true);
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
     }
 
     private function assertPricingBranchScope(User $actor, ?int $branchId, ?int $geofenceAreaId = null): void

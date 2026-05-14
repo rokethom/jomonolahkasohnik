@@ -594,7 +594,7 @@ class PricingCmsCsvService
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM], true);
+        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
     }
 
     /**

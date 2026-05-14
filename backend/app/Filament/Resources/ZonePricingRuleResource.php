@@ -301,7 +301,7 @@ class ZonePricingRuleResource extends Resource
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true);
+        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
     }
 
     private static function scopedBranchId(): ?int

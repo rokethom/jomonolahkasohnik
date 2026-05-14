@@ -21,10 +21,6 @@ class UserPolicy
     {
         $role = $this->roleOf($user);
 
-        if ($role === UserRole::Manager) {
-            return $this->roleOf($model) !== UserRole::Admin;
-        }
-
         if ($role?->canManageUsers()) {
             return $role->canManageRole($this->roleOf($model) ?? UserRole::Customer);
         }

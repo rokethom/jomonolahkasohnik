@@ -76,7 +76,7 @@ enum UserRole: string
             self::Admin => self::cases(),
             self::GM => self::cases(),
             self::HRD => [self::Manager, self::SPV, self::Operator, self::Eksekutor, self::Driver],
-            self::Manager => [self::SPV, self::Operator, self::Eksekutor, self::Driver, self::WebAdmin, self::CmsEditor],
+            self::Manager => [self::Manager, self::SPV, self::Operator, self::Eksekutor, self::Driver],
             self::SPV => [self::Operator, self::Eksekutor, self::Driver],
             self::Operator, self::Eksekutor => [self::Driver],
             default => [],

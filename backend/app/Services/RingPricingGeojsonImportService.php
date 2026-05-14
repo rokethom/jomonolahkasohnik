@@ -177,7 +177,7 @@ class RingPricingGeojsonImportService
             return array_values(array_map('intval', $explicit));
         }
 
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD], true)) {
+        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)) {
             return null;
         }
 

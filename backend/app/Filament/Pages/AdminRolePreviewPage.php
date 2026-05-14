@@ -199,7 +199,7 @@ class AdminRolePreviewPage extends Page implements HasForms
     {
         return match ($role) {
             'hrd' => ['Fokus pada user, driver status, laporan HR, dan pricing sesuai CMS.', 'Akses pricing HRD bersifat global agar tidak mentok akun tanpa cabang.'],
-            'manager' => ['Melihat area/cabang sendiri dan laporan operasional.', 'Bisa evaluasi operator, driver, dan pricing policy sesuai izin.'],
+            'manager' => ['Akses manager bersifat global seperti HRD untuk user, driver, laporan, dan pricing lintas cabang.', 'Bisa create, melihat, dan edit data operasional keseluruhan cabang sesuai izin role.'],
             'spv' => ['Monitoring live order, suspend/release driver, dan approval cancel.', 'Tidak punya menu create user penuh.'],
             'operator' => ['Fokus live chat, manual order, order operations, dan assign driver.', 'Data mengikuti area/jadwal yang melekat pada akun.'],
             'eksekutor' => ['Fokus dispatch area, backup operator, dan pending order.', 'Tidak melihat laporan global atau area lain.'],
