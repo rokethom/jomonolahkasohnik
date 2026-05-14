@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Enums\UserRole;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Services\BranchAccessSettingService;
 use App\Services\RolePermissionCatalog;
 use App\Services\RolePermissionSettingService;
 use App\Services\SettingService;
@@ -41,7 +42,7 @@ class RolePermissionsCmsPage extends Page implements HasForms
         return in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM], true);
     }
 
-    public function mount(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles): void
+    public function mount(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, BranchAccessSettingService $branchAccess): void
     {
         $state = [];
 
@@ -52,6 +53,8 @@ class RolePermissionsCmsPage extends Page implements HasForms
                 $state['roles'][$role][$this->groupKey($group)] = array_values(array_intersect(array_keys($options), $permissions));
             }
         }
+
+        $state['branch_access']['global_roles'] = $branchAccess->globalAccessRoles();
 
         $this->form->fill($state);
     }
@@ -71,11 +74,27 @@ class RolePermissionsCmsPage extends Page implements HasForms
                                     ->schema($this->roleSchema($role, $catalog));
                             })->values()->all()),
                     ]),
+                Forms\Components\Section::make('Akses lintas cabang')
+                    ->description('Role yang dicentang dapat melihat, membuat, dan mengedit data semua cabang tanpa terkunci branch akun. Admin dan GM selalu lintas cabang.')
+                    ->schema([
+                        Forms\Components\CheckboxList::make('branch_access.global_roles')
+                            ->label('Role dengan akses semua cabang')
+                            ->options([
+                                UserRole::HRD->value => UserRole::HRD->label(),
+                                UserRole::Manager->value => UserRole::Manager->label(),
+                                UserRole::SPV->value => UserRole::SPV->label(),
+                                UserRole::Operator->value => UserRole::Operator->label(),
+                                UserRole::Eksekutor->value => UserRole::Eksekutor->label(),
+                            ])
+                            ->columns(2)
+                            ->bulkToggleable()
+                            ->helperText('Gunakan ini jika akses lintas cabang perlu diubah tanpa edit kode.'),
+                    ]),
             ])
             ->statePath('data');
     }
 
-    public function save(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, SettingService $settings): void
+    public function save(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, BranchAccessSettingService $branchAccess, SettingService $settings): void
     {
         $state = $this->form->getState();
         $permissionModels = collect($catalog->permissions())
@@ -107,13 +126,20 @@ class RolePermissionsCmsPage extends Page implements HasForms
             ['type' => 'json'],
         );
 
+        $settings->set(
+            BranchAccessSettingService::GLOBAL_ACCESS_ROLES_KEY,
+            json_encode($branchAccess->normalizeRoles($state['branch_access']['global_roles'] ?? [])),
+            true,
+            ['type' => 'json'],
+        );
+
         Notification::make()
             ->title('Role permissions tersimpan')
-            ->body('Hak akses role, menu FE Admin, dan permission API akan mengikuti checklist terbaru.')
+            ->body('Hak akses role, menu FE Admin, scope cabang, dan permission API akan mengikuti checklist terbaru.')
             ->success()
             ->send();
 
-        $this->mount($catalog, $pricingRoles);
+        $this->mount($catalog, $pricingRoles, $branchAccess);
     }
 
     /**

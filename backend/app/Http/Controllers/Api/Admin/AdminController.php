@@ -29,6 +29,7 @@ use App\Services\AdminDashboardMetricsService;
 use App\Services\AdminRoleMenuOverrideService;
 use App\Services\AiParserRuleService;
 use App\Services\BranchDetectionService;
+use App\Services\BranchAccessSettingService;
 use App\Services\DriverDailyPriorityService;
 use App\Services\DriverFinanceService;
 use App\Services\DriverManagementCsvService;
@@ -2592,7 +2593,7 @@ class AdminController extends Controller
 
     private function canManageGlobalUsers(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+        return app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($actor->role);
     }
 
     private function branchScopeIdsForUserWrite(User $actor, UserRole $targetRole, mixed $branchIds, mixed $fallbackBranchId = null): array
@@ -2635,7 +2636,7 @@ class AdminController extends Controller
      */
     private function operationalBranchScopeIds(User $actor): ?array
     {
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::Operator], true)) {
+        if (app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($actor->role) || $actor->role === UserRole::Operator) {
             return null;
         }
 
@@ -2651,7 +2652,7 @@ class AdminController extends Controller
      */
     private function staffBranchScopeIds(User $actor): ?array
     {
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)) {
+        if (app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($actor->role)) {
             return null;
         }
 
@@ -2948,7 +2949,7 @@ class AdminController extends Controller
 
     private function canManageGlobalPricing(User $actor): bool
     {
-        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+        return app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($actor->role);
     }
 
     private function assertPricingBranchScope(User $actor, ?int $branchId, ?int $geofenceAreaId = null): void

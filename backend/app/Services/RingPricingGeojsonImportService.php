@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\UserRole;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\RingPricingRule;
@@ -177,7 +176,7 @@ class RingPricingGeojsonImportService
             return array_values(array_map('intval', $explicit));
         }
 
-        if (in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)) {
+        if (app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($actor->role)) {
             return null;
         }
 

@@ -8,6 +8,7 @@ use App\Filament\Support\PricingCsvTableActions;
 use App\Models\Branch;
 use App\Models\RingPricingRule;
 use App\Models\Service;
+use App\Services\BranchAccessSettingService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -599,7 +600,7 @@ class RingPricingRuleResource extends Resource
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+        return app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($role);
     }
 
     private static function scopedBranchId(): ?int

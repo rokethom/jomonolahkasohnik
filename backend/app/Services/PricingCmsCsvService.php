@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\UserRole;
 use App\Filament\Resources\PriceSettingResource;
 use App\Filament\Resources\RingPricingRuleResource;
 use App\Filament\Resources\ZonePricingRuleResource;
@@ -594,7 +593,7 @@ class PricingCmsCsvService
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+        return app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($role);
     }
 
     /**

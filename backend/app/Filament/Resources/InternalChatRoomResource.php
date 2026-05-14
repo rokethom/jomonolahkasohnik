@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Enums\UserRole;
 use App\Filament\Resources\InternalChatRoomResource\Pages;
 use App\Models\InternalChatRoom;
+use App\Services\BranchAccessSettingService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -55,7 +56,7 @@ class InternalChatRoomResource extends Resource
         $query = parent::getEloquentQuery()->with(['branch', 'latestMessage.sender'])->withCount('participants');
         $user = auth()->user();
 
-        if (! $user || in_array($user->role, [UserRole::Admin, UserRole::GM], true)) {
+        if (! $user || app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($user->role)) {
             return $query;
         }
 

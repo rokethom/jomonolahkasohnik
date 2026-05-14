@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\GeofenceArea;
 use App\Models\Service;
 use App\Models\ZonePricingRule;
+use App\Services\BranchAccessSettingService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -301,7 +302,7 @@ class ZonePricingRuleResource extends Resource
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+        return app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($role);
     }
 
     private static function scopedBranchId(): ?int
