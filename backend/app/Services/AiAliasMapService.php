@@ -102,7 +102,7 @@ class AiAliasMapService
                 $map->fill([
                     'branch_id' => $region->branch_id,
                     'area_id' => $region->area_id,
-                    'aliases' => $this->mergeAliases($map->aliases ?? [], $aliases),
+                    'aliases' => $this->sanitizeAliasesForRegion($this->mergeAliases($map->aliases ?? [], $aliases), $region),
                     'source' => $exists ? $map->source : 'generated',
                     'confidence' => max((int) ($map->confidence ?: 0), 85),
                     'priority' => max((int) ($map->priority ?: 0), 10),
@@ -187,7 +187,7 @@ class AiAliasMapService
             $aliases[] = $branchArea.' '.$branch;
         }
 
-        if ((Str::contains($this->normalize($name), 'kota') || Str::contains($this->normalize($branchArea), 'kota')) && $branch !== '') {
+        if ((Str::contains($this->normalize($name), 'kota') || ($branch !== '' && $this->normalize($name) === $this->normalize($branch))) && $branch !== '') {
             $aliases[] = 'kota';
             $aliases[] = $branch.' kota';
         }
@@ -243,6 +243,31 @@ class AiAliasMapService
             ->filter(fn (string $value): bool => mb_strlen($value) >= 2)
             ->unique(fn (string $value): string => $this->normalize($value))
             ->take(40)
+            ->values()
+            ->all();
+    }
+
+    private function sanitizeAliasesForRegion(array $aliases, GeojsonRegion $region): array
+    {
+        $branch = trim((string) ($region->branch?->name ?? ''));
+        $isCityTarget = Str::contains($this->normalize((string) $region->name), 'kota')
+            || ($branch !== '' && $this->normalize((string) $region->name) === $this->normalize($branch));
+
+        if ($isCityTarget) {
+            return $aliases;
+        }
+
+        $blocked = collect([
+            'kota',
+            $branch !== '' ? $branch.' kota' : null,
+            $branch !== '' ? 'kota '.$branch : null,
+        ])
+            ->filter()
+            ->map(fn (string $value): string => $this->normalize($value))
+            ->all();
+
+        return collect($aliases)
+            ->reject(fn (string $alias): bool => in_array($this->normalize($alias), $blocked, true))
             ->values()
             ->all();
     }
