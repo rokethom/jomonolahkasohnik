@@ -536,6 +536,7 @@ class PricingServiceTest extends TestCase
         ]);
 
         $geocoding = $this->mock(GeocodingService::class);
+        app(\App\Services\SettingService::class)->set('google_maps_geocode_enabled', true);
         $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
             ->with('ke Panarukan', $branch, 3, 120)
             ->once()
@@ -614,6 +615,7 @@ class PricingServiceTest extends TestCase
         ]);
 
         $geocoding = $this->mock(GeocodingService::class);
+        app(\App\Services\SettingService::class)->set('google_maps_geocode_enabled', true);
         $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
             ->with('Mimbaan Barat', $branch, 3, 120)
             ->once()

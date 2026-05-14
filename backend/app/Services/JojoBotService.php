@@ -27,6 +27,7 @@ class JojoBotService
         private readonly KeywordParserService $keywordParsers,
         private readonly GeojsonRegionLookupService $geojsonRegions,
         private readonly LocationPoiService $locationPois,
+        private readonly SettingService $settings,
     ) {
     }
 
@@ -626,6 +627,10 @@ class JojoBotService
 
         if ($poi = $this->locationPois->resolve($address, $branch?->id)) {
             return $this->pricingGeocodeMemo[$memoKey] = $this->locationPois->geocodeResult($poi);
+        }
+
+        if (! $this->settings->bool('google_maps_geocode_enabled', false)) {
+            return $this->pricingGeocodeMemo[$memoKey] = null;
         }
 
         return $this->pricingGeocodeMemo[$memoKey] = $this->geocoding->geocodeNearBranchGoogleOnly(

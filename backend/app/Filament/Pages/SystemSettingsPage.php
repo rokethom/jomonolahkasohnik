@@ -70,6 +70,7 @@ class SystemSettingsPage extends Page implements HasForms
             'osrm_base_url' => $settings->get('osrm_base_url', 'https://router.project-osrm.org'),
             'osrm_active' => $settings->raw('osrm_base_url')?->is_active ?? true,
             'google_maps_distance_enabled' => $settings->bool('google_maps_distance_enabled', false),
+            'google_maps_geocode_enabled' => $settings->bool('google_maps_geocode_enabled', false),
             'location_log_cleanup_enabled' => $settings->bool('location_log_cleanup_enabled', true),
             'location_log_retention_days' => $settings->int('location_log_retention_days', 14),
             'location_log_suspicious_retention_days' => $settings->int('location_log_suspicious_retention_days', 30),
@@ -394,6 +395,9 @@ class SystemSettingsPage extends Page implements HasForms
                                         Forms\Components\Toggle::make('google_maps_distance_enabled')
                                             ->label('Google Distance fallback aktif')
                                             ->helperText('Matikan jika belum punya API key Google aktif. Jika aktif, Google hanya dipakai setelah OSRM gagal.'),
+                                        Forms\Components\Toggle::make('google_maps_geocode_enabled')
+                                            ->label('Google Geocoding fallback aktif')
+                                            ->helperText('Matikan jika alamat sudah memakai Master POI/Alias. Jika aktif, JojoBot boleh mencari lat/lng ke Google saat POI tidak ditemukan.'),
                                     ]),
                                 Forms\Components\Section::make('Auto Cleanup Location Logs')
                                     ->description('Menghapus riwayat GPS lama secara bertahap agar tabel location_logs tidak membebani server. Data lokasi terakhir user/driver tetap tersimpan di profile/log terbaru.')
@@ -739,6 +743,7 @@ class SystemSettingsPage extends Page implements HasForms
             $settings->set('map_provider', $data['map_provider'] ?? 'osm', (bool) ($data['map_active'] ?? true));
             $settings->set('osrm_base_url', $data['osrm_base_url'] ?? 'https://router.project-osrm.org', (bool) ($data['osrm_active'] ?? true));
             $settings->set('google_maps_distance_enabled', (bool) ($data['google_maps_distance_enabled'] ?? false), true);
+            $settings->set('google_maps_geocode_enabled', (bool) ($data['google_maps_geocode_enabled'] ?? false), true);
             $normalLocationLogRetention = max(1, min(365, (int) ($data['location_log_retention_days'] ?? 14)));
             $settings->set('location_log_cleanup_enabled', (bool) ($data['location_log_cleanup_enabled'] ?? true));
             $settings->set('location_log_retention_days', $normalLocationLogRetention);
