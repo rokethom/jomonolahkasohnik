@@ -12,6 +12,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 
@@ -72,6 +73,21 @@ class GeojsonRegionResource extends Resource
     {
         return $table
             ->defaultSort('updated_at', 'desc')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['branch', 'area']))
+            ->headerActions([
+                Tables\Actions\Action::make('delete_all')
+                    ->label('Hapus semua')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Hapus semua GeoJSON region?')
+                    ->modalDescription('Semua data GeoJSON region akan dihapus dari master data. Master Ring tidak ikut terhapus.')
+                    ->modalSubmitActionLabel('Ya, hapus semua')
+                    ->action(function (): void {
+                        GeojsonRegion::query()->delete();
+                        Cache::flush();
+                    }),
+            ])
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Region')
@@ -93,6 +109,11 @@ class GeojsonRegionResource extends Resource
                 Tables\Columns\TextColumn::make('centroid_lng')
                     ->label('Lng')
                     ->toggleable(),
+                Tables\Columns\TextColumn::make('distance_from_branch')
+                    ->label('Jarak')
+                    ->state(fn (GeojsonRegion $record): ?float => self::distanceFromBranch($record))
+                    ->formatStateUsing(fn (?float $state): string => $state === null ? '-' : number_format($state, 2, ',', '.').' km')
+                    ->toggleable(),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')
                     ->boolean(),
@@ -103,10 +124,12 @@ class GeojsonRegionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->after(fn (): bool => Cache::flush()),
             ])
             ->bulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
+                Tables\Actions\DeleteBulkAction::make()
+                    ->after(fn (): bool => Cache::flush()),
             ]);
     }
 
@@ -172,5 +195,31 @@ class GeojsonRegionResource extends Resource
                 $area->id => trim(($area->branch?->display_name ? $area->branch->display_name.' - ' : '').$area->name.' ('.$area->code.')'),
             ])
             ->all();
+    }
+
+    private static function distanceFromBranch(GeojsonRegion $record): ?float
+    {
+        $branch = $record->branch;
+        if (! $branch || ! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+            return null;
+        }
+
+        if (! is_numeric($record->centroid_lat) || ! is_numeric($record->centroid_lng)) {
+            return null;
+        }
+
+        $earthRadiusKm = 6371.0;
+        $lat1 = (float) $branch->latitude;
+        $lng1 = (float) $branch->longitude;
+        $lat2 = (float) $record->centroid_lat;
+        $lng2 = (float) $record->centroid_lng;
+
+        $latDistance = deg2rad($lat2 - $lat1);
+        $lngDistance = deg2rad($lng2 - $lng1);
+        $a = sin($latDistance / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+            * sin($lngDistance / 2) ** 2;
+
+        return round($earthRadiusKm * (2 * atan2(sqrt($a), sqrt(1 - $a))), 2);
     }
 }
