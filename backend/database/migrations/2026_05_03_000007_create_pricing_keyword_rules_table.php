@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('keywords');
-            $table->unsignedInteger('amount')->default(0);
+            $table->integer('amount')->default(0);
             $table->json('service_scopes')->nullable();
             $table->boolean('is_active')->default(true);
             $table->integer('priority')->default(0);

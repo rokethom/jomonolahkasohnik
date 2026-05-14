@@ -284,11 +284,12 @@ class PricingService
             $payload['items'] ?? [],
         ]);
 
-        if ($extraCharge > 0 && $serviceType !== 'travel') {
+        if ($extraCharge !== 0 && $serviceType !== 'travel') {
             $quote['extra_charge'] = $extraCharge;
             $quote['keyword_charge'] = $extraCharge;
             $quote['service_charge'] += $extraCharge;
             $quote['total_before_round'] += $extraCharge;
+            $quote['total_before_round'] = max(0, (int) $quote['total_before_round']);
             $quote['subtotal'] = $quote['total_before_round'];
             $quote['final_price'] = $this->roundUpPrice($quote['total_before_round']);
             $quote['total_price'] = $quote['final_price'];

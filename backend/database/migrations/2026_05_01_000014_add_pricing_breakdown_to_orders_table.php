@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::table('orders', function (Blueprint $table): void {
             $table->decimal('distance_km', 8, 2)->default(0)->after('destination_lng');
-            $table->unsignedInteger('extra_charge')->default(0)->after('service_charge');
+            $table->integer('extra_charge')->default(0)->after('service_charge');
             $table->unsignedInteger('stops')->default(1)->after('extra_charge');
             $table->json('pricing_breakdown')->nullable()->after('total_price');
         });

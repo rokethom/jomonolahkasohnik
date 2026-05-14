@@ -42,9 +42,11 @@ class RingPricingService
         return [
             'rule' => $selectedRule,
             'distance_from_branch_km' => round($distanceKm, 2),
-            'pickup_ring' => null,
-            'destination_ring' => $selectedRule->ring,
-            'is_cross_ring' => false,
+            'pickup_ring' => $selectedRule->pickup_ring,
+            'destination_ring' => $selectedRule->destination_ring ?: $selectedRule->ring,
+            'is_cross_ring' => filled($selectedRule->pickup_ring)
+                && filled($selectedRule->destination_ring)
+                && $selectedRule->pickup_ring !== $selectedRule->destination_ring,
             'branch_id' => $branchId,
         ];
     }

@@ -3478,7 +3478,7 @@ function PricingKeywordRulesPanel({ rules, services, permissions, api, onChanged
         <form className="admin-inline-form keyword-create-form" onSubmit={(event) => void create(event).catch((error) => setMessage(error instanceof Error ? error.message : 'Gagal menyimpan rule'))}>
           <label>Nama<input name="name" required placeholder="Depan Roxy charge" /></label>
           <label>Keywords<input name="keywords" required placeholder="depan roxy, seberang roxy" /></label>
-          <label>Nominal<input name="amount" type="number" min="0" step="1000" defaultValue="3000" required /></label>
+          <label>Nominal<input name="amount" type="number" step="1000" defaultValue="3000" required /><small>Isi minus untuk diskon, contoh -2000.</small></label>
           <label>Priority<input name="priority" type="number" defaultValue="0" /></label>
           <label className="span-2">Scope layanan<select name="service_scopes" multiple defaultValue={['all']}>{serviceOptions.map((service) => <option key={service.value} value={service.value}>{service.label}</option>)}</select></label>
           <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>

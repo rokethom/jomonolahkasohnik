@@ -1150,6 +1150,10 @@ class JojoBotService
             $breakdown[] = '- Ring: '.$ringLabel;
         }
 
+        if (filled($quote['cross_ring'] ?? null)) {
+            $breakdown[] = '- Cross ring: '.strtoupper(str_replace('_', ' ', (string) $quote['cross_ring']));
+        }
+
         $breakdown = [
             ...$breakdown,
             '- Tarif: '.$money($quote['tarif'] ?? $quote['price'] ?? 0),

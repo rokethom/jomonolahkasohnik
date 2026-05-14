@@ -57,8 +57,8 @@ class PricingKeywordRuleResource extends Resource
                         Forms\Components\TextInput::make('amount')
                             ->required()
                             ->numeric()
-                            ->minValue(0)
                             ->prefix('Rp')
+                            ->helperText('Isi positif untuk tambahan, isi negatif untuk diskon/pengurang. Contoh: -2000.')
                             ->live(onBlur: false),
                         Forms\Components\Select::make('service_scopes')
                             ->label('Service Scope')
@@ -82,7 +82,7 @@ class PricingKeywordRuleResource extends Resource
                             ->columnSpanFull(),
                     ]),
                 Forms\Components\Section::make('Live Preview')
-                    ->description('Cek apakah keyword pada rule ini akan menambah service charge.')
+                    ->description('Cek apakah keyword pada rule ini akan menambah atau mengurangi harga.')
                     ->columnSpan(1)
                     ->schema([
                         Forms\Components\Select::make('preview_service')
@@ -156,7 +156,7 @@ class PricingKeywordRuleResource extends Resource
         $amount = (int) ($get('amount') ?? 0);
 
         return $matched
-            ? 'MATCH - tambahan Rp '.number_format($amount, 0, ',', '.').' akan masuk ke service charge.'
+            ? 'MATCH - tambahan Rp '.number_format($amount, 0, ',', '.').' akan masuk ke breakdown harga.'
             : 'NO MATCH - text atau service scope belum cocok.';
     }
 }

@@ -2003,7 +2003,7 @@ class AdminController extends Controller
         $payload = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'keywords' => ['required', 'string', 'max:255'],
-            'amount' => ['required', 'integer', 'min:0'],
+            'amount' => ['required', 'integer', 'min:-1000000', 'max:1000000'],
             'service_scopes' => ['nullable', 'array'],
             'service_scopes.*' => ['string', 'max:80'],
             'is_active' => ['sometimes', 'boolean'],

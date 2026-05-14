@@ -9,12 +9,19 @@ class TextFormatter
         $money = fn (int|float|null $value): string => 'Rp '.number_format((int) $value, 0, ',', '.');
         $helperFee = (int) ($quote['crew_helper_fee'] ?? $quote['helper_service_charge'] ?? data_get($quote, 'crew_decision.helper_fee', data_get($quote, 'crew_decision.helper_service_charge', 0)));
         $helperLabel = (string) data_get($quote, 'crew_decision.helper_label', 'Jasa helper');
+        $crossRing = filled($quote['cross_ring'] ?? null)
+            ? strtoupper(str_replace('_', ' ', (string) $quote['cross_ring']))
+            : null;
         $breakdown = [
             'Breakdown Harga:',
             '- Tarif: '.$money($quote['tarif'] ?? $quote['price'] ?? 0),
             '- Service fee: '.$money($quote['service_fee'] ?? $quote['service_charge'] ?? 0),
             '- Tambahan: '.$money($quote['extra_charge'] ?? 0),
         ];
+
+        if ($crossRing !== null) {
+            array_splice($breakdown, 1, 0, ['- Cross ring: '.$crossRing]);
+        }
 
         if ($helperFee > 0) {
             $breakdown[] = '- '.$helperLabel.': '.$money($helperFee);
