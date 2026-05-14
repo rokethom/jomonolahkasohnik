@@ -95,7 +95,7 @@ class GeojsonParserServiceTest extends TestCase
         ]);
 
         $geocoding = $this->mock(GeocodingService::class);
-        $geocoding->shouldReceive('geocodeNearBranchLimited')->andReturnUsing(
+        $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')->andReturnUsing(
             fn (string $address): array => match ($address) {
                 'utara' => ['lat' => -7.700, 'lng' => 114.010, 'formatted_address' => 'utara', 'query' => 'utara'],
                 'selatan' => ['lat' => -7.720, 'lng' => 114.010, 'formatted_address' => 'selatan', 'query' => 'selatan'],

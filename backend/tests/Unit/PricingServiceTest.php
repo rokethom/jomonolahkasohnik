@@ -10,6 +10,7 @@ use App\Models\PriceSetting;
 use App\Models\RingPricingRule;
 use App\Services\JojoBotService;
 use App\Services\AiAliasMapService;
+use App\Services\GeocodingService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\PricingService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -489,7 +490,7 @@ class PricingServiceTest extends TestCase
         );
     }
 
-    public function test_geojson_region_can_be_used_as_pricing_geocode_reference(): void
+    public function test_pricing_geocode_uses_google_instead_of_geojson_centroid(): void
     {
         $branch = Branch::query()->create([
             'branch_code' => 'STB-GEO',
@@ -534,15 +535,26 @@ class PricingServiceTest extends TestCase
             'is_active' => true,
         ]);
 
+        $geocoding = $this->mock(GeocodingService::class);
+        $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
+            ->with('ke Panarukan', $branch, 8, 120)
+            ->once()
+            ->andReturn([
+                'lat' => -7.7115,
+                'lng' => 114.0905,
+                'provider' => 'google',
+                'formatted_address' => 'Panarukan, Situbondo',
+                'query' => 'ke Panarukan',
+            ]);
+
         $service = app(JojoBotService::class);
         $method = new \ReflectionMethod($service, 'geocodeForPricing');
         $method->setAccessible(true);
 
         $result = $method->invoke($service, 'ke Panarukan', $branch);
 
-        $this->assertSame('geojson_region', $result['provider']);
-        $this->assertSame('Panarukan', $result['geojson_region_name']);
-        $this->assertSame(114.0810, $result['lng']);
+        $this->assertSame('google', $result['provider']);
+        $this->assertSame(114.0905, $result['lng']);
     }
 
     public function test_ai_alias_map_resolves_local_alias_to_geojson_region(): void
@@ -601,16 +613,26 @@ class PricingServiceTest extends TestCase
             'is_active' => true,
         ]);
 
+        $geocoding = $this->mock(GeocodingService::class);
+        $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
+            ->with('Mimbaan Barat', $branch, 8, 120)
+            ->once()
+            ->andReturn([
+                'lat' => -7.7095,
+                'lng' => 114.0525,
+                'provider' => 'google_places',
+                'formatted_address' => 'Mimbaan Barat, Situbondo',
+                'query' => 'Mimbaan Barat',
+            ]);
+
         $service = app(JojoBotService::class);
         $method = new \ReflectionMethod($service, 'geocodeForPricing');
         $method->setAccessible(true);
 
         $result = $method->invoke($service, 'Mimbaan Barat', $branch);
 
-        $this->assertSame('ai_alias_map', $result['provider']);
-        $this->assertSame('Kelurahan Mimbaan', $result['ai_alias_canonical_name']);
-        $this->assertSame($region->id, $result['geojson_region_id']);
-        $this->assertSame(114.0510, $result['lng']);
+        $this->assertSame('google_places', $result['provider']);
+        $this->assertSame(114.0525, $result['lng']);
     }
 
     public function test_ai_alias_map_does_not_hijack_specific_address_with_branch_name(): void

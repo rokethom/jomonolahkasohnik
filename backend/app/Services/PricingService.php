@@ -85,7 +85,7 @@ class PricingService
 
     public function calculateDistance(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
-        return $this->distanceCalculator->haversine($lat1, $lng1, $lat2, $lng2);
+        return $this->distanceCalculator->drivingDistance($lat1, $lng1, $lat2, $lng2);
     }
 
     public function distanceInKm(float $lat1, float $lng1, float $lat2, float $lng2): float

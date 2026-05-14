@@ -5,7 +5,6 @@ namespace App\Services\Geojson;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
 use App\Services\GeocodingService;
-use App\Services\Spatial\GeojsonRegionLookupService;
 use RuntimeException;
 
 class BoundaryGeojsonRegionService
@@ -13,7 +12,6 @@ class BoundaryGeojsonRegionService
     public function __construct(
         private readonly GeocodingService $geocoding,
         private readonly GeojsonParserService $parser,
-        private readonly GeojsonRegionLookupService $geojsonRegions,
     ) {
     }
 
@@ -107,10 +105,9 @@ class BoundaryGeojsonRegionService
      */
     private function geocodeBoundary(string $address, ?Branch $branch): array
     {
-        $result = $this->geojsonRegions->geocodeByName($address, $branch?->id)
-            ?? $this->geocoding->geocodeNearBranchLimited($address, $branch, 6, 120)
-            ?? $this->geocoding->geocodeNearBranchLimited($address, $branch, 6, null)
-            ?? throw new RuntimeException('Batas tidak ditemukan di Maps atau Master Data GeoJSON: '.$address.'. Coba isi nama lebih lengkap, misalnya tambah kecamatan/kabupaten.');
+        $result = $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, 120)
+            ?? $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, null)
+            ?? throw new RuntimeException('Batas tidak ditemukan di Google Maps: '.$address.'. Coba isi nama lebih lengkap, misalnya tambah kecamatan/kabupaten.');
 
         return [
             'lat' => (float) $result['lat'],

@@ -2,52 +2,63 @@
 
 namespace App\Services\Pricing;
 
+use App\Services\SettingService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class DistanceCalculator
 {
     private const EARTH_RADIUS_KM = 6371.0;
-    private const OSRM_TTL_SECONDS = 3600;
+    private const GOOGLE_TTL_SECONDS = 3600;
+
+    public function __construct(private readonly SettingService $settings)
+    {
+    }
 
     public function drivingDistance(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
-        $cacheKey = sprintf('osrm:distance:%0.5f,%0.5f:%0.5f,%0.5f', $lat1, $lng1, $lat2, $lng2);
+        $key = $this->settings->get('google_maps_api_key');
+        if (! filled($key)) {
+            throw new RuntimeException('Google Maps API key belum aktif. Pricing membutuhkan jarak Google Maps.');
+        }
 
-        return Cache::remember($cacheKey, self::OSRM_TTL_SECONDS, function () use ($lat1, $lng1, $lat2, $lng2): float {
+        $cacheKey = sprintf('google-distance:driving:%0.5f,%0.5f:%0.5f,%0.5f', $lat1, $lng1, $lat2, $lng2);
+
+        return Cache::remember($cacheKey, self::GOOGLE_TTL_SECONDS, function () use ($lat1, $lng1, $lat2, $lng2, $key): float {
             try {
-                $url = sprintf(
-                    'https://router.project-osrm.org/route/v1/driving/%F,%F;%F,%F',
-                    $lng1,
-                    $lat1,
-                    $lng2,
-                    $lat2,
-                );
-
-                $response = Http::connectTimeout(1)->timeout(2)->get($url, [
-                    'overview' => 'false',
-                    'alternatives' => 'false',
+                $response = Http::connectTimeout(2)->timeout(5)->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
+                    'origins' => $lat1.','.$lng1,
+                    'destinations' => $lat2.','.$lng2,
+                    'mode' => 'driving',
+                    'region' => 'id',
+                    'language' => 'id',
+                    'units' => 'metric',
+                    'key' => $key,
                 ]);
 
-                if ($response->successful()) {
-                    $distanceMeters = data_get($response->json(), 'routes.0.distance');
+                $status = data_get($response->json(), 'status');
+                $elementStatus = data_get($response->json(), 'rows.0.elements.0.status');
+
+                if ($response->successful() && $status === 'OK' && $elementStatus === 'OK') {
+                    $distanceMeters = data_get($response->json(), 'rows.0.elements.0.distance.value');
                     if (is_numeric($distanceMeters)) {
                         return round(((float) $distanceMeters) / 1000, 2);
                     }
                 }
 
-                Log::warning('pricing.osrm_failed', [
+                Log::warning('pricing.google_distance_failed', [
                     'status' => $response->status(),
+                    'google_status' => $status,
+                    'element_status' => $elementStatus,
                     'body' => $response->body(),
                 ]);
             } catch (\Throwable $exception) {
-                Log::warning('pricing.osrm_exception', ['message' => $exception->getMessage()]);
+                Log::warning('pricing.google_distance_exception', ['message' => $exception->getMessage()]);
             }
 
-            Log::info('pricing.fallback_haversine', compact('lat1', 'lng1', 'lat2', 'lng2'));
-
-            return round($this->haversine($lat1, $lng1, $lat2, $lng2), 2);
+            throw new RuntimeException('Jarak Google Maps tidak berhasil dihitung. Cek alamat atau API key Google Maps.');
         });
     }
 

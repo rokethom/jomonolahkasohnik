@@ -96,6 +96,54 @@ class GeocodingService
         return null;
     }
 
+    public function geocodeNearBranchGoogleOnly(string $textAddress, ?Branch $branch, int $maxCandidates = 6, ?float $maxDistanceKm = null): ?array
+    {
+        $maxCandidates = max(1, $maxCandidates);
+
+        if (! $branch || ! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+            foreach (array_slice([$textAddress], 0, $maxCandidates) as $query) {
+                $result = $this->geocodeWithGoogleOnly($query, []);
+                if ($result !== null) {
+                    return [
+                        ...$result,
+                        'query' => $query,
+                    ];
+                }
+            }
+
+            return null;
+        }
+
+        $context = $this->branchContext($branch);
+        foreach (array_slice($this->branchCandidates($textAddress, $branch), 0, $maxCandidates) as $query) {
+            $result = $this->geocodeWithGoogleOnly($query, $context);
+            if ($result === null) {
+                continue;
+            }
+
+            $result = [
+                ...$result,
+                'query' => $query,
+            ];
+
+            if ($this->isTooFarFromBranch($result, $branch, $maxDistanceKm)) {
+                continue;
+            }
+
+            return $result;
+        }
+
+        return null;
+    }
+
+    private function geocodeWithGoogleOnly(string $query, array $context = []): ?array
+    {
+        $cacheKey = 'google-geocode-only:'.sha1(mb_strtolower($query).'|'.json_encode($context));
+
+        return Cache::remember($cacheKey, self::TTL_SECONDS, fn (): ?array => $this->geocodeWithGooglePlaces($query, $context)
+            ?? $this->geocodeWithGoogle($query, $context));
+    }
+
     public function getAddressFromLatLng(float $lat, float $lng): array
     {
         $key = sprintf('reverse-geocode:%0.8f:%0.8f', $lat, $lng);

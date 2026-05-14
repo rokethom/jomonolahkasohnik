@@ -605,12 +605,8 @@ class JojoBotService
             return null;
         }
 
-        $geojson = $this->geojsonRegions->geocodeByName($address, $branch?->id);
-        if ($geojson !== null) {
-            return $geojson;
-        }
-
-        return $this->geocoding->geocodeNearBranchLimited($address, $branch, 4, 30);
+        return $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, 120)
+            ?? $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, null);
     }
 
     private function geocodeCandidates(string $address, ?Branch $branch): array
