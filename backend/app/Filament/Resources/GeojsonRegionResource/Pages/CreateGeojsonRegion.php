@@ -22,6 +22,12 @@ class CreateGeojsonRegion extends CreateRecord
             $records = collect(GeojsonRegionResource::normalizeGeojsonRows($data))
                 ->map(fn (array $row): GeojsonRegion => GeojsonRegion::query()->create($row));
         } catch (RuntimeException $exception) {
+            Notification::make()
+                ->danger()
+                ->title('GeoJSON gagal disimpan')
+                ->body($exception->getMessage())
+                ->send();
+
             throw ValidationException::withMessages([
                 'geojson' => $exception->getMessage(),
             ]);
@@ -41,6 +47,9 @@ class CreateGeojsonRegion extends CreateRecord
     {
         return Notification::make()
             ->success()
-            ->title($this->createdRows > 1 ? $this->createdRows.' GeoJSON regions berhasil dibuat' : 'GeoJSON region berhasil dibuat');
+            ->title('GeoJSON berhasil disimpan')
+            ->body($this->createdRows > 1
+                ? $this->createdRows.' data region berhasil dibuat dan ditampilkan di tabel.'
+                : '1 data region berhasil dibuat dan ditampilkan di tabel.');
     }
 }
