@@ -60,6 +60,18 @@ class GeojsonRegionResource extends Resource
             Forms\Components\Toggle::make('is_active')
                 ->label('Aktif')
                 ->default(true),
+            Forms\Components\Select::make('input_mode')
+                ->label('Metode input')
+                ->native(false)
+                ->live()
+                ->default('boundary')
+                ->dehydrated(false)
+                ->hiddenOn('edit')
+                ->options([
+                    'boundary' => 'Otomatis dari 4 batas',
+                    'geojson' => 'Paste GeoJSON manual',
+                ])
+                ->helperText('Pilih 4 batas agar sistem otomatis mengambil lat/lng dan membentuk polygon.'),
             Forms\Components\Section::make('Generate otomatis dari batas')
                 ->description('Opsional. Isi 4 batas, sistem ambil lat/lng dari Maps, membentuk polygon, lalu memasukkan region/desa yang centroid-nya berada di dalam polygon.')
                 ->columns(2)
@@ -81,19 +93,15 @@ class GeojsonRegionResource extends Resource
                         ->placeholder('Contoh: SMPN 2 Panji')
                         ->dehydrated(),
                 ])
-                ->hiddenOn('edit')
+                ->hidden(fn (Forms\Get $get, string $operation): bool => $operation === 'edit' || $get('input_mode') === 'geojson')
                 ->columnSpanFull(),
             Forms\Components\Textarea::make('geojson')
                 ->label('GeoJSON Polygon / MultiPolygon')
-                ->required(fn (Forms\Get $get): bool => ! self::hasBoundaryInput([
-                    'boundary_north' => $get('boundary_north'),
-                    'boundary_south' => $get('boundary_south'),
-                    'boundary_west' => $get('boundary_west'),
-                    'boundary_east' => $get('boundary_east'),
-                ]))
+                ->required(fn (Forms\Get $get, string $operation): bool => $operation === 'edit' || $get('input_mode') === 'geojson')
                 ->rows(14)
                 ->columnSpanFull()
                 ->formatStateUsing(fn (mixed $state): string => is_array($state) ? json_encode($state, JSON_PRETTY_PRINT) : (string) ($state ?? ''))
+                ->hidden(fn (Forms\Get $get, string $operation): bool => $operation === 'create' && $get('input_mode') !== 'geojson')
                 ->helperText('Paste GeoJSON dari geojson.io di sini. Jika berisi FeatureCollection, sistem otomatis membuat baris tabel per feature. Harga tetap dikontrol dari Master Ring.'),
         ]);
     }
