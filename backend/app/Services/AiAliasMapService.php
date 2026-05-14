@@ -157,6 +157,12 @@ class AiAliasMapService
             $limit = max(1, (int) floor(mb_strlen($term) / 5));
             if ($distance <= $limit) {
                 $best = max($best, 20000 - ($distance * 100));
+                continue;
+            }
+
+            similar_text($needle, $term, $percent);
+            if ($percent >= 86 && abs(mb_strlen($needle) - mb_strlen($term)) <= 2) {
+                $best = max($best, 15000 + (int) $percent);
             }
         }
 

@@ -58,8 +58,8 @@ GeoJSON bukan sumber harga.
 2. AI Parser membaca alamat, koordinat, layanan, dan keyword.
 3. AI Pricing menerima pickup lat/lng dan destination lat/lng.
 4. AI Pricing membaca `Master Data GeoJSON` untuk mencocokkan destination ke area/cabang.
-5. Sistem menghitung jarak pickup ke destination dengan Haversine.
-6. Sistem membaca `Master Ring` berdasarkan jarak tersebut.
+5. Sistem menghitung jarak pickup ke destination dengan route distance OSRM, lalu Google Distance jika diaktifkan.
+6. Sistem membaca `Master Ring` berdasarkan jarak dan range KM yang aktif di CMS.
 7. Sistem menjalankan formula harga dari Master Ring.
 8. Sistem menjalankan keyword charge.
 9. Sistem mengembalikan harga ke customer.
@@ -68,17 +68,17 @@ GeoJSON bukan sumber harga.
 
 User order dari Patokan ke Wonokoyo.
 
-Jika hasil Haversine `4 KM`:
+Jika hasil route distance `5 KM` dan Master Ring aktif memakai range `0-5 KM`:
 
-- Ring 1 cocok karena `0 KM` sampai `4 KM`
+- Ring 1 cocok karena range aktif di CMS mencakup `5 KM`
 - harga jasa `6000`
 - service fee `1000`
 - total `7000`
 
-Jika hasil Haversine lebih dari `9 KM`:
+Jika hasil route distance masuk range Ring 3:
 
 - Ring 3 cocok
-- formula: `(jarak * 1900) - 7000`
+- formula mengikuti konfigurasi Master Ring, contoh default: `(jarak * 1900) - 7000`
 
 Contoh `12 KM`:
 
@@ -90,6 +90,6 @@ Contoh `12 KM`:
 
 - Master Ring adalah master kontrol harga.
 - GeoJSON adalah master data spatial.
-- Haversine adalah sumber jarak pricing.
+- Route distance OSRM/Google adalah sumber jarak pricing.
 - Polygon tidak boleh menentukan harga secara langsung.
 - GeoJSON hanya membantu sistem mengenali cabang dan area dari lat/lng.

@@ -227,6 +227,12 @@ class PricingService
             $pricingBranchId = (int) $geojsonRegion->branch_id;
             $payload['branch_id'] = $pricingBranchId;
         }
+        if ($pricingBranch && $this->ringPricing->hasActiveCrossRules($serviceType, $pricingBranchId)) {
+            $payload = [
+                ...$payload,
+                ...$this->endpointDistancesFromBranchCenter($payload, $pricingBranch),
+            ];
+        }
         $distanceFromBranch = $distance;
         $masterRingMatch = ! in_array($serviceType, ['joker_mobil', 'travel'], true)
             ? $this->ringPricing->matchMasterDistance($payload, $serviceType, $pricingBranchId, $distanceFromBranch)
@@ -237,7 +243,7 @@ class PricingService
                 'service_type' => $serviceType,
                 'distance' => $distance,
                 'tarif' => 0,
-                'tarif_source' => 'master_ring_polygon',
+                'tarif_source' => 'master_ring_distance',
                 'service_charge' => 0,
                 'total_before_round' => 0,
                 'final_price' => 0,
@@ -479,6 +485,58 @@ class PricingService
                     (float) $lat,
                     (float) $lng,
                 );
+            }
+        }
+
+        return null;
+    }
+
+    private function endpointDistancesFromBranchCenter(array $payload, Branch $branch): array
+    {
+        return array_filter([
+            'pickup_distance_from_branch_km' => $this->endpointDistanceFromBranchCenter($payload, $branch, 'pickup'),
+            'destination_distance_from_branch_km' => $this->endpointDistanceFromBranchCenter($payload, $branch, 'destination'),
+        ], fn ($value): bool => $value !== null);
+    }
+
+    private function endpointDistanceFromBranchCenter(array $payload, Branch $branch, string $type): ?float
+    {
+        $keys = $type === 'pickup'
+            ? [
+                ['pickup_lat', 'pickup_lng'],
+                ['origin_lat', 'origin_lng'],
+                ['service_payload.pickup_lat', 'service_payload.pickup_lng'],
+                ['service_payload.origin_lat', 'service_payload.origin_lng'],
+            ]
+            : [
+                ['destination_lat', 'destination_lng'],
+                ['dropoff_lat', 'dropoff_lng'],
+                ['service_payload.destination_lat', 'service_payload.destination_lng'],
+                ['service_payload.dropoff_lat', 'service_payload.dropoff_lng'],
+            ];
+
+        foreach ($keys as [$latKey, $lngKey]) {
+            $lat = data_get($payload, $latKey);
+            $lng = data_get($payload, $lngKey);
+            if (! is_numeric($lat) || ! is_numeric($lng)) {
+                continue;
+            }
+
+            try {
+                return $this->distanceCalculator->drivingDistance(
+                    (float) $branch->latitude,
+                    (float) $branch->longitude,
+                    (float) $lat,
+                    (float) $lng,
+                );
+            } catch (\Throwable $exception) {
+                Log::warning('pricing.endpoint_ring_distance_failed', [
+                    'type' => $type,
+                    'branch_id' => $branch->id,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return null;
             }
         }
 

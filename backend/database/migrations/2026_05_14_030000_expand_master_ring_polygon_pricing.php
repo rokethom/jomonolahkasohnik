@@ -52,9 +52,9 @@ return new class extends Migration
         });
 
         $defaults = [
-            'ring_1' => ['min_km' => 0, 'max_km' => 4, 'pricing_mode' => 'flat', 'price' => 6000, 'per_km_rate' => null, 'subtract_value' => 0, 'service_fee' => 1000, 'priority' => 300],
-            'ring_2' => ['min_km' => 4.1, 'max_km' => 9, 'pricing_mode' => 'flat', 'price' => 12000, 'per_km_rate' => null, 'subtract_value' => 0, 'service_fee' => 1000, 'priority' => 200],
-            'ring_3' => ['min_km' => 9.1, 'max_km' => null, 'pricing_mode' => 'formula', 'price' => 0, 'per_km_rate' => 1900, 'subtract_value' => 7000, 'service_fee' => 0, 'priority' => 100],
+            'ring_1' => ['min_km' => 0, 'max_km' => 5, 'pricing_mode' => 'flat', 'price' => 6000, 'per_km_rate' => null, 'subtract_value' => 0, 'service_fee' => 1000, 'priority' => 300],
+            'ring_2' => ['min_km' => 5.01, 'max_km' => 10, 'pricing_mode' => 'flat', 'price' => 12000, 'per_km_rate' => null, 'subtract_value' => 0, 'service_fee' => 1000, 'priority' => 200],
+            'ring_3' => ['min_km' => 10.01, 'max_km' => null, 'pricing_mode' => 'formula', 'price' => 0, 'per_km_rate' => 1900, 'subtract_value' => 7000, 'service_fee' => 0, 'priority' => 100],
         ];
 
         foreach ($defaults as $ring => $values) {

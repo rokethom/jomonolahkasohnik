@@ -271,6 +271,124 @@ class PricingServiceTest extends TestCase
         $this->assertSame(7000, $quote['total_price']);
     }
 
+    public function test_master_ring_single_ring_prices_match_ring_one_two_and_three(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-RING-SINGLE',
+            'name' => 'Situbondo',
+            'area' => 'Kota Single',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $this->seedMasterRingDefaults($branch->id);
+
+        $pricing = app(PricingService::class);
+
+        $ringOne = $pricing->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'distance_km' => 5,
+            'stops' => 1,
+        ]);
+        $ringTwo = $pricing->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'distance_km' => 10,
+            'stops' => 1,
+        ]);
+        $ringThree = $pricing->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'distance_km' => 12,
+            'stops' => 1,
+        ]);
+
+        $this->assertSame('ring_1', $ringOne['ring']);
+        $this->assertSame(6000, $ringOne['tarif']);
+        $this->assertSame(7000, $ringOne['total_price']);
+
+        $this->assertSame('ring_2', $ringTwo['ring']);
+        $this->assertSame(12000, $ringTwo['tarif']);
+        $this->assertSame(13000, $ringTwo['total_price']);
+
+        $this->assertSame('ring_3', $ringThree['ring']);
+        $this->assertSame(15800, $ringThree['tarif']);
+        $this->assertSame(16000, $ringThree['total_price']);
+    }
+
+    public function test_master_ring_cross_ring_only_matches_endpoint_rings(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-RING-CROSS',
+            'name' => 'Situbondo',
+            'area' => 'Kota Cross',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $this->seedMasterRingDefaults($branch->id);
+
+        RingPricingRule::query()->create([
+            'branch_id' => $branch->id,
+            'service_type' => 'ojek',
+            'name' => 'Cross Ring 1 to Ring 2',
+            'pickup_area' => '*',
+            'destination_area' => '*',
+            'match_type' => 'cross',
+            'pickup_ring' => 'ring_1',
+            'destination_ring' => 'ring_2',
+            'ring' => 'ring_2',
+            'min_km' => 0,
+            'max_km' => 99,
+            'pricing_mode' => 'flat',
+            'price' => 11000,
+            'service_fee' => 1000,
+            'priority' => 400,
+            'is_bidirectional' => true,
+            'source' => 'manual',
+            'is_active' => true,
+        ]);
+
+        $pricing = app(PricingService::class);
+
+        $cross = $pricing->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'distance_km' => 6,
+            'pickup_distance_from_branch_km' => 2,
+            'destination_distance_from_branch_km' => 6,
+            'stops' => 1,
+        ]);
+        $single = $pricing->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'distance_km' => 6,
+            'pickup_distance_from_branch_km' => 2,
+            'destination_distance_from_branch_km' => 2,
+            'stops' => 1,
+        ]);
+
+        $this->assertSame('ring_1_to_ring_2', $cross['cross_ring']);
+        $this->assertSame(11000, $cross['tarif']);
+        $this->assertSame(12000, $cross['total_price']);
+
+        $this->assertNull($single['cross_ring']);
+        $this->assertSame('ring_2', $single['ring']);
+        $this->assertSame(12000, $single['tarif']);
+        $this->assertSame(13000, $single['total_price']);
+    }
+
     public function test_master_ring_polygon_no_longer_controls_customer_pricing(): void
     {
         app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
@@ -490,7 +608,7 @@ class PricingServiceTest extends TestCase
         );
     }
 
-    public function test_pricing_geocode_uses_google_instead_of_geojson_centroid(): void
+    public function test_pricing_geocode_uses_geojson_before_external_maps(): void
     {
         $branch = Branch::query()->create([
             'branch_code' => 'STB-GEO',
@@ -535,18 +653,7 @@ class PricingServiceTest extends TestCase
             'is_active' => true,
         ]);
 
-        $geocoding = $this->mock(GeocodingService::class);
         app(\App\Services\SettingService::class)->set('google_maps_geocode_enabled', true);
-        $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
-            ->with('ke Panarukan', $branch, 3, 120)
-            ->once()
-            ->andReturn([
-                'lat' => -7.7115,
-                'lng' => 114.0905,
-                'provider' => 'google',
-                'formatted_address' => 'Panarukan, Situbondo',
-                'query' => 'ke Panarukan',
-            ]);
 
         $service = app(JojoBotService::class);
         $method = new \ReflectionMethod($service, 'geocodeForPricing');
@@ -554,8 +661,8 @@ class PricingServiceTest extends TestCase
 
         $result = $method->invoke($service, 'ke Panarukan', $branch);
 
-        $this->assertSame('google', $result['provider']);
-        $this->assertSame(114.0905, $result['lng']);
+        $this->assertSame('geojson_region', $result['provider']);
+        $this->assertSame(114.081, $result['lng']);
     }
 
     public function test_ai_alias_map_resolves_local_alias_to_geojson_region(): void
@@ -614,18 +721,7 @@ class PricingServiceTest extends TestCase
             'is_active' => true,
         ]);
 
-        $geocoding = $this->mock(GeocodingService::class);
         app(\App\Services\SettingService::class)->set('google_maps_geocode_enabled', true);
-        $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
-            ->with('Mimbaan Barat', $branch, 3, 120)
-            ->once()
-            ->andReturn([
-                'lat' => -7.7095,
-                'lng' => 114.0525,
-                'provider' => 'google_places',
-                'formatted_address' => 'Mimbaan Barat, Situbondo',
-                'query' => 'Mimbaan Barat',
-            ]);
 
         $service = app(JojoBotService::class);
         $method = new \ReflectionMethod($service, 'geocodeForPricing');
@@ -633,8 +729,57 @@ class PricingServiceTest extends TestCase
 
         $result = $method->invoke($service, 'Mimbaan Barat', $branch);
 
-        $this->assertSame('google_places', $result['provider']);
-        $this->assertSame(114.0525, $result['lng']);
+        $this->assertSame('ai_alias_map', $result['provider']);
+        $this->assertSame(114.051, $result['lng']);
+    }
+
+    public function test_ai_alias_map_resolves_common_typo(): void
+    {
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-TYPO',
+            'name' => 'Situbondo',
+            'area' => 'Kota Typo',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        $region = GeojsonRegion::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Panarukan',
+            'geojson' => ['type' => 'Feature', 'properties' => ['name' => 'Panarukan'], 'geometry' => ['type' => 'Polygon', 'coordinates' => [[[114.0800, -7.7100], [114.0820, -7.7100], [114.0820, -7.7080], [114.0800, -7.7080], [114.0800, -7.7100]]]]],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [[
+                ['lat' => -7.7100, 'lng' => 114.0800],
+                ['lat' => -7.7100, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0800],
+            ]],
+            'centroid_lat' => -7.7090,
+            'centroid_lng' => 114.0810,
+            'min_lat' => -7.7100,
+            'max_lat' => -7.7080,
+            'min_lng' => 114.0800,
+            'max_lng' => 114.0820,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        AiAliasMap::query()->create([
+            'branch_id' => $branch->id,
+            'geojson_region_id' => $region->id,
+            'canonical_name' => 'Panarukan',
+            'aliases' => ['panarukan'],
+            'source' => 'manual',
+            'confidence' => 95,
+            'priority' => 20,
+            'is_active' => true,
+        ]);
+
+        $service = app(AiAliasMapService::class);
+
+        $this->assertSame('Panarukan', $service->resolve('panaurkan', $branch->id)?->canonical_name);
+        $this->assertSame('Panarukan', $service->resolve('panarukn', $branch->id)?->canonical_name);
     }
 
     public function test_ai_alias_map_does_not_hijack_specific_address_with_branch_name(): void
@@ -770,5 +915,26 @@ class PricingServiceTest extends TestCase
 
         $this->assertFalse($method->invoke($service, 'antar dari mama marvel ke terminal', ['min']));
         $this->assertTrue($method->invoke($service, 'min mau order', ['min']));
+    }
+
+    private function seedMasterRingDefaults(int $branchId): void
+    {
+        foreach ([
+            ['ring' => 'ring_1', 'name' => 'Default Ring 1', 'min_km' => 0, 'max_km' => 5, 'pricing_mode' => 'flat', 'price' => 6000, 'per_km_rate' => null, 'subtract_value' => 0, 'service_fee' => 1000, 'priority' => 300],
+            ['ring' => 'ring_2', 'name' => 'Default Ring 2', 'min_km' => 5.01, 'max_km' => 10, 'pricing_mode' => 'flat', 'price' => 12000, 'per_km_rate' => null, 'subtract_value' => 0, 'service_fee' => 1000, 'priority' => 200],
+            ['ring' => 'ring_3', 'name' => 'Default Ring 3', 'min_km' => 10.01, 'max_km' => null, 'pricing_mode' => 'formula', 'price' => 0, 'per_km_rate' => 1900, 'subtract_value' => 7000, 'service_fee' => 0, 'priority' => 100],
+        ] as $rule) {
+            RingPricingRule::query()->create([
+                ...$rule,
+                'branch_id' => $branchId,
+                'service_type' => 'ojek',
+                'pickup_area' => '*',
+                'destination_area' => '*',
+                'match_type' => 'point',
+                'is_bidirectional' => true,
+                'source' => 'manual',
+                'is_active' => true,
+            ]);
+        }
     }
 }

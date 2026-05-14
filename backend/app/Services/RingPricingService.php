@@ -23,27 +23,28 @@ class RingPricingService
             return null;
         }
 
-        $pickupPoint = $this->pointFromPayload($payload, 'pickup');
-        $destinationPoint = $this->pointFromPayload($payload, 'destination');
-
         $rules = $this->masterDistanceRules($branchId, $serviceType);
         if ($rules->isEmpty()) {
             return null;
         }
 
         $selectedRule = $rules
-            ->filter(fn (RingPricingRule $rule): bool => $this->matchesDistanceRange($rule, $distanceKm))
+            ->filter(fn (RingPricingRule $rule): bool => $this->matchesDistanceRange($rule, $distanceKm)
+                && $this->matchesRingRoute($rule, $payload, $rules))
             ->sort($this->compareRules(...))
             ->first();
         if (! $selectedRule) {
             return null;
         }
 
+        $pickupRing = $this->endpointRing($payload, $rules, 'pickup');
+        $destinationRing = $this->endpointRing($payload, $rules, 'destination');
+
         return [
             'rule' => $selectedRule,
             'distance_from_branch_km' => round($distanceKm, 2),
-            'pickup_ring' => $selectedRule->pickup_ring,
-            'destination_ring' => $selectedRule->destination_ring ?: $selectedRule->ring,
+            'pickup_ring' => $selectedRule->pickup_ring ?: $pickupRing,
+            'destination_ring' => $selectedRule->destination_ring ?: $destinationRing ?: $selectedRule->ring,
             'is_cross_ring' => filled($selectedRule->pickup_ring)
                 && filled($selectedRule->destination_ring)
                 && $selectedRule->pickup_ring !== $selectedRule->destination_ring,
@@ -79,6 +80,28 @@ class RingPricingService
             $rules,
             fn (RingPricingRule $rule): bool => $this->matches($rule, $pickupText, $destinationText),
         );
+    }
+
+    public function hasActiveCrossRules(string $serviceType, ?int $branchId = null): bool
+    {
+        if (! Schema::hasColumn('ring_pricing_rules', 'match_type')
+            || ! Schema::hasColumn('ring_pricing_rules', 'pickup_ring')
+            || ! Schema::hasColumn('ring_pricing_rules', 'destination_ring')) {
+            return false;
+        }
+
+        return RingPricingRule::query()
+            ->where('is_active', true)
+            ->forBranch($branchId)
+            ->forService($serviceType)
+            ->where(function ($query): void {
+                $query->where('match_type', 'cross')
+                    ->orWhere(function ($query): void {
+                        $query->whereNotNull('pickup_ring')
+                            ->whereNotNull('destination_ring');
+                    });
+            })
+            ->exists();
     }
 
     public function apply(array $quote, RingPricingRule $rule): array
@@ -262,6 +285,66 @@ class RingPricingService
         $max = $rule->max_km !== null ? (float) $rule->max_km : null;
 
         return $distanceKm >= $min && ($max === null || $distanceKm <= $max);
+    }
+
+    /**
+     * @param  Collection<int, RingPricingRule>  $rules
+     */
+    private function matchesRingRoute(RingPricingRule $rule, array $payload, Collection $rules): bool
+    {
+        $isCrossRule = ($rule->match_type ?? 'point') === 'cross'
+            || (filled($rule->pickup_ring) && filled($rule->destination_ring));
+
+        if (! $isCrossRule) {
+            return true;
+        }
+
+        if (! filled($rule->pickup_ring) || ! filled($rule->destination_ring)) {
+            return false;
+        }
+
+        $pickupRing = $this->endpointRing($payload, $rules, 'pickup');
+        $destinationRing = $this->endpointRing($payload, $rules, 'destination');
+        if (! $pickupRing || ! $destinationRing) {
+            return false;
+        }
+
+        $forward = $pickupRing === $rule->pickup_ring && $destinationRing === $rule->destination_ring;
+        if ($forward || ! $rule->is_bidirectional) {
+            return $forward;
+        }
+
+        return $pickupRing === $rule->destination_ring && $destinationRing === $rule->pickup_ring;
+    }
+
+    /**
+     * @param  Collection<int, RingPricingRule>  $rules
+     */
+    private function endpointRing(array $payload, Collection $rules, string $type): ?string
+    {
+        $explicit = $payload[$type.'_ring'] ?? data_get($payload, 'service_payload.'.$type.'_ring');
+        if (is_string($explicit) && filled($explicit)) {
+            return $explicit;
+        }
+
+        $distance = $payload[$type.'_distance_from_branch_km']
+            ?? data_get($payload, 'service_payload.'.$type.'_distance_from_branch_km');
+        if (! is_numeric($distance)) {
+            return null;
+        }
+
+        return $rules
+            ->filter(fn (RingPricingRule $candidate): bool => $this->isSingleRingRule($candidate)
+                && $this->matchesDistanceRange($candidate, (float) $distance))
+            ->sort($this->compareRules(...))
+            ->first()
+            ?->ring;
+    }
+
+    private function isSingleRingRule(RingPricingRule $rule): bool
+    {
+        return ($rule->match_type ?? 'point') !== 'cross'
+            && (! filled($rule->pickup_ring) || ! filled($rule->destination_ring));
     }
 
     private function matches(RingPricingRule $rule, string $pickupText, string $destinationText): bool

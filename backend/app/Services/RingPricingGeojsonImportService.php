@@ -329,8 +329,8 @@ class RingPricingGeojsonImportService
     private function defaultMinKm(string $ring): float
     {
         return match ($ring) {
-            'ring_2' => 4.1,
-            'ring_3' => 9.1,
+            'ring_2' => 5.01,
+            'ring_3' => 10.01,
             default => 0.0,
         };
     }
@@ -338,8 +338,8 @@ class RingPricingGeojsonImportService
     private function defaultMaxKm(string $ring): ?float
     {
         return match ($ring) {
-            'ring_1' => 4.0,
-            'ring_2' => 9.0,
+            'ring_1' => 5.0,
+            'ring_2' => 10.0,
             default => null,
         };
     }
