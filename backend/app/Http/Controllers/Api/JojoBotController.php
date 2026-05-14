@@ -14,10 +14,21 @@ class JojoBotController extends Controller
     {
         $data = $request->validate([
             'raw_text' => ['required', 'string', 'max:4000'],
+            'device_location' => ['nullable', 'array'],
+            'device_location.lat' => ['required_with:device_location', 'numeric', 'between:-90,90'],
+            'device_location.lng' => ['required_with:device_location', 'numeric', 'between:-180,180'],
         ]);
 
         try {
-            $preview = $jojoBot->preview($request->user(), $data['raw_text']);
+            $user = $request->user();
+            if (isset($data['device_location']['lat'], $data['device_location']['lng'])) {
+                $user->forceFill([
+                    'lat' => (float) $data['device_location']['lat'],
+                    'lng' => (float) $data['device_location']['lng'],
+                ]);
+            }
+
+            $preview = $jojoBot->preview($user, $data['raw_text']);
         } catch (\Throwable $exception) {
             Log::warning('jojobot.preview_failed', [
                 'user_id' => $request->user()?->id,

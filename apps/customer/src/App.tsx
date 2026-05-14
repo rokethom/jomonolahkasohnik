@@ -60,7 +60,7 @@ import {
 import { setupPushNotifications } from './services/push'
 import { getEcho, resetEcho } from './services/realtime'
 import { useCustomerStore } from './store/useCustomerStore'
-import type { Banner, Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PriceQuote, PublicSettings } from './types'
+import type { Banner, Branch, ChatConversation, ChatMessage, DynamicService, HomeData, HomeSectionItem, Order, OrderFeedback, PriceQuote, PublicSettings, User } from './types'
 
 type Screen = 'home' | 'order-chat' | 'driver-chat' | 'cs-chat' | 'history' | 'profile' | 'profile-setup' | 'login'
 type JojoHistoryState = {
@@ -265,6 +265,26 @@ function containsTartKeyword(payload?: OrderPayload | null) {
 function validCoordinate(value: unknown, limit: number) {
   const numberValue = Number(value)
   return Number.isFinite(numberValue) && Math.abs(numberValue) <= limit
+}
+
+function userDeviceLocation(user?: User | null) {
+  if (!user || !validCoordinate(user.lat, 90) || !validCoordinate(user.lng, 180)) return null
+
+  return {
+    lat: Number(user.lat),
+    lng: Number(user.lng),
+  }
+}
+
+function needsCustomerLocation(text: string) {
+  return /\b(?:rumah\s+saya|rumahku|rumah|lokasi\s+saya|alamat\s+saya|home)\b/i.test(text)
+}
+
+async function previewDeviceLocation(text: string, user?: User | null) {
+  const saved = userDeviceLocation(user)
+  if (saved || !needsCustomerLocation(text)) return saved
+
+  return getBrowserLocation({ enableHighAccuracy: false, timeout: 2000, maximumAge: 300000 })
 }
 
 function validateOrderPayload(payload: OrderPayload) {
@@ -1169,7 +1189,7 @@ function App() {
 
     setTyping(true)
     try {
-      const preview = await previewJojoBot(text)
+      const preview = await previewJojoBot(text, await previewDeviceLocation(text, store.user) ?? undefined)
       if (preview.order_payload) setPendingOrder(preview.order_payload)
       if (preview.order_payload) setOrderSubmitBlocked(false)
       pushMessage({ from: 'bot', text: preview.reply, preview })
@@ -1214,7 +1234,7 @@ function App() {
 
     setTyping(true)
     try {
-      const preview = await previewJojoBot(text)
+      const preview = await previewJojoBot(text, await previewDeviceLocation(text, store.user) ?? undefined)
       if (!preview.order_payload) {
         pushMessage({
           from: 'bot',
@@ -4028,15 +4048,15 @@ async function syncRealtimeUserLocation(
   }
 }
 
-async function getBrowserLocation() {
+async function getBrowserLocation(options: PositionOptions = {}) {
   if (!('geolocation' in navigator)) return null
 
   try {
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
+        enableHighAccuracy: options.enableHighAccuracy ?? true,
+        timeout: options.timeout ?? 10000,
+        maximumAge: options.maximumAge ?? 0,
       })
     })
 

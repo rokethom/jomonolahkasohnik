@@ -300,8 +300,11 @@ export type DynamicFormSchema = {
   fields?: DynamicFormField[]
 }
 
-export async function previewJojoBot(rawText: string) {
-  const { data } = await api.post<{ data: JojoBotPreview }>('/jojobot/preview', { raw_text: rawText })
+export async function previewJojoBot(rawText: string, deviceLocation?: { lat: number; lng: number }) {
+  const { data } = await api.post<{ data: JojoBotPreview }>('/jojobot/preview', {
+    raw_text: rawText,
+    ...(deviceLocation ? { device_location: deviceLocation } : {}),
+  })
   return data.data
 }
 
