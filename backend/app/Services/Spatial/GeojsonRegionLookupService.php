@@ -20,7 +20,7 @@ class GeojsonRegionLookupService
             return null;
         }
 
-        $cacheKey = 'geojson-region-lookup:'.round($lat, 4).':'.round($lng, 4);
+        $cacheKey = 'geojson-region-lookup:'.$this->cacheVersion().':'.round($lat, 4).':'.round($lng, 4);
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($lat, $lng): ?GeojsonRegion {
             return GeojsonRegion::query()
@@ -49,7 +49,7 @@ class GeojsonRegionLookupService
             return null;
         }
 
-        $cacheKey = 'geojson-region-name-lookup:'.($branchId ?: 'global').':'.sha1($needle);
+        $cacheKey = 'geojson-region-name-lookup:'.$this->cacheVersion().':'.($branchId ?: 'global').':'.sha1($needle);
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchId): ?array {
             $region = GeojsonRegion::query()
@@ -171,5 +171,17 @@ class GeojsonRegionLookupService
             ->replaceMatches('/\s+/u', ' ')
             ->trim()
             ->toString();
+    }
+
+    private function cacheVersion(): string
+    {
+        if (! Schema::hasTable('geojson_regions')) {
+            return 'none';
+        }
+
+        $latest = GeojsonRegion::query()->max('updated_at');
+        $count = GeojsonRegion::query()->count();
+
+        return sha1((string) $latest.'|'.$count);
     }
 }

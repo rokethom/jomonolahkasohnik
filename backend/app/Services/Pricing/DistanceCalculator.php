@@ -12,6 +12,8 @@ class DistanceCalculator
 {
     private const EARTH_RADIUS_KM = 6371.0;
     private const ROUTE_TTL_SECONDS = 3600;
+    private const OSRM_CONNECT_TIMEOUT_SECONDS = 3;
+    private const OSRM_TIMEOUT_SECONDS = 8;
 
     public function __construct(private readonly SettingService $settings)
     {
@@ -90,10 +92,13 @@ class DistanceCalculator
                 $lat2,
             );
 
-            $response = Http::connectTimeout(1)->timeout(3)->get($url, [
-                'overview' => 'false',
-                'alternatives' => 'false',
-            ]);
+            $response = Http::retry(2, 250, throw: false)
+                ->connectTimeout(self::OSRM_CONNECT_TIMEOUT_SECONDS)
+                ->timeout(self::OSRM_TIMEOUT_SECONDS)
+                ->get($url, [
+                    'overview' => 'false',
+                    'alternatives' => 'false',
+                ]);
 
             if ($response->successful()) {
                 $distanceMeters = data_get($response->json(), 'routes.0.distance');
