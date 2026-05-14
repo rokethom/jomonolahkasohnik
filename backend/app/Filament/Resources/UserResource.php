@@ -14,6 +14,7 @@ use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -270,6 +271,86 @@ class UserResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('bulkSuspend')
+                        ->label('Suspend massal')
+                        ->icon('heroicon-o-lock-closed')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Suspend user terpilih?')
+                        ->modalDescription('User yang dipilih tidak bisa login sampai suspend dirilis.')
+                        ->form([
+                            Forms\Components\Textarea::make('reason')
+                                ->label('Alasan suspend')
+                                ->default('Suspend manual admin')
+                                ->required()
+                                ->rows(3),
+                            Forms\Components\DateTimePicker::make('suspended_until')
+                                ->label('Suspend sampai')
+                                ->helperText('Kosongkan jika suspend tanpa batas waktu.'),
+                        ])
+                        ->visible(fn (): bool => self::canBulkManageSuspension())
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (Collection $records, array $data): void {
+                            $reason = trim((string) ($data['reason'] ?? 'Suspend manual admin')) ?: 'Suspend manual admin';
+                            $until = $data['suspended_until'] ?? null;
+
+                            $records->each(function (User $record) use ($reason, $until): void {
+                                if (Auth::user()?->is($record)) {
+                                    return;
+                                }
+
+                                $record->forceFill([
+                                    'is_suspended' => true,
+                                    'suspension_reason' => $reason,
+                                    'suspended_until' => $until,
+                                ])->save();
+
+                                if ($record->driver) {
+                                    $record->driver->forceFill([
+                                        'status' => 'suspended',
+                                        'is_available' => false,
+                                        'suspended_until' => $until,
+                                    ])->save();
+                                }
+                            });
+
+                            Notification::make()
+                                ->title('Suspend massal selesai')
+                                ->body($records->count().' user diproses.')
+                                ->success()
+                                ->send();
+                        }),
+                    Tables\Actions\BulkAction::make('bulkUnsuspend')
+                        ->label('Release suspend massal')
+                        ->icon('heroicon-o-lock-open')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Release suspend user terpilih?')
+                        ->modalDescription('Status suspend user yang dipilih akan dibuka kembali.')
+                        ->visible(fn (): bool => self::canBulkManageSuspension())
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (Collection $records): void {
+                            $records->each(function (User $record): void {
+                                $record->forceFill([
+                                    'is_suspended' => false,
+                                    'suspension_reason' => null,
+                                    'suspended_until' => null,
+                                ])->save();
+
+                                if ($record->driver && $record->driver->status !== 'permanent') {
+                                    $record->driver->forceFill([
+                                        'status' => 'active',
+                                        'suspended_until' => null,
+                                    ])->save();
+                                }
+                            });
+
+                            Notification::make()
+                                ->title('Release suspend massal selesai')
+                                ->body($records->count().' user diproses.')
+                                ->success()
+                                ->send();
+                        }),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
@@ -314,6 +395,15 @@ class UserResource extends Resource
     public static function generatePassword(): string
     {
         return Str::upper(Str::random(2)).Str::random(6).random_int(10, 99).'!';
+    }
+
+    private static function canBulkManageSuspension(): bool
+    {
+        $user = Auth::user();
+
+        return $user?->hasPermission('create_user') === true
+            || $user?->hasPermission('suspend_driver') === true
+            || $user?->hasPermission('unsuspend_driver') === true;
     }
 
     private static function branchOptions(): array
