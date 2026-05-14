@@ -22,8 +22,8 @@ class DistanceCalculator
         $cacheKey = sprintf('route-distance:driving:%0.5f,%0.5f:%0.5f,%0.5f', $lat1, $lng1, $lat2, $lng2);
 
         return Cache::remember($cacheKey, self::ROUTE_TTL_SECONDS, function () use ($lat1, $lng1, $lat2, $lng2): float {
-            return $this->osrmDistance($lat1, $lng1, $lat2, $lng2)
-                ?? $this->googleDistance($lat1, $lng1, $lat2, $lng2)
+            return $this->googleDistance($lat1, $lng1, $lat2, $lng2)
+                ?? $this->osrmDistance($lat1, $lng1, $lat2, $lng2)
                 ?? throw new RuntimeException('Jarak rute tidak berhasil dihitung dari Google Maps maupun OSRM. Cek alamat atau koneksi API.');
         });
     }
@@ -54,6 +54,8 @@ class DistanceCalculator
             if ($response->successful() && $status === 'OK' && $elementStatus === 'OK') {
                 $distanceMeters = data_get($response->json(), 'rows.0.elements.0.distance.value');
                 if (is_numeric($distanceMeters)) {
+                    Log::info('pricing.google_distance_used', compact('lat1', 'lng1', 'lat2', 'lng2'));
+
                     return round(((float) $distanceMeters) / 1000, 2);
                 }
             }

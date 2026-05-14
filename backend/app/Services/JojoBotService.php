@@ -7,6 +7,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Spatial\GeojsonRegionLookupService;
 use Illuminate\Support\Collection;
+use RuntimeException;
 use Throwable;
 
 class JojoBotService
@@ -576,25 +577,33 @@ class JojoBotService
         $destinationGeo = $this->geocodeForPricing($destinationAddress, $branch);
         $resolved = $pickupGeo !== null && $destinationGeo !== null;
 
-        if ($resolved) {
-            $payload['pickup_lat'] = $pickupGeo['lat'];
-            $payload['pickup_lng'] = $pickupGeo['lng'];
-            $payload['destination_lat'] = $destinationGeo['lat'];
-            $payload['destination_lng'] = $destinationGeo['lng'];
+        if (! $resolved) {
+            $missing = [];
+            if ($pickupGeo === null) {
+                $missing[] = 'alamat jemput';
+            }
+            if ($destinationGeo === null) {
+                $missing[] = 'alamat tujuan';
+            }
+
+            throw new RuntimeException('Maps belum berhasil membaca '.implode(' dan ', $missing).'. Perjelas alamat atau cek konfigurasi Google Maps API.');
         }
+
+        $payload['pickup_lat'] = $pickupGeo['lat'];
+        $payload['pickup_lng'] = $pickupGeo['lng'];
+        $payload['destination_lat'] = $destinationGeo['lat'];
+        $payload['destination_lng'] = $destinationGeo['lng'];
 
         $payload['service_payload'] = [
             ...$servicePayload,
-            'geocoding_status' => $resolved ? 'resolved' : 'fallback',
+            'geocoding_status' => 'resolved',
             'pickup_geocoded_by' => $pickupGeo['provider'] ?? null,
             'destination_geocoded_by' => $destinationGeo['provider'] ?? null,
             'pickup_geocoding_query' => $pickupGeo['query'] ?? null,
             'destination_geocoding_query' => $destinationGeo['query'] ?? null,
             'pickup_formatted_address' => $pickupGeo['formatted_address'] ?? null,
             'destination_formatted_address' => $destinationGeo['formatted_address'] ?? null,
-            'geocoding_warning' => $resolved
-                ? null
-                : 'Sebagian alamat belum ditemukan maps. Sistem masih memakai koordinat fallback, cek titik maps sebelum kirim order.',
+            'geocoding_warning' => null,
         ];
 
         return $payload;
