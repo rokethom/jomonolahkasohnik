@@ -13,6 +13,10 @@ class JojoBotService
 {
     private const MENU_KEYWORDS = ['order', 'menu', 'min', 'hai', 'admin', 'jojo'];
     private const SHOPPING_KEYWORDS = ['belikan', 'pasar'];
+    private const PRICING_GEOCODE_CANDIDATES = 3;
+
+    /** @var array<string, array|null> */
+    private array $pricingGeocodeMemo = [];
 
     public function __construct(
         private readonly PricingService $pricing,
@@ -605,8 +609,17 @@ class JojoBotService
             return null;
         }
 
-        return $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, 120)
-            ?? $this->geocoding->geocodeNearBranchGoogleOnly($address, $branch, 8, null);
+        $memoKey = sha1($normalized.'|'.($branch?->id ?? 'none'));
+        if (array_key_exists($memoKey, $this->pricingGeocodeMemo)) {
+            return $this->pricingGeocodeMemo[$memoKey];
+        }
+
+        return $this->pricingGeocodeMemo[$memoKey] = $this->geocoding->geocodeNearBranchGoogleOnly(
+            $address,
+            $branch,
+            self::PRICING_GEOCODE_CANDIDATES,
+            120,
+        );
     }
 
     private function geocodeCandidates(string $address, ?Branch $branch): array

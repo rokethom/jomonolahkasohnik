@@ -38,7 +38,7 @@ class DistanceCalculator
         }
 
         try {
-            $response = Http::connectTimeout(2)->timeout(5)->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
+            $response = Http::connectTimeout(1)->timeout(3)->get('https://maps.googleapis.com/maps/api/distancematrix/json', [
                 'origins' => $lat1.','.$lng1,
                 'destinations' => $lat2.','.$lng2,
                 'mode' => 'driving',
@@ -82,7 +82,7 @@ class DistanceCalculator
                 $lat2,
             );
 
-            $response = Http::connectTimeout(2)->timeout(5)->get($url, [
+            $response = Http::connectTimeout(1)->timeout(3)->get($url, [
                 'overview' => 'false',
                 'alternatives' => 'false',
             ]);

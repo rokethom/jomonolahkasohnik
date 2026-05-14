@@ -537,7 +537,7 @@ class PricingServiceTest extends TestCase
 
         $geocoding = $this->mock(GeocodingService::class);
         $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
-            ->with('ke Panarukan', $branch, 8, 120)
+            ->with('ke Panarukan', $branch, 3, 120)
             ->once()
             ->andReturn([
                 'lat' => -7.7115,
@@ -615,7 +615,7 @@ class PricingServiceTest extends TestCase
 
         $geocoding = $this->mock(GeocodingService::class);
         $geocoding->shouldReceive('geocodeNearBranchGoogleOnly')
-            ->with('Mimbaan Barat', $branch, 8, 120)
+            ->with('Mimbaan Barat', $branch, 3, 120)
             ->once()
             ->andReturn([
                 'lat' => -7.7095,

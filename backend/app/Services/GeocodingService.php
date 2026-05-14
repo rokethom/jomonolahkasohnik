@@ -12,7 +12,7 @@ class GeocodingService
 {
     private const TTL_SECONDS = 86400;
     private const HTTP_CONNECT_TIMEOUT_SECONDS = 1;
-    private const HTTP_TIMEOUT_SECONDS = 3;
+    private const HTTP_TIMEOUT_SECONDS = 2;
 
     public function __construct(private readonly SettingService $settings)
     {

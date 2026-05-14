@@ -784,10 +784,26 @@ class AdminController extends Controller
         $customer = $this->manualPreviewCustomer($request, $payload);
         $this->assertManualOrderCustomerScope($request->user(), $customer);
 
-        $preview = $this->withManualOrderContact(
-            $jojoBot->preview($customer, $payload['raw_text']),
-            $this->manualOrderContactFromText($payload['raw_text']),
-        );
+        try {
+            $preview = $this->withManualOrderContact(
+                $jojoBot->preview($customer, $payload['raw_text']),
+                $this->manualOrderContactFromText($payload['raw_text']),
+            );
+        } catch (\Throwable $exception) {
+            Log::warning('admin.manual_order_preview_failed', [
+                'admin_id' => $request->user()?->id,
+                'customer_id' => $customer->id,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.',
+                'data' => [
+                    'intent' => 'pricing_unavailable',
+                    'reply' => 'JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.',
+                ],
+            ]);
+        }
 
         return response()->json([
             'message' => $preview['message'] ?? $preview['reply'] ?? null,
