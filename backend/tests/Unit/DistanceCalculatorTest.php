@@ -19,6 +19,10 @@ class DistanceCalculatorTest extends TestCase
 
     public function test_driving_distance_uses_osrm_first(): void
     {
+        app(\App\Services\SettingService::class)->set('osrm_base_url', 'https://router.project-osrm.org');
+        app(\App\Services\SettingService::class)->set('osrm_active', true);
+        app(\App\Services\SettingService::class)->set('google_maps_distance_enabled', false);
+
         Http::fake([
             'router.project-osrm.org/*' => Http::response([
                 'routes' => [
@@ -44,7 +48,10 @@ class DistanceCalculatorTest extends TestCase
 
     public function test_driving_distance_falls_back_to_google_when_enabled_and_osrm_fails(): void
     {
+        app(\App\Services\SettingService::class)->set('osrm_base_url', 'https://router.project-osrm.org');
+        app(\App\Services\SettingService::class)->set('osrm_active', true);
         app(\App\Services\SettingService::class)->set('google_maps_distance_enabled', true);
+        app(\App\Services\SettingService::class)->set('google_maps_api_key', 'test-google-key', true);
 
         Http::fake([
             'router.project-osrm.org/*' => Http::response([], 500),

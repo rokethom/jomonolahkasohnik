@@ -296,7 +296,7 @@ class OrderParserServiceTest extends TestCase
         $this->assertSame('Kopi Kita Selatan Taman', $parsed['payload']['service_payload']['store_location']);
     }
 
-    public function test_openrouter_ai_parser_uses_auto_router_model(): void
+    public function test_openrouter_ai_parser_uses_auto_free_model_when_auto_switch_is_enabled(): void
     {
         $settings = app(SettingService::class);
         $settings->set('ai_assistant_enabled', true);
@@ -345,6 +345,6 @@ class OrderParserServiceTest extends TestCase
             ->values()
             ->all();
 
-        $this->assertSame(['openrouter/auto'], $sentModels);
+        $this->assertSame(['openrouter/free'], $sentModels);
     }
 }

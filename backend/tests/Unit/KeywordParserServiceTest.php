@@ -6,6 +6,7 @@ use App\Models\KeywordParser;
 use App\Models\User;
 use App\Services\JojoBotService;
 use App\Services\KeywordParserService;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class KeywordParserServiceTest extends TestCase
@@ -76,9 +77,10 @@ class KeywordParserServiceTest extends TestCase
                 'response_template' => 'Silakan isi detail belanja.',
                 'parser_type' => 'simple',
                 'is_active' => true,
-                'priority' => 200,
+                'priority' => 10000,
             ],
         );
+        Cache::forget(KeywordParserService::CACHE_KEY);
 
         $detected = app(KeywordParserService::class)->detect('tolong belikan sayur di pasar');
 
