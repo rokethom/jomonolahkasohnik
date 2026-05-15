@@ -315,12 +315,16 @@ jobs:
             php artisan migrate --force; \
             php artisan db:seed --class=RolePermissionSeeder --force; \
             WEBUSER=\$(ps -eo user:30,comm,args | awk '/lsphp/ && !/awk/ {print \$1; exit}'); \
+            if [ -z \"\$WEBUSER\" ] && id aplik7393 >/dev/null 2>&1; then WEBUSER=aplik7393; fi; \
             if [ -n \"\$WEBUSER\" ]; then WEBGROUP=\$(id -gn \"\$WEBUSER\"); chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; fi; \
             find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
             find storage bootstrap/cache -type f -exec chmod 664 {} \; ; \
             php artisan config:cache; \
             php artisan route:cache; \
-            php artisan view:cache"
+            php artisan view:cache; \
+            if [ -n \"\$WEBUSER\" ]; then WEBGROUP=\$(id -gn \"\$WEBUSER\"); chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; fi; \
+            find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
+            find storage bootstrap/cache -type f -exec chmod 664 {} \; "
 
       - name: Nothing to deploy
         if: steps.scope.outputs.any != 'true'
