@@ -174,6 +174,8 @@
     @endonce
 
     <div class="deposit-report-shell space-y-6">
+        <x-filament-actions::modals />
+
         <div class="deposit-filter-card p-4">
             {{ $this->form }}
         </div>
@@ -211,8 +213,14 @@
                 <div class="deposit-period">Periode {{ \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1)->translatedFormat('F Y') }}</div>
             </div>
             <div class="flex flex-wrap gap-3">
-                <x-filament::button wire:click="importDepositFile" color="warning" icon="heroicon-o-arrow-up-tray">
+                <x-filament::button wire:click="mountAction('importDeposit')" color="warning" icon="heroicon-o-arrow-up-tray">
                     Import Update Setoran
+                </x-filament::button>
+                <x-filament::button wire:click="downloadTemplateCsv" color="gray" icon="heroicon-o-document-arrow-down">
+                    Download Template CSV
+                </x-filament::button>
+                <x-filament::button wire:click="downloadTemplateExcel" color="gray" icon="heroicon-o-table-cells">
+                    Download Template XLS
                 </x-filament::button>
                 <x-filament::button wire:click="exportCsv" icon="heroicon-o-arrow-down-tray">
                     Export CSV

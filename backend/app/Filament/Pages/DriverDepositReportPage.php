@@ -4,6 +4,9 @@ namespace App\Filament\Pages;
 
 use App\Models\Driver;
 use App\Services\DriverFinanceService;
+use Filament\Actions;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use App\Services\DriverReportService;
 use Filament\Notifications\Notification;
 use Filament\Forms;
@@ -18,8 +21,9 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-class DriverDepositReportPage extends Page implements HasForms
+class DriverDepositReportPage extends Page implements HasForms, HasActions
 {
+    use InteractsWithActions;
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
@@ -35,7 +39,6 @@ class DriverDepositReportPage extends Page implements HasForms
     public ?array $data = [
         'month' => null,
         'year' => null,
-        'import_file' => null,
     ];
 
     public static function shouldRegisterNavigation(): bool
@@ -48,7 +51,6 @@ class DriverDepositReportPage extends Page implements HasForms
         $this->form->fill([
             'month' => now()->month,
             'year' => now()->year,
-            'import_file' => null,
         ]);
     }
 
@@ -70,8 +72,26 @@ class DriverDepositReportPage extends Page implements HasForms
                     ->maxValue(2100)
                     ->live()
                     ->required(),
+            ])
+            ->columns([
+                'default' => 1,
+                'md' => 2,
+                'xl' => 2,
+            ])
+            ->statePath('data');
+    }
+
+    public function importDepositAction(): Actions\Action
+    {
+        return Actions\Action::make('importDeposit')
+            ->label('Import Update Setoran')
+            ->icon('heroicon-o-arrow-up-tray')
+            ->color('warning')
+            ->modalHeading('Import Update Setoran Driver')
+            ->modalSubmitActionLabel('Import')
+            ->form([
                 Forms\Components\FileUpload::make('import_file')
-                    ->label('Import update setoran')
+                    ->label('File CSV / XLS')
                     ->disk('local')
                     ->directory('imports/driver-deposits')
                     ->acceptedFileTypes([
@@ -80,16 +100,14 @@ class DriverDepositReportPage extends Page implements HasForms
                         'application/csv',
                         'application/vnd.ms-excel',
                     ])
-                    ->helperText('Upload file Export CSV atau Export Excel dari halaman ini. Sistem hanya membaca DRIVER, Terbayar, Tgl Bayar, dan Status; angka tagihan tetap dihitung dari order sistem.')
+                    ->helperText('Gunakan template CSV/XLS dari tombol Download Template. Sistem membaca DRIVER/email/username, Terbayar, Tgl Bayar, dan Status.')
                     ->preserveFilenames()
+                    ->required()
                     ->maxSize(4096),
             ])
-            ->columns([
-                'default' => 1,
-                'md' => 2,
-                'xl' => 3,
-            ])
-            ->statePath('data');
+            ->action(function (array $data): void {
+                $this->runDepositImport($data['import_file'] ?? null);
+            });
     }
 
     public function rows(): Collection
@@ -112,15 +130,30 @@ class DriverDepositReportPage extends Page implements HasForms
         return $this->download('driver-setoran-'.$this->period()->format('Y-m').'.xls', "\t");
     }
 
+    public function downloadTemplateCsv(): StreamedResponse
+    {
+        return $this->downloadTemplate('template-update-setoran-driver.csv', ',');
+    }
+
+    public function downloadTemplateExcel(): StreamedResponse
+    {
+        return $this->downloadTemplate('template-update-setoran-driver.xls', "\t");
+    }
+
     public function importDepositFile(): void
     {
         $state = $this->form->getState();
-        $upload = $this->uploadedImportFile($state['import_file'] ?? null);
+        $this->runDepositImport($state['import_file'] ?? null);
+    }
+
+    private function runDepositImport(mixed $file): void
+    {
+        $upload = $this->uploadedImportFile($file);
 
         if (! $upload['path'] || ! is_file($upload['path'])) {
             Notification::make()
                 ->title('File import belum dipilih')
-                ->body('Pilih file CSV atau XLS hasil export setoran, lalu klik Import.')
+                ->body('Pilih file CSV atau XLS dari tombol Import Update Setoran.')
                 ->warning()
                 ->send();
 
@@ -136,7 +169,6 @@ class DriverDepositReportPage extends Page implements HasForms
         $this->form->fill([
             'month' => $this->month(),
             'year' => $this->year(),
-            'import_file' => null,
         ]);
 
         $body = "{$result['updated']} driver diperbarui.";
@@ -184,6 +216,20 @@ class DriverDepositReportPage extends Page implements HasForms
                 ], $separator);
             }
 
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => $separator === ',' ? 'text/csv' : 'application/vnd.ms-excel',
+        ]);
+    }
+
+    private function downloadTemplate(string $filename, string $separator): StreamedResponse
+    {
+        $headers = ['DRIVER', 'email', 'username', 'Terbayar', 'Tgl Bayar', 'Status'];
+
+        return response()->streamDownload(function () use ($headers, $separator): void {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $headers, $separator);
+            fputcsv($out, ['Nama Driver', 'driver@email.com', 'username_driver', '0', now()->toDateString(), 'unpaid'], $separator);
             fclose($out);
         }, $filename, [
             'Content-Type' => $separator === ',' ? 'text/csv' : 'application/vnd.ms-excel',
