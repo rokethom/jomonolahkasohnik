@@ -27,13 +27,14 @@ class OrderCodeGenerator
         throw new \RuntimeException('Gagal generate kode order unik. Silakan coba lagi.');
     }
 
-    public function generateRequest(Service|string|null $service = null): string
+    public function generateRequest(Service|string|null $service = null, Branch|string|null $branch = null): string
     {
         $serviceCode = $this->normalizeCode($service instanceof Service ? $service->code : ($service ?: 'JO'), 'JO');
+        $areaCode = $branch instanceof Branch ? $this->branchCode($branch) : $this->normalizeCode($branch ?: 'APP', 'APP');
         $datetime = now()->format('ymdH');
 
         for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
-            $code = "{$serviceCode}-{$datetime}-REQ".$this->uniqueRequestSuffix();
+            $code = "{$serviceCode}-{$datetime}-REQ{$areaCode}".$this->uniqueRequestSuffix();
 
             if (! Order::query()->where('order_code', $code)->exists()) {
                 return $code;

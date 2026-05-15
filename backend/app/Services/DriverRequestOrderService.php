@@ -30,7 +30,7 @@ class DriverRequestOrderService
         $basePrice = max(0, (int) $parsed['price'] - $serviceFee);
 
         return DB::transaction(fn (): Order => Order::query()->create([
-            'order_code' => $this->codeGenerator->generateRequest($parsed['service']),
+            'order_code' => $this->codeGenerator->generateRequest($parsed['service'], $branch),
             'user_id' => $driver->user_id,
             'driver_id' => $driver->id,
             'service_id' => $parsed['service']->id,
