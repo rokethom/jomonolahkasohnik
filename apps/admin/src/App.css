@@ -4847,6 +4847,8 @@ td {
 }
 
 .priority-window-list {
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   padding: 16px;
   border-style: solid;
@@ -4880,6 +4882,7 @@ td {
 }
 
 .priority-window-row.settings-row.compact {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: stretch;
@@ -4937,11 +4940,13 @@ td {
 }
 
 .priority-add-button.secondary-button {
+  position: static;
+  z-index: 0;
+  display: inline-flex;
   width: 100%;
   justify-content: center;
-  grid-column: 1 / -1;
   min-height: 48px;
-  margin-top: 2px;
+  margin: 4px 0 0;
   border: 1px solid rgba(14, 165, 233, 0.22);
   border-radius: 14px;
   color: #075985;
@@ -7172,15 +7177,25 @@ textarea::placeholder {
   }
 
   .priority-window-row.settings-row.compact {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: stretch;
   }
 
   .priority-window-fields {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
 
   .priority-window-row .priority-remove-button {
     width: 100%;
+  }
+
+  .priority-add-button.secondary-button {
+    width: 100%;
+    margin-top: 6px;
   }
 
   .priority-window-header {
