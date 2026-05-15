@@ -2,8 +2,12 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Branch;
 use App\Models\Driver;
+use App\Models\DriverDeposit;
+use App\Models\User;
 use App\Services\DriverFinanceService;
+use App\Services\BranchAccessSettingService;
 use Filament\Actions;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -112,7 +116,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
 
     public function rows(): Collection
     {
-        return app(DriverReportService::class)->monthlyDepositRows($this->month(), $this->year());
+        return app(DriverReportService::class)->monthlyDepositRows($this->month(), $this->year(), Auth::user());
     }
 
     public function headers(): array
@@ -144,6 +148,119 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
     {
         $state = $this->form->getState();
         $this->runDepositImport($state['import_file'] ?? null);
+    }
+
+    public function updateDepositCell(int $driverId, string $field, mixed $value): array
+    {
+        if (! in_array($field, [
+            'base_service_deposit',
+            'bpjs_jht',
+            'bpjs',
+            'bansos',
+            'paid_amount',
+            'paid_at',
+            'status',
+        ], true)) {
+            Notification::make()
+                ->title('Kolom tidak bisa diedit')
+                ->danger()
+                ->send();
+
+            return $this->gridPayload();
+        }
+
+        $driver = Driver::query()
+            ->with('user.branch')
+            ->find($driverId);
+
+        if (! $driver) {
+            Notification::make()
+                ->title('Driver tidak ditemukan')
+                ->danger()
+                ->send();
+
+            return $this->gridPayload();
+        }
+
+        $actor = Auth::user();
+        if (! $actor || ! $actor->hasPermission('view_report') || ! $this->canEditDriverDeposit($actor, $driver)) {
+            Notification::make()
+                ->title('Tidak punya akses edit setoran driver ini')
+                ->danger()
+                ->send();
+
+            return $this->gridPayload();
+        }
+
+        try {
+            $period = $this->period();
+            $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $period->copy());
+            $breakdown = $deposit->breakdown ?? [];
+            $breakdown['manual_override'] = true;
+
+            if ($field === 'base_service_deposit') {
+                $deposit->handle_day_15 = $this->moneyToInt($value);
+                $deposit->handle_day_30 = 0;
+            } elseif (in_array($field, ['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'], true)) {
+                $deposit->{$field} = $this->moneyToInt($value);
+            } elseif ($field === 'paid_at') {
+                $deposit->paid_at = filled($value) ? Carbon::parse((string) $value) : null;
+            } elseif ($field === 'status') {
+                $status = strtolower(trim((string) $value));
+                if (! in_array($status, ['paid', 'unpaid'], true)) {
+                    throw new \InvalidArgumentException('Status hanya boleh paid atau unpaid.');
+                }
+                $deposit->status = $status;
+            }
+
+            $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
+            $previous = $period->copy()->subMonth();
+            $previousDeposit = DriverDeposit::query()
+                ->where('driver_id', $driver->id)
+                ->where('year', $previous->year)
+                ->where('month', $previous->month)
+                ->first();
+
+            $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
+            $previousBase = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
+            $cashback = $this->cashbackForPreviousDeposit($previousDeposit, $previousBase);
+
+            $deposit->total = max(0, $base + $previousRemaining - $cashback + (int) $deposit->bansos + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
+
+            if ($field !== 'status') {
+                $deposit->status = (int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid';
+            }
+
+            if ($deposit->status === 'paid' && ! $deposit->paid_at) {
+                $deposit->paid_at = now();
+            }
+
+            $breakdown['handle_hari_15'] = (int) $deposit->handle_day_15;
+            $breakdown['handle_hari_30'] = (int) $deposit->handle_day_30;
+            $breakdown['setoran_hingga_hari_ini'] = $base;
+            $breakdown['tagihan_bulan_sebelumnya'] = $previousRemaining;
+            $breakdown['cashback_bulan_sebelumnya'] = $cashback;
+            $breakdown['bansos'] = (int) $deposit->bansos;
+            $breakdown['bpjs'] = (int) $deposit->bpjs;
+            $breakdown['bpjs_jht'] = (int) $deposit->bpjs_jht;
+            $deposit->breakdown = $breakdown;
+            $deposit->save();
+
+            Notification::make()
+                ->title('Setoran driver diperbarui')
+                ->success()
+                ->send();
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Gagal menyimpan setoran')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+        }
+
+        return $this->gridPayload();
     }
 
     private function runDepositImport(mixed $file): void
@@ -407,6 +524,61 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
         $numeric = preg_replace('/[^\d\-]/', '', $raw);
 
         return max(0, (int) $numeric);
+    }
+
+    private function gridPayload(): array
+    {
+        return [
+            'rows' => $this->rows()->values()->all(),
+        ];
+    }
+
+    private function canEditDriverDeposit(User $actor, Driver $driver): bool
+    {
+        if (app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($actor->role)) {
+            return true;
+        }
+
+        $branchIds = $this->staffBranchScopeIds($actor);
+
+        return $driver->user?->branch_id !== null
+            && in_array((int) $driver->user->branch_id, $branchIds, true);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function staffBranchScopeIds(User $actor): array
+    {
+        $actor->loadMissing('branchScopes:id');
+
+        $branchIds = $actor->branchScopes
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if ($branchIds === [] && $actor->branch_id !== null) {
+            $branchIds[] = (int) $actor->branch_id;
+        }
+
+        return Branch::expandToOperationalAreaIds($branchIds);
+    }
+
+    private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int
+    {
+        if (! $previousDeposit || $previousBaseDeposit <= 0) {
+            return 0;
+        }
+
+        if ($previousDeposit->status !== 'paid' || ! $previousDeposit->paid_at) {
+            return 0;
+        }
+
+        if ((int) $previousDeposit->paid_at->day >= 7) {
+            return 0;
+        }
+
+        return (int) floor($previousBaseDeposit * 0.1);
     }
 
     private function parsePaidAt(mixed $value, int $paidAmount): ?Carbon

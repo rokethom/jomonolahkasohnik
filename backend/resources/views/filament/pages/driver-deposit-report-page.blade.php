@@ -13,6 +13,9 @@
     @endphp
 
     @once
+        <link rel="stylesheet" href="{{ asset('assets/ag-grid/ag-grid.css') }}">
+        <link rel="stylesheet" href="{{ asset('assets/ag-grid/ag-theme-quartz.css') }}">
+        <script src="{{ asset('assets/ag-grid/ag-grid-community.min.js') }}"></script>
         <style>
             .deposit-report-shell {
                 color: #e5e7eb;
@@ -64,99 +67,78 @@
                 font-size: .86rem;
             }
 
-            .deposit-table-scroll {
-                overflow: auto;
-                max-height: 64vh;
+            .deposit-grid-shell {
+                padding: .75rem;
             }
 
-            .deposit-table {
-                border-collapse: separate;
-                border-spacing: 0;
-                min-width: 1460px;
+            .deposit-ag-grid {
+                --ag-background-color: #0f172a;
+                --ag-foreground-color: #f8fafc;
+                --ag-border-color: rgba(148, 163, 184, .24);
+                --ag-header-background-color: #111827;
+                --ag-header-foreground-color: #f8fafc;
+                --ag-odd-row-background-color: #111827;
+                --ag-row-hover-color: rgba(37, 99, 235, .18);
+                --ag-selected-row-background-color: rgba(14, 165, 233, .18);
+                --ag-wrapper-border-radius: 12px;
+                height: 66vh;
+                min-height: 520px;
                 width: 100%;
             }
 
-            .deposit-table th {
-                background: #111827;
-                border-bottom: 1px solid rgba(148, 163, 184, .28);
-                border-right: 1px solid rgba(148, 163, 184, .18);
-                color: #f8fafc;
-                font-size: .68rem;
-                font-weight: 850;
-                line-height: 1.2;
-                padding: .85rem .7rem;
-                position: sticky;
+            .deposit-ag-grid .ag-header-cell-label {
+                justify-content: center;
                 text-align: center;
-                text-transform: uppercase;
-                top: 0;
-                vertical-align: middle;
                 white-space: normal;
-                z-index: 2;
             }
 
-            .deposit-table th.deposit-accent-orange {
+            .deposit-ag-grid .ag-header-cell-text {
+                line-height: 1.18;
+                white-space: normal;
+            }
+
+            .deposit-ag-grid .ag-cell {
+                align-items: center;
+                display: flex;
+                font-size: .78rem;
+                font-weight: 650;
+            }
+
+            .deposit-ag-grid .deposit-driver-cell {
+                font-weight: 850;
+            }
+
+            .deposit-ag-grid .deposit-number-cell {
+                justify-content: flex-end;
+                text-align: right;
+            }
+
+            .deposit-ag-grid .deposit-editable-cell {
+                background: rgba(14, 165, 233, .12);
+                color: #e0f2fe;
+            }
+
+            .deposit-ag-grid .deposit-total-cell,
+            .deposit-ag-grid .deposit-remaining-cell {
+                background: rgba(2, 6, 23, .95);
+                color: #ffffff;
+                font-weight: 900;
+            }
+
+            .deposit-ag-grid .deposit-orange-header {
                 background: #7c2d12;
                 color: #fed7aa;
             }
 
-            .deposit-table th.deposit-accent-yellow {
+            .deposit-ag-grid .deposit-yellow-header {
                 background: #713f12;
                 color: #fde68a;
             }
 
-            .deposit-table td {
-                background: #f8fafc;
-                border-bottom: 1px solid #dbe3ef;
-                border-right: 1px solid #e2e8f0;
-                color: #111827 !important;
+            .deposit-grid-note {
+                color: #93c5fd;
                 font-size: .78rem;
-                font-weight: 650;
-                padding: .75rem .7rem;
-                vertical-align: middle;
-            }
-
-            .deposit-table tbody tr:nth-child(even) td {
-                background: #eef2f7;
-            }
-
-            .deposit-table tbody tr:hover td {
-                background: #dbeafe;
-            }
-
-            .deposit-table .deposit-name {
-                color: #0f172a !important;
-                font-weight: 850;
-                min-width: 150px;
-            }
-
-            .deposit-table .deposit-area {
-                color: #334155 !important;
-                min-width: 140px;
-            }
-
-            .deposit-table .deposit-number {
-                text-align: right;
-                white-space: nowrap;
-            }
-
-            .deposit-table .deposit-total {
-                background: #0f172a !important;
-                color: #ffffff !important;
-                font-weight: 900;
-            }
-
-            .deposit-table .deposit-remaining {
-                background: #1e293b !important;
-                color: #ffffff !important;
-                font-weight: 900;
-            }
-
-            .deposit-empty {
-                background: #f8fafc !important;
-                color: #475569 !important;
-                font-size: .95rem !important;
-                padding: 2rem !important;
-                text-align: center;
+                margin-top: .65rem;
             }
 
             @media (min-width: 768px) {
@@ -171,6 +153,101 @@
                 }
             }
         </style>
+        <script>
+            window.initDriverDepositReportGrid = function (root, rows, livewire) {
+                if (!window.agGrid || !root || !livewire) {
+                    return;
+                }
+
+                const target = root.querySelector('[data-deposit-grid]');
+                if (!target) {
+                    return;
+                }
+
+                if (root.__depositGridApi) {
+                    root.__depositGridApi.destroy();
+                }
+
+                const moneyFormatter = (params) => {
+                    const value = Number(params.value || 0);
+                    return value > 0 ? value.toLocaleString('en-US') : '-';
+                };
+                const numberFormatter = (params) => Number(params.value || 0).toLocaleString('en-US');
+                const moneyParser = (params) => {
+                    const parsed = String(params.newValue ?? '').replace(/[^\d-]/g, '');
+                    return Math.max(0, Number(parsed || 0));
+                };
+                const editableNumber = {
+                    editable: true,
+                    valueParser: moneyParser,
+                    valueFormatter: moneyFormatter,
+                    cellClass: 'deposit-number-cell deposit-editable-cell',
+                    type: 'rightAligned',
+                };
+
+                const gridOptions = {
+                    rowData: rows,
+                    defaultColDef: {
+                        sortable: true,
+                        filter: true,
+                        resizable: true,
+                        minWidth: 110,
+                    },
+                    columnDefs: [
+                        { headerName: 'DRIVER', field: 'driver', pinned: 'left', minWidth: 180, cellClass: 'deposit-driver-cell' },
+                        { headerName: 'AREA', field: 'area', pinned: 'left', minWidth: 150 },
+                        { headerName: 'JML ORDER', field: 'orders_count', width: 110, valueFormatter: numberFormatter, cellClass: 'deposit-number-cell' },
+                        { headerName: 'OMSET DARI JASA DASAR', field: 'base_service_omset', minWidth: 150, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell' },
+                        { headerName: 'SETORAN 20% DARI JASA DASAR', field: 'base_service_deposit', minWidth: 170, ...editableNumber },
+                        { headerName: 'TAGIHAN BLN LALU', field: 'previous_bill', minWidth: 135, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell' },
+                        { headerName: 'JHT BPJSTK', field: 'bpjs_jht', minWidth: 125, ...editableNumber },
+                        { headerName: 'PREMI BPJSTK', field: 'bpjs', minWidth: 125, ...editableNumber },
+                        { headerName: 'REWARD CASHBACK BULAN LALU', field: 'previous_cashback_reward', minWidth: 170, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell', headerClass: 'deposit-orange-header' },
+                        { headerName: 'TOTAL TAGIHAN', field: 'bill_before_bansos', minWidth: 130, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell' },
+                        { headerName: 'BANSOS AREA', field: 'bansos', minWidth: 125, ...editableNumber },
+                        { headerName: 'TOTAL TAGIHAN BULAN INI', field: 'total_bill', minWidth: 145, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell deposit-total-cell', headerClass: 'deposit-yellow-header' },
+                        { headerName: 'TERBAYAR', field: 'paid_amount', minWidth: 130, ...editableNumber },
+                        { headerName: 'SISA TAGIHAN', field: 'remaining_bill', minWidth: 135, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell deposit-remaining-cell', headerClass: 'deposit-yellow-header' },
+                        { headerName: 'TGL BAYAR', field: 'paid_at', minWidth: 130, editable: true, cellClass: 'deposit-editable-cell' },
+                        {
+                            headerName: 'STATUS',
+                            field: 'status',
+                            minWidth: 120,
+                            editable: true,
+                            cellEditor: 'agSelectCellEditor',
+                            cellEditorParams: { values: ['paid', 'unpaid'] },
+                            cellClass: 'deposit-editable-cell',
+                        },
+                        { headerName: 'CASHBACK 10% UTK BULAN DEPAN', field: 'next_cashback', minWidth: 170, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell' },
+                    ],
+                    singleClickEdit: false,
+                    stopEditingWhenCellsLoseFocus: true,
+                    animateRows: true,
+                    overlayNoRowsTemplate: '<span style="color:#cbd5e1">Belum ada data setoran pada periode ini.</span>',
+                    onCellValueChanged: (event) => {
+                        const field = event.colDef.field;
+                        if (!field || event.newValue === event.oldValue || !event.data?.driver_id) {
+                            return;
+                        }
+
+                        event.api.showLoadingOverlay();
+                        livewire.updateDepositCell(Number(event.data.driver_id), field, event.newValue)
+                            .then((payload) => {
+                                event.api.setGridOption('rowData', payload?.rows || []);
+                                event.api.hideOverlay();
+                            })
+                            .catch((error) => {
+                                event.data[field] = event.oldValue;
+                                event.api.refreshCells({ force: true });
+                                event.api.hideOverlay();
+                                alert(error?.message || 'Gagal menyimpan perubahan setoran.');
+                            });
+                    },
+                };
+
+                root.__depositGridApi = agGrid.createGrid(target, gridOptions);
+            };
+        </script>
     @endonce
 
     <div class="deposit-report-shell space-y-6">
@@ -231,48 +308,17 @@
             </div>
         </div>
 
-        <div class="deposit-table-card">
-            <div class="deposit-table-scroll">
-            <table class="deposit-table">
-                <thead>
-                    <tr>
-                        @foreach ($headers as $index => $header)
-                            <th @class([
-                                'deposit-accent-orange' => $index === 8,
-                                'deposit-accent-yellow' => in_array($index, [11, 13], true),
-                            ])>
-                                {{ $header }}
-                            </th>
-                        @endforeach
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($rows as $row)
-                        <tr>
-                            <td class="deposit-name">{{ $row['driver'] }}</td>
-                            <td class="deposit-area">{{ $row['area'] }}</td>
-                            <td class="deposit-number">{{ $row['orders_count'] }}</td>
-                            <td class="deposit-number">{{ number_format($row['base_service_omset'], 0, '.', ',') }}</td>
-                            <td class="deposit-number">{{ number_format($row['base_service_deposit'], 0, '.', ',') }}</td>
-                            <td class="deposit-number">{{ $row['previous_bill'] ? number_format($row['previous_bill'], 0, '.', ',') : '-' }}</td>
-                            <td class="deposit-number">{{ $row['bpjs_jht'] ? number_format($row['bpjs_jht'], 0, '.', ',') : '-' }}</td>
-                            <td class="deposit-number">{{ $row['bpjs'] ? number_format($row['bpjs'], 0, '.', ',') : '-' }}</td>
-                            <td class="deposit-number">{{ $row['previous_cashback_reward'] ? number_format($row['previous_cashback_reward'], 0, '.', ',') : '-' }}</td>
-                            <td class="deposit-number">{{ number_format($row['bill_before_bansos'], 0, '.', ',') }}</td>
-                            <td class="deposit-number">{{ $row['bansos'] ? number_format($row['bansos'], 0, '.', ',') : '-' }}</td>
-                            <td class="deposit-number deposit-total">{{ number_format($row['total_bill'], 0, '.', ',') }}</td>
-                            <td class="deposit-number">{{ $row['paid_amount'] ? number_format($row['paid_amount'], 0, '.', ',') : '-' }}</td>
-                            <td class="deposit-number deposit-remaining">{{ $row['remaining_bill'] ? number_format($row['remaining_bill'], 0, '.', ',') : '-' }}</td>
-                            <td>{{ $row['paid_at'] ?: '-' }}</td>
-                            <td class="deposit-number">{{ number_format($row['next_cashback'], 0, '.', ',') }}</td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="16" class="deposit-empty">Belum ada data setoran pada periode ini.</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
+        <div class="deposit-table-card deposit-grid-shell">
+            <div
+                wire:ignore
+                wire:key="driver-deposit-ag-grid-{{ $this->data['year'] }}-{{ $this->data['month'] }}"
+                x-data
+                x-init="window.initDriverDepositReportGrid($el, @js($rows->values()->all()), $wire)"
+            >
+                <div data-deposit-grid class="ag-theme-quartz-dark deposit-ag-grid"></div>
+                <div class="deposit-grid-note">
+                    Double-click sel berwarna biru untuk edit live. Kolom total, sisa, dan cashback dihitung ulang otomatis oleh backend setelah tersimpan.
+                </div>
             </div>
         </div>
     </div>
