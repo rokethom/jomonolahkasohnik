@@ -3805,6 +3805,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   const [year, setYear] = useState(now.getFullYear())
   const [depositRows, setDepositRows] = useState<DepositReportRow[]>([])
   const [loadingDeposits, setLoadingDeposits] = useState(false)
+  const [depositFullscreen, setDepositFullscreen] = useState(false)
   const completed = data.orders.filter((order) => /completed|done/i.test(order.status)).length
 
   const loadDeposits = useCallback(async () => {
@@ -3820,6 +3821,22 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   useEffect(() => {
     void loadDeposits()
   }, [loadDeposits])
+
+  useEffect(() => {
+    if (!depositFullscreen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDepositFullscreen(false)
+    }
+
+    document.body.classList.add('admin-report-fullscreen-open')
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.classList.remove('admin-report-fullscreen-open')
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [depositFullscreen])
 
   const depositColumnDefs = useMemo<ColDef<DepositReportRow>[]>(() => [
     { field: 'driver', headerName: 'Driver', pinned: 'left', minWidth: 180 },
@@ -3883,7 +3900,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
         <div className="report-grid"><ReportCard title="Orders" value={String(data.orders.length)} meta={`${completed} selesai`} tone="order" /><ReportCard title="Drivers" value={String(data.users.filter((user) => user.role === 'driver').length)} meta="visible drivers" tone="driver" /><ReportCard title="Suspicious GPS" value={String(data.location_logs.filter((log) => log.is_suspicious).length)} meta="needs review" tone="risk" /></div>
       </section>
 
-      <section className="panel deposit-report-panel">
+      <section className={`panel deposit-report-panel${depositFullscreen ? ' is-fullscreen' : ''}`}>
         <div className="section-head">
           <div>
             <h2>Rekap Setoran Driver</h2>
@@ -3895,6 +3912,14 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
             </select>
             <input type="number" value={year} min={2020} max={2100} onChange={(event) => setYear(Number(event.target.value))} />
             {data.permissions.can_export_report && <button className="secondary-button compact" type="button" onClick={() => void exportExcel()}>Export Excel</button>}
+            <button
+              className="secondary-button compact"
+              type="button"
+              aria-pressed={depositFullscreen}
+              onClick={() => setDepositFullscreen((value) => !value)}
+            >
+              {depositFullscreen ? 'Keluar Full Screen' : 'Full Screen'}
+            </button>
           </div>
         </div>
         <div className="deposit-report-wrap ag-theme-quartz-dark jojo-deposit-grid">
