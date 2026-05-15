@@ -99,8 +99,16 @@ class AiLocationSuggestionResource extends Resource
                 Tables\Columns\TextColumn::make('branch.display_name')->label('Cabang')->searchable(),
                 Tables\Columns\TextColumn::make('role')->badge(),
                 Tables\Columns\TextColumn::make('occurrence_count')->label('Muncul')->sortable(),
-                Tables\Columns\TextColumn::make('latitude')->label('Lat')->toggleable(),
-                Tables\Columns\TextColumn::make('longitude')->label('Lng')->toggleable(),
+                Tables\Columns\TextColumn::make('latitude')
+                    ->label('Lat')
+                    ->state(fn (AiLocationSuggestion $record): ?string => self::coordinateState($record->latitude ?? $record->locationPoi?->latitude))
+                    ->placeholder('-')
+                    ->copyable(),
+                Tables\Columns\TextColumn::make('longitude')
+                    ->label('Lng')
+                    ->state(fn (AiLocationSuggestion $record): ?string => self::coordinateState($record->longitude ?? $record->locationPoi?->longitude))
+                    ->placeholder('-')
+                    ->copyable(),
                 Tables\Columns\TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
                     'approved' => 'success',
                     'rejected' => 'danger',
@@ -193,5 +201,10 @@ class AiLocationSuggestionResource extends Resource
     private static function areaOptions(): array
     {
         return Area::query()->with('branch')->orderBy('name')->get()->mapWithKeys(fn (Area $area): array => [$area->id => trim(($area->branch?->display_name ? $area->branch->display_name.' - ' : '').$area->name)])->all();
+    }
+
+    private static function coordinateState(mixed $value): ?string
+    {
+        return is_numeric($value) ? number_format((float) $value, 7, '.', '') : null;
     }
 }

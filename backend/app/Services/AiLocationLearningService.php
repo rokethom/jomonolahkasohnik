@@ -64,6 +64,9 @@ class AiLocationLearningService
 
     public function approve(AiLocationSuggestion $suggestion, array $overrides = []): LocationPoi
     {
+        $latitude = $overrides['latitude'] ?? $suggestion->latitude;
+        $longitude = $overrides['longitude'] ?? $suggestion->longitude;
+
         $poi = LocationPoi::query()->updateOrCreate(
             [
                 'branch_id' => $overrides['branch_id'] ?? $suggestion->branch_id,
@@ -74,17 +77,19 @@ class AiLocationLearningService
                 'name' => $overrides['name'] ?? $suggestion->location_text,
                 'aliases' => $this->mergeAliases($suggestion->aliases ?? [], $overrides['aliases'] ?? []),
                 'category' => $overrides['category'] ?? $suggestion->role,
-                'latitude' => $overrides['latitude'] ?? $suggestion->latitude,
-                'longitude' => $overrides['longitude'] ?? $suggestion->longitude,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
                 'source' => 'whatsapp_learning',
                 'confidence' => max(70, (int) $suggestion->confidence),
                 'priority' => $overrides['priority'] ?? 20,
-                'is_active' => (bool) ($overrides['is_active'] ?? ($overrides['latitude'] ?? $suggestion->latitude) && ($overrides['longitude'] ?? $suggestion->longitude)),
+                'is_active' => (bool) ($overrides['is_active'] ?? $latitude && $longitude),
             ],
         );
 
         $suggestion->forceFill([
             'location_poi_id' => $poi->id,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
             'status' => 'approved',
         ])->save();
 
