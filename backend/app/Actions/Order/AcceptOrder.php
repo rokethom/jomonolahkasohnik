@@ -16,6 +16,8 @@ use App\Services\DriverFinanceService;
 use App\Services\ChatService;
 use App\Services\OrderCrewDecisionService;
 use App\Services\SuspendService;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -36,7 +38,20 @@ class AcceptOrder
 
     public function handle(Order $order, Driver $driver, bool $ignoreDailyPriority = false): Order
     {
-        return DB::transaction(function () use ($order, $driver, $ignoreDailyPriority): Order {
+        try {
+            return Cache::lock("orders:accept:{$order->id}", 10)->block(3, function () use ($order, $driver, $ignoreDailyPriority): Order {
+                return $this->acceptWithDatabaseLock($order, $driver, $ignoreDailyPriority);
+            });
+        } catch (LockTimeoutException) {
+            throw new RuntimeException('Order sedang diproses driver lain. Silakan refresh daftar order.');
+        }
+    }
+
+    private function acceptWithDatabaseLock(Order $order, Driver $driver, bool $ignoreDailyPriority): Order
+    {
+        $rejectionMessage = null;
+
+        $result = DB::transaction(function () use ($order, $driver, $ignoreDailyPriority, &$rejectionMessage): Order {
             $order = Order::query()->lockForUpdate()->findOrFail($order->id);
             $driver = Driver::query()->with(['user', 'setting'])->lockForUpdate()->findOrFail($driver->id);
 
@@ -52,18 +67,23 @@ class AcceptOrder
                     'notes' => trim(((string) $order->notes)."\nAuto-cancel: driver timeout 10 menit."),
                 ]);
                 $this->chatService->closeForOrder($order);
+                $cancelledOrder = $order->fresh(['user', 'driver.user']);
 
-                try {
-                    OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::Cancelled);
-                } catch (\Throwable $exception) {
-                    Log::warning('broadcast.accept_timeout_status_failed', [
-                        'order_id' => $order->id,
-                        'status' => OrderStatus::Cancelled->value,
-                        'message' => $exception->getMessage(),
-                    ]);
-                }
+                DB::afterCommit(function () use ($cancelledOrder, $oldStatus): void {
+                    try {
+                        OrderStatusUpdated::dispatch($cancelledOrder, $oldStatus, OrderStatus::Cancelled);
+                    } catch (\Throwable $exception) {
+                        Log::warning('broadcast.accept_timeout_status_failed', [
+                            'order_id' => $cancelledOrder->id,
+                            'status' => OrderStatus::Cancelled->value,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                });
 
-                throw new RuntimeException('Order sudah timeout dan tidak bisa diterima.');
+                $rejectionMessage = 'Order sudah timeout dan tidak bisa diterima.';
+
+                return $cancelledOrder;
             }
 
             if (! $this->suspensions->canAcceptOrder($driver)) {
@@ -104,14 +124,24 @@ class AcceptOrder
             $breakdown = $order->pricing_breakdown ?? [];
             $breakdown['accepted_at'] = now()->toIso8601String();
 
-            $order->update([
-                'driver_id' => $driver->id,
-                'direction_bearing' => $this->multiOrder->bearingFor($order),
-                'is_multi_order' => ($eligibility['active_order_count'] ?? 0) > 0,
-                'status' => OrderStatus::DriverAccepted,
-                'pricing_breakdown' => $breakdown,
-            ]);
-            $this->crewDecisions->createPendingHelperCrew($order->fresh());
+            $updated = Order::query()
+                ->whereKey($order->id)
+                ->whereNull('driver_id')
+                ->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
+                ->update([
+                    'driver_id' => $driver->id,
+                    'direction_bearing' => $this->multiOrder->bearingFor($order),
+                    'is_multi_order' => ($eligibility['active_order_count'] ?? 0) > 0,
+                    'status' => OrderStatus::DriverAccepted->value,
+                    'pricing_breakdown' => $breakdown,
+                ]);
+
+            if ($updated !== 1) {
+                throw new RuntimeException('Order has already been accepted by another driver.');
+            }
+
+            $order = $order->fresh();
+            $this->crewDecisions->createPendingHelperCrew($order);
             $this->dailyPriority->completeForAcceptedOrder($driver, $order);
             $acceptedOrder = $order->fresh(['user', 'driver.user', 'items']);
             $driverName = $acceptedOrder->driver?->user?->name ?? 'driver';
@@ -137,26 +167,35 @@ class AcceptOrder
                 'is_read' => false,
             ]);
 
-            try {
-                DriverAccepted::dispatch($acceptedOrder);
-                broadcast(new MessageSent($message))->toOthers();
-            } catch (\Throwable $exception) {
-                Log::warning('broadcast.driver_accepted_failed', [
-                    'order_id' => $order->id,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            DB::afterCommit(function () use ($acceptedOrder, $message, $helperLabel, $driverName): void {
+                try {
+                    DriverAccepted::dispatch($acceptedOrder);
+                    broadcast(new MessageSent($message))->toOthers();
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.driver_accepted_failed', [
+                        'order_id' => $acceptedOrder->id,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
 
-            $this->notifications->sendToUser(
-                $acceptedOrder->user,
-                'Order diterima driver',
-                $helperLabel ? "Pesanan Anda telah diterima oleh {$driverName}. Sistem sedang mencari {$helperLabel}." : "Pesanan Anda telah diterima oleh {$driverName}",
-                [
-                    'type' => 'driver_accepted',
-                    'order_id' => $acceptedOrder->id,
-                    'url' => '/?open=driver-chat&order_id='.$acceptedOrder->id.'&notification_type=driver_accepted',
-                ],
-            );
+                try {
+                    $this->notifications->sendToUser(
+                        $acceptedOrder->user,
+                        'Order diterima driver',
+                        $helperLabel ? "Pesanan Anda telah diterima oleh {$driverName}. Sistem sedang mencari {$helperLabel}." : "Pesanan Anda telah diterima oleh {$driverName}",
+                        [
+                            'type' => 'driver_accepted',
+                            'order_id' => $acceptedOrder->id,
+                            'url' => '/?open=driver-chat&order_id='.$acceptedOrder->id.'&notification_type=driver_accepted',
+                        ],
+                    );
+                } catch (\Throwable $exception) {
+                    Log::warning('notification.driver_accepted_failed', [
+                        'order_id' => $acceptedOrder->id,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            });
 
             if ($helperLabel) {
                 $orderId = $acceptedOrder->id;
@@ -175,20 +214,36 @@ class AcceptOrder
                         })
                         ->limit(50)
                         ->get()
-                        ->each(fn (Driver $candidate) => $this->notifications->sendToUser(
-                            $candidate->user,
-                            'Slot helper tersedia',
-                            "{$helperLabel} dibutuhkan untuk order #{$orderId}.",
-                            [
-                                'type' => 'crew_helper_needed',
-                                'order_id' => $orderId,
-                                'url' => '/?open=orders&notification_type=crew_helper_needed&order_id='.$orderId,
-                            ],
-                        ));
+                        ->each(function (Driver $candidate) use ($helperLabel, $orderId): void {
+                            try {
+                                $this->notifications->sendToUser(
+                                    $candidate->user,
+                                    'Slot helper tersedia',
+                                    "{$helperLabel} dibutuhkan untuk order #{$orderId}.",
+                                    [
+                                        'type' => 'crew_helper_needed',
+                                        'order_id' => $orderId,
+                                        'url' => '/?open=orders&notification_type=crew_helper_needed&order_id='.$orderId,
+                                    ],
+                                );
+                            } catch (\Throwable $exception) {
+                                Log::warning('notification.crew_helper_needed_failed', [
+                                    'order_id' => $orderId,
+                                    'driver_id' => $candidate->id,
+                                    'message' => $exception->getMessage(),
+                                ]);
+                            }
+                        });
                 });
             }
 
             return $acceptedOrder;
         });
+
+        if ($rejectionMessage !== null) {
+            throw new RuntimeException($rejectionMessage);
+        }
+
+        return $result;
     }
 }
