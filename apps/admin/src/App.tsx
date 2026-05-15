@@ -2537,7 +2537,6 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           ))}
           <button className="secondary-button priority-add-button" type="button" disabled={!permissions.can_manage_system_settings} onClick={() => setDriverDailyPriorityWindows((rows) => [...rows, { start: '05:00', end: '11:00' }])}>Tambah jam aktif</button>
         </div>
-        <div className="notice priority-note">Prioritas hanya 1 kali per hari berdasarkan Asia/Jakarta. Jika driver OFF lalu ON lagi di hari yang sama, prioritas tidak dibuat ulang. Setelah order accepted, driver kembali ke sistem normal.</div>
       </div>
       <div className="feedback-cms">
         <div className="section-head">

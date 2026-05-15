@@ -4958,15 +4958,6 @@ td {
   display: none;
 }
 
-.priority-note.notice {
-  margin: 0;
-  border-color: #fde68a;
-  border-radius: 16px;
-  color: #92400e;
-  background: #fffbeb;
-  line-height: 1.45;
-}
-
 .feedback-cms .status.info {
   align-self: start;
 }
@@ -5127,12 +5118,6 @@ td {
   color: #e0f2fe;
   border-color: rgba(14, 165, 233, 0.28);
   background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(20, 184, 166, 0.12));
-}
-
-.admin-shell.dark .priority-note.notice {
-  color: #fde68a;
-  border-color: rgba(245, 158, 11, 0.34);
-  background: rgba(120, 53, 15, 0.34);
 }
 
 .admin-shell.dark .system-settings-panel > .settings-grid,
