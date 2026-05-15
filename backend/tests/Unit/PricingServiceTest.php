@@ -665,6 +665,60 @@ class PricingServiceTest extends TestCase
         $this->assertSame(114.081, $result['lng']);
     }
 
+    public function test_pricing_geocode_reads_geojson_from_parent_branch_scope(): void
+    {
+        $parent = Branch::query()->create([
+            'branch_code' => 'STB-PARENT',
+            'name' => 'Situbondo',
+            'area' => null,
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 20,
+            'is_active' => true,
+        ]);
+
+        $area = Branch::query()->create([
+            'parent_branch_id' => $parent->id,
+            'branch_code' => 'STBKT-PARENT',
+            'name' => 'Situbondo',
+            'area' => 'Kota',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 20,
+            'is_active' => true,
+        ]);
+
+        GeojsonRegion::query()->create([
+            'branch_id' => $parent->id,
+            'name' => 'Panarukan',
+            'geojson' => ['type' => 'Polygon', 'coordinates' => [[[114.0800, -7.7100], [114.0820, -7.7100], [114.0820, -7.7080], [114.0800, -7.7080], [114.0800, -7.7100]]]],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [[
+                ['lat' => -7.7100, 'lng' => 114.0800],
+                ['lat' => -7.7100, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0800],
+            ]],
+            'centroid_lat' => -7.7090,
+            'centroid_lng' => 114.0810,
+            'min_lat' => -7.7100,
+            'max_lat' => -7.7080,
+            'min_lng' => 114.0800,
+            'max_lng' => 114.0820,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeForPricing');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, 'panarukan', $area);
+
+        $this->assertSame('geojson_region', $result['provider']);
+        $this->assertSame(114.081, $result['lng']);
+    }
+
     public function test_ai_alias_map_resolves_local_alias_to_geojson_region(): void
     {
         $branch = Branch::query()->create([

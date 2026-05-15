@@ -106,7 +106,7 @@ class TextFormatter
     private function destinationText(array $parsed): string
     {
         if (($parsed['service_type'] ?? null) === 'ojek') {
-            return $parsed['destination'] ?? $parsed['store_location'] ?? $parsed['destination_address'] ?? '-';
+            return $parsed['destination'] ?? $parsed['destination_address'] ?? '-';
         }
 
         return $parsed['destination'] ?? $parsed['address'] ?? $parsed['destination_address'] ?? '-';

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\LocationPoi;
+use App\Models\Branch;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -20,15 +21,16 @@ class LocationPoiService
             return null;
         }
 
-        $cacheKey = 'location-poi:'.($branchId ?: 'global').':'.sha1($needle);
+        $branchIds = $this->branchScopeIds($branchId);
+        $cacheKey = 'location-poi:'.($branchIds === [] ? 'global' : implode('-', $branchIds)).':'.sha1($needle);
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchId): ?LocationPoi {
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchIds): ?LocationPoi {
             $matches = LocationPoi::query()
                 ->with(['branch', 'area'])
                 ->active()
                 ->whereNotNull('latitude')
                 ->whereNotNull('longitude')
-                ->when($branchId, fn ($query) => $query->where(fn ($query) => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
+                ->when($branchIds !== [], fn ($query) => $query->where(fn ($query) => $query->whereIn('branch_id', $branchIds)->orWhereNull('branch_id')))
                 ->get()
                 ->map(fn (LocationPoi $poi): array => [
                     'poi' => $poi,
@@ -146,5 +148,34 @@ class LocationPoiService
             ->replaceMatches('/\s+/u', ' ')
             ->trim()
             ->toString();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function branchScopeIds(?int $branchId): array
+    {
+        if (! $branchId) {
+            return [];
+        }
+
+        $branch = Branch::query()->find($branchId);
+        if (! $branch) {
+            return [(int) $branchId];
+        }
+
+        $rootId = $branch->parent_branch_id ?: $branch->id;
+        $childIds = Branch::query()
+            ->where('parent_branch_id', $rootId)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        return collect([$branch->id, $rootId, ...$childIds])
+            ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

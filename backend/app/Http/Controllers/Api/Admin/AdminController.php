@@ -1037,7 +1037,7 @@ class AdminController extends Controller
         return [
             'name' => $this->manualOrderTextField($text, '(?:nama|customer|pemesan)'),
             'phone' => $this->manualOrderTextField($text, '(?:hp|no\\s*hp|wa|whatsapp|telepon|phone)'),
-            'address' => $this->manualOrderTextField($text, '(?:alamat\\s*(?:customer|pemesan)?|alamat\\s*antar)'),
+            'address' => $this->manualOrderTextField($text, '(?:alamat\\s+(?:customer|pemesan)|alamat\\s*rumah|alamat\\s*profile|alamat(?!\\s*(?:jemput|antar|tujuan|pembelian)))'),
         ];
     }
 

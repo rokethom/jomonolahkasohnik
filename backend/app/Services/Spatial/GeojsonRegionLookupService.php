@@ -3,6 +3,7 @@
 namespace App\Services\Spatial;
 
 use App\Models\GeojsonRegion;
+use App\Models\Branch;
 use App\Services\AiAliasMapService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
@@ -49,15 +50,16 @@ class GeojsonRegionLookupService
             return null;
         }
 
-        $cacheKey = 'geojson-region-name-lookup:'.$this->cacheVersion().':'.($branchId ?: 'global').':'.sha1($needle);
+        $branchIds = $this->branchScopeIds($branchId);
+        $cacheKey = 'geojson-region-name-lookup:'.$this->cacheVersion().':'.($branchIds === [] ? 'global' : implode('-', $branchIds)).':'.sha1($needle);
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchId): ?array {
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchIds): ?array {
             $region = GeojsonRegion::query()
                 ->with(['branch', 'area'])
                 ->active()
                 ->whereNotNull('centroid_lat')
                 ->whereNotNull('centroid_lng')
-                ->when($branchId, fn ($query) => $query->where(fn ($query) => $query->where('branch_id', $branchId)->orWhereNull('branch_id')))
+                ->when($branchIds !== [], fn ($query) => $query->where(fn ($query) => $query->whereIn('branch_id', $branchIds)->orWhereNull('branch_id')))
                 ->get()
                 ->map(fn (GeojsonRegion $region): array => [
                     'region' => $region,
@@ -276,5 +278,34 @@ class GeojsonRegionLookupService
         $count = GeojsonRegion::query()->count();
 
         return sha1((string) $latest.'|'.$count);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function branchScopeIds(?int $branchId): array
+    {
+        if (! $branchId) {
+            return [];
+        }
+
+        $branch = Branch::query()->find($branchId);
+        if (! $branch) {
+            return [(int) $branchId];
+        }
+
+        $rootId = $branch->parent_branch_id ?: $branch->id;
+        $childIds = Branch::query()
+            ->where('parent_branch_id', $rootId)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        return collect([$branch->id, $rootId, ...$childIds])
+            ->filter()
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

@@ -142,7 +142,8 @@ class OrderParserServiceTest extends TestCase
         $this->assertNotNull($parsed);
         $this->assertSame('ojek', $parsed['service_type']);
         $this->assertSame('Rani Profile', $parsed['name']);
-        $this->assertSame('Alun alun', $parsed['store_location']);
+        $this->assertNull($parsed['store_location']);
+        $this->assertSame('Alun alun', $parsed['destination']);
         $this->assertSame(2, $parsed['passengers']);
     }
 
