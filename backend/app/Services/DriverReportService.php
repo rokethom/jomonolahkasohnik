@@ -66,8 +66,8 @@ class DriverReportService
 
     public function monthlyDepositRows(?int $month = null, ?int $year = null, ?User $actor = null): Collection
     {
-        $paymentPeriod = Carbon::create($year ?: now()->year, $month ?: now()->month, 1)->startOfMonth();
-        $earningPeriod = $paymentPeriod->copy()->subMonth();
+        $reportPeriod = Carbon::create($year ?: now()->year, $month ?: now()->month, 1)->startOfMonth();
+        $earningPeriod = $reportPeriod->copy();
         $previous = $earningPeriod->copy()->subMonth();
         $start = $earningPeriod->copy()->startOfMonth();
         $end = $earningPeriod->copy()->endOfMonth();
@@ -79,7 +79,7 @@ class DriverReportService
                 return $query->whereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds($actor) ?? []));
             })
             ->get()
-            ->map(function (Driver $driver) use ($paymentPeriod, $earningPeriod, $previous, $start, $end): array {
+            ->map(function (Driver $driver) use ($reportPeriod, $earningPeriod, $previous, $start, $end): array {
                 $orders = Order::query()
                     ->where('driver_id', $driver->id)
                     ->where('status', OrderStatus::Completed->value)
@@ -137,7 +137,7 @@ class DriverReportService
                     'status' => $deposit?->status ?? 'unpaid',
                     'manual_override' => (bool) data_get($deposit?->breakdown, 'manual_override', false),
                     'next_cashback' => (int) (data_get($breakdown, 'manual_next_cashback') ?? $this->cashbackForPreviousDeposit($deposit, $setoranJasaDasar)),
-                    'payment_period' => $paymentPeriod->format('Y-m'),
+                    'payment_period' => $reportPeriod->format('Y-m'),
                     'earning_period' => $earningPeriod->format('Y-m'),
                 ];
             })
@@ -150,9 +150,9 @@ class DriverReportService
         return [
             'DRIVER',
             'AREA',
-            'JML ORDER BULAN LALU',
-            'Omset Jasa Dasar Bulan Lalu',
-            'Setoran dari Jasa Dasar Bulan Lalu',
+            'JML ORDER BULAN REKAP',
+            'Omset Jasa Dasar Bulan Rekap',
+            'Setoran dari Jasa Dasar Bulan Rekap',
             'Tagihan Bln Lalu',
             'JHT BPJSTK',
             'Premi BPJSTK',

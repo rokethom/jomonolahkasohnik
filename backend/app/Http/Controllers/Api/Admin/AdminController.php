@@ -1894,7 +1894,7 @@ class AdminController extends Controller
         ]);
 
         $paymentPeriod = now()->setDate($year, $month, 1)->startOfMonth();
-        $depositPeriod = $paymentPeriod->copy()->subMonthNoOverflow()->startOfMonth();
+        $depositPeriod = $paymentPeriod->copy()->startOfMonth();
         $finance = app(DriverFinanceService::class);
         $deposit = $finance->monthlyDeposit($driver, $depositPeriod->copy());
         $breakdown = $deposit->breakdown ?? [];

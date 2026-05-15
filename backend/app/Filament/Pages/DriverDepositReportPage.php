@@ -672,6 +672,6 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
 
     private function depositPeriodForPayment(Carbon $paymentPeriod): Carbon
     {
-        return $paymentPeriod->copy()->subMonthNoOverflow()->startOfMonth();
+        return $paymentPeriod->copy()->startOfMonth();
     }
 }

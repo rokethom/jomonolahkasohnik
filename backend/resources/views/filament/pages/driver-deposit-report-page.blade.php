@@ -232,9 +232,9 @@
                     columnDefs: [
                         { headerName: 'DRIVER', field: 'driver', pinned: 'left', minWidth: 180, cellClass: 'deposit-driver-cell' },
                         { headerName: 'AREA', field: 'area', pinned: 'left', minWidth: 150 },
-                        { headerName: 'JML ORDER', field: 'orders_count', width: 110, ...editableNumber, valueFormatter: numberFormatter },
-                        { headerName: 'OMSET DARI JASA DASAR', field: 'base_service_omset', minWidth: 150, ...editableNumber },
-                        { headerName: 'SETORAN 20% DARI JASA DASAR', field: 'base_service_deposit', minWidth: 170, ...editableNumber },
+                        { headerName: 'JML ORDER BULAN REKAP', field: 'orders_count', width: 135, ...editableNumber, valueFormatter: numberFormatter },
+                        { headerName: 'OMSET JASA DASAR BULAN REKAP', field: 'base_service_omset', minWidth: 170, ...editableNumber },
+                        { headerName: 'SETORAN 20% BULAN REKAP', field: 'base_service_deposit', minWidth: 170, ...editableNumber },
                         { headerName: 'TAGIHAN BLN LALU', field: 'previous_bill', minWidth: 135, ...editableNumber },
                         { headerName: 'JHT BPJSTK', field: 'bpjs_jht', minWidth: 125, editable: false, valueFormatter: requiredMoneyFormatter, cellClass: 'deposit-number-cell', type: 'rightAligned' },
                         { headerName: 'PREMI BPJSTK', field: 'bpjs', minWidth: 125, editable: false, valueFormatter: requiredMoneyFormatter, cellClass: 'deposit-number-cell', type: 'rightAligned' },
@@ -324,11 +324,10 @@
             <div>
                 <div class="text-lg font-bold text-white">Rekap Setoran Driver</div>
                 @php
-                    $paymentPeriod = \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1);
-                    $earningPeriod = $paymentPeriod->copy()->subMonthNoOverflow();
+                    $reportPeriod = \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1);
                 @endphp
                 <div class="deposit-period">
-                    Periode bayar {{ $paymentPeriod->translatedFormat('F Y') }} untuk pencapaian {{ $earningPeriod->translatedFormat('F Y') }}
+                    Periode rekap {{ $reportPeriod->translatedFormat('F Y') }}
                 </div>
             </div>
             <div class="flex flex-wrap gap-3">

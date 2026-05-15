@@ -3841,9 +3841,9 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   const depositColumnDefs = useMemo<ColDef<DepositReportRow>[]>(() => [
     { field: 'driver', headerName: 'Driver', pinned: 'left', minWidth: 180 },
     { field: 'area', headerName: 'Area', minWidth: 130 },
-    { field: 'orders_count', headerName: 'JML Order', editable: true, type: 'numericColumn', width: 105, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
-    { field: 'base_service_omset', headerName: 'Omset Dari Jasa Dasar', editable: true, type: 'numericColumn', width: 150, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
-    { field: 'base_service_deposit', headerName: 'Setoran 20% Dari Jasa Dasar', editable: true, type: 'numericColumn', width: 165, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'orders_count', headerName: 'JML Order Bulan Rekap', editable: true, type: 'numericColumn', width: 135, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'base_service_omset', headerName: 'Omset Jasa Dasar Bulan Rekap', editable: true, type: 'numericColumn', width: 170, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'base_service_deposit', headerName: 'Setoran 20% Bulan Rekap', editable: true, type: 'numericColumn', width: 165, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'previous_bill', headerName: 'Tagihan Bln Lalu', editable: true, type: 'numericColumn', width: 135, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'bpjs_jht', headerName: 'JHT BPJSTK', editable: false, type: 'numericColumn', width: 120, valueFormatter: agRequiredNumberFormatter },
     { field: 'bpjs', headerName: 'Premi BPJSTK', editable: false, type: 'numericColumn', width: 125, valueFormatter: agRequiredNumberFormatter },
