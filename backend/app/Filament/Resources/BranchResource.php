@@ -28,10 +28,22 @@ class BranchResource extends Resource
                 Forms\Components\Section::make('Branch')
                     ->columns(2)
                     ->schema([
+                        Forms\Components\Select::make('parent_branch_id')
+                            ->label('Parent Branch Kota/Kab')
+                            ->helperText('Kosongkan jika ini level kota/kab. Isi parent jika ini area/kecamatan operasional.')
+                            ->options(fn (): array => Branch::query()
+                                ->regencies()
+                                ->orderBy('branch_code')
+                                ->get()
+                                ->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])
+                                ->all())
+                            ->searchable()
+                            ->preload()
+                            ->native(false),
                         Forms\Components\TextInput::make('branch_code')
                             ->label('Kode branch unik')
-                            ->placeholder('STB-ASB')
-                            ->helperText('Format disarankan: KAB-AREA, contoh STB-ASB untuk Situbondo Asembagus. Kode ini dipakai parser, kode order, dan pencarian cabang agar tidak bentrok.')
+                            ->placeholder('STB / STBKT / STBASB')
+                            ->helperText('Branch kota/kab contoh STB. Area operasional contoh STBKT, STBASB, STBBSK.')
                             ->required()
                             ->maxLength(20)
                             ->unique(ignoreRecord: true)
@@ -42,8 +54,8 @@ class BranchResource extends Resource
                             ->required()
                             ->maxLength(255),
                         Forms\Components\TextInput::make('area')
-                            ->label('Nama area')
-                            ->helperText('Contoh: Asembagus, Kota, Besuki. Jangan isi ulang kode di sini.')
+                            ->label('Nama area/kecamatan')
+                            ->helperText('Kosongkan untuk parent kota/kab. Contoh area: Asembagus, Kota, Besuki.')
                             ->maxLength(255),
                         Forms\Components\TextInput::make('latitude')
                             ->numeric()
@@ -78,6 +90,11 @@ class BranchResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->badge(),
+                Tables\Columns\TextColumn::make('parent.branch_code')
+                    ->label('Parent')
+                    ->badge()
+                    ->placeholder('Kota/Kab')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Kab/Kota')
                     ->searchable()

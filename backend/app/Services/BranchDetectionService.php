@@ -31,6 +31,7 @@ class BranchDetectionService
         $match = GeofenceArea::query()
             ->with('branch')
             ->where('is_active', true)
+            ->whereHas('branch', fn ($query) => $query->operationalAreas())
             ->orderByDesc('priority')
             ->orderBy('radius_meters')
             ->get()
@@ -49,6 +50,7 @@ class BranchDetectionService
         $nearest = Branch::query()
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
+            ->operationalAreas()
             ->get()
             ->map(fn (Branch $branch): array => [
                 'area' => null,

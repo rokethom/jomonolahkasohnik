@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\OrderStatus;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
+use App\Models\Branch;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\Pricing\ServiceFeeCalculator;
@@ -198,6 +199,6 @@ class DriverReportService
             $branchIds[] = (int) $actor->branch_id;
         }
 
-        return array_values(array_unique($branchIds));
+        return Branch::expandToOperationalAreaIds($branchIds);
     }
 }

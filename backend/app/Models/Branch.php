@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Builder;
 
 class Branch extends Model
 {
@@ -12,6 +14,7 @@ class Branch extends Model
 
     protected $fillable = [
         'branch_code',
+        'parent_branch_id',
         'name',
         'area',
         'latitude',
@@ -25,15 +28,28 @@ class Branch extends Model
         'longitude' => 'decimal:8',
         'radius_km' => 'decimal:2',
         'is_active' => 'boolean',
+        'parent_branch_id' => 'integer',
     ];
 
     protected $appends = [
         'display_name',
+        'is_regency',
+        'is_operational_area',
     ];
 
     public function geofenceAreas(): HasMany
     {
         return $this->hasMany(GeofenceArea::class);
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'parent_branch_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(Branch::class, 'parent_branch_id');
     }
 
     public function areas(): HasMany
@@ -61,6 +77,63 @@ class Branch extends Model
         return collect([$this->branch_code, $this->name, $this->area])
             ->filter()
             ->implode(' - ');
+    }
+
+    public function getIsRegencyAttribute(): bool
+    {
+        return $this->parent_branch_id === null && blank($this->area);
+    }
+
+    public function getIsOperationalAreaAttribute(): bool
+    {
+        return ! $this->is_regency;
+    }
+
+    public function scopeRegencies(Builder $query): Builder
+    {
+        return $query->whereNull('parent_branch_id')
+            ->where(fn (Builder $query): Builder => $query->whereNull('area')->orWhere('area', ''));
+    }
+
+    public function scopeOperationalAreas(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereNotNull('parent_branch_id')
+                ->orWhereNotNull('area');
+        });
+    }
+
+    /**
+     * @param  array<int, int>  $branchIds
+     * @return array<int, int>
+     */
+    public static function expandToOperationalAreaIds(array $branchIds): array
+    {
+        $branchIds = collect($branchIds)
+            ->filter(fn (mixed $id): bool => is_numeric($id))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($branchIds === []) {
+            return [];
+        }
+
+        $childIds = static::query()
+            ->whereIn('parent_branch_id', $branchIds)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $selectedOperationalIds = static::query()
+            ->whereIn('id', $branchIds)
+            ->operationalAreas()
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        return array_values(array_unique([...$selectedOperationalIds, ...$childIds]));
     }
 
     protected static function booted(): void
@@ -112,9 +185,13 @@ class Branch extends Model
     public static function makeBranchCode(?string $name, ?string $area): string
     {
         $regency = static::regencyCode((string) $name);
+        if (blank($area)) {
+            return $regency;
+        }
+
         $areaCode = static::areaCode((string) $area, $regency);
 
-        return $regency.'-'.$areaCode;
+        return str_starts_with($areaCode, $regency) ? $areaCode : $regency.$areaCode;
     }
 
     private static function regencyCode(string $name): string
@@ -171,7 +248,7 @@ class Branch extends Model
 
     private static function uniqueBranchCode(string $code, ?int $branchId = null): string
     {
-        $base = $code !== '' ? substr($code, 0, 20) : 'BRN-ARE';
+        $base = $code !== '' ? substr($code, 0, 20) : 'BRNARE';
         $candidate = $base;
         $counter = 2;
 

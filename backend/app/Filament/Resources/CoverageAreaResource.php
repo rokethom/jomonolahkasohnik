@@ -87,6 +87,7 @@ class CoverageAreaResource extends Resource
     private static function branchOptions(): array
     {
         return Branch::query()
+            ->operationalAreas()
             ->orderBy('branch_code')
             ->orderBy('name')
             ->orderBy('area')

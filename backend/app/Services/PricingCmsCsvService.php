@@ -617,7 +617,7 @@ class PricingCmsCsvService
             $branchIds[] = (int) $user->branch_id;
         }
 
-        return array_values(array_unique($branchIds));
+        return Branch::expandToOperationalAreaIds($branchIds);
     }
 
     /**

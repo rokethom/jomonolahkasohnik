@@ -89,9 +89,16 @@ class AdminController extends Controller
             'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)),
             'oper_handles' => $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)),
             'branches' => Branch::query()
-                ->with('geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active')
+                ->with([
+                    'parent:id,branch_code,name,area,parent_branch_id',
+                    'children:id,parent_branch_id,branch_code,name,area,is_active',
+                    'geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active',
+                ])
                 ->withCount('geofenceAreas')
+                ->orderByRaw('COALESCE(parent_branch_id, id)')
                 ->orderBy('name')
+                ->orderBy('parent_branch_id')
+                ->orderBy('area')
                 ->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
             'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
@@ -1746,9 +1753,16 @@ class AdminController extends Controller
     {
         return response()->json([
             'data' => Branch::query()
-                ->with('geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active')
+                ->with([
+                    'parent:id,branch_code,name,area,parent_branch_id',
+                    'children:id,parent_branch_id,branch_code,name,area,is_active',
+                    'geofenceAreas:id,branch_id,name,center_latitude,center_longitude,radius_meters,is_active',
+                ])
                 ->withCount('geofenceAreas')
+                ->orderByRaw('COALESCE(parent_branch_id, id)')
                 ->orderBy('name')
+                ->orderBy('parent_branch_id')
+                ->orderBy('area')
                 ->get(),
         ]);
     }
@@ -1765,6 +1779,7 @@ class AdminController extends Controller
                 'regex:/^[A-Za-z0-9][A-Za-z0-9_-]*$/',
                 Rule::unique('branches', 'branch_code'),
             ],
+            'parent_branch_id' => ['nullable', 'exists:branches,id'],
             'name' => [
                 'required',
                 'string',
@@ -1779,6 +1794,7 @@ class AdminController extends Controller
 
         $payload['branch_code'] = strtoupper(trim((string) $payload['branch_code']));
         $payload['radius_km'] ??= 5;
+        $payload['parent_branch_id'] = filled($payload['parent_branch_id'] ?? null) ? (int) $payload['parent_branch_id'] : null;
 
         $branch = Branch::query()->create($payload);
         $this->recordAudit($request->user(), 'created_branch', $branch, ['area' => $branch->area]);
@@ -2626,7 +2642,11 @@ class AdminController extends Controller
         abort_unless($branchIds !== [], 403, 'Akun ini belum memiliki area/cabang.');
 
         if (filled($branchId)) {
-            abort_unless(in_array((int) $branchId, $branchIds, true), 403, 'User di luar area akun ini.');
+            $branchId = $this->branchIdForRole((int) $branchId, $targetRole);
+            $candidateScope = Branch::expandToOperationalAreaIds([(int) $branchId]);
+            $allowedForWrite = in_array((int) $branchId, $branchIds, true)
+                || ($candidateScope !== [] && array_intersect($candidateScope, $branchIds) !== []);
+            abort_unless($allowedForWrite, 403, 'User di luar area akun ini.');
 
             return (int) $branchId;
         }
@@ -2656,6 +2676,10 @@ class AdminController extends Controller
             $branchIds = [(int) $fallbackBranchId];
         }
 
+        if (in_array($targetRole, [UserRole::SPV, UserRole::Eksekutor], true)) {
+            $branchIds = Branch::expandToOperationalAreaIds($branchIds);
+        }
+
         if ($this->canManageGlobalUsers($actor)) {
             return $branchIds;
         }
@@ -2667,11 +2691,22 @@ class AdminController extends Controller
             return $allowed;
         }
 
-        foreach ($branchIds as $branchId) {
+        foreach (Branch::expandToOperationalAreaIds($branchIds) as $branchId) {
             abort_unless(in_array($branchId, $allowed, true), 403, 'Scope cabang di luar area akun ini.');
         }
 
         return $branchIds;
+    }
+
+    private function branchIdForRole(int $branchId, ?UserRole $targetRole): int
+    {
+        if (in_array($targetRole, [UserRole::HRD, UserRole::Manager], true)) {
+            return $branchId;
+        }
+
+        $expanded = Branch::expandToOperationalAreaIds([$branchId]);
+
+        return $expanded[0] ?? $branchId;
     }
 
     /**
@@ -2683,7 +2718,7 @@ class AdminController extends Controller
             return null;
         }
 
-        if (in_array($actor->role, [UserRole::SPV, UserRole::Eksekutor], true)) {
+        if (in_array($actor->role, [UserRole::HRD, UserRole::Manager, UserRole::SPV, UserRole::Eksekutor], true)) {
             return $this->staffBranchScopeIds($actor) ?? [];
         }
 
@@ -2710,7 +2745,7 @@ class AdminController extends Controller
             $branchIds[] = (int) $actor->branch_id;
         }
 
-        return array_values(array_unique($branchIds));
+        return Branch::expandToOperationalAreaIds($branchIds);
     }
 
     private function whereInStaffBranchScope(Builder $query, ?array $branchIds, bool $includeUnassignedOperators = false): Builder

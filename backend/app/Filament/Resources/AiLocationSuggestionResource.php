@@ -195,7 +195,7 @@ class AiLocationSuggestionResource extends Resource
 
     private static function branchOptions(): array
     {
-        return Branch::query()->orderBy('branch_code')->get()->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])->all();
+        return Branch::query()->operationalAreas()->orderBy('branch_code')->get()->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])->all();
     }
 
     private static function areaOptions(): array

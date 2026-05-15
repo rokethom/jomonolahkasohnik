@@ -9,10 +9,7 @@ class BranchAccessSettingService
 {
     public const GLOBAL_ACCESS_ROLES_KEY = 'branch_global_access_roles';
 
-    public const DEFAULT_GLOBAL_ACCESS_ROLES = [
-        'hrd',
-        'manager',
-    ];
+    public const DEFAULT_GLOBAL_ACCESS_ROLES = [];
 
     public const CONFIGURABLE_ROLES = [
         'hrd',

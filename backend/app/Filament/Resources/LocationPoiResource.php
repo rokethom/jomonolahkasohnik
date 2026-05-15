@@ -59,7 +59,7 @@ class LocationPoiResource extends Resource
                     ]),
                 Forms\Components\Select::make('branch_id')
                     ->label('Cabang')
-                    ->options(fn (): array => Branch::query()->orderBy('branch_code')->get()->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])->all())
+                    ->options(fn (): array => Branch::query()->operationalAreas()->orderBy('branch_code')->get()->mapWithKeys(fn (Branch $branch): array => [$branch->id => $branch->display_name])->all())
                     ->searchable()
                     ->preload()
                     ->native(false),

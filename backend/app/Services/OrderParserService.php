@@ -461,7 +461,7 @@ class OrderParserService
             return Branch::query()->find($user->branch_id);
         }
 
-        return Branch::query()->whereNotNull('latitude')->whereNotNull('longitude')->first();
+        return Branch::query()->operationalAreas()->whereNotNull('latitude')->whereNotNull('longitude')->first();
     }
 
     private function branchFromText(?string $text): ?Branch
