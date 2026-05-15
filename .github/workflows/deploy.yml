@@ -5,6 +5,19 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Target deploy"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - all
+          - backend
+          - admin
+          - customer
+          - driver
 
 concurrency:
   group: deploy-production
@@ -29,32 +42,161 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect deploy scope
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target="${{ github.event.inputs.target || 'auto' }}"
+          backend=false
+          admin=false
+          customer=false
+          driver=false
+
+          mark_all() {
+            backend=true
+            admin=true
+            customer=true
+            driver=true
+          }
+
+          case "$target" in
+            all)
+              mark_all
+              ;;
+            backend)
+              backend=true
+              ;;
+            admin)
+              admin=true
+              ;;
+            customer)
+              customer=true
+              ;;
+            driver)
+              driver=true
+              ;;
+            auto)
+              if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                mark_all
+              else
+                before="${{ github.event.before }}"
+                after="${{ github.sha }}"
+                if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+                  files="$(git diff --name-only HEAD~1 HEAD || true)"
+                else
+                  git fetch --no-tags --depth=2 origin "${{ github.ref_name }}" >/dev/null 2>&1 || true
+                  files="$(git diff --name-only "$before" "$after" || true)"
+                fi
+
+                if [ -z "$files" ]; then
+                  files="$(git diff --name-only HEAD~1 HEAD || true)"
+                fi
+
+                echo "Changed files:"
+                echo "$files"
+
+                while IFS= read -r file; do
+                  [ -z "$file" ] && continue
+                  case "$file" in
+                    backend/*)
+                      backend=true
+                      ;;
+                    apps/admin/*)
+                      admin=true
+                      ;;
+                    apps/customer/*)
+                      customer=true
+                      ;;
+                    apps/driver/*)
+                      driver=true
+                      ;;
+                    packages/*|pnpm-lock.yaml|pnpm-workspace.yaml|package.json|scripts/write-build-version.mjs)
+                      admin=true
+                      customer=true
+                      driver=true
+                      ;;
+                    .github/workflows/deploy.yml)
+                      mark_all
+                      ;;
+                  esac
+                done <<< "$files"
+              fi
+              ;;
+            *)
+              echo "Unknown target: $target" >&2
+              exit 1
+              ;;
+          esac
+
+          frontend=false
+          if [ "$admin" = true ] || [ "$customer" = true ] || [ "$driver" = true ]; then
+            frontend=true
+          fi
+
+          any=false
+          if [ "$backend" = true ] || [ "$frontend" = true ]; then
+            any=true
+          fi
+
+          {
+            echo "backend=$backend"
+            echo "admin=$admin"
+            echo "customer=$customer"
+            echo "driver=$driver"
+            echo "frontend=$frontend"
+            echo "any=$any"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Deploy scope: backend=$backend admin=$admin customer=$customer driver=$driver"
 
       - name: Setup pnpm
+        if: steps.scope.outputs.frontend == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
+        if: steps.scope.outputs.frontend == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install frontend dependencies
+        if: steps.scope.outputs.frontend == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Create production frontend env files
+        if: steps.scope.outputs.frontend == 'true'
         shell: bash
         run: |
-          for app in admin customer driver; do
+          apps=()
+          if [ "${{ steps.scope.outputs.admin }}" = "true" ]; then apps+=(admin); fi
+          if [ "${{ steps.scope.outputs.customer }}" = "true" ]; then apps+=(customer); fi
+          if [ "${{ steps.scope.outputs.driver }}" = "true" ]; then apps+=(driver); fi
+          for app in "${apps[@]}"; do
             printf "VITE_API_URL=%s\nVITE_API_BASE_URL=%s\n" "${API_URL}" "${API_URL}" > "apps/${app}/.env.production"
           done
 
-      - name: Build frontends
-        run: pnpm build
+      - name: Build admin frontend
+        if: steps.scope.outputs.admin == 'true'
+        run: pnpm --filter admin build
+
+      - name: Build customer frontend
+        if: steps.scope.outputs.customer == 'true'
+        run: pnpm --filter customer build
+
+      - name: Build driver frontend
+        if: steps.scope.outputs.driver == 'true'
+        run: pnpm --filter driver build
 
       - name: Setup PHP for backend dependency validation
+        if: steps.scope.outputs.backend == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
@@ -62,6 +204,7 @@ jobs:
           coverage: none
 
       - name: Prepare Laravel runtime directories
+        if: steps.scope.outputs.backend == 'true'
         shell: bash
         run: |
           mkdir -p backend/bootstrap/cache
@@ -72,27 +215,32 @@ jobs:
           mkdir -p backend/storage/logs
 
       - name: Validate backend composer dependencies
+        if: steps.scope.outputs.backend == 'true'
         working-directory: backend
         run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
 
       - name: Setup SSH agent
+        if: steps.scope.outputs.any == 'true'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
       - name: Trust VPS host key
+        if: steps.scope.outputs.any == 'true'
         shell: bash
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Ensure remote directories exist
+        if: steps.scope.outputs.any == 'true'
         shell: bash
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
             "mkdir -p '${BACKEND_PATH}' '${BACKEND_PUBLIC_PATH}' '${ADMIN_PUBLIC_PATH}' '${CUSTOMER_PUBLIC_PATH}' '${DRIVER_PUBLIC_PATH}'"
 
       - name: Upload backend source
+        if: steps.scope.outputs.backend == 'true'
         shell: bash
         run: |
           rsync -az --delete \
@@ -109,6 +257,7 @@ jobs:
             backend/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${BACKEND_PATH}/"
 
       - name: Upload Laravel public assets
+        if: steps.scope.outputs.backend == 'true'
         shell: bash
         run: |
           rsync -az \
@@ -119,6 +268,7 @@ jobs:
             backend/public/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${BACKEND_PUBLIC_PATH}/"
 
       - name: Upload admin frontend
+        if: steps.scope.outputs.admin == 'true'
         shell: bash
         run: |
           rsync -az --delete \
@@ -129,6 +279,7 @@ jobs:
             apps/admin/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${ADMIN_PUBLIC_PATH}/"
 
       - name: Upload customer frontend
+        if: steps.scope.outputs.customer == 'true'
         shell: bash
         run: |
           rsync -az --delete \
@@ -139,6 +290,7 @@ jobs:
             apps/customer/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${CUSTOMER_PUBLIC_PATH}/"
 
       - name: Upload driver frontend
+        if: steps.scope.outputs.driver == 'true'
         shell: bash
         run: |
           rsync -az --delete \
@@ -149,6 +301,7 @@ jobs:
             apps/driver/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${DRIVER_PUBLIC_PATH}/"
 
       - name: Finalize Laravel deployment
+        if: steps.scope.outputs.backend == 'true'
         shell: bash
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
@@ -168,3 +321,7 @@ jobs:
             php artisan config:cache; \
             php artisan route:cache; \
             php artisan view:cache"
+
+      - name: Nothing to deploy
+        if: steps.scope.outputs.any != 'true'
+        run: echo "No frontend or backend deployment needed for this change."
