@@ -69,6 +69,11 @@ class DriverFinanceService
             ->where('year', $previousPeriod->year)
             ->where('month', $previousPeriod->month)
             ->first();
+
+        if (! $previousDeposit) {
+            $previousDeposit = $this->monthlyDeposit($driver, $previousPeriod);
+        }
+
         $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
         $previousBaseDeposit = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
         $cashback = $this->cashbackForPreviousDeposit($previousDeposit, $month, $previousBaseDeposit);

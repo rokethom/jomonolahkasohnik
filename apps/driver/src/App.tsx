@@ -1079,7 +1079,7 @@ function SetoranModal({ finance, mode, onClose }: { finance: DriverFinance; mode
   const rows = setoranBreakdownRows(billing.breakdown, billing.period_label, mode)
   const remaining = Math.max(0, billing.total - billing.paid_amount)
   return (
-    <Modal title={mode === 'billing' ? 'Detail Setoran' : 'Detail Tagihan Berjalan'} onClose={onClose}>
+    <Modal title={mode === 'billing' ? 'Detail Setoran Bulan Kemarin' : 'Detail Tagihan Berjalan'} onClose={onClose}>
       <div className="deposit-summary">
         <span>
           <small>Jatuh tempo</small>
@@ -1092,7 +1092,7 @@ function SetoranModal({ finance, mode, onClose }: { finance: DriverFinance; mode
       </div>
       <div className="setoran-breakdown">
         {rows.map(([label, value]) => <PriceRow key={label} label={label} value={value} />)}
-        <div className="total-row"><span>{mode === 'billing' ? `Total tagihan ${billing.period_label ?? 'bulan sebelumnya'}` : 'Total tagihan berjalan'}</span><strong>Rp {formatMoney(billing.total)}</strong></div>
+        <div className="total-row"><span>{mode === 'billing' ? `Total setoran ${billing.period_label ?? 'bulan kemarin'}` : 'Total tagihan berjalan'}</span><strong>Rp {formatMoney(billing.total)}</strong></div>
         <PaidAmountRow value={billing.paid_amount} paidAt={billing.paid_at} />
         <div className="total-row"><span>Sisa tagihan</span><strong>Rp {formatMoney(remaining)}</strong></div>
       </div>
@@ -1892,7 +1892,7 @@ function DriverFinanceSection() {
       </button>
       <div className="profile-finance-grid">
         <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
-          <span>TAGIHAN BULAN INI</span>
+          <span>SETORAN BULAN KEMARIN</span>
           <strong>Rp {formatMoney(previousRemaining)}</strong>
           <small>{previousPeriodLabel} - {previousDeposit?.status ?? 'paid'} - total Rp {formatMoney(previousTotal)}{previousRemaining <= 0 && previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
         </button>
@@ -2693,7 +2693,7 @@ function setoranBreakdownRows(breakdown?: Record<string, number>, periodLabel = 
   const setoranHinggaHariIni = breakdown.setoran_hingga_hari_ini ?? ((breakdown.handle_hari_15 ?? 0) + (breakdown.handle_hari_30 ?? 0))
   const cashbackBulanSebelumnya = breakdown.cashback_bulan_sebelumnya ?? 0
   const tagihanBulanSebelumnya = breakdown.tagihan_bulan_sebelumnya ?? 0
-  const rows: Array<[string, number]> = [[mode === 'running' ? `Setoran sampai hari ini (${periodLabel})` : `Tagihan pada bulan ${periodLabel}`, setoranHinggaHariIni]]
+  const rows: Array<[string, number]> = [[mode === 'running' ? `Setoran sampai hari ini (${periodLabel})` : `Setoran dasar bulan ${periodLabel}`, setoranHinggaHariIni]]
 
   rows.push(['Cashback bulan sebelumnya', cashbackBulanSebelumnya > 0 ? -cashbackBulanSebelumnya : 0])
   if (tagihanBulanSebelumnya > 0) rows.push(['Sisa tagihan bulan sebelumnya', tagihanBulanSebelumnya])

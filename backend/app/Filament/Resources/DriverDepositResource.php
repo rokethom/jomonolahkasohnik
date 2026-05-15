@@ -14,6 +14,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Table;
+use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 
 class DriverDepositResource extends Resource
@@ -115,7 +116,7 @@ class DriverDepositResource extends Resource
                             ->required(),
                     ])
                     ->action(function (DriverDeposit $record, array $data): void {
-                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver);
+                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver, self::recordPeriod($record));
                         $targetTotal = (int) $record->total;
                         $paidAmount = min($targetTotal, (int) $record->paid_amount + (int) $data['amount']);
                         $isPaid = $targetTotal <= 0 || $paidAmount >= $targetTotal;
@@ -145,7 +146,7 @@ class DriverDepositResource extends Resource
                     ->requiresConfirmation()
                     ->visible(fn (DriverDeposit $record): bool => max(0, (int) $record->total - (int) $record->paid_amount) > 0)
                     ->action(function (DriverDeposit $record): void {
-                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver);
+                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver, self::recordPeriod($record));
                         $record->forceFill([
                             'paid_amount' => (int) $record->total,
                             'paid_at' => now(),
@@ -171,7 +172,7 @@ class DriverDepositResource extends Resource
                     ->requiresConfirmation()
                     ->visible(fn (DriverDeposit $record): bool => $record->status !== 'unpaid')
                     ->action(function (DriverDeposit $record): void {
-                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver);
+                        $record = app(DriverFinanceService::class)->monthlyDeposit($record->driver, self::recordPeriod($record));
                         $record->forceFill([
                             'paid_amount' => 0,
                             'paid_at' => null,
@@ -211,5 +212,10 @@ class DriverDepositResource extends Resource
             ->get()
             ->mapWithKeys(fn (User $user): array => [$user->driver->id => $user->name])
             ->all();
+    }
+
+    private static function recordPeriod(DriverDeposit $record): Carbon
+    {
+        return Carbon::create((int) $record->year, (int) $record->month, 1)->startOfMonth();
     }
 }
