@@ -6,7 +6,6 @@ use App\Enums\UserRole;
 use App\Filament\Widgets\AiMonitoringOverview;
 use App\Filament\Widgets\OperationsChartWidget;
 use App\Filament\Widgets\ProductionTimelineWidget;
-use App\Filament\Widgets\ServerMonitoringWidget;
 use App\Filament\Widgets\ServerUsageChartWidget;
 use App\Services\AiMonitoringService;
 use Filament\Pages\Page;
@@ -54,7 +53,6 @@ class AiMonitoringPage extends Page
     protected function getFooterWidgets(): array
     {
         return [
-            ServerMonitoringWidget::class,
             OperationsChartWidget::class,
             ServerUsageChartWidget::class,
             ProductionTimelineWidget::class,

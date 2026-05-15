@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 class AiLocationSuggestionResource extends Resource
 {
@@ -140,6 +141,36 @@ class AiLocationSuggestionResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('approve_selected_to_poi')
+                        ->label('Approve POI terpilih')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Approve masal AI Location Suggestions?')
+                        ->modalDescription('Suggestion terpilih akan dibuat/diupdate ke Master Location POI. Data yang sudah approved akan dilewati.')
+                        ->action(function (Collection $records): void {
+                            $service = app(AiLocationLearningService::class);
+                            $approved = 0;
+                            $skipped = 0;
+
+                            $records->each(function (AiLocationSuggestion $record) use ($service, &$approved, &$skipped): void {
+                                if ($record->status === 'approved') {
+                                    $skipped++;
+
+                                    return;
+                                }
+
+                                $service->approve($record);
+                                $approved++;
+                            });
+
+                            Notification::make()
+                                ->title('Approve masal selesai')
+                                ->body("Approved: {$approved}, dilewati: {$skipped}.")
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
