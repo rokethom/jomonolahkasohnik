@@ -20,7 +20,6 @@ class OrderCreated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('orders'),
             new PrivateChannel('order.'.$this->order->id),
         ];
     }

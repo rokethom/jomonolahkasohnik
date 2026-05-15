@@ -21,7 +21,6 @@ class DriverAccepted implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('orders'),
             new PrivateChannel('order.'.$this->order->id),
             new PrivateChannel('user.'.$this->order->user_id),
         ];
