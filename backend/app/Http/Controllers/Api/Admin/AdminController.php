@@ -1873,13 +1873,17 @@ class AdminController extends Controller
         }
 
         $payload = $request->validate([
+            'orders_count' => ['sometimes', 'integer', 'min:0'],
             'base_service_deposit' => ['sometimes', 'integer', 'min:0'],
+            'previous_bill' => ['sometimes', 'integer', 'min:0'],
             'bpjs_jht' => ['sometimes', 'integer', 'min:0'],
             'bpjs' => ['sometimes', 'integer', 'min:0'],
+            'previous_cashback_reward' => ['sometimes', 'integer', 'min:0'],
             'bansos' => ['sometimes', 'integer', 'min:0'],
             'paid_amount' => ['sometimes', 'integer', 'min:0'],
             'paid_at' => ['sometimes', 'nullable', 'date'],
             'status' => ['sometimes', 'nullable', 'in:paid,unpaid'],
+            'next_cashback' => ['sometimes', 'integer', 'min:0'],
         ]);
 
         $period = now()->setDate($year, $month, 1)->startOfMonth();
@@ -1890,6 +1894,22 @@ class AdminController extends Controller
         if (array_key_exists('base_service_deposit', $payload)) {
             $deposit->handle_day_15 = (int) $payload['base_service_deposit'];
             $deposit->handle_day_30 = 0;
+        }
+
+        if (array_key_exists('orders_count', $payload)) {
+            $breakdown['manual_orders_count'] = (int) $payload['orders_count'];
+        }
+
+        if (array_key_exists('previous_bill', $payload)) {
+            $breakdown['manual_previous_bill'] = (int) $payload['previous_bill'];
+        }
+
+        if (array_key_exists('previous_cashback_reward', $payload)) {
+            $breakdown['manual_previous_cashback_reward'] = (int) $payload['previous_cashback_reward'];
+        }
+
+        if (array_key_exists('next_cashback', $payload)) {
+            $breakdown['manual_next_cashback'] = (int) $payload['next_cashback'];
         }
 
         foreach (['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'] as $field) {
@@ -1909,9 +1929,13 @@ class AdminController extends Controller
             ->where('year', $previous->year)
             ->where('month', $previous->month)
             ->first();
-        $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
+        $previousRemaining = array_key_exists('manual_previous_bill', $breakdown)
+            ? max(0, (int) $breakdown['manual_previous_bill'])
+            : max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
         $previousBase = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
-        $cashback = $this->depositCashbackForReport($previousDeposit, $previousBase);
+        $cashback = array_key_exists('manual_previous_cashback_reward', $breakdown)
+            ? max(0, (int) $breakdown['manual_previous_cashback_reward'])
+            : $this->depositCashbackForReport($previousDeposit, $previousBase);
         $deposit->total = max(0, $base + $previousRemaining - $cashback + (int) $deposit->bansos + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
 
         $deposit->status = $payload['status'] ?? ((int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid');
@@ -1924,6 +1948,7 @@ class AdminController extends Controller
         $breakdown['setoran_hingga_hari_ini'] = $base;
         $breakdown['tagihan_bulan_sebelumnya'] = $previousRemaining;
         $breakdown['cashback_bulan_sebelumnya'] = $cashback;
+        $breakdown['cashback_bulan_depan'] = $this->depositCashbackForReport($deposit, $base);
         $breakdown['bansos'] = (int) $deposit->bansos;
         $breakdown['bpjs'] = (int) $deposit->bpjs;
         $breakdown['bpjs_jht'] = (int) $deposit->bpjs_jht;
@@ -2000,6 +2025,11 @@ class AdminController extends Controller
 
     private function depositCashbackForReport(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int
     {
+        $manualNextCashback = data_get($previousDeposit?->breakdown, 'manual_next_cashback');
+        if ($manualNextCashback !== null) {
+            return max(0, (int) $manualNextCashback);
+        }
+
         if (! $previousDeposit || $previousBaseDeposit <= 0 || $previousDeposit->status !== 'paid' || ! $previousDeposit->paid_at) {
             return 0;
         }

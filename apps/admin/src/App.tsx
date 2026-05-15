@@ -3841,13 +3841,13 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   const depositColumnDefs = useMemo<ColDef<DepositReportRow>[]>(() => [
     { field: 'driver', headerName: 'Driver', pinned: 'left', minWidth: 180 },
     { field: 'area', headerName: 'Area', minWidth: 130 },
-    { field: 'orders_count', headerName: 'JML Order', type: 'numericColumn', width: 105, valueFormatter: agNumberFormatter },
+    { field: 'orders_count', headerName: 'JML Order', editable: true, type: 'numericColumn', width: 105, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'base_service_omset', headerName: 'Omset Dari Jasa Dasar', type: 'numericColumn', width: 150, valueFormatter: agNumberFormatter },
     { field: 'base_service_deposit', headerName: 'Setoran 20% Dari Jasa Dasar', editable: true, type: 'numericColumn', width: 165, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
-    { field: 'previous_bill', headerName: 'Tagihan Bln Lalu', type: 'numericColumn', width: 135, valueFormatter: agNumberFormatter },
+    { field: 'previous_bill', headerName: 'Tagihan Bln Lalu', editable: true, type: 'numericColumn', width: 135, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'bpjs_jht', headerName: 'JHT BPJSTK', editable: true, type: 'numericColumn', width: 120, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'bpjs', headerName: 'Premi BPJSTK', editable: true, type: 'numericColumn', width: 125, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
-    { field: 'previous_cashback_reward', headerName: 'Reward Cashback Bulan Lalu', type: 'numericColumn', width: 160, valueFormatter: agNumberFormatter, headerClass: 'ag-orange-head' },
+    { field: 'previous_cashback_reward', headerName: 'Reward Cashback Bulan Lalu', editable: true, type: 'numericColumn', width: 160, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money', headerClass: 'ag-orange-head' },
     { field: 'bill_before_bansos', headerName: 'Total Tagihan', type: 'numericColumn', width: 130, valueFormatter: agNumberFormatter },
     { field: 'bansos', headerName: 'Bansos Area', editable: true, type: 'numericColumn', width: 120, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'total_bill', headerName: `Total Tagihan ${monthName(month).toUpperCase()}`, type: 'numericColumn', width: 145, valueFormatter: agNumberFormatter, cellClass: 'ag-total-cell', headerClass: 'ag-yellow-head' },
@@ -3855,14 +3855,14 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     { field: 'remaining_bill', headerName: 'Sisa Tagihan', type: 'numericColumn', width: 130, valueFormatter: agNumberFormatter, cellClass: 'ag-total-cell', headerClass: 'ag-yellow-head' },
     { field: 'paid_at', headerName: 'Tgl Bayar', editable: true, width: 120 },
     { field: 'status', headerName: 'Status', editable: true, cellEditor: 'agSelectCellEditor', cellEditorParams: { values: ['paid', 'unpaid'] }, width: 115 },
-    { field: 'next_cashback', headerName: 'Cashback 10% Utk Bulan Depan', type: 'numericColumn', width: 160, valueFormatter: agNumberFormatter },
+    { field: 'next_cashback', headerName: 'Cashback 10% Utk Bulan Depan', editable: true, type: 'numericColumn', width: 160, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
   ], [month])
 
   const saveDepositCell = useCallback(async (event: CellValueChangedEvent<DepositReportRow>) => {
     const field = event.colDef.field
     const row = event.data
     if (!row?.driver_id || !field || event.newValue === event.oldValue) return
-    if (!['base_service_deposit', 'bpjs_jht', 'bpjs', 'bansos', 'paid_amount', 'paid_at', 'status'].includes(field)) return
+    if (!['orders_count', 'base_service_deposit', 'previous_bill', 'bpjs_jht', 'bpjs', 'previous_cashback_reward', 'bansos', 'paid_amount', 'paid_at', 'status', 'next_cashback'].includes(field)) return
 
     try {
       const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits/${row.driver_id}?month=${month}&year=${year}`, {

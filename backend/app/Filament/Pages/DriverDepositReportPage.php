@@ -153,13 +153,17 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
     public function updateDepositCell(int $driverId, string $field, mixed $value): array
     {
         if (! in_array($field, [
+            'orders_count',
             'base_service_deposit',
+            'previous_bill',
             'bpjs_jht',
             'bpjs',
+            'previous_cashback_reward',
             'bansos',
             'paid_amount',
             'paid_at',
             'status',
+            'next_cashback',
         ], true)) {
             Notification::make()
                 ->title('Kolom tidak bisa diedit')
@@ -201,6 +205,14 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             if ($field === 'base_service_deposit') {
                 $deposit->handle_day_15 = $this->moneyToInt($value);
                 $deposit->handle_day_30 = 0;
+            } elseif ($field === 'orders_count') {
+                $breakdown['manual_orders_count'] = $this->moneyToInt($value);
+            } elseif ($field === 'previous_bill') {
+                $breakdown['manual_previous_bill'] = $this->moneyToInt($value);
+            } elseif ($field === 'previous_cashback_reward') {
+                $breakdown['manual_previous_cashback_reward'] = $this->moneyToInt($value);
+            } elseif ($field === 'next_cashback') {
+                $breakdown['manual_next_cashback'] = $this->moneyToInt($value);
             } elseif (in_array($field, ['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'], true)) {
                 $deposit->{$field} = $this->moneyToInt($value);
             } elseif ($field === 'paid_at') {
@@ -221,9 +233,13 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                 ->where('month', $previous->month)
                 ->first();
 
-            $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
+            $previousRemaining = array_key_exists('manual_previous_bill', $breakdown)
+                ? max(0, (int) $breakdown['manual_previous_bill'])
+                : max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
             $previousBase = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
-            $cashback = $this->cashbackForPreviousDeposit($previousDeposit, $previousBase);
+            $cashback = array_key_exists('manual_previous_cashback_reward', $breakdown)
+                ? max(0, (int) $breakdown['manual_previous_cashback_reward'])
+                : $this->cashbackForPreviousDeposit($previousDeposit, $previousBase);
 
             $deposit->total = max(0, $base + $previousRemaining - $cashback + (int) $deposit->bansos + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
 
@@ -240,6 +256,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             $breakdown['setoran_hingga_hari_ini'] = $base;
             $breakdown['tagihan_bulan_sebelumnya'] = $previousRemaining;
             $breakdown['cashback_bulan_sebelumnya'] = $cashback;
+            $breakdown['cashback_bulan_depan'] = $this->cashbackForPreviousDeposit($deposit, $base);
             $breakdown['bansos'] = (int) $deposit->bansos;
             $breakdown['bpjs'] = (int) $deposit->bpjs;
             $breakdown['bpjs_jht'] = (int) $deposit->bpjs_jht;
@@ -566,6 +583,11 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
 
     private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int
     {
+        $manualNextCashback = data_get($previousDeposit?->breakdown, 'manual_next_cashback');
+        if ($manualNextCashback !== null) {
+            return max(0, (int) $manualNextCashback);
+        }
+
         if (! $previousDeposit || $previousBaseDeposit <= 0) {
             return 0;
         }

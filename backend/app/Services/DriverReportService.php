@@ -104,9 +104,16 @@ class DriverReportService
                     $setoranJasaDasar = (int) $orders->sum(fn (Order $order): int => $this->depositAmount($order));
                 }
 
-                $tagihanBulanLalu = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
+                $breakdown = $deposit?->breakdown ?? [];
+                $tagihanBulanLalu = data_get($breakdown, 'manual_previous_bill');
+                $tagihanBulanLalu = $tagihanBulanLalu !== null
+                    ? max(0, (int) $tagihanBulanLalu)
+                    : max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
                 $previousBaseDeposit = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
-                $rewardCashbackBulanLalu = $this->cashbackForPreviousDeposit($previousDeposit, $previousBaseDeposit);
+                $rewardCashbackBulanLalu = data_get($breakdown, 'manual_previous_cashback_reward');
+                $rewardCashbackBulanLalu = $rewardCashbackBulanLalu !== null
+                    ? max(0, (int) $rewardCashbackBulanLalu)
+                    : $this->cashbackForPreviousDeposit($previousDeposit, $previousBaseDeposit);
                 $totalTagihan = max(0, $setoranJasaDasar + $tagihanBulanLalu + (int) ($deposit?->bpjs_jht ?? 0) + (int) ($deposit?->bpjs ?? 0) + (int) ($deposit?->bansos ?? 0) - $rewardCashbackBulanLalu);
                 $terbayar = (int) ($deposit?->paid_amount ?? 0);
 
@@ -115,7 +122,7 @@ class DriverReportService
                     'deposit_id' => $deposit?->id,
                     'driver' => $driver->user?->name ?? 'Driver #'.$driver->id,
                     'area' => $driver->user?->branch?->area ?? $driver->user?->branch?->name ?? '-',
-                    'orders_count' => $orders->count(),
+                    'orders_count' => (int) (data_get($breakdown, 'manual_orders_count') ?? $orders->count()),
                     'base_service_omset' => (int) $orders->sum('price'),
                     'base_service_deposit' => $setoranJasaDasar,
                     'previous_bill' => $tagihanBulanLalu,
@@ -130,7 +137,7 @@ class DriverReportService
                     'paid_at' => $deposit?->paid_at?->format('n/j/Y'),
                     'status' => $deposit?->status ?? 'unpaid',
                     'manual_override' => (bool) data_get($deposit?->breakdown, 'manual_override', false),
-                    'next_cashback' => $this->cashbackForPreviousDeposit($deposit, $setoranJasaDasar),
+                    'next_cashback' => (int) (data_get($breakdown, 'manual_next_cashback') ?? $this->cashbackForPreviousDeposit($deposit, $setoranJasaDasar)),
                 ];
             })
             ->sortBy('driver')
@@ -166,6 +173,11 @@ class DriverReportService
 
     private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int
     {
+        $manualNextCashback = data_get($previousDeposit?->breakdown, 'manual_next_cashback');
+        if ($manualNextCashback !== null) {
+            return max(0, (int) $manualNextCashback);
+        }
+
         if (! $previousDeposit || $previousBaseDeposit <= 0) {
             return 0;
         }
