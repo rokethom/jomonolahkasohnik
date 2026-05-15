@@ -3448,6 +3448,8 @@ class AdminController extends Controller
     {
         return $this->usersQuery($actor)
             ->where('role', UserRole::Driver->value)
+            ->orderBy('name')
+            ->orderBy('username')
             ->with([
                 'driver' => fn ($query) => $query
                     ->withAvg('ratings as rating_average', 'rating')
@@ -3486,7 +3488,6 @@ class AdminController extends Controller
                     ->limit(1),
                 'driver.suspensions' => fn ($query) => $query->latest()->limit(5),
             ])
-            ->limit(100)
             ->get()
             ->map(function (User $user): array {
                 $deposit = $user->driver ? app(DriverFinanceService::class)->monthlyDeposit($user->driver, now()->subMonth()) : null;
