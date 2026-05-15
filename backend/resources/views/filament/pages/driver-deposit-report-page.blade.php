@@ -240,7 +240,7 @@
                         { headerName: 'TOTAL TAGIHAN BULAN INI', field: 'total_bill', minWidth: 145, ...editableNumber, cellClass: 'deposit-number-cell deposit-editable-cell deposit-total-cell', headerClass: 'deposit-yellow-header' },
                         { headerName: 'TERBAYAR', field: 'paid_amount', minWidth: 130, ...editableNumber },
                         { headerName: 'SISA TAGIHAN', field: 'remaining_bill', minWidth: 135, ...editableNumber, cellClass: 'deposit-number-cell deposit-editable-cell deposit-remaining-cell', headerClass: 'deposit-yellow-header' },
-                        { headerName: 'TGL BAYAR', field: 'paid_at', minWidth: 130, editable: true, cellClass: 'deposit-editable-cell' },
+                        { headerName: 'TGL BAYAR (AUTO)', field: 'paid_at', minWidth: 145, editable: false },
                         {
                             headerName: 'STATUS',
                             field: 'status',

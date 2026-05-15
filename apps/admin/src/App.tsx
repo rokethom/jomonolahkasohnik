@@ -3853,7 +3853,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     { field: 'total_bill', headerName: `Total Tagihan ${monthName(month).toUpperCase()}`, editable: true, type: 'numericColumn', width: 145, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money ag-total-cell', headerClass: 'ag-yellow-head' },
     { field: 'paid_amount', headerName: 'Terbayar', editable: true, type: 'numericColumn', width: 125, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'remaining_bill', headerName: 'Sisa Tagihan', editable: true, type: 'numericColumn', width: 130, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money ag-total-cell', headerClass: 'ag-yellow-head' },
-    { field: 'paid_at', headerName: 'Tgl Bayar', editable: true, width: 120 },
+    { field: 'paid_at', headerName: 'Tgl Bayar (Auto)', editable: false, width: 135 },
     { field: 'status', headerName: 'Status', editable: true, cellEditor: 'agSelectCellEditor', cellEditorParams: { values: ['paid', 'unpaid'] }, width: 115 },
     { field: 'next_cashback', headerName: 'Cashback 10% Utk Bulan Depan', editable: true, type: 'numericColumn', width: 160, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
   ], [month])
@@ -3862,7 +3862,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     const field = event.colDef.field
     const row = event.data
     if (!row?.driver_id || !field || event.newValue === event.oldValue) return
-    if (!['orders_count', 'base_service_omset', 'base_service_deposit', 'previous_bill', 'bpjs_jht', 'bpjs', 'previous_cashback_reward', 'bill_before_bansos', 'bansos', 'total_bill', 'paid_amount', 'remaining_bill', 'paid_at', 'status', 'next_cashback'].includes(field)) return
+    if (!['orders_count', 'base_service_omset', 'base_service_deposit', 'previous_bill', 'bpjs_jht', 'bpjs', 'previous_cashback_reward', 'bill_before_bansos', 'bansos', 'total_bill', 'paid_amount', 'remaining_bill', 'status', 'next_cashback'].includes(field)) return
 
     try {
       const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits/${row.driver_id}?month=${month}&year=${year}`, {

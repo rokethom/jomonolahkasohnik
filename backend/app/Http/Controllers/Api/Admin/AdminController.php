@@ -1944,7 +1944,9 @@ class AdminController extends Controller
             }
         }
 
-        if (array_key_exists('paid_at', $payload)) {
+        if (array_key_exists('paid_amount', $payload)) {
+            $deposit->paid_at = (int) $payload['paid_amount'] > 0 ? now() : null;
+        } elseif (array_key_exists('paid_at', $payload)) {
             $deposit->paid_at = filled($payload['paid_at'] ?? null) ? \Illuminate\Support\Carbon::parse((string) $payload['paid_at']) : null;
         }
 
@@ -1970,7 +1972,7 @@ class AdminController extends Controller
             : max(0, $billBeforeBansos + (int) $deposit->bansos);
 
         $deposit->status = $payload['status'] ?? ((int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid');
-        if ($deposit->status === 'paid' && ! $deposit->paid_at) {
+        if ((int) $deposit->paid_amount > 0 && ! $deposit->paid_at) {
             $deposit->paid_at = now();
         }
 

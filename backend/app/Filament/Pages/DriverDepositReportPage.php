@@ -165,7 +165,6 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             'total_bill',
             'paid_amount',
             'remaining_bill',
-            'paid_at',
             'status',
             'next_cashback',
         ], true)) {
@@ -228,14 +227,16 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                 $breakdown['manual_next_cashback'] = $this->moneyToInt($value);
             } elseif (in_array($field, ['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'], true)) {
                 $deposit->{$field} = $this->moneyToInt($value);
-            } elseif ($field === 'paid_at') {
-                $deposit->paid_at = filled($value) ? Carbon::parse((string) $value) : null;
             } elseif ($field === 'status') {
                 $status = strtolower(trim((string) $value));
                 if (! in_array($status, ['paid', 'unpaid'], true)) {
                     throw new \InvalidArgumentException('Status hanya boleh paid atau unpaid.');
                 }
                 $deposit->status = $status;
+            }
+
+            if ($field === 'paid_amount') {
+                $deposit->paid_at = (int) $deposit->paid_amount > 0 ? now() : null;
             }
 
             $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
@@ -265,7 +266,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                 $deposit->status = (int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid';
             }
 
-            if ($deposit->status === 'paid' && ! $deposit->paid_at) {
+            if ((int) $deposit->paid_amount > 0 && ! $deposit->paid_at) {
                 $deposit->paid_at = now();
             }
 
