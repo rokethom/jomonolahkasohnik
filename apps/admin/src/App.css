@@ -4849,7 +4849,7 @@ td {
 .priority-window-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   padding: 16px;
   border-style: solid;
   background:
@@ -4884,9 +4884,9 @@ td {
 .priority-window-row.settings-row.compact {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: stretch;
-  padding: 14px;
+  gap: 18px;
+  align-items: end;
+  padding: 16px 14px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.86);
 }
@@ -4894,7 +4894,7 @@ td {
 .priority-window-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(160px, 1fr));
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -4912,6 +4912,7 @@ td {
 }
 
 .priority-window-row input {
+  display: block;
   min-height: 42px;
   padding: 0 12px;
   border: 1px solid #cbd5e1;
@@ -4946,7 +4947,7 @@ td {
   width: 100%;
   justify-content: center;
   min-height: 48px;
-  margin: 4px 0 0;
+  margin: 10px 0 0;
   border: 1px solid rgba(14, 165, 233, 0.22);
   border-radius: 14px;
   color: #075985;
