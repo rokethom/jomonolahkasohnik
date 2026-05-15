@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 class InternalChatController extends Controller
 {
@@ -124,7 +123,7 @@ class InternalChatController extends Controller
                 'mime' => $file?->getClientMimeType(),
                 'size' => $file?->getSize(),
                 'path' => $path,
-                'url' => $path ? Storage::url($path) : null,
+                'url' => $path ? '/api/media/'.ltrim($path, '/') : null,
             ];
         }
 

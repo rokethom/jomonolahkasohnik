@@ -89,7 +89,7 @@ class MessageService
             return null;
         }
 
-        return '/storage/'.$file->store($path, 'public');
+        return '/api/media/'.$file->store($path, 'public');
     }
 
     private function chatNotificationUrl(ChatConversation $conversation): string

@@ -35,7 +35,7 @@ class Banner extends Model
 
     public function getImageUrlAttribute(): ?string
     {
-        return $this->image ? asset('storage/'.$this->image) : null;
+        return $this->image ? url('/api/media/'.ltrim($this->image, '/')) : null;
     }
 
     public function getImageThumbUrlAttribute(): ?string

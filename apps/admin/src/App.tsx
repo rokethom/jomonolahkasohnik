@@ -6109,7 +6109,24 @@ function locationRiskTone(risk?: string | null) {
 }
 
 function assetUrl(path: string) {
-  return path.startsWith('http') ? path : `${APP_BASE}${path}`
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path)) return normalizeRemoteAsset(path)
+
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return `${APP_BASE}${cleanPath}`
+}
+
+function normalizeRemoteAsset(path: string) {
+  try {
+    const url = new URL(path)
+    if (['localhost', '127.0.0.1'].includes(url.hostname) || url.pathname.startsWith('/storage/') || url.pathname.startsWith('/api/media/')) {
+      return `${APP_BASE}${url.pathname}${url.search}${url.hash}`
+    }
+  } catch {
+    return path
+  }
+
+  return path
 }
 
 function Icon({ name }: { name: string }) {

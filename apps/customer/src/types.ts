@@ -155,6 +155,11 @@ export type ChatMessage = {
   from?: 'customer' | 'driver' | 'cs' | 'system'
   sender_type?: string
   sender_id?: number | null
+  sender_name?: string | null
+  sender?: {
+    id?: number
+    name?: string | null
+  } | null
   text?: string
   message?: string
   image_url?: string | null
@@ -170,6 +175,10 @@ export type ChatConversation = {
   order_id?: number | null
   type: 'customer_driver' | 'customer_operator' | 'driver_operator'
   status: 'waiting' | 'active' | 'closed' | string
+  customer_id?: number | null
+  customer_name?: string | null
+  driver_id?: number | null
+  driver_name?: string | null
   sla_status?: 'waiting' | 'on_time' | 'late' | string | null
   closed_at?: string | null
   operator_rating?: number | null

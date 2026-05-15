@@ -655,6 +655,29 @@
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
+.chat-participant-card {
+  margin: 0 12px 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
+  color: #1f2c33;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.chat-participant-card span,
+.message-sender-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #6b7b88;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chat-participant-card strong {
+  display: block;
+  font-size: 15px;
+}
+
 .message-list {
   flex: 1;
   min-height: 0;

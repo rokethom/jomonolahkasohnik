@@ -1549,7 +1549,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
   return (
     <section className="page chat-page">
       <button className="back-button" aria-label="Kembali" onClick={() => setView(mode === 'operator' ? 'profile' : order ? 'order-detail' : 'dashboard')}><ChevronLeft size={22} /></button>
-      <PageTitle title={mode === 'operator' ? 'Chat Operator' : 'Chat'} subtitle={mode === 'operator' ? 'CS / Operator' : order?.customer ?? 'Customer'} />
+      <PageTitle title={mode === 'operator' ? 'Chat Operator' : 'Chat'} subtitle={mode === 'operator' ? 'CS / Operator' : `${driver?.name ?? 'Driver'} dengan ${order?.customer ?? 'Customer'}`} />
       {mode === 'order' && !order && <EmptyState title="Belum ada order aktif" copy="Chat customer muncul setelah order diterima." />}
       {(mode === 'operator' || order) && (
         <div className="driver-chat panel">
@@ -1576,7 +1576,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
                   const mine = message.sender_id === driver?.id || message.sender_type === 'driver'
                   return (
                     <article key={message.id} className={`bubble ${mine ? 'mine' : ''}`}>
-                      {!mine && <strong className="bubble-sender">{chatSenderLabel(message)}</strong>}
+                      <strong className="bubble-sender">{mine ? `${driver?.name ?? 'Driver'} (Driver)` : chatSenderLabel(message)}</strong>
                       <p>{redactMapText(message.message) || (message.image_url ? 'Foto terkirim' : 'Pesan media')}</p>
                       {message.image_url && <button className="chat-image-button" type="button" onClick={() => setPreviewImage(assetUrl(message.image_url!))}><img className="chat-media" src={assetUrl(message.image_url)} alt="Lampiran chat" /></button>}
                       {message.audio_url && <audio controls src={assetUrl(message.audio_url)} />}

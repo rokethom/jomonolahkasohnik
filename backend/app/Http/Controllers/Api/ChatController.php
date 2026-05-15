@@ -44,7 +44,7 @@ class ChatController extends Controller
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
-        return response()->json(['data' => $this->conversationPayload($conversation->load('operator'))]);
+        return response()->json(['data' => $this->conversationPayload($conversation->load(['customer', 'driver', 'operator']))]);
     }
 
     public function orderMessages(Order $order, Request $request, ChatService $chatService): JsonResponse
@@ -282,6 +282,10 @@ class ChatController extends Controller
             'type' => $conversation->type,
             'status' => $conversation->status,
             'operator_id' => $conversation->operator_id,
+            'customer_id' => $conversation->customer_id,
+            'customer_name' => $conversation->customer?->name,
+            'driver_id' => $conversation->driver_id,
+            'driver_name' => $conversation->driver?->name,
             'operator_name' => $conversation->operator?->name,
             'operator_role' => $conversation->operator?->role?->value,
             'operator_rating' => $conversation->operator_rating,

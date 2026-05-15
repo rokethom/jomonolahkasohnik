@@ -76,6 +76,7 @@ type NotificationOpenTarget = {
 type LocalMessage = {
   id: string
   from: 'bot' | 'user' | 'driver' | 'system'
+  senderLabel?: string
   text?: string
   imageUrl?: string
   time: string
@@ -1324,7 +1325,7 @@ function App() {
     <ChatLayout
       screen={screen}
       title="JOJO"
-      subtitle={screen === 'driver-chat' ? 'Chat dengan driver' : screen === 'cs-chat' ? 'Hubungi Operator' : screen === 'profile-setup' ? 'Lengkapi profile' : 'SI APLIKASI JOKER'}
+      subtitle={screen === 'driver-chat' ? `Chat dengan ${driverNameFromOrder(acceptedOrder) !== '-' ? driverNameFromOrder(acceptedOrder) : 'driver'}` : screen === 'cs-chat' ? 'Hubungi Operator' : screen === 'profile-setup' ? 'Lengkapi profile' : 'SI APLIKASI JOKER'}
       showCall={screen === 'driver-chat'}
       showBack={Boolean(token) && screen !== 'home'}
       onBack={() => setScreen(token ? isProfileComplete(store.user) ? 'home' : 'profile-setup' : 'login')}
@@ -2612,6 +2613,7 @@ function MessageBubble({
 
   return (
     <article className={`message-bubble ${side}`}>
+      {message.senderLabel && side === 'in' && <strong className="message-sender-label">{message.senderLabel}</strong>}
       {message.imageUrl && <button className="chat-image-button" type="button" onClick={() => onImageClick?.(message.imageUrl!)}><img src={message.imageUrl} alt="Lampiran customer" /></button>}
       {message.text && <p>{redactMapText(message.text)}</p>}
       {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi Operator</button>}
@@ -3110,6 +3112,7 @@ function FallbackForm({ onSend }: { onSend: (text: string) => void }) {
 
 function DriverChatScreen({ order }: { order: Order | null }) {
   const store = useCustomerStore()
+  const driverName = driverNameFromOrder(order)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -3177,6 +3180,12 @@ function DriverChatScreen({ order }: { order: Order | null }) {
   return (
     <div className="driver-chat">
       <div className="chat-date">{todayLabel()}</div>
+      {order && (
+        <div className="chat-participant-card">
+          <span>Driver</span>
+          <strong>{driverName !== '-' ? driverName : 'Driver belum tersedia'}</strong>
+        </div>
+      )}
       <div className="message-list" ref={listRef}>
         {!order && <MessageBubble message={{ id: 'no-order', from: 'system', text: 'Belum ada order yang diterima driver.', time: nowTime() }} />}
         {loading && <TypingIndicator />}
@@ -3186,7 +3195,8 @@ function DriverChatScreen({ order }: { order: Order | null }) {
             message={{
               id: 'driver-welcome',
               from: 'driver',
-              text: `Order ${order.order_code ?? `#${order.id}`} sudah diterima driver. Silakan mulai chat.`,
+              senderLabel: driverName !== '-' ? `${driverName} (Driver)` : 'Driver',
+              text: `Order ${order.order_code ?? `#${order.id}`} sudah diterima ${driverName !== '-' ? driverName : 'driver'}. Silakan mulai chat.`,
               time: nowTime(),
             }}
           />
@@ -3199,6 +3209,7 @@ function DriverChatScreen({ order }: { order: Order | null }) {
               message={{
                 id: String(message.id),
                 from,
+                senderLabel: from === 'user' ? undefined : chatParticipantLabel(message, driverName),
                 text: message.message ?? message.text,
                 imageUrl: message.image_url ? assetUrl(message.image_url) : undefined,
                 time: formatMessageTime(message.created_at),
@@ -3370,6 +3381,7 @@ function CsChatScreen({ initialConversationId }: { initialConversationId?: numbe
               message={{
                 id: String(message.id),
                 from,
+                senderLabel: from === 'user' ? undefined : chatParticipantLabel(message),
                 text: message.message ?? message.text,
                 imageUrl: message.image_url ? assetUrl(message.image_url) : undefined,
                 time: formatMessageTime(message.created_at),
@@ -4398,6 +4410,29 @@ function cmsAssetUrl(path: string) {
   if (!/^https?:\/\//i.test(path)) return assetUrl(path)
 
   return normalizeRemoteAsset(path)
+}
+
+function chatParticipantLabel(message: ChatMessage, fallbackDriverName = '') {
+  const senderName = message.sender?.name ?? message.sender_name
+  const role = String(message.sender_type ?? '').toLowerCase()
+  if (senderName) return `${senderName} (${chatRoleLabel(role)})`
+  if (role === 'driver' && fallbackDriverName && fallbackDriverName !== '-') return `${fallbackDriverName} (Driver)`
+
+  return chatRoleLabel(role)
+}
+
+function chatRoleLabel(role?: string | null) {
+  const key = String(role ?? '').toLowerCase()
+  if (key === 'driver') return 'Driver'
+  if (key === 'customer') return 'Customer'
+  if (key === 'operator') return 'Operator'
+  if (key === 'eksekutor') return 'Eksekutor'
+  if (key === 'manager') return 'Manager'
+  if (key === 'spv') return 'SPV'
+  if (key === 'admin') return 'Admin'
+  if (key === 'bot') return 'JOJOBOT'
+
+  return 'JOJO'
 }
 
 async function downloadAsset(url: string, filename: string) {

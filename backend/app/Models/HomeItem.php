@@ -66,7 +66,7 @@ class HomeItem extends Model implements HasMedia
 
     public function getImageUrlAttribute(): ?string
     {
-        return $this->getFirstMediaUrl('image') ?: ($this->image ? asset('storage/'.$this->image) : null);
+        return $this->getFirstMediaUrl('image') ?: ($this->image ? url('/api/media/'.ltrim($this->image, '/')) : null);
     }
 
     public function getImageThumbUrlAttribute(): ?string
@@ -76,6 +76,6 @@ class HomeItem extends Model implements HasMedia
 
     public function getIconUrlAttribute(): ?string
     {
-        return $this->getFirstMediaUrl('icon') ?: ($this->icon ? asset('storage/'.$this->icon) : null);
+        return $this->getFirstMediaUrl('icon') ?: ($this->icon ? url('/api/media/'.ltrim($this->icon, '/')) : null);
     }
 }

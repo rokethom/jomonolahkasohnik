@@ -116,7 +116,7 @@ class CmsHomeController extends Controller
 
         return response()->json([
             'path' => $path,
-            'url' => asset('storage/'.$path),
+            'url' => url('/api/media/'.$path),
         ]);
     }
 }
