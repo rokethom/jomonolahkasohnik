@@ -395,6 +395,12 @@ type Bootstrap = {
   chats: Chat[]
   audit_logs: AuditLog[]
 }
+type UserIndexResponse = {
+  data: {
+    data: User[]
+    total?: number
+  }
+}
 type AdminHomeBanner = {
   id: number
   title: string
@@ -634,6 +640,9 @@ function App() {
   const [view, setView] = useState<View>('dashboard')
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
+  const [serverUsers, setServerUsers] = useState<User[] | null>(null)
+  const [serverUsersTotal, setServerUsersTotal] = useState<number | null>(null)
+  const [usersLoading, setUsersLoading] = useState(false)
   const [isUserFormOpen, setUserFormOpen] = useState(false)
   const [isLoading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -844,6 +853,43 @@ function App() {
   const { current: buildInfo, update: updateInfo } = useBuildUpdate('admin')
 
   useEffect(() => {
+    if (!token || !data || safeView !== 'users') {
+      setServerUsers(null)
+      setServerUsersTotal(null)
+      setUsersLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ per_page: '100' })
+      const trimmedQuery = query.trim()
+      if (trimmedQuery !== '') params.set('q', trimmedQuery)
+      if (roleFilter !== 'all') params.set('role', roleFilter)
+
+      setUsersLoading(true)
+      void api<UserIndexResponse>(`/admin/users?${params.toString()}`)
+        .then((payload) => {
+          if (cancelled) return
+          setServerUsers(payload.data.data)
+          setServerUsersTotal(payload.data.total ?? payload.data.data.length)
+        })
+        .catch((error) => {
+          if (cancelled || isAuthError(error)) return
+          setError(error instanceof Error ? error.message : 'Gagal memuat data user')
+        })
+        .finally(() => {
+          if (!cancelled) setUsersLoading(false)
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [api, data, query, roleFilter, safeView, token])
+
+  useEffect(() => {
     if (safeView === 'dashboard' && query !== '') {
       setQuery('')
     }
@@ -876,8 +922,9 @@ function App() {
   const visibleMenuGroups = menuGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => allowedViews.includes(item.id)) }))
     .filter((group) => group.items.length > 0)
-  const filteredUsers = data.users.filter((user) => {
-    const text = `${user.username} ${user.name} ${user.email}`.toLowerCase()
+  const userRows = serverUsers ?? data.users
+  const filteredUsers = userRows.filter((user) => {
+    const text = `${user.username} ${user.name} ${user.email} ${user.phone ?? ''} ${user.address ?? ''} ${user.branch ?? ''} ${user.branch_code ?? ''} ${user.branch_area ?? ''} ${user.branch_display_name ?? ''}`.toLowerCase()
     return text.includes(query.toLowerCase()) && (roleFilter === 'all' || user.role === roleFilter)
   })
   const pendingOperHandles = (data.oper_handles ?? []).filter((item) => item.status === 'pending')
@@ -987,7 +1034,7 @@ function App() {
         {safeView === 'dashboard' && <Dashboard data={data} api={api} buildInfo={buildInfo} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} permissions={data.permissions} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
-        {safeView === 'users' && <UsersPanel users={filteredUsers} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'users' && <UsersPanel users={filteredUsers} totalUsers={serverUsersTotal} isLoading={usersLoading} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {isBackendCmsView(safeView) && <BackendCmsLinkPanel view={safeView} />}
@@ -1723,7 +1770,7 @@ function driverBranchKey(driver: DriverRow) {
   return driverBranchLabel(driver).toLowerCase()
 }
 
-function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permissions, api, onChanged }: { users: User[]; branches: Branch[]; me: User; roleFilter: Role | 'all'; onRoleFilterChange: (role: Role | 'all') => void; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, onRoleFilterChange, permissions, api, onChanged }: { users: User[]; totalUsers: number | null; isLoading: boolean; branches: Branch[]; me: User; roleFilter: Role | 'all'; onRoleFilterChange: (role: Role | 'all') => void; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const detailRef = useRef<HTMLElement | null>(null)
@@ -1756,7 +1803,7 @@ function UsersPanel({ users, branches, me, roleFilter, onRoleFilterChange, permi
   }
   return (
     <section className="panel user-management-panel">
-      <PanelHeader title="User management" action={`${users.length} records`} />
+      <PanelHeader title="User management" action={isLoading ? 'Mencari...' : `${users.length}${totalUsers !== null && totalUsers !== users.length ? ` dari ${totalUsers}` : ''} records`} />
       <div className="table-toolbar user-toolbar">
         <select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
         <span className="toolbar-hint">Klik baris user untuk melihat detail dan aksi. Admin/GM only can edit Admin & GM accounts.</span>

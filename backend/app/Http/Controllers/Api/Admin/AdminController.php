@@ -121,10 +121,40 @@ class AdminController extends Controller
 
     public function users(Request $request): JsonResponse
     {
+        $query = $this->usersQuery($request->user());
+        $search = trim((string) $request->query('q', $request->query('search', '')));
+        $role = trim((string) $request->query('role', ''));
+        $branchId = $request->query('branch_id');
+
+        if ($search !== '') {
+            $query->where(function (Builder $query) use ($search): void {
+                $query->where('username', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhereHas('branch', function (Builder $query) use ($search): void {
+                        $query->where('branch_code', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('area', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($role !== '' && $role !== 'all') {
+            $query->where('role', $role);
+        }
+
+        if (is_numeric($branchId)) {
+            $query->where('branch_id', (int) $branchId);
+        }
+
+        $perPage = max(10, min(100, $request->integer('per_page', 25)));
+
         return response()->json([
-            'data' => $this->usersQuery($request->user())
+            'data' => $query
                 ->latest()
-                ->paginate($request->integer('per_page', 25))
+                ->paginate($perPage)
                 ->through(fn (User $user) => $this->userPayload($user)),
         ]);
     }

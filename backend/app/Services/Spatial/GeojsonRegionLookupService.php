@@ -92,13 +92,106 @@ class GeojsonRegionLookupService
 
     private function contains(float $lat, float $lng, array $polygons): bool
     {
-        foreach ($polygons as $polygon) {
-            if (is_array($polygon) && $this->containsSinglePolygon($lat, $lng, $polygon)) {
+        foreach ($this->normalizePolygons($polygons) as $polygon) {
+            if ($this->containsSinglePolygon($lat, $lng, $polygon)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * GeoJSON rows created by the current parser are stored as array-of-polygons,
+     * while older manual rows may be stored as a single polygon. Support both so
+     * region detection stays reliable for existing CMS data.
+     *
+     * @return array<int, array<int, array{lat: float, lng: float}>>
+     */
+    private function normalizePolygons(array $value): array
+    {
+        if ($value === []) {
+            return [];
+        }
+
+        if ($this->isPoint($value[0] ?? null)) {
+            return [$this->normalizePolygon($value)];
+        }
+
+        $polygons = [];
+        foreach ($value as $polygon) {
+            if (! is_array($polygon)) {
+                continue;
+            }
+
+            if ($this->isPoint($polygon[0] ?? null)) {
+                $normalized = $this->normalizePolygon($polygon);
+                if (count($normalized) >= 3) {
+                    $polygons[] = $normalized;
+                }
+
+                continue;
+            }
+
+            foreach ($polygon as $ring) {
+                if (is_array($ring) && $this->isPoint($ring[0] ?? null)) {
+                    $normalized = $this->normalizePolygon($ring);
+                    if (count($normalized) >= 3) {
+                        $polygons[] = $normalized;
+                    }
+                }
+            }
+        }
+
+        return $polygons;
+    }
+
+    /**
+     * @param array<int, mixed> $polygon
+     * @return array<int, array{lat: float, lng: float}>
+     */
+    private function normalizePolygon(array $polygon): array
+    {
+        return collect($polygon)
+            ->map(fn (mixed $point): ?array => $this->normalizePoint($point))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function isPoint(mixed $point): bool
+    {
+        if (! is_array($point)) {
+            return false;
+        }
+
+        return (isset($point['lat'], $point['lng']) && is_numeric($point['lat']) && is_numeric($point['lng']))
+            || (isset($point['latitude'], $point['longitude']) && is_numeric($point['latitude']) && is_numeric($point['longitude']))
+            || (isset($point[0], $point[1]) && is_numeric($point[0]) && is_numeric($point[1]));
+    }
+
+    /**
+     * @return array{lat: float, lng: float}|null
+     */
+    private function normalizePoint(mixed $point): ?array
+    {
+        if (! is_array($point)) {
+            return null;
+        }
+
+        if (isset($point['lat'], $point['lng']) && is_numeric($point['lat']) && is_numeric($point['lng'])) {
+            return ['lat' => (float) $point['lat'], 'lng' => (float) $point['lng']];
+        }
+
+        if (isset($point['latitude'], $point['longitude']) && is_numeric($point['latitude']) && is_numeric($point['longitude'])) {
+            return ['lat' => (float) $point['latitude'], 'lng' => (float) $point['longitude']];
+        }
+
+        if (isset($point[0], $point[1]) && is_numeric($point[0]) && is_numeric($point[1])) {
+            return ['lat' => (float) $point[1], 'lng' => (float) $point[0]];
+        }
+
+        return null;
     }
 
     private function containsSinglePolygon(float $lat, float $lng, array $polygon): bool

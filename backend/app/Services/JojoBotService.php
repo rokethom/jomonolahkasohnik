@@ -600,6 +600,18 @@ class JojoBotService
             'destination_geocoding_query' => $destinationGeo['query'] ?? null,
             'pickup_formatted_address' => $pickupGeo['formatted_address'] ?? null,
             'destination_formatted_address' => $destinationGeo['formatted_address'] ?? null,
+            'pickup_geojson_region_id' => $pickupGeo['geojson_region_id'] ?? null,
+            'pickup_geojson_region_name' => $pickupGeo['geojson_region_name'] ?? null,
+            'pickup_geojson_area_id' => $pickupGeo['geojson_area_id'] ?? null,
+            'pickup_geojson_area_name' => $pickupGeo['geojson_area_name'] ?? null,
+            'pickup_ai_alias_map_id' => $pickupGeo['ai_alias_map_id'] ?? null,
+            'pickup_ai_alias_canonical_name' => $pickupGeo['ai_alias_canonical_name'] ?? null,
+            'destination_geojson_region_id' => $destinationGeo['geojson_region_id'] ?? null,
+            'destination_geojson_region_name' => $destinationGeo['geojson_region_name'] ?? null,
+            'destination_geojson_area_id' => $destinationGeo['geojson_area_id'] ?? null,
+            'destination_geojson_area_name' => $destinationGeo['geojson_area_name'] ?? null,
+            'destination_ai_alias_map_id' => $destinationGeo['ai_alias_map_id'] ?? null,
+            'destination_ai_alias_canonical_name' => $destinationGeo['ai_alias_canonical_name'] ?? null,
             'geocoding_warning' => null,
         ];
 

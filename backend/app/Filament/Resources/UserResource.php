@@ -184,7 +184,13 @@ class UserResource extends Resource
                     ->label('Branch')
                     ->formatStateUsing(fn (User $record): string => $record->branch?->display_name ?? 'No branch')
                     ->placeholder('Global')
-                    ->searchable()
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        return $query->whereHas('branch', function (Builder $query) use ($search): void {
+                            $query->where('branch_code', 'like', "%{$search}%")
+                                ->orWhere('name', 'like', "%{$search}%")
+                                ->orWhere('area', 'like', "%{$search}%");
+                        });
+                    })
                     ->sortable(),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()

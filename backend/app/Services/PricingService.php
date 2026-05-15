@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Branch;
+use App\Models\GeojsonRegion;
 use App\Models\PriceSetting;
 use App\Services\Pricing\DistanceCalculator;
 use App\Services\Pricing\JokerPricing;
@@ -450,8 +451,28 @@ class PricingService
         return null;
     }
 
-    private function detectDestinationRegion(array $payload): ?\App\Models\GeojsonRegion
+    private function detectDestinationRegion(array $payload): ?GeojsonRegion
     {
+        foreach ([
+            'service_payload.destination_geojson_region_id',
+            'destination_geojson_region_id',
+            'geojson_region_id',
+        ] as $regionKey) {
+            $regionId = data_get($payload, $regionKey);
+            if (! is_numeric($regionId)) {
+                continue;
+            }
+
+            $region = GeojsonRegion::query()
+                ->with(['branch', 'area'])
+                ->active()
+                ->find((int) $regionId);
+
+            if ($region instanceof GeojsonRegion) {
+                return $region;
+            }
+        }
+
         foreach ([
             ['destination_lat', 'destination_lng'],
             ['dropoff_lat', 'dropoff_lng'],

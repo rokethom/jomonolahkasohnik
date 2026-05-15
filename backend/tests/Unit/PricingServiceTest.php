@@ -917,6 +917,63 @@ class PricingServiceTest extends TestCase
         $this->assertTrue($method->invoke($service, 'min mau order', ['min']));
     }
 
+    public function test_pricing_uses_geojson_region_metadata_from_jojobot_payload(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-META',
+            'name' => 'Situbondo',
+            'area' => 'Kota Metadata',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+            'is_active' => true,
+        ]);
+
+        $region = GeojsonRegion::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Panarukan Metadata',
+            'geojson' => ['type' => 'Polygon', 'coordinates' => [[[114.0800, -7.7100], [114.0820, -7.7100], [114.0820, -7.7080], [114.0800, -7.7080], [114.0800, -7.7100]]]],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [[
+                ['lat' => -7.7100, 'lng' => 114.0800],
+                ['lat' => -7.7100, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0820],
+                ['lat' => -7.7080, 'lng' => 114.0800],
+            ]],
+            'centroid_lat' => -7.7090,
+            'centroid_lng' => 114.0810,
+            'min_lat' => -7.7100,
+            'max_lat' => -7.7080,
+            'min_lng' => 114.0800,
+            'max_lng' => 114.0820,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->seedMasterRingDefaults($branch->id);
+
+        $quote = app(PricingService::class)->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'pickup_address' => 'Terminal Situbondo',
+            'destination_address' => 'Panarukan',
+            'distance_km' => 7,
+            'stops' => 1,
+            'service_payload' => [
+                'destination_geojson_region_id' => $region->id,
+            ],
+        ]);
+
+        $this->assertSame($region->id, $quote['geojson_region_id']);
+        $this->assertSame('Panarukan Metadata', $quote['geojson_region_name']);
+        $this->assertSame('ring_2', $quote['ring']);
+        $this->assertSame(13000, $quote['total_price']);
+    }
+
     private function seedMasterRingDefaults(int $branchId): void
     {
         foreach ([
