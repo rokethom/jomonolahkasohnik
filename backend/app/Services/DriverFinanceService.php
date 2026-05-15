@@ -13,6 +13,8 @@ class DriverFinanceService
 {
     public const UNPAID_SUSPEND_DAY = 11;
     public const UNPAID_SUSPEND_REASON = 'Setoran bulan sebelumnya masih unpaid per tanggal 11. Anda terkena suspend setoran, silakan bayar setoran agar akun bisa ON kembali.';
+    public const BPJS_PREMI_AMOUNT = 20000;
+    public const BPJS_JHT_AMOUNT = 20000;
 
     private const BANSOS_BY_AREA = [
         'situbondo' => 5000,
@@ -37,10 +39,10 @@ class DriverFinanceService
             ->where('month', (int) $month->month)
             ->first();
 
-        if ($this->periodIsBeforeDriverJoined($driver, $end)) {
-            if ((bool) data_get($existing?->breakdown, 'manual_override', false)) {
-                return $existing;
-            }
+        if ($this->periodIsBeforeDriverJoined($driver, $end) && ! (bool) data_get($existing?->breakdown, 'manual_override', false)) {
+            $bpjs = $this->bpjsPremiumForBaseDeposit(0);
+            $bpjsJht = $this->bpjsJhtForDriver($driver);
+            $total = $bpjs + $bpjsJht;
 
             return DriverDeposit::query()->updateOrCreate(
                 ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
@@ -48,13 +50,13 @@ class DriverFinanceService
                     'handle_day_15' => 0,
                     'handle_day_30' => 0,
                     'bansos' => 0,
-                    'bpjs' => 0,
-                    'bpjs_jht' => 0,
-                    'total' => 0,
+                    'bpjs' => $bpjs,
+                    'bpjs_jht' => $bpjsJht,
+                    'total' => $total,
                     'due_date' => $this->unpaidSuspendDate($month)->toDateString(),
                     'paid_amount' => 0,
                     'paid_at' => null,
-                    'status' => 'paid',
+                    'status' => $total > 0 ? 'unpaid' : 'paid',
                     'breakdown' => [
                         'handle_hari_15' => 0,
                         'handle_hari_30' => 0,
@@ -62,9 +64,9 @@ class DriverFinanceService
                         'tagihan_bulan_sebelumnya' => 0,
                         'cashback_bulan_sebelumnya' => 0,
                         'bansos' => 0,
-                        'bpjs' => 0,
-                        'bpjs_jht' => 0,
-                        'note' => 'Driver belum terdaftar pada periode setoran ini.',
+                        'bpjs' => $bpjs,
+                        'bpjs_jht' => $bpjsJht,
+                        'note' => 'Periode ini sebelum driver terdaftar. BPJS/JHT tetap mengikuti aturan hardcode untuk kebutuhan migrasi setoran.',
                     ],
                 ],
             );
@@ -95,8 +97,8 @@ class DriverFinanceService
         }
 
         $bansos = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bansos ?? 0) : $this->bansos($driver);
-        $bpjs = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bpjs ?? 0) : ($baseDeposit < 30000 ? 20000 : 0);
-        $bpjsJht = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bpjs_jht ?? 0) : ($driver->bpjs_jht_enabled ? 20000 : 0);
+        $bpjs = $this->bpjsPremiumForBaseDeposit($baseDeposit);
+        $bpjsJht = $this->bpjsJhtForDriver($driver);
         $billBeforeBansos = data_get($existing?->breakdown, 'manual_bill_before_bansos');
         $billBeforeBansos = $billBeforeBansos !== null
             ? max(0, (int) $billBeforeBansos)
@@ -175,6 +177,16 @@ class DriverFinanceService
             'suspend_history' => $driver->suspensions()->latest()->limit(20)->get(),
             'oper_handle' => $driver->operHandleRequests()->latest()->limit(20)->get(),
         ];
+    }
+
+    public function bpjsPremiumForBaseDeposit(int $baseDeposit): int
+    {
+        return self::BPJS_PREMI_AMOUNT;
+    }
+
+    public function bpjsJhtForDriver(Driver $driver): int
+    {
+        return $driver->bpjs_jht_enabled ? self::BPJS_JHT_AMOUNT : 0;
     }
 
     public function enforceUnpaidSuspensions(SuspendService $suspensions): int

@@ -200,6 +200,10 @@
                     const value = Number(params.value || 0);
                     return value > 0 ? value.toLocaleString('en-US') : '-';
                 };
+                const requiredMoneyFormatter = (params) => {
+                    const value = Number(params.value || 0);
+                    return Number.isFinite(value) ? value.toLocaleString('en-US') : '0';
+                };
                 const numberFormatter = (params) => Number(params.value || 0).toLocaleString('en-US');
                 const moneyParser = (params) => {
                     const parsed = String(params.newValue ?? '').replace(/[^\d-]/g, '');
@@ -232,8 +236,8 @@
                         { headerName: 'OMSET DARI JASA DASAR', field: 'base_service_omset', minWidth: 150, ...editableNumber },
                         { headerName: 'SETORAN 20% DARI JASA DASAR', field: 'base_service_deposit', minWidth: 170, ...editableNumber },
                         { headerName: 'TAGIHAN BLN LALU', field: 'previous_bill', minWidth: 135, ...editableNumber },
-                        { headerName: 'JHT BPJSTK', field: 'bpjs_jht', minWidth: 125, ...editableNumber },
-                        { headerName: 'PREMI BPJSTK', field: 'bpjs', minWidth: 125, ...editableNumber },
+                        { headerName: 'JHT BPJSTK', field: 'bpjs_jht', minWidth: 125, editable: false, valueFormatter: requiredMoneyFormatter, cellClass: 'deposit-number-cell', type: 'rightAligned' },
+                        { headerName: 'PREMI BPJSTK', field: 'bpjs', minWidth: 125, editable: false, valueFormatter: requiredMoneyFormatter, cellClass: 'deposit-number-cell', type: 'rightAligned' },
                         { headerName: 'REWARD CASHBACK BULAN LALU', field: 'previous_cashback_reward', minWidth: 170, ...editableNumber, headerClass: 'deposit-orange-header' },
                         { headerName: 'TOTAL TAGIHAN', field: 'bill_before_bansos', minWidth: 130, ...editableNumber },
                         { headerName: 'BANSOS AREA', field: 'bansos', minWidth: 125, ...editableNumber },

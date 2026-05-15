@@ -3845,8 +3845,8 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     { field: 'base_service_omset', headerName: 'Omset Dari Jasa Dasar', editable: true, type: 'numericColumn', width: 150, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'base_service_deposit', headerName: 'Setoran 20% Dari Jasa Dasar', editable: true, type: 'numericColumn', width: 165, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'previous_bill', headerName: 'Tagihan Bln Lalu', editable: true, type: 'numericColumn', width: 135, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
-    { field: 'bpjs_jht', headerName: 'JHT BPJSTK', editable: true, type: 'numericColumn', width: 120, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
-    { field: 'bpjs', headerName: 'Premi BPJSTK', editable: true, type: 'numericColumn', width: 125, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'bpjs_jht', headerName: 'JHT BPJSTK', editable: false, type: 'numericColumn', width: 120, valueFormatter: agRequiredNumberFormatter },
+    { field: 'bpjs', headerName: 'Premi BPJSTK', editable: false, type: 'numericColumn', width: 125, valueFormatter: agRequiredNumberFormatter },
     { field: 'previous_cashback_reward', headerName: 'Reward Cashback Bulan Lalu', editable: true, type: 'numericColumn', width: 160, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money', headerClass: 'ag-orange-head' },
     { field: 'bill_before_bansos', headerName: 'Total Tagihan', editable: true, type: 'numericColumn', width: 130, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'bansos', headerName: 'Bansos Area', editable: true, type: 'numericColumn', width: 120, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
@@ -3862,7 +3862,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     const field = event.colDef.field
     const row = event.data
     if (!row?.driver_id || !field || event.newValue === event.oldValue) return
-    if (!['orders_count', 'base_service_omset', 'base_service_deposit', 'previous_bill', 'bpjs_jht', 'bpjs', 'previous_cashback_reward', 'bill_before_bansos', 'bansos', 'total_bill', 'paid_amount', 'remaining_bill', 'status', 'next_cashback'].includes(field)) return
+    if (!['orders_count', 'base_service_omset', 'base_service_deposit', 'previous_bill', 'previous_cashback_reward', 'bill_before_bansos', 'bansos', 'total_bill', 'paid_amount', 'remaining_bill', 'status', 'next_cashback'].includes(field)) return
 
     try {
       const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits/${row.driver_id}?month=${month}&year=${year}`, {
@@ -6172,6 +6172,12 @@ function agNumberFormatter(params: { value: unknown }) {
   const value = Number(params.value ?? 0)
 
   return value === 0 ? '-' : value.toLocaleString('en-US')
+}
+
+function agRequiredNumberFormatter(params: { value: unknown }) {
+  const value = Number(params.value ?? 0)
+
+  return Number.isFinite(value) ? value.toLocaleString('en-US') : '0'
 }
 
 function formatShortTime(value?: string | null) {

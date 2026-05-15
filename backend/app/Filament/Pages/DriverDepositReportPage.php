@@ -157,8 +157,6 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             'base_service_omset',
             'base_service_deposit',
             'previous_bill',
-            'bpjs_jht',
-            'bpjs',
             'previous_cashback_reward',
             'bill_before_bansos',
             'bansos',
@@ -202,7 +200,8 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
         try {
             $paymentPeriod = $this->period();
             $depositPeriod = $this->depositPeriodForPayment($paymentPeriod);
-            $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $depositPeriod->copy());
+            $finance = app(DriverFinanceService::class);
+            $deposit = $finance->monthlyDeposit($driver, $depositPeriod->copy());
             $breakdown = $deposit->breakdown ?? [];
             $breakdown['manual_override'] = true;
 
@@ -225,7 +224,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                 $breakdown['manual_remaining_bill'] = $this->moneyToInt($value);
             } elseif ($field === 'next_cashback') {
                 $breakdown['manual_next_cashback'] = $this->moneyToInt($value);
-            } elseif (in_array($field, ['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'], true)) {
+            } elseif (in_array($field, ['bansos', 'paid_amount'], true)) {
                 $deposit->{$field} = $this->moneyToInt($value);
             } elseif ($field === 'status') {
                 $status = strtolower(trim((string) $value));
@@ -240,6 +239,9 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             }
 
             $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
+            $deposit->bpjs = $finance->bpjsPremiumForBaseDeposit($base);
+            $deposit->bpjs_jht = $finance->bpjsJhtForDriver($driver);
+
             $previous = $depositPeriod->copy()->subMonth();
             $previousDeposit = DriverDeposit::query()
                 ->where('driver_id', $driver->id)

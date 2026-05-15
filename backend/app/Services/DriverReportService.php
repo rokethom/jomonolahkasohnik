@@ -86,13 +86,8 @@ class DriverReportService
                     ->whereBetween('created_at', [$start, $end])
                     ->get(['id', 'source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown']);
 
-                app(DriverFinanceService::class)->monthlyDeposit($driver, $earningPeriod->copy());
-
-                $deposit = DriverDeposit::query()
-                    ->where('driver_id', $driver->id)
-                    ->where('year', $earningPeriod->year)
-                    ->where('month', $earningPeriod->month)
-                    ->first();
+                $finance = app(DriverFinanceService::class);
+                $deposit = $finance->monthlyDeposit($driver, $earningPeriod->copy());
 
                 $previousDeposit = DriverDeposit::query()
                     ->where('driver_id', $driver->id)

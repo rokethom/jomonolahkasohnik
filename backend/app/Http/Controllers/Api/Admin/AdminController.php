@@ -1882,8 +1882,6 @@ class AdminController extends Controller
             'base_service_omset' => ['sometimes', 'integer', 'min:0'],
             'base_service_deposit' => ['sometimes', 'integer', 'min:0'],
             'previous_bill' => ['sometimes', 'integer', 'min:0'],
-            'bpjs_jht' => ['sometimes', 'integer', 'min:0'],
-            'bpjs' => ['sometimes', 'integer', 'min:0'],
             'previous_cashback_reward' => ['sometimes', 'integer', 'min:0'],
             'bill_before_bansos' => ['sometimes', 'integer', 'min:0'],
             'bansos' => ['sometimes', 'integer', 'min:0'],
@@ -1897,7 +1895,8 @@ class AdminController extends Controller
 
         $paymentPeriod = now()->setDate($year, $month, 1)->startOfMonth();
         $depositPeriod = $paymentPeriod->copy()->subMonthNoOverflow()->startOfMonth();
-        $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $depositPeriod->copy());
+        $finance = app(DriverFinanceService::class);
+        $deposit = $finance->monthlyDeposit($driver, $depositPeriod->copy());
         $breakdown = $deposit->breakdown ?? [];
         $breakdown['manual_override'] = true;
 
@@ -1938,7 +1937,7 @@ class AdminController extends Controller
             $breakdown['manual_next_cashback'] = (int) $payload['next_cashback'];
         }
 
-        foreach (['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'] as $field) {
+        foreach (['bansos', 'paid_amount'] as $field) {
             if (array_key_exists($field, $payload)) {
                 $deposit->{$field} = (int) $payload[$field];
             }
@@ -1951,6 +1950,9 @@ class AdminController extends Controller
         }
 
         $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
+        $deposit->bpjs = $finance->bpjsPremiumForBaseDeposit($base);
+        $deposit->bpjs_jht = $finance->bpjsJhtForDriver($driver);
+
         $previous = $depositPeriod->copy()->subMonth();
         $previousDeposit = DriverDeposit::query()
             ->where('driver_id', $driver->id)
