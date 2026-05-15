@@ -18,11 +18,11 @@ use Illuminate\Validation\ValidationException;
 */
 
 Route::get('/', function () {
-    return redirect('/admin');
+    return redirect()->away(config('app.frontend_url') ?: 'https://app.aplikasijoker.my.id');
 });
 
 Route::get('/login', function () {
-    return redirect('/admin/login');
+    return redirect()->away(config('app.frontend_url') ?: 'https://app.aplikasijoker.my.id');
 })->name('login');
 
 Route::get('/admin/login', function () {
