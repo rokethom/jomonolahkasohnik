@@ -958,8 +958,8 @@ function BranchAcceptedFeed({
 }) {
   const [openPanel, setOpenPanel] = useState<'accepted' | 'request' | 'oper' | 'suspend' | null>(null)
   const visible = orders.filter((order) => order.driver && order.source !== 'driver_request')
-  const requestVisible = requestOrders.slice(0, 8)
-  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 6)
+  const requestVisible = requestOrders
+  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus)
   const suspendVisible = suspendHistory.slice(0, 6)
   const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
   const togglePanel = (panel: 'accepted' | 'request' | 'oper' | 'suspend') => setOpenPanel((current) => current === panel ? null : panel)
@@ -971,7 +971,7 @@ function BranchAcceptedFeed({
           <span>Monitor area</span>
           <h2>Order diterima area</h2>
         </div>
-        <strong>{visible.length + requestVisible.length + operVisible.length + suspendVisible.length} catatan</strong>
+        <strong>{visible.length + requestVisible.length + operVisible.length + suspendVisible.length} data</strong>
       </div>
 
       <div className="branch-monitor-grid">
@@ -1006,10 +1006,10 @@ function BranchAcceptedFeed({
               <div className="branch-accepted-main">
                 <strong>{order.code}</strong>
                 <span>
-                  {order.driver} menerima order {order.service}
+                  {order.driver} menerima order {order.service} untuk {order.customer}
                   {order.driverPreference === 'ladies' && <em className="ladies-chip">Ladies</em>}
                 </span>
-                <small>{shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
+                <small>{statusLabel(order.status)} - Rp {formatMoney(order.total)} - {shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
               </div>
               <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
             </article>

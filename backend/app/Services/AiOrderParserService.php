@@ -18,6 +18,16 @@ class AiOrderParserService
         'openrouter/auto',
     ];
 
+    private const OPENROUTER_FREE_MODELS = [
+        'openrouter/free',
+        'openrouter/owl-alpha',
+        'inclusionai/ring-2.6-1t:free',
+        'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+        'baidu/cobuddy:free',
+        'poolside/laguna-xs.2:free',
+        'poolside/laguna-m.1:free',
+    ];
+
     private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503, 504];
     private const REQUEST_TIMEOUT_SECONDS = 4;
     private const CONNECT_TIMEOUT_SECONDS = 2;
@@ -249,6 +259,10 @@ class AiOrderParserService
 
     private function modelsForRequest(): array
     {
+        if ($this->provider() === 'openrouter' && $this->settings->bool('ai_openrouter_free_auto_enabled', false)) {
+            return ['openrouter/free'];
+        }
+
         $models = $this->provider() === 'openrouter'
             ? array_values(array_unique(array_filter([$this->model(), ...self::OPENROUTER_MODELS])))
             : [$this->model()];
@@ -532,12 +546,16 @@ PROMPT;
 
     private function model(): string
     {
+        if ($this->provider() === 'openrouter' && $this->settings->bool('ai_openrouter_free_auto_enabled', false)) {
+            return 'openrouter/free';
+        }
+
         $custom = $this->settings->get('ai_model');
         if (filled($custom)) {
             $model = (string) $custom;
 
-            return $this->provider() === 'openrouter' && $model === 'openrouter/free'
-                ? self::OPENROUTER_MODELS[0]
+            return $this->provider() === 'openrouter' && $model === 'openrouter/auto:free'
+                ? 'openrouter/free'
                 : $model;
         }
 

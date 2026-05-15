@@ -539,7 +539,7 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: 'home-cms',
-    label: 'Home CMS',
+    label: 'Home',
     icon: 'note',
     items: [
       { id: 'banners', label: 'Banners', icon: 'note' },
@@ -550,7 +550,7 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: 'pricing-cms',
-    label: 'Pricing CMS',
+    label: 'Pricing',
     icon: 'cash',
     items: [
       { id: 'pricing-keyword-rules', label: 'Pricing Keyword Rules', icon: 'note' },
@@ -558,7 +558,7 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: 'jojobot-cms',
-    label: 'JojoBot CMS',
+    label: 'JojoBot',
     icon: 'note',
     items: [
       { id: 'keyword-parsers', label: 'Keyword Parsers', icon: 'note' },
@@ -577,7 +577,7 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: 'system-cms',
-    label: 'System CMS',
+    label: 'System',
     icon: 'settings',
     items: [
       { id: 'settings', label: 'System Settings', icon: 'settings' },
@@ -1211,7 +1211,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenOrder }:
   }
 
   const activeOrders = data.orders.filter(isActiveOrderStatus).length || data.stats.active_orders
-  const onlineDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active').length
+  const onlineDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active' && driver.is_active && !driver.is_suspended).length
   const unassignedOrders = data.orders.filter((order) => isWaitingDriverStatus(order.status) && !order.driver).length
   const unansweredChats = data.chats.filter((chat) => Number(chat.unread_count ?? 0) > 0 || ['waiting', 'open'].includes(String(chat.status).toLowerCase())).length
   const pendingOperHandles = (data.oper_handles ?? []).filter((item) => item.status === 'pending').length

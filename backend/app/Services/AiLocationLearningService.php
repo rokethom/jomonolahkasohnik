@@ -5,11 +5,17 @@ namespace App\Services;
 use App\Models\AiLocationSuggestion;
 use App\Models\LocationPoi;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class AiLocationLearningService
 {
-    public function __construct(private readonly LocationPoiService $pois)
+    public function __construct(
+        private readonly LocationPoiService $pois,
+        private readonly SettingService $settings,
+    )
     {
     }
 
@@ -23,7 +29,7 @@ class AiLocationLearningService
         $updated = 0;
         $suggestions = [];
 
-        foreach ($this->extractLocations($rawText) as $row) {
+        foreach ($this->locationRows($rawText) as $row) {
             $normalized = $this->pois->normalize($row['text']);
             if (mb_strlen($normalized) < 3 || $this->isIgnored($normalized)) {
                 continue;
@@ -124,6 +130,89 @@ class AiLocationLearningService
             ->map(fn (array $row): array => [...$row, 'text' => $this->cleanLocation($row['text'])])
             ->filter(fn (array $row): bool => mb_strlen($row['text']) >= 3)
             ->unique(fn (array $row): string => $row['role'].'|'.$this->pois->normalize($row['text']))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{text: string, role: string, confidence: int}>
+     */
+    private function locationRows(string $rawText): array
+    {
+        $rows = $this->extractLocations($rawText);
+        if (! $this->openRouterLearningReady()) {
+            return $rows;
+        }
+
+        try {
+            $aiRows = $this->extractLocationsWithOpenRouter($rawText);
+            return collect([...$rows, ...$aiRows])
+                ->filter(fn (array $row): bool => filled($row['text'] ?? null) && filled($row['role'] ?? null))
+                ->unique(fn (array $row): string => $row['role'].'|'.$this->pois->normalize((string) $row['text']))
+                ->values()
+                ->all();
+        } catch (Throwable $exception) {
+            Log::channel('ai')->warning('ai_location_learning.openrouter_failed', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $rows;
+        }
+    }
+
+    private function openRouterLearningReady(): bool
+    {
+        return $this->settings->bool('ai_location_learning_openrouter_enabled', false)
+            && strtolower((string) $this->settings->get('ai_provider', 'openai')) === 'openrouter'
+            && filled($this->settings->get('openrouter_api_key'));
+    }
+
+    /**
+     * @return array<int, array{text: string, role: string, confidence: int}>
+     */
+    private function extractLocationsWithOpenRouter(string $rawText): array
+    {
+        $model = $this->settings->bool('ai_openrouter_free_auto_enabled', false)
+            ? 'openrouter/free'
+            : (string) ($this->settings->get('ai_model') ?: 'openrouter/free');
+
+        $response = Http::connectTimeout(2)
+            ->timeout(6)
+            ->acceptJson()
+            ->withToken((string) $this->settings->get('openrouter_api_key'))
+            ->withHeaders([
+                'HTTP-Referer' => config('app.url'),
+                'X-Title' => 'JOJO AI Location Learning',
+            ])
+            ->post(rtrim((string) ($this->settings->get('ai_base_url') ?: 'https://openrouter.ai/api/v1'), '/').'/chat/completions', [
+                'model' => $model,
+                'temperature' => 0.1,
+                'max_tokens' => 500,
+                'response_format' => ['type' => 'json_object'],
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Ekstrak kandidat lokasi dari teks order WhatsApp Indonesia. Balas JSON valid: {"locations":[{"text":"...","role":"pickup|destination|store","confidence":0-100}]}. Jangan menebak nama customer atau nomor HP sebagai lokasi.',
+                    ],
+                    ['role' => 'user', 'content' => $rawText],
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            return [];
+        }
+
+        $content = data_get($response->json(), 'choices.0.message.content');
+        $decoded = is_string($content) ? json_decode($content, true) : null;
+
+        return collect(data_get(is_array($decoded) ? $decoded : [], 'locations', []))
+            ->filter(fn (mixed $row): bool => is_array($row))
+            ->map(fn (array $row): array => [
+                'text' => $this->cleanLocation((string) ($row['text'] ?? '')),
+                'role' => in_array($row['role'] ?? '', ['pickup', 'destination', 'store'], true) ? (string) $row['role'] : 'destination',
+                'confidence' => max(60, min(95, (int) ($row['confidence'] ?? 75))),
+            ])
+            ->filter(fn (array $row): bool => mb_strlen($row['text']) >= 3)
             ->values()
             ->all();
     }

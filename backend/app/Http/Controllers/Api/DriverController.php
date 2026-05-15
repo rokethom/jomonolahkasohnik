@@ -102,7 +102,6 @@ class DriverController extends Controller
                 ->where('branch_id', $branchId)
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
-                ->limit(30)
                 ->get()
             : collect();
         $branchOperHandleOrders = $branchId
@@ -110,7 +109,6 @@ class DriverController extends Controller
                 ->with(['order.user', 'order.driver.user', 'driver.user'])
                 ->whereHas('order', fn ($query) => $query->where('branch_id', $branchId))
                 ->latest('updated_at')
-                ->limit(12)
                 ->get()
             : collect();
         $branchSuspendHistory = $branchId
@@ -247,7 +245,6 @@ class DriverController extends Controller
                 ->where('branch_id', $branchId)
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
-                ->limit(30)
                 ->get()
             : collect();
         $branchOperHandleOrders = $branchId
@@ -255,7 +252,6 @@ class DriverController extends Controller
                 ->with(['order.user', 'order.driver.user', 'driver.user'])
                 ->whereHas('order', fn ($query) => $query->where('branch_id', $branchId))
                 ->latest('updated_at')
-                ->limit(12)
                 ->get()
             : collect();
         $branchSuspendHistory = $branchId

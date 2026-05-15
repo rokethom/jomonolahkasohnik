@@ -102,6 +102,8 @@ class SystemSettingsPage extends Page implements HasForms
             'ai_provider' => $settings->get('ai_provider', 'openai'),
             'ai_model' => $settings->get('ai_model'),
             'ai_model_custom' => null,
+            'ai_openrouter_free_auto_enabled' => $settings->bool('ai_openrouter_free_auto_enabled', false),
+            'ai_location_learning_openrouter_enabled' => $settings->bool('ai_location_learning_openrouter_enabled', false),
             'ai_base_url' => $settings->get('ai_base_url'),
             'ai_max_tokens' => $settings->int('ai_max_tokens', 700),
             'hermes_enabled' => $settings->bool('hermes_enabled', false),
@@ -226,10 +228,21 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->options(fn (Forms\Get $get): array => $this->aiModelOptions((string) $get('ai_provider')))
                                             ->searchable()
                                             ->native(false)
-                                            ->helperText('Untuk OpenRouter, gunakan Auto Router agar OpenRouter memilih model terbaik yang tersedia, atau isi custom model ID.'),
+                                            ->disabled(fn (Forms\Get $get): bool => (bool) $get('ai_openrouter_free_auto_enabled'))
+                                            ->helperText('Untuk OpenRouter, aktifkan Auto Free jika ingin sistem otomatis memakai router model gratis. Jika nonaktif, admin dapat memilih model sendiri.'),
+                                        Forms\Components\Toggle::make('ai_openrouter_free_auto_enabled')
+                                            ->label('Auto switch OpenRouter free')
+                                            ->visible(fn (Forms\Get $get): bool => $get('ai_provider') === 'openrouter')
+                                            ->live()
+                                            ->helperText('Jika aktif, JOJOBOT memakai openrouter/free otomatis. Jika nonaktif, admin memilih model parser sendiri.'),
+                                        Forms\Components\Toggle::make('ai_location_learning_openrouter_enabled')
+                                            ->label('AI Location Learning pakai OpenRouter')
+                                            ->visible(fn (Forms\Get $get): bool => $get('ai_provider') === 'openrouter')
+                                            ->helperText('Jika aktif, paste histori WhatsApp dibantu OpenRouter untuk ekstrak pickup/tujuan selain parser lokal.'),
                                         Forms\Components\TextInput::make('ai_model_custom')
                                             ->label('Custom model ID')
-                                            ->placeholder('contoh: openrouter/auto')
+                                            ->placeholder('contoh: qwen/qwen3-coder:free')
+                                            ->disabled(fn (Forms\Get $get): bool => (bool) $get('ai_openrouter_free_auto_enabled'))
                                             ->helperText('Opsional. Jika diisi, nilai ini menggantikan pilihan Model parser tanpa perlu ubah kode.'),
                                         Forms\Components\TextInput::make('ai_max_tokens')
                                             ->label('Max token output')
@@ -342,7 +355,7 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->columnSpanFull(),
                                     ]),
                                 Forms\Components\Section::make('OpenRouter')
-                                    ->description('OpenRouter bersifat OpenAI-compatible. Gunakan model :free untuk parser murah, lalu monitor limit/rate dari dashboard OpenRouter.')
+                                    ->description('OpenRouter bersifat OpenAI-compatible. Gunakan openrouter/free atau model :free untuk parser murah, lalu monitor limit/rate dari dashboard OpenRouter.')
                                     ->collapsible()
                                     ->columns(2)
                                     ->schema([
@@ -755,7 +768,10 @@ class SystemSettingsPage extends Page implements HasForms
             $settings->set('firebase_vapid_key', $data['firebase_vapid_key'] ?? null, (bool) ($data['firebase_vapid_active'] ?? false));
             $settings->set('ai_assistant_enabled', (bool) ($data['ai_assistant_enabled'] ?? false));
             $settings->set('ai_provider', $data['ai_provider'] ?? 'openai');
-            $settings->set('ai_model', filled($data['ai_model_custom'] ?? null) ? $data['ai_model_custom'] : ($data['ai_model'] ?? null));
+            $freeAuto = (bool) ($data['ai_openrouter_free_auto_enabled'] ?? false);
+            $settings->set('ai_openrouter_free_auto_enabled', $freeAuto);
+            $settings->set('ai_location_learning_openrouter_enabled', (bool) ($data['ai_location_learning_openrouter_enabled'] ?? false));
+            $settings->set('ai_model', $freeAuto ? 'openrouter/free' : (filled($data['ai_model_custom'] ?? null) ? $data['ai_model_custom'] : ($data['ai_model'] ?? null)));
             $settings->set('ai_base_url', $data['ai_base_url'] ?? null);
             $settings->set('ai_max_tokens', max(200, min(1500, (int) ($data['ai_max_tokens'] ?? 700))));
             $settings->set('hermes_enabled', (bool) ($data['hermes_enabled'] ?? false));
@@ -793,7 +809,14 @@ class SystemSettingsPage extends Page implements HasForms
     {
         return match ($provider) {
             'openrouter' => [
+                'openrouter/free' => 'OpenRouter Free Router - auto pilih model gratis',
                 'openrouter/auto' => 'OpenRouter Auto Router - pilih model terbaik otomatis',
+                'openrouter/owl-alpha' => 'Owl Alpha - free',
+                'inclusionai/ring-2.6-1t:free' => 'inclusionAI Ring 2.6 1T - free',
+                'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' => 'NVIDIA Nemotron 3 Nano Omni - free',
+                'baidu/cobuddy:free' => 'Baidu CoBuddy - free',
+                'poolside/laguna-xs.2:free' => 'Poolside Laguna XS.2 - free',
+                'poolside/laguna-m.1:free' => 'Poolside Laguna M.1 - free',
             ],
             'kimi' => [
                 'kimi-pro' => 'Kimi Pro',
