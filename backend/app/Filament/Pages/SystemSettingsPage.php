@@ -266,8 +266,8 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->required(),
                                         Forms\Components\TextInput::make('hermes_model')
                                             ->label('AI assistant model ID')
-                                            ->placeholder('openclaw/default')
-                                            ->helperText('OpenClaw biasanya memakai openclaw/default. Kimi otomatis fallback ke moonshot-v1-8k jika model lama Hermes masih terisi.')
+                                            ->placeholder('kimi-pro')
+                                            ->helperText('Rekomendasi saat ini: provider OpenClaw Gateway dengan model kimi-pro. Model lama Hermes otomatis diarahkan ke kimi-pro saat memakai OpenClaw.')
                                             ->maxLength(180)
                                             ->required(),
                                         Forms\Components\TextInput::make('hermes_max_tokens')

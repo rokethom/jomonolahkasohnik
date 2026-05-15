@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\UserRole;
 use App\Models\OperHandleRequest;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -17,6 +18,16 @@ class OperHandleRequestResource extends Resource
 
     protected static ?string $navigationLabel = 'Oper Handle';
 
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -28,8 +39,16 @@ class OperHandleRequestResource extends Resource
                 Tables\Columns\TextColumn::make('operator_approved_at')->dateTime(),
                 Tables\Columns\TextColumn::make('spv_approved_at')->dateTime(),
             ])
-            ->actions([])
-            ->bulkActions([]);
+            ->actions([
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => static::canDeleteAny()),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => static::canDeleteAny()),
+                ])->visible(fn (): bool => static::canDeleteAny()),
+            ]);
     }
 
     public static function getPages(): array

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\UserRole;
 use App\Filament\Resources\DriverRequestOrderResource\Pages;
 use App\Models\Order;
 use Filament\Resources\Resource;
@@ -21,6 +22,16 @@ class DriverRequestOrderResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -34,7 +45,16 @@ class DriverRequestOrderResource extends Resource
                 Tables\Columns\TextColumn::make('raw_text')->limit(50)->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
             ])
-            ->actions([])
+            ->actions([
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => static::canDeleteAny()),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => static::canDeleteAny()),
+                ])->visible(fn (): bool => static::canDeleteAny()),
+            ])
             ->defaultSort('created_at', 'desc');
     }
 

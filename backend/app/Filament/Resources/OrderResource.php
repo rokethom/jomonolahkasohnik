@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Enums\OrderStatus;
+use App\Enums\UserRole;
 use App\Filament\Resources\OrderResource\Pages;
 use App\Models\Driver;
 use App\Models\Order;
@@ -33,6 +34,16 @@ class OrderResource extends Resource
     public static function canViewAny(): bool
     {
         return static::shouldRegisterNavigation();
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
     }
 
     public static function form(Form $form): Form
@@ -178,11 +189,14 @@ class OrderResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => static::canDeleteAny()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => static::canDeleteAny()),
+                ])->visible(fn (): bool => static::canDeleteAny()),
             ])
             ->defaultSort('created_at', 'desc');
     }

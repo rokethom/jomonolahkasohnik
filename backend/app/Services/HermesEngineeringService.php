@@ -532,8 +532,8 @@ class HermesEngineeringService
             return 'moonshot-v1-8k';
         }
 
-        if ($this->settings->get('hermes_provider') === 'openclaw' && ($model === '' || str_starts_with($model, 'nousresearch/'))) {
-            return 'openclaw/default';
+        if ($this->settings->get('hermes_provider') === 'openclaw' && ($model === '' || str_starts_with($model, 'nousresearch/') || $model === 'openclaw/default')) {
+            return 'kimi-pro';
         }
 
         return $model !== '' ? $model : 'nousresearch/hermes-3-llama-3.1-405b';
@@ -575,7 +575,8 @@ class HermesEngineeringService
 
     private function requiresMinimalChatPayload(): bool
     {
-        return $this->settings->get('hermes_provider') === 'kimi';
+        return $this->settings->get('hermes_provider') === 'kimi'
+            || ($this->settings->get('hermes_provider') === 'openclaw' && $this->model() === 'kimi-pro');
     }
 
     private function maxTotalContext(): int

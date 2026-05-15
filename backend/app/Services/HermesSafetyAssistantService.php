@@ -314,8 +314,8 @@ class HermesSafetyAssistantService
             return 'moonshot-v1-8k';
         }
 
-        if ($this->provider() === 'openclaw' && ($model === '' || str_starts_with($model, 'nousresearch/'))) {
-            return 'openclaw/default';
+        if ($this->provider() === 'openclaw' && ($model === '' || str_starts_with($model, 'nousresearch/') || $model === 'openclaw/default')) {
+            return 'kimi-pro';
         }
 
         return $model !== '' ? $model : 'openclaw/default';
@@ -332,13 +332,19 @@ class HermesSafetyAssistantService
             'messages' => $messages,
         ];
 
-        if ($this->provider() !== 'kimi') {
+        if (! $this->requiresMinimalChatPayload()) {
             $payload['temperature'] = 0.1;
             $payload['max_tokens'] = 1200;
             $payload['response_format'] = ['type' => 'json_object'];
         }
 
         return $payload;
+    }
+
+    private function requiresMinimalChatPayload(): bool
+    {
+        return $this->provider() === 'kimi'
+            || ($this->provider() === 'openclaw' && $this->chatModel() === 'kimi-pro');
     }
 
     /**

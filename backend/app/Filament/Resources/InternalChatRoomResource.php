@@ -48,7 +48,12 @@ class InternalChatRoomResource extends Resource
 
     public static function canDelete($record): bool
     {
-        return false;
+        return auth()->user()?->role === UserRole::Admin;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->role === UserRole::Admin;
     }
 
     public static function getEloquentQuery(): Builder
@@ -116,6 +121,14 @@ class InternalChatRoomResource extends Resource
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make()
                     ->visible(fn (): bool => in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true)),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => static::canDeleteAny()),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => static::canDeleteAny()),
+                ])->visible(fn (): bool => static::canDeleteAny()),
             ])
             ->defaultSort('updated_at', 'desc');
     }
