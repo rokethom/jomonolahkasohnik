@@ -5,13 +5,17 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\LocationPoiResource\Pages;
 use App\Models\Area;
 use App\Models\Branch;
+use App\Models\GeojsonRegion;
 use App\Models\LocationPoi;
+use App\Services\LocationPoiService;
 use Filament\Forms;
+use Filament\Notifications\Notification;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 
 class LocationPoiResource extends Resource
 {
@@ -108,6 +112,24 @@ class LocationPoiResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['branch', 'area'])->latest('updated_at'))
+            ->headerActions([
+                Tables\Actions\Action::make('sync_geojson_regions')
+                    ->label('Sync dari GeoJSON')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Buat Master POI dari GeoJSON Regions?')
+                    ->modalDescription('Semua GeoJSON region aktif yang punya centroid lat/lng akan dibuat atau diperbarui menjadi Master Location POI aktif. Data ini akan dipakai JojoBot sebelum fallback ke GeoJSON/Maps.')
+                    ->action(function (): void {
+                        $result = self::syncFromGeojsonRegions();
+
+                        Notification::make()
+                            ->title('Sync GeoJSON ke POI selesai')
+                            ->body("Dibuat: {$result['created']}, diperbarui: {$result['updated']}, dilewati: {$result['skipped']}.")
+                            ->success()
+                            ->send();
+                    }),
+            ])
             ->columns([
                 Tables\Columns\TextColumn::make('name')->label('Lokasi')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('aliases')->formatStateUsing(fn (mixed $state): string => collect($state ?? [])->take(4)->implode(', '))->wrap()->searchable(),
@@ -132,6 +154,52 @@ class LocationPoiResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    public static function syncFromGeojsonRegions(): array
+    {
+        $aliases = app(LocationPoiService::class);
+        $created = 0;
+        $updated = 0;
+        $skipped = 0;
+
+        GeojsonRegion::query()
+            ->active()
+            ->whereNotNull('centroid_lat')
+            ->whereNotNull('centroid_lng')
+            ->with(['branch', 'area'])
+            ->orderBy('name')
+            ->chunkById(200, function ($regions) use ($aliases, &$created, &$updated, &$skipped): void {
+                foreach ($regions as $region) {
+                    if (! is_numeric($region->centroid_lat) || ! is_numeric($region->centroid_lng)) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    $poi = LocationPoi::query()->updateOrCreate(
+                        ['geojson_region_id' => $region->id],
+                        [
+                            'branch_id' => $region->branch_id,
+                            'area_id' => $region->area_id,
+                            'name' => $region->name,
+                            'aliases' => $aliases->aliasesFor($region->name),
+                            'category' => 'destination',
+                            'latitude' => $region->centroid_lat,
+                            'longitude' => $region->centroid_lng,
+                            'source' => 'geojson',
+                            'confidence' => 85,
+                            'priority' => 10,
+                            'is_active' => true,
+                        ],
+                    );
+
+                    $poi->wasRecentlyCreated ? $created++ : $updated++;
+                }
+            });
+
+        Cache::flush();
+
+        return compact('created', 'updated', 'skipped');
     }
 
     public static function getPages(): array
