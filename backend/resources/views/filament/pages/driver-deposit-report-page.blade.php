@@ -86,15 +86,43 @@
                 width: 100%;
             }
 
+            .deposit-ag-grid .ag-header {
+                min-height: 118px;
+            }
+
+            .deposit-ag-grid .ag-header-cell,
+            .deposit-ag-grid .ag-header-group-cell {
+                align-items: stretch;
+                padding-inline: 8px;
+            }
+
             .deposit-ag-grid .ag-header-cell-label {
+                align-items: center;
                 justify-content: center;
+                line-height: 1.2;
+                min-height: 70px;
+                overflow: visible;
                 text-align: center;
                 white-space: normal;
             }
 
             .deposit-ag-grid .ag-header-cell-text {
-                line-height: 1.18;
+                line-height: 1.2;
+                overflow: visible;
+                text-overflow: clip;
                 white-space: normal;
+                word-break: normal;
+            }
+
+            .deposit-ag-grid .ag-floating-filter {
+                align-items: center;
+                min-height: 42px;
+                padding-top: 4px;
+            }
+
+            .deposit-ag-grid .ag-header-icon,
+            .deposit-ag-grid .ag-sort-indicator-container {
+                flex: 0 0 auto;
             }
 
             .deposit-ag-grid .ag-cell {
@@ -191,8 +219,12 @@
                         sortable: true,
                         filter: true,
                         resizable: true,
+                        wrapHeaderText: true,
+                        autoHeaderHeight: true,
                         minWidth: 110,
                     },
+                    headerHeight: 76,
+                    floatingFiltersHeight: 42,
                     columnDefs: [
                         { headerName: 'DRIVER', field: 'driver', pinned: 'left', minWidth: 180, cellClass: 'deposit-driver-cell' },
                         { headerName: 'AREA', field: 'area', pinned: 'left', minWidth: 150 },
