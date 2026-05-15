@@ -3918,7 +3918,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
               aria-pressed={depositFullscreen}
               onClick={() => setDepositFullscreen((value) => !value)}
             >
-              {depositFullscreen ? 'Keluar Full Screen' : 'Full Screen'}
+              {depositFullscreen ? 'Keluar Layar Penuh' : 'Layar Penuh'}
             </button>
           </div>
         </div>
