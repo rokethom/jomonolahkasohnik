@@ -3307,10 +3307,21 @@
 
   .home-hero {
     grid-template-columns: 1fr;
+    gap: 12px;
+    align-items: start;
   }
 
   .rider-visual {
-    display: none;
+    display: grid;
+    height: 132px;
+    justify-self: center;
+    margin-top: 2px;
+    width: 100%;
+  }
+
+  .rider-visual img {
+    height: 132px;
+    width: min(168px, 62vw);
   }
 
   .quick-grid,
