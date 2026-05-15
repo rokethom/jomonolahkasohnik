@@ -1567,14 +1567,7 @@ function HomeScreen({
           <PwaInstallButton />
         </div>
         <div className="rider-visual" aria-hidden="true">
-          <div className="city-fade" />
-          <div className="rider-head" />
-          <div className="rider-body" />
-          <div className="scooter">
-            <span className="wheel front" />
-            <span className="wheel back" />
-            <span className="box">JO</span>
-          </div>
+          <img src="/jojohome.webp" alt="" loading="eager" decoding="async" />
         </div>
       </section>
       {banners.length > 0 && (

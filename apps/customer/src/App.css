@@ -215,101 +215,18 @@
 .rider-visual {
   height: 150px;
   position: relative;
-}
-
-.city-fade {
-  position: absolute;
-  inset: 34px 0 22px;
-  border-radius: 20px;
-  background:
-    linear-gradient(90deg, transparent, rgba(0, 119, 255, 0.08)),
-    repeating-linear-gradient(90deg, transparent 0 22px, rgba(0, 119, 255, 0.12) 23px 28px);
-}
-
-.rider-head {
-  position: absolute;
-  top: 22px;
-  left: 58px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #0868d8;
-  box-shadow: inset -6px -2px 0 #0757b7;
-}
-
-.rider-body {
-  position: absolute;
-  top: 47px;
-  left: 62px;
-  width: 35px;
-  height: 48px;
-  border-radius: 16px 16px 9px 9px;
-  background: #087cff;
-  transform: rotate(-8deg);
-}
-
-.scooter {
-  position: absolute;
-  right: 0;
-  bottom: 12px;
-  width: 142px;
-  height: 68px;
-  border-radius: 50px 58px 20px 22px;
-  background: linear-gradient(145deg, #058cff, #0456d8);
-  box-shadow: 0 18px 22px rgba(0, 111, 255, 0.2);
-}
-
-.scooter::before {
-  content: "";
-  position: absolute;
-  left: 10px;
-  top: 25px;
-  width: 44px;
-  height: 18px;
-  border-radius: 999px;
-  background: #e7f7ff;
-}
-
-.scooter::after {
-  content: "";
-  position: absolute;
-  right: 19px;
-  top: -30px;
-  width: 38px;
-  height: 50px;
-  border-radius: 8px;
-  background: #00a4ff;
-}
-
-.wheel {
-  position: absolute;
-  bottom: -11px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #fff 0 25%, #121827 27% 62%, #5e6672 64%);
-}
-
-.wheel.front {
-  right: 11px;
-}
-
-.wheel.back {
-  left: 16px;
-}
-
-.box {
-  position: absolute;
-  right: 24px;
-  top: -17px;
-  width: 31px;
-  height: 31px;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #00b7ff;
-  background: #fff;
-  font-weight: 900;
+  overflow: hidden;
+}
+
+.rider-visual img {
+  display: block;
+  width: min(178px, 100%);
+  height: 150px;
+  object-fit: contain;
+  object-position: center;
+  filter: drop-shadow(0 16px 22px rgba(0, 111, 255, 0.18));
 }
 
 .section-title {
