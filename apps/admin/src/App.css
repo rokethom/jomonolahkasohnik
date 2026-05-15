@@ -4640,12 +4640,43 @@ td {
   --ag-font-size: 12px;
 }
 
+.jojo-deposit-grid .ag-header {
+  min-height: 118px;
+}
+
+.jojo-deposit-grid .ag-header-cell,
+.jojo-deposit-grid .ag-header-group-cell {
+  align-items: stretch;
+  padding-inline: 8px;
+}
+
 .jojo-deposit-grid .ag-header-cell-label {
+  align-items: center;
   white-space: normal;
   text-align: center;
   justify-content: center;
-  line-height: 1.15;
+  line-height: 1.2;
   font-weight: 950;
+  min-height: 70px;
+  overflow: visible;
+}
+
+.jojo-deposit-grid .ag-header-cell-text {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: normal;
+}
+
+.jojo-deposit-grid .ag-floating-filter {
+  align-items: center;
+  min-height: 42px;
+  padding-top: 4px;
+}
+
+.jojo-deposit-grid .ag-header-icon,
+.jojo-deposit-grid .ag-sort-indicator-container {
+  flex: 0 0 auto;
 }
 
 .jojo-deposit-grid .ag-cell {

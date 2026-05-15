@@ -3927,7 +3927,9 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
             rowData={depositRows}
             columnDefs={depositColumnDefs}
             getRowId={(params) => String(params.data.driver_id)}
-            defaultColDef={{ sortable: true, resizable: true, filter: true }}
+            defaultColDef={{ sortable: true, resizable: true, filter: true, wrapHeaderText: true, autoHeaderHeight: true }}
+            headerHeight={76}
+            floatingFiltersHeight={42}
             singleClickEdit
             stopEditingWhenCellsLoseFocus
             onCellValueChanged={(event) => void saveDepositCell(event)}
