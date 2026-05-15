@@ -874,7 +874,10 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const activeOrders = orders.filter((order) => isActiveOrder(order) && !isCrewOpportunity(order))
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
-  const pendingOrders = canReceiveOrders ? orders.filter((order) => order.status === 'pending' || isCrewOpportunity(order)) : []
+  const canCreateRequestOrder = isOnline && driver.status === 'active' && activeOrders.length < maxMultiOrder
+  const pendingOrders = canReceiveOrders
+    ? orders.filter((order) => (order.status === 'pending' && order.eligibility?.can_accept !== false) || isCrewOpportunity(order))
+    : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
   const availabilityCopy = driver.availability_block_reason
     ?? (canReceiveOrders ? 'Order baru dan request order aktif saat tersedia.' : 'OFF: order baru dan request order nonaktif.')
@@ -928,7 +931,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       </section>
 
       <section className="quick-grid">
-        <button className="primary-button" disabled={!isOnline || driver.status !== 'active'} onClick={() => setView('request')}>Request Order</button>
+        <button className="primary-button" disabled={!canCreateRequestOrder} onClick={() => setView('request')}>Request Order</button>
         <button className="secondary-button" onClick={() => setView('history')}>Riwayat</button>
       </section>
 
@@ -1134,7 +1137,7 @@ function OrderList({ orders, loading, api, onAction, onRefreshOrders }: { orders
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const visibleOrders = useMemo(
-    () => orders.filter((order) => (isActiveOrder(order) && !isCrewOpportunity(order)) || (canReceiveOrders && (order.status === 'pending' || isCrewOpportunity(order)))).sort(sortNewestOrderFirst),
+    () => orders.filter((order) => (isActiveOrder(order) && !isCrewOpportunity(order)) || (canReceiveOrders && ((order.status === 'pending' && order.eligibility?.can_accept !== false) || isCrewOpportunity(order)))).sort(sortNewestOrderFirst),
     [canReceiveOrders, orders],
   )
 
@@ -1151,12 +1154,22 @@ function OrderList({ orders, loading, api, onAction, onRefreshOrders }: { orders
 
 function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
   const { selectOrder } = useDriverStore()
+  const [submitting, setSubmitting] = useState(false)
   const hasActiveOrders = (order.eligibility?.active_order_count ?? 0) > 0
   const directionMatch = order.eligibility?.direction_match ?? true
   const route = routeInfoFor(order)
   const crewActionRole = pendingCrewRole(order)
   const isHelperOpportunity = isCrewOpportunity(order)
   const helperLabel = pendingCrewLabel(order) ?? order.crewDecision?.helper_label ?? 'Helper'
+  const runOrderAction = async (work: () => Promise<unknown>, success: string) => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await onAction(work, success)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <article className="order-card panel fade-in">
@@ -1185,9 +1198,9 @@ function OrderCard({ order, api, onAction }: { order: Order; api: ApiClient; onA
       <footer>
         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); selectOrder(order.id) }}>Detail</button>
         {isHelperOpportunity ? (
-          <button className="primary-button" onClick={(event) => { event.stopPropagation(); void onAction(() => api(`/orders/${order.id}/crew/${crewActionRole}/accept`, { method: 'POST' }), `${helperLabel} diterima`) }}>Terima {helperLabel}</button>
+          <button className="primary-button" disabled={submitting} onClick={(event) => { event.stopPropagation(); void runOrderAction(() => api(`/orders/${order.id}/crew/${crewActionRole}/accept`, { method: 'POST' }), `${helperLabel} diterima`) }}>{submitting ? 'Memproses...' : `Terima ${helperLabel}`}</button>
         ) : (
-          <button className="primary-button" disabled={order.eligibility?.can_accept === false || order.status !== 'pending'} onClick={(event) => { event.stopPropagation(); void onAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima') }}>Terima Order</button>
+          <button className="primary-button" disabled={submitting || order.eligibility?.can_accept === false || order.status !== 'pending'} onClick={(event) => { event.stopPropagation(); void runOrderAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima') }}>{submitting ? 'Memproses...' : 'Terima Order'}</button>
         )}
       </footer>
     </article>
@@ -1199,6 +1212,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [operOpen, setOperOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const isAccepted = order.status === 'accepted'
   const isHelperOpportunity = isCrewOpportunity(order)
@@ -1215,6 +1229,15 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
   const finishDisabled = finishWait > 0 || isOperHandlePending || isWaitingForCrew
   const directionMatch = order.eligibility?.direction_match ?? true
   const route = routeInfoFor(order)
+  const runOrderAction = async (work: () => Promise<unknown>, success: string) => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await onAction(work, success)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   useEffect(() => {
     if (!canFinish || finishWait <= 0) return
@@ -1302,11 +1325,11 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         {order.status === 'pending' && (
           <>
             {order.eligibility?.can_accept === false && <p className="eligibility-note">{eligibilityReason(order.eligibility.reason)}</p>}
-            <button className="primary-button" disabled={order.eligibility?.can_accept === false} onClick={() => onAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima')}>Terima Order</button>
+            <button className="primary-button" disabled={submitting || order.eligibility?.can_accept === false} onClick={() => runOrderAction(() => api(`/orders/${order.id}/accept`, { method: 'POST' }), 'Order diterima')}>{submitting ? 'Memproses...' : 'Terima Order'}</button>
           </>
         )}
         {isHelperOpportunity && (
-          <button className="primary-button" onClick={() => onAction(() => api(`/orders/${order.id}/crew/${crewActionRole}/accept`, { method: 'POST' }), `${helperLabel} diterima`)}>Terima {helperLabel}</button>
+          <button className="primary-button" disabled={submitting} onClick={() => runOrderAction(() => api(`/orders/${order.id}/crew/${crewActionRole}/accept`, { method: 'POST' }), `${helperLabel} diterima`)}>{submitting ? 'Memproses...' : `Terima ${helperLabel}`}</button>
         )}
         {isAccepted && canMainRiderAction && (
           <>

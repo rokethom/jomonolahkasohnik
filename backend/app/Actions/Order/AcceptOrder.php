@@ -113,8 +113,6 @@ class AcceptOrder
             ]);
             $this->crewDecisions->createPendingHelperCrew($order->fresh());
             $this->dailyPriority->completeForAcceptedOrder($driver, $order);
-
-            $driver->update(['is_available' => (($eligibility['active_order_count'] ?? 0) + 1) < ($eligibility['max_order'] ?? 1)]);
             $acceptedOrder = $order->fresh(['user', 'driver.user', 'items']);
             $driverName = $acceptedOrder->driver?->user?->name ?? 'driver';
             $crewDecision = data_get($acceptedOrder->pricing_breakdown, 'crew_decision');
