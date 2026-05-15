@@ -136,6 +136,67 @@ class Branch extends Model
         return array_values(array_unique([...$selectedOperationalIds, ...$childIds]));
     }
 
+    public function isRegency(): bool
+    {
+        return $this->getIsRegencyAttribute();
+    }
+
+    public function isOperationalArea(): bool
+    {
+        return $this->getIsOperationalAreaAttribute();
+    }
+
+    public function nearestOperationalChild(?float $lat = null, ?float $lng = null): ?self
+    {
+        if ($this->isOperationalArea()) {
+            return $this;
+        }
+
+        $children = $this->children()
+            ->operationalAreas()
+            ->where('is_active', true)
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->get();
+
+        if ($children->isEmpty()) {
+            return null;
+        }
+
+        if ($lat !== null && $lng !== null) {
+            return $children
+                ->sortBy(fn (Branch $branch): float => self::distanceInMeters($lat, $lng, (float) $branch->latitude, (float) $branch->longitude))
+                ->first();
+        }
+
+        return $children->sortBy('area')->first();
+    }
+
+    public static function resolveOperationalAreaId(?int $branchId, ?float $lat = null, ?float $lng = null): ?int
+    {
+        if ($branchId === null) {
+            return null;
+        }
+
+        $branch = static::query()
+            ->with('children:id,parent_branch_id,branch_code,name,area,latitude,longitude,is_active')
+            ->find($branchId);
+
+        return $branch?->nearestOperationalChild($lat, $lng)?->id;
+    }
+
+    private static function distanceInMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $latDistance = deg2rad($lat2 - $lat1);
+        $lngDistance = deg2rad($lng2 - $lng1);
+
+        $a = sin($latDistance / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+            * sin($lngDistance / 2) ** 2;
+
+        return 6371000.0 * (2 * atan2(sqrt($a), sqrt(1 - $a)));
+    }
+
     protected static function booted(): void
     {
         static::saving(function (Branch $branch): void {

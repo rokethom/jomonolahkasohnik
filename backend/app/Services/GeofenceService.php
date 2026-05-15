@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Branch;
 use App\Models\GeofenceArea;
 
 class GeofenceService
@@ -13,6 +14,7 @@ class GeofenceService
         if (! $geofenceArea) {
             return GeofenceArea::query()
                 ->where('is_active', true)
+                ->whereHas('branch', fn ($query) => $query->operationalAreas())
                 ->get()
                 ->contains(fn (GeofenceArea $area): bool => $this->containsPoint($lat, $lng, $area));
         }
@@ -31,10 +33,16 @@ class GeofenceService
 
     public function findValidGeofence(?int $branchId, float $lat, float $lng): ?GeofenceArea
     {
+        $branchIds = $branchId ? Branch::expandToOperationalAreaIds([$branchId]) : [];
+        if ($branchId && $branchIds === []) {
+            $branchIds = [$branchId];
+        }
+
         return GeofenceArea::query()
             ->with('branch')
             ->where('is_active', true)
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereHas('branch', fn ($query) => $query->operationalAreas())
+            ->when($branchIds !== [], fn ($query) => $query->whereIn('branch_id', $branchIds))
             ->orderByDesc('priority')
             ->orderBy('radius_meters')
             ->get()

@@ -587,7 +587,10 @@ PROMPT;
     private function branch(User $user): ?Branch
     {
         if ($user->branch_id) {
-            return Branch::query()->find($user->branch_id);
+            $branchId = Branch::resolveOperationalAreaId((int) $user->branch_id, (float) $user->lat ?: null, (float) $user->lng ?: null)
+                ?? (int) $user->branch_id;
+
+            return Branch::query()->find($branchId);
         }
 
         return Branch::query()->operationalAreas()->whereNotNull('latitude')->whereNotNull('longitude')->first();

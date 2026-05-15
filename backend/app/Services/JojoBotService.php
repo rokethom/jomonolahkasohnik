@@ -563,7 +563,11 @@ class JojoBotService
             return $payload;
         }
 
-        $branch ??= isset($payload['branch_id']) ? Branch::query()->find($payload['branch_id']) : null;
+        if (! $branch && isset($payload['branch_id'])) {
+            $branchId = Branch::resolveOperationalAreaId((int) $payload['branch_id'])
+                ?? (int) $payload['branch_id'];
+            $branch = Branch::query()->find($branchId);
+        }
         $servicePayload = is_array($payload['service_payload'] ?? null) ? $payload['service_payload'] : [];
 
         $pickupAddress = trim((string) ($payload['pickup_address'] ?? ''));
@@ -867,7 +871,10 @@ class JojoBotService
         }
 
         if ($user->branch_id) {
-            return Branch::query()->find($user->branch_id);
+            $branchId = Branch::resolveOperationalAreaId((int) $user->branch_id, (float) $user->lat ?: null, (float) $user->lng ?: null)
+                ?? (int) $user->branch_id;
+
+            return Branch::query()->find($branchId);
         }
 
         return Branch::query()->operationalAreas()->whereNotNull('latitude')->whereNotNull('longitude')->first();
@@ -886,6 +893,7 @@ class JojoBotService
         }
 
         $matches = Branch::query()
+            ->operationalAreas()
             ->get(['id', 'branch_code', 'name', 'area'])
             ->flatMap(function (Branch $branch) use ($needle): array {
                 $normalizedCode = str((string) $branch->branch_code)
@@ -934,7 +942,8 @@ class JojoBotService
             return null;
         }
 
-        return (int) $topBranchIds->first();
+        return Branch::resolveOperationalAreaId((int) $topBranchIds->first())
+            ?? (int) $topBranchIds->first();
     }
 
     private function serviceType(string $code, string $name): string

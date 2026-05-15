@@ -36,7 +36,10 @@ class UserLocationService
 
         $inside = $validation['is_valid'] && $validation['branch'] !== null;
         $branch = $inside ? $validation['branch'] : null;
-        $lockedBranch = $branch ?: ($user->branch_id ? Branch::query()->find($user->branch_id) : null);
+        $branchId = Branch::resolveOperationalAreaId($branch?->id, $lat, $lng)
+            ?? Branch::resolveOperationalAreaId($user->branch_id, $lat, $lng)
+            ?? Branch::resolveOperationalAreaId($nearest['branch']?->id ?? null, $lat, $lng);
+        $lockedBranch = $branchId ? Branch::query()->find($branchId) : null;
         $geofence = $inside ? $validation['geofence_area'] : null;
         $distance = $geofence
             ? $this->distanceToGeofence($lat, $lng, $geofence)
@@ -113,6 +116,7 @@ class UserLocationService
         return GeofenceArea::query()
             ->with('branch')
             ->where('is_active', true)
+            ->whereHas('branch', fn ($query) => $query->operationalAreas())
             ->get()
             ->map(function (GeofenceArea $area) use ($lat, $lng): array {
                 return [

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Branch;
 use App\Models\User;
 use App\Models\UserLocation;
 use Illuminate\Support\Carbon;
@@ -21,6 +22,8 @@ class LocationService
         $address = $this->geocodingService->getAddressFromLatLng($lat, $lng);
         $detected = $this->branchDetectionService->detect($lat, $lng);
         $branch = $detected['branch'] ?? null;
+        $operationalBranchId = Branch::resolveOperationalAreaId($branch?->id, $lat, $lng);
+        $branch = $operationalBranchId ? Branch::query()->find($operationalBranchId) : $branch;
         $geofence = $detected['area'] ?? null;
 
         $this->locationValidationService->validateLocation(

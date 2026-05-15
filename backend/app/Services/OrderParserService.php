@@ -458,7 +458,10 @@ class OrderParserService
         }
 
         if ($user->branch_id) {
-            return Branch::query()->find($user->branch_id);
+            $branchId = Branch::resolveOperationalAreaId((int) $user->branch_id, (float) $user->lat ?: null, (float) $user->lng ?: null)
+                ?? (int) $user->branch_id;
+
+            return Branch::query()->find($branchId);
         }
 
         return Branch::query()->operationalAreas()->whereNotNull('latitude')->whereNotNull('longitude')->first();
@@ -472,7 +475,10 @@ class OrderParserService
 
         $hint = $this->field($text, 'branch\s*id|id\s*cabang|kode\s*area');
         if ($hint && is_numeric($hint)) {
-            return Branch::query()->find((int) $hint);
+            $branchId = Branch::resolveOperationalAreaId((int) $hint)
+                ?? (int) $hint;
+
+            return Branch::query()->find($branchId);
         }
 
         $hint ??= $this->field($text, 'area|cabang|branch');
@@ -487,6 +493,7 @@ class OrderParserService
         }
 
         $matches = Branch::query()
+            ->operationalAreas()
             ->get(['id', 'branch_code', 'name', 'area', 'latitude', 'longitude'])
             ->flatMap(function (Branch $branch) use ($needle): array {
                 $normalizedCode = str((string) $branch->branch_code)
@@ -535,6 +542,9 @@ class OrderParserService
             return null;
         }
 
-        return Branch::query()->find((int) $topBranchIds->first());
+        $branchId = Branch::resolveOperationalAreaId((int) $topBranchIds->first())
+            ?? (int) $topBranchIds->first();
+
+        return Branch::query()->find($branchId);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\OrderStatus;
 use App\Events\OrderStatusUpdated;
 use App\Exceptions\OrderLimitExceededException;
+use App\Models\Branch;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Models\User;
@@ -373,12 +374,12 @@ class OrderService
             $detected = $this->branches->detect((float) $payload[$latKey], (float) $payload[$lngKey]);
             $branchId = $detected['branch']?->id ?? null;
             if ($branchId) {
-                return (int) $branchId;
+                return Branch::resolveOperationalAreaId((int) $branchId, (float) $payload[$latKey], (float) $payload[$lngKey]) ?? (int) $branchId;
             }
         }
 
         return isset($payload['branch_id'])
-            ? (int) $payload['branch_id']
+            ? (Branch::resolveOperationalAreaId((int) $payload['branch_id']) ?? (int) $payload['branch_id'])
             : $fallbackBranchId;
     }
 

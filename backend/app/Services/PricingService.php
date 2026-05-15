@@ -427,7 +427,10 @@ class PricingService
     private function resolvePricingBranch(array $payload): ?Branch
     {
         if (isset($payload['branch_id']) && $payload['branch_id']) {
-            return Branch::query()->find((int) $payload['branch_id']);
+            $branchId = Branch::resolveOperationalAreaId((int) $payload['branch_id'])
+                ?? (int) $payload['branch_id'];
+
+            return Branch::query()->find($branchId);
         }
 
         foreach ([
