@@ -21,12 +21,41 @@ class DistanceCalculator
 
     public function drivingDistance(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
-        $cacheKey = sprintf('route-distance:driving:%0.5f,%0.5f:%0.5f,%0.5f', $lat1, $lng1, $lat2, $lng2);
+        return (float) $this->drivingDistanceResult($lat1, $lng1, $lat2, $lng2)['distance_km'];
+    }
 
-        return Cache::remember($cacheKey, self::ROUTE_TTL_SECONDS, function () use ($lat1, $lng1, $lat2, $lng2): float {
-            return $this->osrmDistance($lat1, $lng1, $lat2, $lng2)
-                ?? ($this->settings->bool('google_maps_distance_enabled', false) ? $this->googleDistance($lat1, $lng1, $lat2, $lng2) : null)
-                ?? throw new RuntimeException('Jarak rute tidak berhasil dihitung dari Google Maps maupun OSRM. Cek alamat atau koneksi API.');
+    public function drivingDistanceResult(float $lat1, float $lng1, float $lat2, float $lng2): array
+    {
+        $cacheKey = sprintf('route-distance:driving:%0.5f,%0.5f:%0.5f,%0.5f', $lat1, $lng1, $lat2, $lng2);
+        $baseUrl = rtrim((string) $this->settings->get('osrm_base_url', 'https://router.project-osrm.org'), '/');
+        $cacheKey .= ':'.sha1(json_encode([
+            'osrm_active' => $this->settings->bool('osrm_active', true),
+            'osrm_base_url' => $baseUrl,
+            'google_distance' => $this->settings->bool('google_maps_distance_enabled', false),
+        ]));
+
+        return Cache::remember($cacheKey, self::ROUTE_TTL_SECONDS, function () use ($lat1, $lng1, $lat2, $lng2): array {
+            $osrm = $this->osrmDistance($lat1, $lng1, $lat2, $lng2);
+            if ($osrm !== null) {
+                return [
+                    'distance_km' => $osrm,
+                    'provider' => 'osrm',
+                    'fallback_used' => false,
+                ];
+            }
+
+            if ($this->settings->bool('google_maps_distance_enabled', false)) {
+                $google = $this->googleDistance($lat1, $lng1, $lat2, $lng2);
+                if ($google !== null) {
+                    return [
+                        'distance_km' => $google,
+                        'provider' => 'google_maps',
+                        'fallback_used' => true,
+                    ];
+                }
+            }
+
+            throw new RuntimeException('Jarak rute tidak berhasil dihitung dari Google Maps maupun OSRM. Cek alamat atau koneksi API.');
         });
     }
 

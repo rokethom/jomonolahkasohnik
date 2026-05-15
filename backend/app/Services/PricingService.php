@@ -213,7 +213,8 @@ class PricingService
     {
         $serviceType = $this->normalizeServiceType((string) ($payload['service_type'] ?? 'ojek'));
         $stops = max(1, (int) ($payload['stops'] ?? $payload['stop_count'] ?? 1));
-        $distance = $this->resolveDistance($payload);
+        $routeDistance = $this->resolveDistanceResult($payload);
+        $distance = (float) $routeDistance['distance_km'];
         $route = $payload['route'] ?? $payload['travel_route'] ?? $payload['service_payload']['route'] ?? null;
         $this->validate($serviceType, $distance, $stops);
 
@@ -257,6 +258,8 @@ class PricingService
                 'geojson_area_id' => $geojsonRegion?->area_id,
                 'geojson_area_name' => $geojsonRegion?->area?->name,
                 'distance_from_branch_km' => $distanceFromBranch,
+                'routing_provider' => $routeDistance['provider'],
+                'routing_fallback_used' => $routeDistance['fallback_used'],
                 'service_fee_breakdown' => [['point' => 1, 'label' => 'Master Ring service fee', 'fee' => (int) ($masterRingMatch['rule']->service_fee ?? 0)]],
             ]);
             $quote = $this->ringPricing->applyMaster($quote, $masterRingMatch['rule'], $masterRingMatch);
@@ -280,6 +283,9 @@ class PricingService
                 $quote = $this->ringPricing->apply($quote, $ringRule);
             }
         }
+
+        $quote['routing_provider'] = $routeDistance['provider'];
+        $quote['routing_fallback_used'] = $routeDistance['fallback_used'];
 
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
             $payload['pickup_address'] ?? '',
@@ -569,15 +575,28 @@ class PricingService
 
     private function resolveDistance(array $payload): float
     {
+        return (float) $this->resolveDistanceResult($payload)['distance_km'];
+    }
+
+    private function resolveDistanceResult(array $payload): array
+    {
         if (isset($payload['distance'])) {
-            return (float) $payload['distance'];
+            return [
+                'distance_km' => (float) $payload['distance'],
+                'provider' => 'payload',
+                'fallback_used' => false,
+            ];
         }
 
         if (isset($payload['distance_km'])) {
-            return (float) $payload['distance_km'];
+            return [
+                'distance_km' => (float) $payload['distance_km'],
+                'provider' => 'payload',
+                'fallback_used' => false,
+            ];
         }
 
-        return $this->calculateDistance(
+        return $this->distanceCalculator->drivingDistanceResult(
             (float) $payload['pickup_lat'],
             (float) $payload['pickup_lng'],
             (float) $payload['destination_lat'],

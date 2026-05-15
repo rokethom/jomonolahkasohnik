@@ -41,8 +41,12 @@ class DistanceCalculatorTest extends TestCase
         ]);
 
         $distance = app(DistanceCalculator::class)->drivingDistance(-7.7063, 114.0098, -7.7034, 114.0500);
+        $result = app(DistanceCalculator::class)->drivingDistanceResult(-7.7063, 114.0098, -7.7034, 114.0500);
 
         $this->assertSame(5.9, $distance);
+        $this->assertSame(5.9, $result['distance_km']);
+        $this->assertSame('osrm', $result['provider']);
+        $this->assertFalse($result['fallback_used']);
         Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'maps.googleapis.com'));
     }
 
@@ -67,7 +71,11 @@ class DistanceCalculatorTest extends TestCase
         ]);
 
         $distance = app(DistanceCalculator::class)->drivingDistance(-7.7063, 114.0098, -7.7034, 114.0500);
+        $result = app(DistanceCalculator::class)->drivingDistanceResult(-7.7063, 114.0098, -7.7034, 114.0500);
 
         $this->assertSame(6.2, $distance);
+        $this->assertSame(6.2, $result['distance_km']);
+        $this->assertSame('google_maps', $result['provider']);
+        $this->assertTrue($result['fallback_used']);
     }
 }

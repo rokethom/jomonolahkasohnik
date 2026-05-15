@@ -312,14 +312,17 @@ class PricingServiceTest extends TestCase
         $this->assertSame('ring_1', $ringOne['ring']);
         $this->assertSame(6000, $ringOne['tarif']);
         $this->assertSame(7000, $ringOne['total_price']);
+        $this->assertSame('payload', $ringOne['routing_provider']);
 
         $this->assertSame('ring_2', $ringTwo['ring']);
         $this->assertSame(12000, $ringTwo['tarif']);
         $this->assertSame(13000, $ringTwo['total_price']);
+        $this->assertSame('payload', $ringTwo['routing_provider']);
 
         $this->assertSame('ring_3', $ringThree['ring']);
         $this->assertSame(15800, $ringThree['tarif']);
         $this->assertSame(16000, $ringThree['total_price']);
+        $this->assertSame('payload', $ringThree['routing_provider']);
     }
 
     public function test_master_ring_cross_ring_only_matches_endpoint_rings(): void
