@@ -1765,7 +1765,6 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
   const toast = useDriverStore((state) => state.toast)
   const openOperatorChat = useDriverStore((state) => state.openOperatorChat)
   const logout = useDriverStore((state) => state.logout)
-  const [form, setForm] = useState({ name: driver.name, username: driver.username, password: '' })
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [hasCustomSound, setHasCustomSound] = useState(false)
@@ -1784,13 +1783,11 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
           fileNamePrefix: 'driver-profile',
         })
         const payload = new FormData()
-        payload.append('name', form.name)
-        payload.append('username', form.username)
-        if (form.password) payload.append('password', form.password)
         payload.append('profile_photo', resizedPhoto)
         await api('/driver/profile', { method: 'POST', body: payload })
       } else {
-        await api('/driver/profile', { method: 'PUT', body: JSON.stringify(form) })
+        toast('Nama, username, telephone, dan password driver dikunci. Hubungi Manager/SPV untuk perubahan data akun.', 'warning')
+        return
       }
       if (photoPreview) URL.revokeObjectURL(photoPreview)
       setPhoto(null)
@@ -1870,10 +1867,10 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
             }} />
           </label>
         </div>
-        <label>Nama<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
-        <label>Username<input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} required /></label>
+        <label>Nama<input value={driver.name} readOnly /><small>Perubahan nama melalui Manager/SPV.</small></label>
+        <label>Username<input value={driver.username} readOnly /><small>Username dikunci untuk akun driver.</small></label>
         <label>Telephone<input value={driver.phone ?? ''} readOnly /><small>Perubahan nomor melalui Manager/SPV.</small></label>
-        <label>Password Baru<input type="password" value={form.password} minLength={8} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+        <label>Password<input type="password" value="" readOnly placeholder="Dikelola oleh Manager/SPV" /><small>Password driver tidak bisa diubah dari aplikasi driver.</small></label>
         <button className="primary-button" type="submit">Update Profile</button>
       </form>
       <button className="danger-button full logout-button" type="button" onClick={() => void handleLogout()}>

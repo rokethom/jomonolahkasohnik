@@ -25,7 +25,6 @@ use App\Services\SuspendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
@@ -340,9 +339,6 @@ class DriverController extends Controller
         $this->ensureDriver($request);
 
         $payload = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'username' => ['required', 'string', 'max:255', 'unique:users,username,'.$request->user()->id],
-            'password' => ['nullable', 'string', 'min:8'],
             'profile_photo' => ['nullable', 'image', 'max:4096'],
         ]);
 
@@ -354,14 +350,10 @@ class DriverController extends Controller
             $payload['profile_photo_path'] = $request->file('profile_photo')?->store('profiles/drivers', 'public');
         }
 
-        if (! filled($payload['password'] ?? null)) {
-            unset($payload['password']);
-        } else {
-            $payload['password'] = Hash::make($payload['password']);
-        }
-
         unset($payload['profile_photo']);
-        $request->user()->update($payload);
+        if ($payload !== []) {
+            $request->user()->update($payload);
+        }
 
         return $this->profile($request);
     }
