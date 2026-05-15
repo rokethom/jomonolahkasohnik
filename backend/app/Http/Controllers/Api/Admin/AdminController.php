@@ -2669,32 +2669,33 @@ class AdminController extends Controller
     private function permissionsFor(User $user): array
     {
         $permissionNames = $user->permissions();
+        $isAdminOrGm = in_array($user->role, [UserRole::Admin, UserRole::GM], true);
 
         $permissions = [
-            'backend_access' => in_array($user->role, [UserRole::Admin, UserRole::GM], true),
+            'backend_access' => $isAdminOrGm,
             'names' => $permissionNames,
             'assignable_roles' => collect($user->role->assignableRoles())->map->value->all(),
-            'can_manage_policy' => $user->hasPermission('edit_tarif'),
-            'can_manage_ring_pricing' => $user->hasPermission('edit_tarif'),
-            'can_manage_users' => $user->hasPermission('create_user'),
-            'can_suspend_drivers' => $user->hasPermission('suspend_driver'),
-            'can_unsuspend_drivers' => $user->hasPermission('unsuspend_driver'),
+            'can_manage_policy' => $isAdminOrGm || $user->hasPermission('edit_tarif'),
+            'can_manage_ring_pricing' => $isAdminOrGm || $user->hasPermission('edit_tarif'),
+            'can_manage_users' => $isAdminOrGm || $user->hasPermission('create_user'),
+            'can_suspend_drivers' => $isAdminOrGm || $user->hasPermission('suspend_driver'),
+            'can_unsuspend_drivers' => $isAdminOrGm || $user->hasPermission('unsuspend_driver'),
             'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
-                && $user->hasPermission('suspend_driver'),
+                && ($isAdminOrGm || $user->hasPermission('suspend_driver')),
             'can_manage_all_branches' => app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($user->role),
-            'can_manage_system_settings' => $user->hasPermission('manage_system_settings'),
+            'can_manage_system_settings' => $isAdminOrGm || $user->hasPermission('manage_system_settings'),
             'can_manage_cms' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::WebAdmin, UserRole::CmsEditor], true),
-            'can_edit_order_price' => $user->hasPermission('edit_tarif'),
-            'can_create_manual_order' => $user->hasPermission('manual_order'),
+            'can_edit_order_price' => $isAdminOrGm || $user->hasPermission('edit_tarif'),
+            'can_create_manual_order' => $isAdminOrGm || $user->hasPermission('manual_order'),
             'can_assign_driver' => $this->canAssignDriver($user),
-            'can_view_report' => $user->hasPermission('view_report'),
-            'can_export_report' => $user->hasPermission('export_report'),
-            'can_monitor_live_order' => $user->hasPermission('monitor_live_order'),
-            'can_monitor_live_chat' => $user->hasPermission('monitor_live_chat'),
-            'can_use_internal_chat' => $user->hasPermission('internal_chat'),
-            'can_use_internal_notes' => $user->hasPermission('internal_chat'),
-            'can_approve_cancel_order' => $user->hasPermission('approve_cancel_order'),
-            'can_reject_cancel_order' => $user->hasPermission('reject_cancel_order'),
+            'can_view_report' => $isAdminOrGm || $user->hasPermission('view_report'),
+            'can_export_report' => $isAdminOrGm || $user->hasPermission('export_report'),
+            'can_monitor_live_order' => $isAdminOrGm || $user->hasPermission('monitor_live_order'),
+            'can_monitor_live_chat' => $isAdminOrGm || $user->hasPermission('monitor_live_chat'),
+            'can_use_internal_chat' => $isAdminOrGm || $user->hasPermission('internal_chat'),
+            'can_use_internal_notes' => $isAdminOrGm || $user->hasPermission('internal_chat'),
+            'can_approve_cancel_order' => $isAdminOrGm || $user->hasPermission('approve_cancel_order'),
+            'can_reject_cancel_order' => $isAdminOrGm || $user->hasPermission('reject_cancel_order'),
             'can_approve_oper_handle' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true),
         ];
 
