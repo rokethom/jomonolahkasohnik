@@ -2,6 +2,11 @@
 
 Dokumen ini menjelaskan flow pricing yang dipakai setelah GeoJSON dipisahkan dari Master Ring.
 
+Dokumentasi admin utama ada di:
+
+- `Backend Filament > Dokumentasi > Flow Sistem`
+- file: `backend/docs/dokumentasi-flow-sistem-jojo.md`
+
 ## Status Saat Ini
 
 Pricing aktif tetap memakai engine Laravel yang sudah ada:
@@ -12,6 +17,43 @@ Pricing aktif tetap memakai engine Laravel yang sudah ada:
 - keyword charge: `Pricing Keyword Rules`
 
 GeoJSON tidak di-upload dari Master Ring lagi.
+
+## AI Yang Dipakai Saat Ini
+
+### AI Order Parser / JOJOBOT Parser
+
+AI parser sudah mendukung OpenRouter dan konfigurasi terbaru mengarahkan parser ke:
+
+- provider: `openrouter`
+- model: `openrouter/auto`
+- base URL: `https://openrouter.ai/api/v1`
+- konfigurasi CMS: `System Settings > AI Assistant`
+
+AI parser tidak menghitung harga. AI parser hanya membaca teks order bebas menjadi data terstruktur, misalnya nama customer, nomor HP, pickup, tujuan, layanan, catatan, dan keyword tambahan.
+
+Jika OpenRouter API key belum aktif, JOJOBOT tetap memakai parser lokal, rule yang sudah pernah dipelajari, POI/Alias, GeoJSON, dan validasi backend.
+
+### AI Location Learning
+
+AI Location Learning dipakai untuk menyimpan kandidat lokasi dari order manual, typo customer, nama lokal, dan histori order. Data yang sudah di-approve dapat menjadi POI/Alias agar order berikutnya lebih mudah terbaca.
+
+### AI Monitoring
+
+AI Monitoring membaca `storage/logs/ai.log` untuk menampilkan provider aktif, model, success, fallback, failed request, dan indikasi model lambat. Halaman ini tidak menghitung harga.
+
+### Hermes Assistant
+
+Hermes adalah asisten analisa internal untuk monitoring error dan laporan teknis. Hermes terpisah dari JOJOBOT order parser.
+
+### Pricing Engine
+
+Pricing engine bukan LLM. Pricing tetap deterministic dari Laravel:
+
+- route distance OSRM lokal
+- Google Maps fallback jika diaktifkan dan API key valid
+- Master Ring aktif di CMS
+- Pricing Keyword Rules
+- service fee dan formula dari CMS
 
 ## Peran Setiap Menu
 

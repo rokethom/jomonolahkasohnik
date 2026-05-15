@@ -214,11 +214,74 @@
             <div class="doc-grid">
                 <div class="doc-step"><b>Parser Lokal</b><span>Keyword, form schema, smart parser, dan template berjalan lebih dulu untuk menghemat biaya.</span></div>
                 <div class="doc-step"><b>AI Parser Memory</b><span>Input yang pernah sukses diparse AI disimpan ke database agar bisa dipakai tanpa API key.</span></div>
-                <div class="doc-step"><b>AI Fallback</b><span>Jika perlu, provider aktif dari CMS dipanggil: OpenAI, Kimi, Blackbox, atau OpenRouter.</span></div>
-                <div class="doc-step"><b>OpenRouter Hemat</b><span>Admin bisa memilih model free dengan suffix <code>:free</code> dari System Settings tanpa ubah kode.</span></div>
+                <div class="doc-step"><b>AI Fallback</b><span>Jika perlu, provider aktif dari CMS dipanggil. Konfigurasi terbaru diarahkan ke OpenRouter agar pilihan model lebih fleksibel.</span></div>
+                <div class="doc-step"><b>OpenRouter Auto</b><span>Provider rekomendasi: <code>openrouter</code>, model <code>openrouter/auto</code>, base URL <code>https://openrouter.ai/api/v1</code>.</span></div>
                 <div class="doc-step"><b>Validasi JSON</b><span>Backend memastikan service_type, alamat pembelian, alamat tujuan, item, dan field wajib tidak tertukar.</span></div>
                 <div class="doc-step"><b>Fallback Aman</b><span>Jika AI gagal, sistem kembali ke parser lama atau form manual, bukan membuat order sembarang.</span></div>
             </div>
+        </section>
+
+        <section class="doc-card">
+            <h2>AI Yang Dipakai Saat Ini</h2>
+            <p>Daftar ini membedakan AI parser, AI learning, monitoring, dan pricing agar admin tidak salah membaca fungsi tiap menu.</p>
+            <div class="doc-grid">
+                <div class="doc-step">
+                    <b>JOJOBOT AI Parser</b>
+                    <span>Membaca chat order menjadi JSON order. Mendukung OpenRouter dari <code>System Settings &gt; AI Assistant</code>. AI ini tidak menghitung harga.</span>
+                </div>
+                <div class="doc-step">
+                    <b>AI Parser Memory</b>
+                    <span>Menyimpan format order yang pernah sukses agar order berikutnya bisa diparse lebih cepat tanpa selalu memanggil API AI.</span>
+                </div>
+                <div class="doc-step">
+                    <b>AI Location Learning</b>
+                    <span>Mengumpulkan kandidat lokasi, typo, nama lokal, dan histori order. Data yang di-approve bisa menjadi POI/Alias.</span>
+                </div>
+                <div class="doc-step">
+                    <b>AI Alias Map</b>
+                    <span>Membantu mapping input seperti <code>kota</code>, <code>dekat panji</code>, atau typo alamat ke lokasi asli yang punya koordinat.</span>
+                </div>
+                <div class="doc-step">
+                    <b>AI Monitoring</b>
+                    <span>Membaca <code>storage/logs/ai.log</code> untuk menampilkan provider, model, success, fallback, failed request, dan model lambat.</span>
+                </div>
+                <div class="doc-step">
+                    <b>Hermes Assistant</b>
+                    <span>Asisten analisa internal untuk error, failed job, dan laporan teknis. Hermes terpisah dari JOJOBOT order parser.</span>
+                </div>
+                <div class="doc-step">
+                    <b>Pricing Engine</b>
+                    <span>Bukan LLM. Harga dihitung deterministic dari OSRM, Google fallback jika aktif, Master Ring, service fee, dan Pricing Keyword Rules.</span>
+                </div>
+                <div class="doc-step">
+                    <b>OSRM Lokal</b>
+                    <span>Sumber utama jarak rute jalan untuk pricing. Ini bukan AI, tetapi routing engine agar harga tidak memakai jarak lurus.</span>
+                </div>
+                <div class="doc-step">
+                    <b>Google Maps Fallback</b>
+                    <span>Dipakai hanya jika switch Google aktif dan API key valid. Tujuannya fallback geocode/distance, bukan sumber utama.</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="doc-card">
+            <h2>Flow JOJOBOT & Pricing</h2>
+            <div class="doc-flow">
+                <span class="doc-pill">Customer / Manual Order</span>
+                <span class="doc-pill">Parser Lokal</span>
+                <span class="doc-pill">AI Parser Memory</span>
+                <span class="doc-pill">OpenRouter jika perlu</span>
+                <span class="doc-pill">POI & Alias</span>
+                <span class="doc-pill">GeoJSON Regions</span>
+                <span class="doc-pill">OSRM Distance</span>
+                <span class="doc-pill">Master Ring</span>
+                <span class="doc-pill">Keyword Rules</span>
+                <span class="doc-pill">Breakdown Harga</span>
+            </div>
+            <p style="margin-top: 12px;">
+                GeoJSON hanya membantu mengenali area, branch, coverage, geofence, dan referensi lat/lng.
+                Harga tetap mengikuti jarak route, Master Ring, service fee, formula, dan keyword rule yang aktif di CMS.
+            </p>
         </section>
 
         <section class="doc-card">
@@ -266,7 +329,7 @@
                     <ul>
                         <li>Aktifkan AI parser hanya sebagai fallback.</li>
                         <li>Pilih provider OpenRouter.</li>
-                        <li>Pilih model free dengan suffix :free.</li>
+                        <li>Pilih model <code>openrouter/auto</code> agar OpenRouter memilih model yang tersedia.</li>
                         <li>Batasi max token 500-700 untuk parser.</li>
                     </ul>
                 </div>
