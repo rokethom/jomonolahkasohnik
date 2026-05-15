@@ -710,6 +710,7 @@ class DriverController extends Controller
 
         return [
             ...$deposit->toArray(),
+            'due_date' => $period->copy()->day(DriverFinanceService::UNPAID_SUSPEND_DAY)->toDateString(),
             'period_label' => $period->translatedFormat('F Y'),
             'current_period_deposit' => (int) data_get($deposit->breakdown, 'setoran_hingga_hari_ini', ((int) $deposit->handle_day_15 + (int) $deposit->handle_day_30)),
             'remaining' => max(0, (int) $deposit->total - (int) $deposit->paid_amount),
