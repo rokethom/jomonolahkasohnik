@@ -1,8 +1,14 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import { AgGridReact } from 'ag-grid-react'
+import { AllCommunityModule, ModuleRegistry, type CellValueChangedEvent, type ColDef } from 'ag-grid-community'
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
+import 'ag-grid-community/styles/ag-grid.css'
+import 'ag-grid-community/styles/ag-theme-quartz.css'
 import './App.css'
+
+ModuleRegistry.registerModules([AllCommunityModule])
 
 declare global {
   interface Window {
@@ -344,6 +350,8 @@ type SystemSettings = {
 type NightTariffRule = { area?: string | null; start: string; end: string; percent: number }
 type DailyPriorityWindow = { start: string; end: string }
 type DepositReportRow = {
+  driver_id: number
+  deposit_id?: number | null
   driver: string
   area: string
   orders_count: number
@@ -359,6 +367,8 @@ type DepositReportRow = {
   paid_amount: number
   remaining_bill: number
   paid_at?: string | null
+  status?: 'paid' | 'unpaid' | string | null
+  manual_override?: boolean
   next_cashback: number
 }
 type Permissions = {
@@ -3189,7 +3199,7 @@ export function PricingPanel({ ringRules, ringSuggestions, branches, services, p
       {canManageRing && ringSuggestions.length > 0 && (
         <div className="pricing-subsection">
           <PanelHeader title="Suggestion dari edit harga" action={`${ringSuggestions.length} pending`} />
-          <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} → {suggestion.destination_area}</strong><span className="status warning">Learn</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
+          <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} ? {suggestion.destination_area}</strong><span className="status warning">Learn</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
         </div>
       )}
     </section>
@@ -3811,6 +3821,44 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     void loadDeposits()
   }, [loadDeposits])
 
+  const depositColumnDefs = useMemo<ColDef<DepositReportRow>[]>(() => [
+    { field: 'driver', headerName: 'Driver', pinned: 'left', minWidth: 180 },
+    { field: 'area', headerName: 'Area', minWidth: 130 },
+    { field: 'orders_count', headerName: 'JML Order', type: 'numericColumn', width: 105, valueFormatter: agNumberFormatter },
+    { field: 'base_service_omset', headerName: 'Omset Dari Jasa Dasar', type: 'numericColumn', width: 150, valueFormatter: agNumberFormatter },
+    { field: 'base_service_deposit', headerName: 'Setoran 20% Dari Jasa Dasar', editable: true, type: 'numericColumn', width: 165, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'previous_bill', headerName: 'Tagihan Bln Lalu', type: 'numericColumn', width: 135, valueFormatter: agNumberFormatter },
+    { field: 'bpjs_jht', headerName: 'JHT BPJSTK', editable: true, type: 'numericColumn', width: 120, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'bpjs', headerName: 'Premi BPJSTK', editable: true, type: 'numericColumn', width: 125, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'previous_cashback_reward', headerName: 'Reward Cashback Bulan Lalu', type: 'numericColumn', width: 160, valueFormatter: agNumberFormatter, headerClass: 'ag-orange-head' },
+    { field: 'bill_before_bansos', headerName: 'Total Tagihan', type: 'numericColumn', width: 130, valueFormatter: agNumberFormatter },
+    { field: 'bansos', headerName: 'Bansos Area', editable: true, type: 'numericColumn', width: 120, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'total_bill', headerName: `Total Tagihan ${monthName(month).toUpperCase()}`, type: 'numericColumn', width: 145, valueFormatter: agNumberFormatter, cellClass: 'ag-total-cell', headerClass: 'ag-yellow-head' },
+    { field: 'paid_amount', headerName: 'Terbayar', editable: true, type: 'numericColumn', width: 125, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
+    { field: 'remaining_bill', headerName: 'Sisa Tagihan', type: 'numericColumn', width: 130, valueFormatter: agNumberFormatter, cellClass: 'ag-total-cell', headerClass: 'ag-yellow-head' },
+    { field: 'paid_at', headerName: 'Tgl Bayar', editable: true, width: 120 },
+    { field: 'status', headerName: 'Status', editable: true, cellEditor: 'agSelectCellEditor', cellEditorParams: { values: ['paid', 'unpaid'] }, width: 115 },
+    { field: 'next_cashback', headerName: 'Cashback 10% Utk Bulan Depan', type: 'numericColumn', width: 160, valueFormatter: agNumberFormatter },
+  ], [month])
+
+  const saveDepositCell = useCallback(async (event: CellValueChangedEvent<DepositReportRow>) => {
+    const field = event.colDef.field
+    const row = event.data
+    if (!row?.driver_id || !field || event.newValue === event.oldValue) return
+    if (!['base_service_deposit', 'bpjs_jht', 'bpjs', 'bansos', 'paid_amount', 'paid_at', 'status'].includes(field)) return
+
+    try {
+      const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits/${row.driver_id}?month=${month}&year=${year}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: event.newValue === '' ? null : event.newValue }),
+      })
+      setDepositRows(payload.data.rows)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Update setoran gagal.')
+      await loadDeposits()
+    }
+  }, [api, loadDeposits, month, year])
+
   const exportExcel = async () => {
     const response = await fetch(`${API_BASE}/admin/reports/driver-deposits/export?month=${month}&year=${year}`, {
       headers: {
@@ -3849,36 +3897,16 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
             {data.permissions.can_export_report && <button className="secondary-button compact" type="button" onClick={() => void exportExcel()}>Export Excel</button>}
           </div>
         </div>
-        <div className="deposit-report-wrap">
-          <table className="deposit-report-table">
-            <thead>
-              <tr>
-                {depositReportHeaders(month).map((header, index) => <th key={header} className={index === 8 ? 'orange-head' : [11, 13].includes(index) ? 'yellow-head' : ''}>{header}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {depositRows.map((row) => (
-                <tr key={`${row.driver}-${row.area}`}>
-                  <td>{row.driver}</td>
-                  <td>{row.area}</td>
-                  <td className="num">{row.orders_count}</td>
-                  <td className="num">{formatNumber(row.base_service_omset)}</td>
-                  <td className="num">{formatNumber(row.base_service_deposit)}</td>
-                  <td className="num">{formatNumber(row.previous_bill)}</td>
-                  <td className="num">{formatNumber(row.bpjs_jht)}</td>
-                  <td className="num">{formatNumber(row.bpjs)}</td>
-                  <td className="num">{formatNumber(row.previous_cashback_reward)}</td>
-                  <td className="num">{formatNumber(row.bill_before_bansos)}</td>
-                  <td className="num">{formatNumber(row.bansos)}</td>
-                  <td className="num yellow-cell">{formatNumber(row.total_bill)}</td>
-                  <td className="num">{formatNumber(row.paid_amount)}</td>
-                  <td className="num yellow-cell">{formatNumber(row.remaining_bill)}</td>
-                  <td>{row.paid_at ?? ''}</td>
-                  <td className="num">{formatNumber(row.next_cashback)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="deposit-report-wrap ag-theme-quartz-dark jojo-deposit-grid">
+          <AgGridReact<DepositReportRow>
+            rowData={depositRows}
+            columnDefs={depositColumnDefs}
+            getRowId={(params) => String(params.data.driver_id)}
+            defaultColDef={{ sortable: true, resizable: true, filter: true }}
+            singleClickEdit
+            stopEditingWhenCellsLoseFocus
+            onCellValueChanged={(event) => void saveDepositCell(event)}
+          />
           {loadingDeposits && <EmptyPanel title="Memuat report setoran" copy="Data sedang diambil dari backend." />}
           {!loadingDeposits && depositRows.length === 0 && <EmptyPanel title="Belum ada data setoran" copy="Report akan tampil setelah ada driver/deposit bulan ini." />}
         </div>
@@ -6105,30 +6133,16 @@ function monthName(month: number) {
   return new Intl.DateTimeFormat('id-ID', { month: 'long' }).format(new Date(2026, month - 1, 1))
 }
 
-function depositReportHeaders(month: number) {
-  const label = monthName(month).toUpperCase()
+function agNumberParser(params: { newValue: unknown }) {
+  const cleaned = String(params.newValue ?? '').replace(/[^\d-]/g, '')
+  const value = Number(cleaned)
 
-  return [
-    'DRIVER',
-    'AREA',
-    'JML ORDER',
-    'Omset Dari Jasa Dasar',
-    'Setoran 20% dari Jasa Dasar',
-    'Tagihan Bln Lalu',
-    'JHT BPJSTK',
-    'Premi BPJSTK',
-    'Reward Cashback Bulan Lalu',
-    'Total Tagihan',
-    'Bansos Area',
-    `Total Tagihan ${label}`,
-    'Terbayar',
-    'Sisa Tagihan',
-    'Tgl Bayar',
-    'cashback 10% utk Bulan Depan',
-  ]
+  return Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
-function formatNumber(value: number) {
+function agNumberFormatter(params: { value: unknown }) {
+  const value = Number(params.value ?? 0)
+
   return value === 0 ? '-' : value.toLocaleString('en-US')
 }
 
@@ -6235,4 +6249,6 @@ function Icon({ name }: { name: string }) {
 }
 
 export default App
+
+
 

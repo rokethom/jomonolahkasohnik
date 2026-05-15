@@ -143,6 +143,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/oper-handles/{operHandle}/approve', [OperHandleApprovalController::class, 'approve']);
         Route::get('/reports', [AdminController::class, 'reports'])->middleware('permission:view_report');
         Route::get('/reports/driver-deposits', [AdminController::class, 'driverDepositReport'])->middleware('permission:view_report');
+        Route::patch('/reports/driver-deposits/{driver}', [AdminController::class, 'updateDriverDepositReportRow'])->middleware('permission:view_report');
         Route::get('/reports/driver-deposits/export', [AdminController::class, 'exportDriverDepositReport'])->middleware('permission:export_report');
     });
 

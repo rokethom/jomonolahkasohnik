@@ -4583,11 +4583,57 @@ td {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow: auto;
   border-radius: 14px;
   border: 1px solid #d0d5dd;
   background: #fff;
   -webkit-overflow-scrolling: touch;
+}
+
+.jojo-deposit-grid {
+  height: 560px;
+  --ag-background-color: #0f172a;
+  --ag-foreground-color: #e5edf8;
+  --ag-header-background-color: #0b1221;
+  --ag-header-foreground-color: #ffffff;
+  --ag-border-color: rgba(148, 163, 184, 0.28);
+  --ag-row-hover-color: rgba(14, 165, 233, 0.14);
+  --ag-selected-row-background-color: rgba(14, 165, 233, 0.18);
+  --ag-font-family: inherit;
+  --ag-font-size: 12px;
+}
+
+.jojo-deposit-grid .ag-header-cell-label {
+  white-space: normal;
+  text-align: center;
+  justify-content: center;
+  line-height: 1.15;
+  font-weight: 950;
+}
+
+.jojo-deposit-grid .ag-cell {
+  font-weight: 800;
+}
+
+.jojo-deposit-grid .ag-cell-inline-editing {
+  color: #07111f;
+}
+
+.jojo-deposit-grid .ag-editable-money {
+  background: rgba(14, 165, 233, 0.11);
+}
+
+.jojo-deposit-grid .ag-total-cell {
+  background: #101d33;
+  color: #fff;
+  font-weight: 950;
+}
+
+.jojo-deposit-grid .ag-orange-head {
+  background: #8b3a13;
+}
+
+.jojo-deposit-grid .ag-yellow-head {
+  background: #8a4b0f;
 }
 
 .deposit-report-table {

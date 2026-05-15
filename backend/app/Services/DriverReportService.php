@@ -111,6 +111,8 @@ class DriverReportService
                 $terbayar = (int) ($deposit?->paid_amount ?? 0);
 
                 return [
+                    'driver_id' => $driver->id,
+                    'deposit_id' => $deposit?->id,
                     'driver' => $driver->user?->name ?? 'Driver #'.$driver->id,
                     'area' => $driver->user?->branch?->area ?? $driver->user?->branch?->name ?? '-',
                     'orders_count' => $orders->count(),
@@ -126,6 +128,8 @@ class DriverReportService
                     'paid_amount' => $terbayar,
                     'remaining_bill' => max(0, $totalTagihan - $terbayar),
                     'paid_at' => $deposit?->paid_at?->format('n/j/Y'),
+                    'status' => $deposit?->status ?? 'unpaid',
+                    'manual_override' => (bool) data_get($deposit?->breakdown, 'manual_override', false),
                     'next_cashback' => $this->cashbackForPreviousDeposit($deposit, $setoranJasaDasar),
                 ];
             })

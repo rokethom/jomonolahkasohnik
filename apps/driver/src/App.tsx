@@ -1079,7 +1079,7 @@ function SetoranModal({ finance, mode, onClose }: { finance: DriverFinance; mode
   const rows = setoranBreakdownRows(billing.breakdown, billing.period_label, mode)
   const remaining = Math.max(0, billing.total - billing.paid_amount)
   return (
-    <Modal title={mode === 'billing' ? 'Detail Setoran Bulan Kemarin' : 'Detail Tagihan Berjalan'} onClose={onClose}>
+    <Modal title={mode === 'billing' ? `Detail Setoran ${billing.period_label ?? 'bulan kemarin'}` : `Detail Tagihan ${billing.period_label ?? 'berjalan'}`} onClose={onClose}>
       <div className="deposit-summary">
         <span>
           <small>Jatuh tempo</small>
@@ -1892,7 +1892,7 @@ function DriverFinanceSection() {
       </button>
       <div className="profile-finance-grid">
         <button className="metric setoran-card" disabled={!finance} onClick={() => { setFinanceMode('billing'); setFinanceOpen(true) }}>
-          <span>SETORAN BULAN KEMARIN</span>
+          <span>SETORAN {previousPeriodLabel.toUpperCase()}</span>
           <strong>Rp {formatMoney(previousRemaining)}</strong>
           <small>{previousPeriodLabel} - {previousDeposit?.status ?? 'paid'} - total Rp {formatMoney(previousTotal)}{previousRemaining <= 0 && previousDeposit?.paid_at ? ` - dibayar ${formatDepositPaidAt(previousDeposit.paid_at)}` : ''}</small>
         </button>

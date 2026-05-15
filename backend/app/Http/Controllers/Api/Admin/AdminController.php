@@ -13,6 +13,7 @@ use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\ChatConversation;
 use App\Models\Driver;
+use App\Models\DriverDeposit;
 use App\Models\GeofenceArea;
 use App\Models\KeywordParser;
 use App\Models\LocationLog;
@@ -1860,6 +1861,89 @@ class AdminController extends Controller
         ]);
     }
 
+    public function updateDriverDepositReportRow(Request $request, Driver $driver, DriverReportService $reports): JsonResponse
+    {
+        [$month, $year] = $this->reportPeriod($request);
+        $driver->loadMissing('user.branch');
+        $actor = $request->user();
+
+        if (! $this->canManageGlobalUsers($actor)) {
+            $branchIds = $this->staffBranchScopeIds($actor) ?? [];
+            abort_unless($driver->user?->branch_id !== null && in_array((int) $driver->user->branch_id, $branchIds, true), 403, 'Driver di luar area akun ini.');
+        }
+
+        $payload = $request->validate([
+            'base_service_deposit' => ['sometimes', 'integer', 'min:0'],
+            'bpjs_jht' => ['sometimes', 'integer', 'min:0'],
+            'bpjs' => ['sometimes', 'integer', 'min:0'],
+            'bansos' => ['sometimes', 'integer', 'min:0'],
+            'paid_amount' => ['sometimes', 'integer', 'min:0'],
+            'paid_at' => ['sometimes', 'nullable', 'date'],
+            'status' => ['sometimes', 'nullable', 'in:paid,unpaid'],
+        ]);
+
+        $period = now()->setDate($year, $month, 1)->startOfMonth();
+        $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $period->copy());
+        $breakdown = $deposit->breakdown ?? [];
+        $breakdown['manual_override'] = true;
+
+        if (array_key_exists('base_service_deposit', $payload)) {
+            $deposit->handle_day_15 = (int) $payload['base_service_deposit'];
+            $deposit->handle_day_30 = 0;
+        }
+
+        foreach (['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'] as $field) {
+            if (array_key_exists($field, $payload)) {
+                $deposit->{$field} = (int) $payload[$field];
+            }
+        }
+
+        if (array_key_exists('paid_at', $payload)) {
+            $deposit->paid_at = filled($payload['paid_at'] ?? null) ? \Illuminate\Support\Carbon::parse((string) $payload['paid_at']) : null;
+        }
+
+        $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
+        $previous = $period->copy()->subMonth();
+        $previousDeposit = DriverDeposit::query()
+            ->where('driver_id', $driver->id)
+            ->where('year', $previous->year)
+            ->where('month', $previous->month)
+            ->first();
+        $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
+        $previousBase = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
+        $cashback = $this->depositCashbackForReport($previousDeposit, $previousBase);
+        $deposit->total = max(0, $base + $previousRemaining - $cashback + (int) $deposit->bansos + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
+
+        $deposit->status = $payload['status'] ?? ((int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid');
+        if ($deposit->status === 'paid' && ! $deposit->paid_at) {
+            $deposit->paid_at = now();
+        }
+
+        $breakdown['handle_hari_15'] = (int) $deposit->handle_day_15;
+        $breakdown['handle_hari_30'] = (int) $deposit->handle_day_30;
+        $breakdown['setoran_hingga_hari_ini'] = $base;
+        $breakdown['tagihan_bulan_sebelumnya'] = $previousRemaining;
+        $breakdown['cashback_bulan_sebelumnya'] = $cashback;
+        $breakdown['bansos'] = (int) $deposit->bansos;
+        $breakdown['bpjs'] = (int) $deposit->bpjs;
+        $breakdown['bpjs_jht'] = (int) $deposit->bpjs_jht;
+        $deposit->breakdown = $breakdown;
+        $deposit->save();
+
+        $this->recordAudit($actor, 'edited_driver_deposit_report_row', $deposit, [
+            'driver_id' => $driver->id,
+            'period' => $period->format('Y-m'),
+            'payload' => $payload,
+        ]);
+
+        return response()->json([
+            'message' => 'Setoran driver berhasil diperbarui.',
+            'data' => [
+                'rows' => $reports->monthlyDepositRows($month, $year, $actor)->values(),
+            ],
+        ]);
+    }
+
     public function exportDriverDepositReport(Request $request, DriverReportService $reports): StreamedResponse
     {
         [$month, $year] = $this->reportPeriod($request);
@@ -1912,6 +1996,19 @@ class AdminController extends Controller
         }, $filename, [
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
         ]);
+    }
+
+    private function depositCashbackForReport(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int
+    {
+        if (! $previousDeposit || $previousBaseDeposit <= 0 || $previousDeposit->status !== 'paid' || ! $previousDeposit->paid_at) {
+            return 0;
+        }
+
+        if ((int) $previousDeposit->paid_at->day >= 7) {
+            return 0;
+        }
+
+        return (int) floor($previousBaseDeposit * 0.1);
     }
 
     public function updateSystemSettings(Request $request, SettingService $settings): JsonResponse

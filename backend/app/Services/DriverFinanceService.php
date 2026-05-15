@@ -77,20 +77,27 @@ class DriverFinanceService
         $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
         $previousBaseDeposit = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
         $cashback = $this->cashbackForPreviousDeposit($previousDeposit, $month, $previousBaseDeposit);
-        $bansos = $this->bansos($driver);
-        $bpjs = $baseDeposit < 30000 ? 20000 : 0;
-        $bpjsJht = $driver->bpjs_jht_enabled ? 20000 : 0;
-        $total = max(0, $baseDeposit + $previousRemaining - $cashback + $bansos + $bpjs + $bpjsJht);
-
         $existing = DriverDeposit::query()
             ->where('driver_id', $driver->id)
             ->where('year', (int) $month->year)
             ->where('month', (int) $month->month)
             ->first();
+
+        if ((bool) data_get($existing?->breakdown, 'manual_override', false)) {
+            $handleDay15 = (int) ($existing?->handle_day_15 ?? 0);
+            $handleDay30 = (int) ($existing?->handle_day_30 ?? 0);
+            $baseDeposit = $handleDay15 + $handleDay30;
+        }
+
+        $bansos = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bansos ?? 0) : $this->bansos($driver);
+        $bpjs = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bpjs ?? 0) : ($baseDeposit < 30000 ? 20000 : 0);
+        $bpjsJht = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bpjs_jht ?? 0) : ($driver->bpjs_jht_enabled ? 20000 : 0);
+        $total = max(0, $baseDeposit + $previousRemaining - $cashback + $bansos + $bpjs + $bpjsJht);
         $paidAmount = (int) ($existing?->paid_amount ?? 0);
         $paidAt = $existing?->paid_at;
         $dueDate = $this->unpaidSuspendDate($month);
         $status = $this->depositStatus($total, $paidAmount, $dueDate, $existing?->status);
+        $manualOverride = (bool) data_get($existing?->breakdown, 'manual_override', false);
 
         return DriverDeposit::query()->updateOrCreate(
             ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
@@ -114,6 +121,7 @@ class DriverFinanceService
                     'bansos' => $bansos,
                     'bpjs' => $bpjs,
                     'bpjs_jht' => $bpjsJht,
+                    'manual_override' => $manualOverride,
                 ],
             ],
         );
