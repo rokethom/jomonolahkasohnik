@@ -31,7 +31,17 @@ class DriverFinanceService
         $month ??= now();
         $start = $month->copy()->startOfMonth();
         $end = $month->copy()->endOfMonth();
+        $existing = DriverDeposit::query()
+            ->where('driver_id', $driver->id)
+            ->where('year', (int) $month->year)
+            ->where('month', (int) $month->month)
+            ->first();
+
         if ($this->periodIsBeforeDriverJoined($driver, $end)) {
+            if ((bool) data_get($existing?->breakdown, 'manual_override', false)) {
+                return $existing;
+            }
+
             return DriverDeposit::query()->updateOrCreate(
                 ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
                 [
@@ -77,11 +87,6 @@ class DriverFinanceService
         $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
         $previousBaseDeposit = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
         $cashback = $this->cashbackForPreviousDeposit($previousDeposit, $month, $previousBaseDeposit);
-        $existing = DriverDeposit::query()
-            ->where('driver_id', $driver->id)
-            ->where('year', (int) $month->year)
-            ->where('month', (int) $month->month)
-            ->first();
 
         if ((bool) data_get($existing?->breakdown, 'manual_override', false)) {
             $handleDay15 = (int) ($existing?->handle_day_15 ?? 0);
