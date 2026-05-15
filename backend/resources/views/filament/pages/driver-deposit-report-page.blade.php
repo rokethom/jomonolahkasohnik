@@ -229,17 +229,17 @@
                         { headerName: 'DRIVER', field: 'driver', pinned: 'left', minWidth: 180, cellClass: 'deposit-driver-cell' },
                         { headerName: 'AREA', field: 'area', pinned: 'left', minWidth: 150 },
                         { headerName: 'JML ORDER', field: 'orders_count', width: 110, ...editableNumber, valueFormatter: numberFormatter },
-                        { headerName: 'OMSET DARI JASA DASAR', field: 'base_service_omset', minWidth: 150, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell' },
+                        { headerName: 'OMSET DARI JASA DASAR', field: 'base_service_omset', minWidth: 150, ...editableNumber },
                         { headerName: 'SETORAN 20% DARI JASA DASAR', field: 'base_service_deposit', minWidth: 170, ...editableNumber },
                         { headerName: 'TAGIHAN BLN LALU', field: 'previous_bill', minWidth: 135, ...editableNumber },
                         { headerName: 'JHT BPJSTK', field: 'bpjs_jht', minWidth: 125, ...editableNumber },
                         { headerName: 'PREMI BPJSTK', field: 'bpjs', minWidth: 125, ...editableNumber },
                         { headerName: 'REWARD CASHBACK BULAN LALU', field: 'previous_cashback_reward', minWidth: 170, ...editableNumber, headerClass: 'deposit-orange-header' },
-                        { headerName: 'TOTAL TAGIHAN', field: 'bill_before_bansos', minWidth: 130, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell' },
+                        { headerName: 'TOTAL TAGIHAN', field: 'bill_before_bansos', minWidth: 130, ...editableNumber },
                         { headerName: 'BANSOS AREA', field: 'bansos', minWidth: 125, ...editableNumber },
-                        { headerName: 'TOTAL TAGIHAN BULAN INI', field: 'total_bill', minWidth: 145, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell deposit-total-cell', headerClass: 'deposit-yellow-header' },
+                        { headerName: 'TOTAL TAGIHAN BULAN INI', field: 'total_bill', minWidth: 145, ...editableNumber, cellClass: 'deposit-number-cell deposit-editable-cell deposit-total-cell', headerClass: 'deposit-yellow-header' },
                         { headerName: 'TERBAYAR', field: 'paid_amount', minWidth: 130, ...editableNumber },
-                        { headerName: 'SISA TAGIHAN', field: 'remaining_bill', minWidth: 135, valueFormatter: moneyFormatter, cellClass: 'deposit-number-cell deposit-remaining-cell', headerClass: 'deposit-yellow-header' },
+                        { headerName: 'SISA TAGIHAN', field: 'remaining_bill', minWidth: 135, ...editableNumber, cellClass: 'deposit-number-cell deposit-editable-cell deposit-remaining-cell', headerClass: 'deposit-yellow-header' },
                         { headerName: 'TGL BAYAR', field: 'paid_at', minWidth: 130, editable: true, cellClass: 'deposit-editable-cell' },
                         {
                             headerName: 'STATUS',
@@ -319,7 +319,13 @@
         <div class="deposit-action-row">
             <div>
                 <div class="text-lg font-bold text-white">Rekap Setoran Driver</div>
-                <div class="deposit-period">Periode {{ \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1)->translatedFormat('F Y') }}</div>
+                @php
+                    $paymentPeriod = \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1);
+                    $earningPeriod = $paymentPeriod->copy()->subMonthNoOverflow();
+                @endphp
+                <div class="deposit-period">
+                    Periode bayar {{ $paymentPeriod->translatedFormat('F Y') }} untuk pencapaian {{ $earningPeriod->translatedFormat('F Y') }}
+                </div>
             </div>
             <div class="flex flex-wrap gap-3">
                 <x-filament::button wire:click="mountAction('importDeposit')" color="warning" icon="heroicon-o-arrow-up-tray">
@@ -349,7 +355,7 @@
             >
                 <div data-deposit-grid class="ag-theme-quartz-dark deposit-ag-grid"></div>
                 <div class="deposit-grid-note">
-                    Double-click sel berwarna biru untuk edit live. Kolom total, sisa, dan cashback dihitung ulang otomatis oleh backend setelah tersimpan.
+                    Double-click sel berwarna biru untuk edit live. Semua nominal bisa diisi manual untuk migrasi data offline; backend tetap menyimpan jejak override manual.
                 </div>
             </div>
         </div>

@@ -66,10 +66,11 @@ class DriverReportService
 
     public function monthlyDepositRows(?int $month = null, ?int $year = null, ?User $actor = null): Collection
     {
-        $period = Carbon::create($year ?: now()->year, $month ?: now()->month, 1)->startOfMonth();
-        $previous = $period->copy()->subMonth();
-        $start = $period->copy()->startOfMonth();
-        $end = $period->copy()->endOfMonth();
+        $paymentPeriod = Carbon::create($year ?: now()->year, $month ?: now()->month, 1)->startOfMonth();
+        $earningPeriod = $paymentPeriod->copy()->subMonth();
+        $previous = $earningPeriod->copy()->subMonth();
+        $start = $earningPeriod->copy()->startOfMonth();
+        $end = $earningPeriod->copy()->endOfMonth();
 
         return Driver::query()
             ->with(['user.branch'])
@@ -78,19 +79,19 @@ class DriverReportService
                 return $query->whereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds($actor) ?? []));
             })
             ->get()
-            ->map(function (Driver $driver) use ($period, $previous, $start, $end): array {
+            ->map(function (Driver $driver) use ($paymentPeriod, $earningPeriod, $previous, $start, $end): array {
                 $orders = Order::query()
                     ->where('driver_id', $driver->id)
                     ->where('status', OrderStatus::Completed->value)
                     ->whereBetween('created_at', [$start, $end])
                     ->get(['id', 'source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown']);
 
-                app(DriverFinanceService::class)->monthlyDeposit($driver, $period->copy());
+                app(DriverFinanceService::class)->monthlyDeposit($driver, $earningPeriod->copy());
 
                 $deposit = DriverDeposit::query()
                     ->where('driver_id', $driver->id)
-                    ->where('year', $period->year)
-                    ->where('month', $period->month)
+                    ->where('year', $earningPeriod->year)
+                    ->where('month', $earningPeriod->month)
                     ->first();
 
                 $previousDeposit = DriverDeposit::query()
@@ -114,8 +115,11 @@ class DriverReportService
                 $rewardCashbackBulanLalu = $rewardCashbackBulanLalu !== null
                     ? max(0, (int) $rewardCashbackBulanLalu)
                     : $this->cashbackForPreviousDeposit($previousDeposit, $previousBaseDeposit);
-                $totalTagihan = max(0, $setoranJasaDasar + $tagihanBulanLalu + (int) ($deposit?->bpjs_jht ?? 0) + (int) ($deposit?->bpjs ?? 0) + (int) ($deposit?->bansos ?? 0) - $rewardCashbackBulanLalu);
+                $baseServiceOmset = (int) (data_get($breakdown, 'manual_base_service_omset') ?? $orders->sum('price'));
+                $billBeforeBansos = (int) (data_get($breakdown, 'manual_bill_before_bansos') ?? max(0, $setoranJasaDasar + $tagihanBulanLalu + (int) ($deposit?->bpjs_jht ?? 0) + (int) ($deposit?->bpjs ?? 0) - $rewardCashbackBulanLalu));
+                $totalTagihan = (int) (data_get($breakdown, 'manual_total_bill') ?? max(0, $billBeforeBansos + (int) ($deposit?->bansos ?? 0)));
                 $terbayar = (int) ($deposit?->paid_amount ?? 0);
+                $remainingBill = (int) (data_get($breakdown, 'manual_remaining_bill') ?? max(0, $totalTagihan - $terbayar));
 
                 return [
                     'driver_id' => $driver->id,
@@ -123,21 +127,23 @@ class DriverReportService
                     'driver' => $driver->user?->name ?? 'Driver #'.$driver->id,
                     'area' => $driver->user?->branch?->area ?? $driver->user?->branch?->name ?? '-',
                     'orders_count' => (int) (data_get($breakdown, 'manual_orders_count') ?? $orders->count()),
-                    'base_service_omset' => (int) $orders->sum('price'),
+                    'base_service_omset' => $baseServiceOmset,
                     'base_service_deposit' => $setoranJasaDasar,
                     'previous_bill' => $tagihanBulanLalu,
                     'bpjs_jht' => (int) ($deposit?->bpjs_jht ?? 0),
                     'bpjs' => (int) ($deposit?->bpjs ?? 0),
                     'previous_cashback_reward' => $rewardCashbackBulanLalu,
-                    'bill_before_bansos' => max(0, $setoranJasaDasar + $tagihanBulanLalu + (int) ($deposit?->bpjs_jht ?? 0) + (int) ($deposit?->bpjs ?? 0) - $rewardCashbackBulanLalu),
+                    'bill_before_bansos' => $billBeforeBansos,
                     'bansos' => (int) ($deposit?->bansos ?? 0),
                     'total_bill' => $totalTagihan,
                     'paid_amount' => $terbayar,
-                    'remaining_bill' => max(0, $totalTagihan - $terbayar),
+                    'remaining_bill' => $remainingBill,
                     'paid_at' => $deposit?->paid_at?->format('n/j/Y'),
                     'status' => $deposit?->status ?? 'unpaid',
                     'manual_override' => (bool) data_get($deposit?->breakdown, 'manual_override', false),
                     'next_cashback' => (int) (data_get($breakdown, 'manual_next_cashback') ?? $this->cashbackForPreviousDeposit($deposit, $setoranJasaDasar)),
+                    'payment_period' => $paymentPeriod->format('Y-m'),
+                    'earning_period' => $earningPeriod->format('Y-m'),
                 ];
             })
             ->sortBy('driver')
@@ -149,9 +155,9 @@ class DriverReportService
         return [
             'DRIVER',
             'AREA',
-            'JML ORDER',
-            'Omset Dari Jasa Dasar',
-            'Setoran 20% dari Jasa Dasar',
+            'JML ORDER BULAN LALU',
+            'Omset Jasa Dasar Bulan Lalu',
+            'Setoran dari Jasa Dasar Bulan Lalu',
             'Tagihan Bln Lalu',
             'JHT BPJSTK',
             'Premi BPJSTK',

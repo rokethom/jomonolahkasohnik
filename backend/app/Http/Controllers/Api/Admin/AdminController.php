@@ -1874,20 +1874,25 @@ class AdminController extends Controller
 
         $payload = $request->validate([
             'orders_count' => ['sometimes', 'integer', 'min:0'],
+            'base_service_omset' => ['sometimes', 'integer', 'min:0'],
             'base_service_deposit' => ['sometimes', 'integer', 'min:0'],
             'previous_bill' => ['sometimes', 'integer', 'min:0'],
             'bpjs_jht' => ['sometimes', 'integer', 'min:0'],
             'bpjs' => ['sometimes', 'integer', 'min:0'],
             'previous_cashback_reward' => ['sometimes', 'integer', 'min:0'],
+            'bill_before_bansos' => ['sometimes', 'integer', 'min:0'],
             'bansos' => ['sometimes', 'integer', 'min:0'],
+            'total_bill' => ['sometimes', 'integer', 'min:0'],
             'paid_amount' => ['sometimes', 'integer', 'min:0'],
+            'remaining_bill' => ['sometimes', 'integer', 'min:0'],
             'paid_at' => ['sometimes', 'nullable', 'date'],
             'status' => ['sometimes', 'nullable', 'in:paid,unpaid'],
             'next_cashback' => ['sometimes', 'integer', 'min:0'],
         ]);
 
-        $period = now()->setDate($year, $month, 1)->startOfMonth();
-        $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $period->copy());
+        $paymentPeriod = now()->setDate($year, $month, 1)->startOfMonth();
+        $depositPeriod = $paymentPeriod->copy()->subMonthNoOverflow()->startOfMonth();
+        $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $depositPeriod->copy());
         $breakdown = $deposit->breakdown ?? [];
         $breakdown['manual_override'] = true;
 
@@ -1900,12 +1905,28 @@ class AdminController extends Controller
             $breakdown['manual_orders_count'] = (int) $payload['orders_count'];
         }
 
+        if (array_key_exists('base_service_omset', $payload)) {
+            $breakdown['manual_base_service_omset'] = (int) $payload['base_service_omset'];
+        }
+
         if (array_key_exists('previous_bill', $payload)) {
             $breakdown['manual_previous_bill'] = (int) $payload['previous_bill'];
         }
 
         if (array_key_exists('previous_cashback_reward', $payload)) {
             $breakdown['manual_previous_cashback_reward'] = (int) $payload['previous_cashback_reward'];
+        }
+
+        if (array_key_exists('bill_before_bansos', $payload)) {
+            $breakdown['manual_bill_before_bansos'] = (int) $payload['bill_before_bansos'];
+        }
+
+        if (array_key_exists('total_bill', $payload)) {
+            $breakdown['manual_total_bill'] = (int) $payload['total_bill'];
+        }
+
+        if (array_key_exists('remaining_bill', $payload)) {
+            $breakdown['manual_remaining_bill'] = (int) $payload['remaining_bill'];
         }
 
         if (array_key_exists('next_cashback', $payload)) {
@@ -1923,7 +1944,7 @@ class AdminController extends Controller
         }
 
         $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
-        $previous = $period->copy()->subMonth();
+        $previous = $depositPeriod->copy()->subMonth();
         $previousDeposit = DriverDeposit::query()
             ->where('driver_id', $driver->id)
             ->where('year', $previous->year)
@@ -1936,7 +1957,12 @@ class AdminController extends Controller
         $cashback = array_key_exists('manual_previous_cashback_reward', $breakdown)
             ? max(0, (int) $breakdown['manual_previous_cashback_reward'])
             : $this->depositCashbackForReport($previousDeposit, $previousBase);
-        $deposit->total = max(0, $base + $previousRemaining - $cashback + (int) $deposit->bansos + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
+        $billBeforeBansos = array_key_exists('manual_bill_before_bansos', $breakdown)
+            ? max(0, (int) $breakdown['manual_bill_before_bansos'])
+            : max(0, $base + $previousRemaining - $cashback + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
+        $deposit->total = array_key_exists('manual_total_bill', $breakdown)
+            ? max(0, (int) $breakdown['manual_total_bill'])
+            : max(0, $billBeforeBansos + (int) $deposit->bansos);
 
         $deposit->status = $payload['status'] ?? ((int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid');
         if ($deposit->status === 'paid' && ! $deposit->paid_at) {
@@ -1948,6 +1974,7 @@ class AdminController extends Controller
         $breakdown['setoran_hingga_hari_ini'] = $base;
         $breakdown['tagihan_bulan_sebelumnya'] = $previousRemaining;
         $breakdown['cashback_bulan_sebelumnya'] = $cashback;
+        $breakdown['bill_before_bansos'] = $billBeforeBansos;
         $breakdown['cashback_bulan_depan'] = $this->depositCashbackForReport($deposit, $base);
         $breakdown['bansos'] = (int) $deposit->bansos;
         $breakdown['bpjs'] = (int) $deposit->bpjs;
@@ -1957,7 +1984,8 @@ class AdminController extends Controller
 
         $this->recordAudit($actor, 'edited_driver_deposit_report_row', $deposit, [
             'driver_id' => $driver->id,
-            'period' => $period->format('Y-m'),
+            'payment_period' => $paymentPeriod->format('Y-m'),
+            'earning_period' => $depositPeriod->format('Y-m'),
             'payload' => $payload,
         ]);
 

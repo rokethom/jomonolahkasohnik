@@ -154,13 +154,17 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
     {
         if (! in_array($field, [
             'orders_count',
+            'base_service_omset',
             'base_service_deposit',
             'previous_bill',
             'bpjs_jht',
             'bpjs',
             'previous_cashback_reward',
+            'bill_before_bansos',
             'bansos',
+            'total_bill',
             'paid_amount',
+            'remaining_bill',
             'paid_at',
             'status',
             'next_cashback',
@@ -197,8 +201,9 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
         }
 
         try {
-            $period = $this->period();
-            $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $period->copy());
+            $paymentPeriod = $this->period();
+            $depositPeriod = $this->depositPeriodForPayment($paymentPeriod);
+            $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, $depositPeriod->copy());
             $breakdown = $deposit->breakdown ?? [];
             $breakdown['manual_override'] = true;
 
@@ -207,10 +212,18 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                 $deposit->handle_day_30 = 0;
             } elseif ($field === 'orders_count') {
                 $breakdown['manual_orders_count'] = $this->moneyToInt($value);
+            } elseif ($field === 'base_service_omset') {
+                $breakdown['manual_base_service_omset'] = $this->moneyToInt($value);
             } elseif ($field === 'previous_bill') {
                 $breakdown['manual_previous_bill'] = $this->moneyToInt($value);
             } elseif ($field === 'previous_cashback_reward') {
                 $breakdown['manual_previous_cashback_reward'] = $this->moneyToInt($value);
+            } elseif ($field === 'bill_before_bansos') {
+                $breakdown['manual_bill_before_bansos'] = $this->moneyToInt($value);
+            } elseif ($field === 'total_bill') {
+                $breakdown['manual_total_bill'] = $this->moneyToInt($value);
+            } elseif ($field === 'remaining_bill') {
+                $breakdown['manual_remaining_bill'] = $this->moneyToInt($value);
             } elseif ($field === 'next_cashback') {
                 $breakdown['manual_next_cashback'] = $this->moneyToInt($value);
             } elseif (in_array($field, ['bpjs_jht', 'bpjs', 'bansos', 'paid_amount'], true)) {
@@ -226,7 +239,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             }
 
             $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
-            $previous = $period->copy()->subMonth();
+            $previous = $depositPeriod->copy()->subMonth();
             $previousDeposit = DriverDeposit::query()
                 ->where('driver_id', $driver->id)
                 ->where('year', $previous->year)
@@ -240,8 +253,13 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             $cashback = array_key_exists('manual_previous_cashback_reward', $breakdown)
                 ? max(0, (int) $breakdown['manual_previous_cashback_reward'])
                 : $this->cashbackForPreviousDeposit($previousDeposit, $previousBase);
+            $billBeforeBansos = array_key_exists('manual_bill_before_bansos', $breakdown)
+                ? max(0, (int) $breakdown['manual_bill_before_bansos'])
+                : max(0, $base + $previousRemaining - $cashback + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
 
-            $deposit->total = max(0, $base + $previousRemaining - $cashback + (int) $deposit->bansos + (int) $deposit->bpjs + (int) $deposit->bpjs_jht);
+            $deposit->total = array_key_exists('manual_total_bill', $breakdown)
+                ? max(0, (int) $breakdown['manual_total_bill'])
+                : max(0, $billBeforeBansos + (int) $deposit->bansos);
 
             if ($field !== 'status') {
                 $deposit->status = (int) $deposit->paid_amount >= (int) $deposit->total ? 'paid' : 'unpaid';
@@ -256,6 +274,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             $breakdown['setoran_hingga_hari_ini'] = $base;
             $breakdown['tagihan_bulan_sebelumnya'] = $previousRemaining;
             $breakdown['cashback_bulan_sebelumnya'] = $cashback;
+            $breakdown['bill_before_bansos'] = $billBeforeBansos;
             $breakdown['cashback_bulan_depan'] = $this->cashbackForPreviousDeposit($deposit, $base);
             $breakdown['bansos'] = (int) $deposit->bansos;
             $breakdown['bpjs'] = (int) $deposit->bpjs;
@@ -372,6 +391,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
 
     private function importRowsFromFile(string $path, Carbon $period): array
     {
+        $depositPeriod = $this->depositPeriodForPayment($period);
         $handle = fopen($path, 'r');
         if ($handle === false) {
             return ['updated' => 0, 'skipped' => 0, 'errors' => ['File tidak dapat dibaca.']];
@@ -400,7 +420,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
         $errors = [];
         $rowNumber = 1;
 
-        DB::transaction(function () use ($handle, $separator, $headerMap, $period, &$updated, &$skipped, &$errors, &$rowNumber): void {
+        DB::transaction(function () use ($handle, $separator, $headerMap, $depositPeriod, &$updated, &$skipped, &$errors, &$rowNumber): void {
             while (($values = fgetcsv($handle, 0, $separator)) !== false) {
                 $rowNumber++;
                 $row = $this->mapImportRow($headerMap, $values);
@@ -421,7 +441,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                 $paidAmount = $this->moneyToInt($row['paid_amount'] ?? $row['terbayar'] ?? 0);
                 $paidAt = $this->parsePaidAt($row['paid_at'] ?? $row['tgl_bayar'] ?? null, $paidAmount);
 
-                $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver->load('user.branch'), $period->copy());
+                $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver->load('user.branch'), $depositPeriod->copy());
                 $status = $this->statusFromImport($row['status'] ?? null, $paidAmount, (int) $deposit->total);
 
                 $deposit->forceFill([
@@ -645,5 +665,10 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
     private function period(): Carbon
     {
         return Carbon::create($this->year(), $this->month(), 1)->startOfMonth();
+    }
+
+    private function depositPeriodForPayment(Carbon $paymentPeriod): Carbon
+    {
+        return $paymentPeriod->copy()->subMonthNoOverflow()->startOfMonth();
     }
 }

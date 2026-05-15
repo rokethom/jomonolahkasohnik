@@ -92,12 +92,33 @@ class DriverFinanceService
         $bansos = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bansos ?? 0) : $this->bansos($driver);
         $bpjs = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bpjs ?? 0) : ($baseDeposit < 30000 ? 20000 : 0);
         $bpjsJht = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bpjs_jht ?? 0) : ($driver->bpjs_jht_enabled ? 20000 : 0);
-        $total = max(0, $baseDeposit + $previousRemaining - $cashback + $bansos + $bpjs + $bpjsJht);
+        $billBeforeBansos = data_get($existing?->breakdown, 'manual_bill_before_bansos');
+        $billBeforeBansos = $billBeforeBansos !== null
+            ? max(0, (int) $billBeforeBansos)
+            : max(0, $baseDeposit + $previousRemaining - $cashback + $bpjs + $bpjsJht);
+        $manualTotal = data_get($existing?->breakdown, 'manual_total_bill');
+        $total = $manualTotal !== null
+            ? max(0, (int) $manualTotal)
+            : max(0, $billBeforeBansos + $bansos);
         $paidAmount = (int) ($existing?->paid_amount ?? 0);
         $paidAt = $existing?->paid_at;
         $dueDate = $this->unpaidSuspendDate($month);
         $status = $this->depositStatus($total, $paidAmount, $dueDate, $existing?->status);
         $manualOverride = (bool) data_get($existing?->breakdown, 'manual_override', false);
+
+        $breakdown = $existing?->breakdown ?? [];
+        $breakdown = array_merge($breakdown, [
+            'handle_hari_15' => $handleDay15,
+            'handle_hari_30' => $handleDay30,
+            'setoran_hingga_hari_ini' => $baseDeposit,
+            'tagihan_bulan_sebelumnya' => $previousRemaining,
+            'cashback_bulan_sebelumnya' => $cashback,
+            'bill_before_bansos' => $billBeforeBansos,
+            'bansos' => $bansos,
+            'bpjs' => $bpjs,
+            'bpjs_jht' => $bpjsJht,
+            'manual_override' => $manualOverride,
+        ]);
 
         return DriverDeposit::query()->updateOrCreate(
             ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
@@ -112,17 +133,7 @@ class DriverFinanceService
                 'paid_amount' => $paidAmount,
                 'paid_at' => $paidAt,
                 'status' => $status,
-                'breakdown' => [
-                    'handle_hari_15' => $handleDay15,
-                    'handle_hari_30' => $handleDay30,
-                    'setoran_hingga_hari_ini' => $baseDeposit,
-                    'tagihan_bulan_sebelumnya' => $previousRemaining,
-                    'cashback_bulan_sebelumnya' => $cashback,
-                    'bansos' => $bansos,
-                    'bpjs' => $bpjs,
-                    'bpjs_jht' => $bpjsJht,
-                    'manual_override' => $manualOverride,
-                ],
+                'breakdown' => $breakdown,
             ],
         );
     }
