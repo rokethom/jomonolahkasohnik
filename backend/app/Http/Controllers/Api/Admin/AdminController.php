@@ -285,6 +285,11 @@ class AdminController extends Controller
             $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, isset($payload['role']) ? UserRole::from($payload['role']) : $user->role);
         }
 
+        $isExistingDriver = ($user->role instanceof UserRole ? $user->role : UserRole::tryFrom((string) $user->role)) === UserRole::Driver;
+        if ($isExistingDriver) {
+            unset($payload['username'], $payload['name'], $payload['password']);
+        }
+
         $targetRole = isset($payload['role']) ? UserRole::from($payload['role']) : $user->role;
         $branchScopeIds = array_key_exists('branch_scope_ids', $payload)
             ? $this->branchScopeIdsForUserWrite($actor, $targetRole, $payload['branch_scope_ids'] ?? [], $payload['branch_id'] ?? $user->branch_id)

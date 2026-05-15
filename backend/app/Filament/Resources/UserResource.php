@@ -64,10 +64,14 @@ class UserResource extends Resource
                                         Forms\Components\TextInput::make('username')
                                             ->required()
                                             ->maxLength(255)
-                                            ->unique(ignoreRecord: true),
+                                            ->unique(ignoreRecord: true)
+                                            ->disabled(fn (?User $record): bool => ($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver)
+                                            ->helperText(fn (?User $record): ?string => (($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver) ? 'Username driver dikunci. Driver login memakai Google.' : null),
                                         Forms\Components\TextInput::make('name')
                                             ->required()
-                                            ->maxLength(255),
+                                            ->maxLength(255)
+                                            ->disabled(fn (?User $record): bool => ($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver)
+                                            ->helperText(fn (?User $record): ?string => (($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver) ? 'Nama driver dikunci dari form ini.' : null),
                                         Forms\Components\TextInput::make('email')
                                             ->email()
                                             ->required()
@@ -85,6 +89,7 @@ class UserResource extends Resource
                                         Forms\Components\TextInput::make('password')
                                             ->label('Password')
                                             ->password()
+                                            ->visible(fn (Forms\Get $get): bool => $get('role') !== UserRole::Driver->value)
                                             ->minLength(8)
                                             ->maxLength(255)
                                             ->afterStateHydrated(function (Forms\Components\TextInput $component): void {
