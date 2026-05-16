@@ -1145,6 +1145,76 @@ class PricingServiceTest extends TestCase
         $this->assertSame(13000, $quote['total_price']);
     }
 
+    public function test_explicit_pickup_branch_is_not_overridden_by_destination_geojson_region(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        $asembagus = Branch::query()->create([
+            'branch_code' => 'STBASB-PRICE',
+            'name' => 'Situbondo',
+            'area' => 'Asembagus Pricing',
+            'latitude' => -7.75086000,
+            'longitude' => 114.21561000,
+            'radius_km' => 5,
+            'is_active' => true,
+        ]);
+
+        $situbondo = Branch::query()->create([
+            'branch_code' => 'STBKT-PRICE',
+            'name' => 'Situbondo',
+            'area' => 'Kota Pricing',
+            'latitude' => -7.70686204,
+            'longitude' => 114.00550184,
+            'radius_km' => 5,
+            'is_active' => true,
+        ]);
+
+        $region = GeojsonRegion::query()->create([
+            'branch_id' => $situbondo->id,
+            'name' => 'Situbondo Kota Region',
+            'geojson' => ['type' => 'Polygon', 'coordinates' => [[[114.0000, -7.7100], [114.0100, -7.7100], [114.0100, -7.7000], [114.0000, -7.7000], [114.0000, -7.7100]]]],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [[
+                ['lat' => -7.7100, 'lng' => 114.0000],
+                ['lat' => -7.7100, 'lng' => 114.0100],
+                ['lat' => -7.7000, 'lng' => 114.0100],
+                ['lat' => -7.7000, 'lng' => 114.0000],
+            ]],
+            'centroid_lat' => -7.7050,
+            'centroid_lng' => 114.0050,
+            'min_lat' => -7.7100,
+            'max_lat' => -7.7000,
+            'min_lng' => 114.0000,
+            'max_lng' => 114.0100,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->seedMasterRingDefaults($asembagus->id);
+        $this->seedMasterRingDefaults($situbondo->id);
+
+        $quote = app(PricingService::class)->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $asembagus->id,
+            'pickup_lat' => -7.75086000,
+            'pickup_lng' => 114.21561000,
+            'destination_lat' => -7.70686204,
+            'destination_lng' => 114.00550184,
+            'distance_km' => 7,
+            'stops' => 1,
+            'service_payload' => [
+                'destination_geojson_region_id' => $region->id,
+            ],
+        ]);
+
+        $this->assertSame($asembagus->id, $quote['branch_id']);
+        $this->assertSame($region->id, $quote['geojson_region_id']);
+        $this->assertSame('ring_2', $quote['ring']);
+        $this->assertSame(13000, $quote['total_price']);
+    }
+
     private function seedMasterRingDefaults(int $branchId): void
     {
         foreach ([

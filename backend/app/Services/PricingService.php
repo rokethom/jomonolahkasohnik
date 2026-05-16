@@ -215,13 +215,14 @@ class PricingService
         $stops = max(1, (int) ($payload['stops'] ?? $payload['stop_count'] ?? 1));
         $route = $payload['route'] ?? $payload['travel_route'] ?? $payload['service_payload']['route'] ?? null;
 
+        $hasExplicitBranch = isset($payload['branch_id']) && $payload['branch_id'];
         $pricingBranch = $this->resolvePricingBranch($payload);
         $pricingBranchId = $pricingBranch?->id ?? (isset($payload['branch_id']) ? (int) $payload['branch_id'] : null);
         if ($pricingBranchId !== null) {
             $payload['branch_id'] = $pricingBranchId;
         }
         $geojsonRegion = $this->detectDestinationRegion($payload);
-        if ($geojsonRegion?->branch_id) {
+        if (! $hasExplicitBranch && $geojsonRegion?->branch_id) {
             $pricingBranch = $geojsonRegion->branch;
             $pricingBranchId = (int) $geojsonRegion->branch_id;
             $payload['branch_id'] = $pricingBranchId;
@@ -454,10 +455,10 @@ class PricingService
         }
 
         foreach ([
-            ['destination_lat', 'destination_lng'],
-            ['dropoff_lat', 'dropoff_lng'],
             ['pickup_lat', 'pickup_lng'],
             ['origin_lat', 'origin_lng'],
+            ['destination_lat', 'destination_lng'],
+            ['dropoff_lat', 'dropoff_lng'],
         ] as [$latKey, $lngKey]) {
             $lat = data_get($payload, $latKey);
             $lng = data_get($payload, $lngKey);

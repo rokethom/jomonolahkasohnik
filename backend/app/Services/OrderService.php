@@ -364,8 +364,8 @@ class OrderService
     public function resolveTargetBranchId(array $payload, ?int $fallbackBranchId = null): ?int
     {
         foreach ([
-            ['destination_lat', 'destination_lng'],
             ['pickup_lat', 'pickup_lng'],
+            ['destination_lat', 'destination_lng'],
         ] as [$latKey, $lngKey]) {
             if (! isset($payload[$latKey], $payload[$lngKey])) {
                 continue;
