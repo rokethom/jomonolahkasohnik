@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jojo-customer-pwa-v3'
-const APP_ASSETS = ['/logo.png', '/favicon.ico', '/manifest.webmanifest', '/customernotif.mpeg']
+const CACHE_NAME = 'jojo-customer-pwa-v4'
+const APP_ASSETS = ['/logo.png', '/favicon.ico', '/manifest.json', '/manifest.webmanifest', '/apple-touch-icon.png', '/customernotif.mpeg']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_ASSETS)).finally(() => self.skipWaiting()))
