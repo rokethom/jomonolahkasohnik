@@ -649,10 +649,6 @@ class JojoBotService
             return $this->pricingGeocodeMemo[$memoKey] = $regionGeocode;
         }
 
-        if ($aliasFallback = $this->geocodeAliasCanonicalForPricing($address, $branch)) {
-            return $this->pricingGeocodeMemo[$memoKey] = $aliasFallback;
-        }
-
         if ($this->settings->bool('google_maps_geocode_enabled', false)) {
             $googleResult = $this->geocoding->geocodeNearBranchGoogleOnly(
                 $address,
@@ -666,12 +662,18 @@ class JojoBotService
             }
         }
 
-        return $this->pricingGeocodeMemo[$memoKey] = $this->geocoding->geocodeNearBranchLimited(
+        $result = $this->geocoding->geocodeNearBranchLimited(
             $address,
             $branch,
             self::PRICING_GEOCODE_CANDIDATES,
             120,
         );
+
+        if ($result !== null) {
+            return $this->pricingGeocodeMemo[$memoKey] = $result;
+        }
+
+        return $this->pricingGeocodeMemo[$memoKey] = $this->geocodeAliasCanonicalForPricing($address, $branch);
     }
 
     private function geocodeAliasCanonicalForPricing(string $address, ?Branch $branch): ?array

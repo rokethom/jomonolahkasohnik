@@ -814,15 +814,24 @@ class PricingServiceTest extends TestCase
 
         $this->mock(GeocodingService::class)
             ->shouldReceive('geocodeNearBranchLimited')
-            ->once()
-            ->withArgs(fn (string $address, ?Branch $givenBranch): bool => $address === 'Panji' && $givenBranch?->id === $branch->id)
-            ->andReturn([
-                'lat' => -7.6975156,
-                'lng' => 114.0305382,
-                'formatted_address' => 'Panji, Situbondo, Jawa Timur, Indonesia',
-                'provider' => 'nominatim',
-                'query' => 'Panji Situbondo, Indonesia',
-            ]);
+            ->twice()
+            ->andReturnUsing(function (string $address, ?Branch $givenBranch) use ($branch): ?array {
+                $this->assertSame($branch->id, $givenBranch?->id);
+
+                if ($address === 'griya panji mulya') {
+                    return null;
+                }
+
+                $this->assertSame('Panji', $address);
+
+                return [
+                    'lat' => -7.6975156,
+                    'lng' => 114.0305382,
+                    'formatted_address' => 'Panji, Situbondo, Jawa Timur, Indonesia',
+                    'provider' => 'nominatim',
+                    'query' => 'Panji Situbondo, Indonesia',
+                ];
+            });
 
         $service = app(JojoBotService::class);
         $method = new \ReflectionMethod($service, 'geocodeForPricing');
