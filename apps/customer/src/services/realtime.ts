@@ -17,12 +17,14 @@ function isLocalHost(host?: string) {
 
 function reverbConfig() {
   const configuredHost = import.meta.env.VITE_REVERB_HOST
+  const apiUrl = new URL(API_BASE.replace(/\/api$/, ''))
   const browserHost = window.location.hostname
-  const isPublicHost = !isLocalHost(browserHost)
-  const host = isPublicHost && isLocalHost(configuredHost) ? browserHost : (configuredHost || browserHost)
+  const fallbackHost = isLocalHost(apiUrl.hostname) ? browserHost : apiUrl.hostname
+  const isPublicHost = !isLocalHost(fallbackHost)
+  const host = isPublicHost && isLocalHost(configuredHost) ? fallbackHost : (configuredHost || fallbackHost)
   const scheme = isPublicHost && isLocalHost(configuredHost)
-    ? window.location.protocol.replace(':', '')
-    : (import.meta.env.VITE_REVERB_SCHEME ?? window.location.protocol.replace(':', '') ?? 'http')
+    ? apiUrl.protocol.replace(':', '')
+    : (import.meta.env.VITE_REVERB_SCHEME ?? apiUrl.protocol.replace(':', '') ?? window.location.protocol.replace(':', '') ?? 'http')
   const port = isPublicHost && isLocalHost(configuredHost) && scheme === 'https'
     ? 443
     : Number(import.meta.env.VITE_REVERB_PORT ?? (scheme === 'https' ? 443 : 8080))

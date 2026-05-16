@@ -2529,12 +2529,14 @@ function isLocalRealtimeHost(host?: string) {
 
 function resolveRealtimeConfig() {
   const configuredHost = import.meta.env.VITE_REVERB_HOST
+  const apiUrl = new URL(APP_BASE)
   const browserHost = window.location.hostname
-  const isPublicHost = !isLocalRealtimeHost(browserHost)
-  const host = isPublicHost && isLocalRealtimeHost(configuredHost) ? browserHost : (configuredHost || browserHost)
+  const fallbackHost = isLocalRealtimeHost(apiUrl.hostname) ? browserHost : apiUrl.hostname
+  const isPublicHost = !isLocalRealtimeHost(fallbackHost)
+  const host = isPublicHost && isLocalRealtimeHost(configuredHost) ? fallbackHost : (configuredHost || fallbackHost)
   const scheme = isPublicHost && isLocalRealtimeHost(configuredHost)
-    ? window.location.protocol.replace(':', '')
-    : (import.meta.env.VITE_REVERB_SCHEME ?? window.location.protocol.replace(':', '') ?? 'http')
+    ? apiUrl.protocol.replace(':', '')
+    : (import.meta.env.VITE_REVERB_SCHEME ?? apiUrl.protocol.replace(':', '') ?? window.location.protocol.replace(':', '') ?? 'http')
   const port = isPublicHost && isLocalRealtimeHost(configuredHost) && scheme === 'https'
     ? 443
     : Number(import.meta.env.VITE_REVERB_PORT ?? (scheme === 'https' ? 443 : 8080))
