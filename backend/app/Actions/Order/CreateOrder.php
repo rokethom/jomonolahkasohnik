@@ -198,10 +198,6 @@ class CreateOrder
             ->filter(function (Driver $driver) use ($order): bool {
                 $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());
                 if ($this->finance->depositBlocksOrders($deposit)) {
-                    if ($driver->is_available) {
-                        $driver->forceFill(['is_available' => false])->save();
-                    }
-
                     return false;
                 }
 

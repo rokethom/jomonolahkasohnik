@@ -35,12 +35,9 @@ class DriverController extends Controller
 {
     public function bootstrap(Request $request, MultiOrderService $multiOrder, SettingService $settings, DriverFinanceService $finance, OrderService $orders, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
-        $orders->cancelExpiredCreatedOrders();
-
         $driver = $this->ensureDriver($request)->load('user.branch');
         $deposit = $finance->monthlyDeposit($driver);
         $billingDeposit = $finance->monthlyDeposit($driver, now()->subMonth());
-        $driver = $this->syncAvailabilityForFinance($driver, $billingDeposit);
         $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
 
         $orders = Order::query()
@@ -178,11 +175,8 @@ class DriverController extends Controller
 
     public function ordersFeed(Request $request, MultiOrderService $multiOrder, DriverFinanceService $finance, OrderService $ordersService, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
-        $ordersService->cancelExpiredCreatedOrders();
-
         $driver = $this->ensureDriver($request)->load('user.branch');
         $billingDeposit = $finance->monthlyDeposit($driver, now()->subMonth());
-        $driver = $this->syncAvailabilityForFinance($driver, $billingDeposit);
         $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
         $branchId = $driver->user?->branch_id;
 

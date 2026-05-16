@@ -1801,6 +1801,7 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const detailRef = useRef<HTMLElement | null>(null)
   const canEditUser = (user: User) => permissions.can_manage_users && user.id !== me.id && (['admin', 'gm'].includes(me.role) || !['admin', 'gm'].includes(user.role))
+  const canAdministerUser = (user: User) => canEditUser(user) && (['admin', 'gm'].includes(me.role) || permissions.names.includes('create_user'))
   const selectedUser = useMemo(() => users.find((user) => user.id === selectedUserId) ?? users[0] ?? null, [selectedUserId, users])
   useEffect(() => {
     if (users.length === 0) {
@@ -1895,9 +1896,9 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
                 <span>Aksi akun</span>
                 <div>
                   {canEditUser(selectedUser) && <button className="mini-button" type="button" onClick={() => setEditingUser(selectedUser)}>Edit</button>}
-                  {canEditUser(selectedUser) && <button className="mini-button" type="button" onClick={() => void resetPassword(selectedUser)}>Reset Pass</button>}
-                  {canEditUser(selectedUser) && selectedUser.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(selectedUser)}>Reset Token</button>}
-                  {canEditUser(selectedUser) && <button className="mini-button reject" type="button" onClick={() => void destroy(selectedUser)}>Delete</button>}
+                  {canAdministerUser(selectedUser) && <button className="mini-button" type="button" onClick={() => void resetPassword(selectedUser)}>Reset Pass</button>}
+                  {canAdministerUser(selectedUser) && selectedUser.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(selectedUser)}>Reset Token</button>}
+                  {canAdministerUser(selectedUser) && <button className="mini-button reject" type="button" onClick={() => void destroy(selectedUser)}>Delete</button>}
                   {!canEditUser(selectedUser) && <span className="status muted">Akun ini tidak dapat diedit oleh role Anda.</span>}
                 </div>
               </div>

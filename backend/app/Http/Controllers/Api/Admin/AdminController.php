@@ -2756,7 +2756,9 @@ class AdminController extends Controller
             'assignable_roles' => collect($user->role->assignableRoles())->map->value->all(),
             'can_manage_policy' => $isAdminOrGm || $user->hasPermission('edit_tarif'),
             'can_manage_ring_pricing' => $isAdminOrGm || $user->hasPermission('edit_tarif'),
-            'can_manage_users' => $isAdminOrGm || $user->hasPermission('create_user'),
+            'can_manage_users' => $isAdminOrGm
+                || $user->hasPermission('create_user')
+                || in_array($user->role, [UserRole::HRD, UserRole::Manager, UserRole::SPV], true),
             'can_suspend_drivers' => $isAdminOrGm || $user->hasPermission('suspend_driver'),
             'can_unsuspend_drivers' => $isAdminOrGm || $user->hasPermission('unsuspend_driver'),
             'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
@@ -2789,6 +2791,10 @@ class AdminController extends Controller
     private function canManageUser(User $actor, User $target): bool
     {
         if ($actor->is($target)) {
+            return false;
+        }
+
+        if (! in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true)) {
             return false;
         }
 
