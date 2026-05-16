@@ -27,6 +27,7 @@ class JojoBotService
         private readonly KeywordParserService $keywordParsers,
         private readonly GeojsonRegionLookupService $geojsonRegions,
         private readonly LocationPoiService $locationPois,
+        private readonly AiAliasMapService $aliasMaps,
         private readonly SettingService $settings,
     ) {
     }
@@ -648,6 +649,10 @@ class JojoBotService
             return $this->pricingGeocodeMemo[$memoKey] = $regionGeocode;
         }
 
+        if ($aliasFallback = $this->geocodeAliasCanonicalForPricing($address, $branch)) {
+            return $this->pricingGeocodeMemo[$memoKey] = $aliasFallback;
+        }
+
         if ($this->settings->bool('google_maps_geocode_enabled', false)) {
             $googleResult = $this->geocoding->geocodeNearBranchGoogleOnly(
                 $address,
@@ -667,6 +672,43 @@ class JojoBotService
             self::PRICING_GEOCODE_CANDIDATES,
             120,
         );
+    }
+
+    private function geocodeAliasCanonicalForPricing(string $address, ?Branch $branch): ?array
+    {
+        $alias = $this->aliasMaps->resolve($address, $branch?->id);
+        if ($alias === null) {
+            return null;
+        }
+
+        $canonical = trim((string) $alias->canonical_name);
+        if ($canonical === '' || $this->locationPois->normalize($canonical) === $this->locationPois->normalize($address)) {
+            return null;
+        }
+
+        $result = $this->geocoding->geocodeNearBranchLimited(
+            $canonical,
+            $branch,
+            self::PRICING_GEOCODE_CANDIDATES,
+            120,
+        );
+
+        if ($result === null) {
+            return null;
+        }
+
+        $alias->forceFill([
+            'hit_count' => $alias->hit_count + 1,
+            'last_used_at' => now(),
+        ])->save();
+
+        return [
+            ...$result,
+            'provider' => 'ai_alias_canonical_geocode',
+            'ai_alias_map_id' => $alias->id,
+            'ai_alias_canonical_name' => $alias->canonical_name,
+            'query' => $result['query'] ?? $canonical,
+        ];
     }
 
     private function pickupPointFromPayload(array $payload, string $address, ?User $user): ?array

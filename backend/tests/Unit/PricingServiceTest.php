@@ -790,6 +790,51 @@ class PricingServiceTest extends TestCase
         $this->assertSame(114.051, $result['lng']);
     }
 
+    public function test_jojobot_geocodes_alias_canonical_when_alias_has_no_geojson_region(): void
+    {
+        $branch = Branch::query()->create([
+            'branch_code' => 'STB-ALIAS-CANONICAL',
+            'name' => 'Situbondo',
+            'area' => 'Kota Alias Canonical',
+            'latitude' => -7.70924228,
+            'longitude' => 113.99408479,
+            'radius_km' => 5,
+        ]);
+
+        AiAliasMap::query()->create([
+            'branch_id' => $branch->id,
+            'geojson_region_id' => null,
+            'canonical_name' => 'Panji',
+            'aliases' => ['Griya Panji Mulya Blok C9', 'perum griya panji mulya'],
+            'source' => 'history',
+            'confidence' => 85,
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->mock(GeocodingService::class)
+            ->shouldReceive('geocodeNearBranchLimited')
+            ->once()
+            ->withArgs(fn (string $address, ?Branch $givenBranch): bool => $address === 'Panji' && $givenBranch?->id === $branch->id)
+            ->andReturn([
+                'lat' => -7.6975156,
+                'lng' => 114.0305382,
+                'formatted_address' => 'Panji, Situbondo, Jawa Timur, Indonesia',
+                'provider' => 'nominatim',
+                'query' => 'Panji Situbondo, Indonesia',
+            ]);
+
+        $service = app(JojoBotService::class);
+        $method = new \ReflectionMethod($service, 'geocodeForPricing');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, 'griya panji mulya', $branch);
+
+        $this->assertSame('ai_alias_canonical_geocode', $result['provider']);
+        $this->assertSame('Panji', $result['ai_alias_canonical_name']);
+        $this->assertSame(114.0305382, $result['lng']);
+    }
+
     public function test_ai_alias_map_resolves_common_typo(): void
     {
         $branch = Branch::query()->create([
