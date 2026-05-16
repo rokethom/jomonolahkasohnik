@@ -735,7 +735,7 @@ function App() {
     <Shell>
       <ToastStack toasts={toasts} />
       {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchRequestOrders={branchRequestOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
-      {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
+      {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} mode={chatTarget} />}
       {view === 'history' && <History orders={orders} loading={apiState.loading} />}
@@ -1144,9 +1144,8 @@ function PaidAmountRow({ value, paidAt }: { value: number; paidAt?: string | nul
   )
 }
 
-function OrderList({ orders, loading, api, onAction, onRefreshOrders }: { orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
+function OrderList({ orders, loading, api, onAction }: { orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void> }) {
   const { driver, finance, isOnline } = useDriverStore()
-  const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const visibleOrders = useMemo(
     () => orders.filter((order) => (isActiveOrder(order) && !isCrewOpportunity(order)) || (canReceiveOrders && ((order.status === 'pending' && order.eligibility?.can_accept !== false) || isCrewOpportunity(order)))).sort(sortNewestOrderFirst),
@@ -1155,7 +1154,7 @@ function OrderList({ orders, loading, api, onAction, onRefreshOrders }: { orders
 
   return (
     <section className="page">
-      <PageTitle title="Order List" subtitle={orderSyncing ? 'Sinkron order terbaru...' : 'Order aktif dan terbaru untuk driver.'} />
+      <PageTitle title="Order List" subtitle="Order aktif dan terbaru untuk driver." />
       {!canReceiveOrders && <div className="notice-card warning">Status OFF atau rule setoran/suspend aktif. Order baru tidak ditampilkan.</div>}
       {loading && <SkeletonCards />}
       {!loading && visibleOrders.length === 0 && <EmptyState title="Kosong" copy="Belum ada order aktif atau order baru." />}
