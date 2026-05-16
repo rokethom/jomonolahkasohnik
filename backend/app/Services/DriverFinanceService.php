@@ -40,9 +40,9 @@ class DriverFinanceService
             ->first();
 
         if ($this->periodIsBeforeDriverJoined($driver, $end) && ! (bool) data_get($existing?->breakdown, 'manual_override', false)) {
-            $bpjs = $this->bpjsPremiumForBaseDeposit(0);
-            $bpjsJht = $this->bpjsJhtForDriver($driver);
-            $total = $bpjs + $bpjsJht;
+            $bpjs = 0;
+            $bpjsJht = 0;
+            $total = 0;
 
             return DriverDeposit::query()->updateOrCreate(
                 ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
@@ -56,7 +56,7 @@ class DriverFinanceService
                     'due_date' => $this->unpaidSuspendDate($month)->toDateString(),
                     'paid_amount' => 0,
                     'paid_at' => null,
-                    'status' => $total > 0 ? 'unpaid' : 'paid',
+                    'status' => 'paid',
                     'breakdown' => [
                         'before_driver_joined' => true,
                         'handle_hari_15' => 0,
@@ -67,7 +67,7 @@ class DriverFinanceService
                         'bansos' => 0,
                         'bpjs' => $bpjs,
                         'bpjs_jht' => $bpjsJht,
-                        'note' => 'Periode ini sebelum driver terdaftar. BPJS/JHT tetap mengikuti aturan hardcode untuk kebutuhan migrasi setoran.',
+                        'note' => 'Periode ini sebelum driver terdaftar. Tidak dibuat tagihan BPJS/JHT/Bansos dan status dianggap paid.',
                     ],
                 ],
             );
