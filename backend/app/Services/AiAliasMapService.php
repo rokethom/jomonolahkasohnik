@@ -25,7 +25,7 @@ class AiAliasMapService
         }
 
         $branchIds = $this->branchScopeIds($branchId);
-        $cacheKey = 'ai-alias-map:'.($branchIds === [] ? 'global' : implode('-', $branchIds)).':'.sha1($needle);
+        $cacheKey = 'ai-alias-map:v2:'.($branchIds === [] ? 'global' : implode('-', $branchIds)).':'.sha1($needle);
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchIds): ?AiAliasMap {
             /** @var Collection<int, array{map: AiAliasMap, score: int}> $matches */
@@ -133,6 +133,10 @@ class AiAliasMapService
 
     private function score(string $needle, AiAliasMap $map): int
     {
+        if ($this->isPricingCoverageMap($map) && ! $this->isRingQuery($needle)) {
+            return 0;
+        }
+
         $terms = collect([$map->canonical_name, ...($map->aliases ?? [])])
             ->map(fn (mixed $value): string => $this->normalize((string) $value))
             ->filter()
@@ -147,6 +151,10 @@ class AiAliasMapService
             }
 
             if ($this->isBroadContextTerm($term, $map)) {
+                continue;
+            }
+
+            if (! $this->isUsableLooseTerm($term)) {
                 continue;
             }
 
@@ -173,6 +181,21 @@ class AiAliasMapService
         }
 
         return $best + ((int) $map->priority * 10) + (int) $map->confidence;
+    }
+
+    private function isPricingCoverageMap(AiAliasMap $map): bool
+    {
+        return preg_match('/^ring\s*\d+/u', $this->normalize((string) $map->canonical_name)) === 1;
+    }
+
+    private function isRingQuery(string $needle): bool
+    {
+        return preg_match('/\bring\s*\d*\b/u', $needle) === 1;
+    }
+
+    private function isUsableLooseTerm(string $term): bool
+    {
+        return mb_strlen($term) >= 3;
     }
 
     private function defaultAliasesForRegion(GeojsonRegion $region): array

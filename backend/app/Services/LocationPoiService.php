@@ -22,7 +22,7 @@ class LocationPoiService
         }
 
         $branchIds = $this->branchScopeIds($branchId);
-        $cacheKey = 'location-poi:'.($branchIds === [] ? 'global' : implode('-', $branchIds)).':'.sha1($needle);
+        $cacheKey = 'location-poi:v2:'.($branchIds === [] ? 'global' : implode('-', $branchIds)).':'.sha1($needle);
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($needle, $branchIds): ?LocationPoi {
             $matches = LocationPoi::query()
@@ -114,6 +114,10 @@ class LocationPoiService
 
     private function score(string $needle, LocationPoi $poi): int
     {
+        if ($this->isPricingCoveragePoi($poi) && ! $this->isRingQuery($needle)) {
+            return 0;
+        }
+
         $terms = collect([$poi->name, ...($poi->aliases ?? [])])
             ->map(fn (mixed $value): string => $this->normalize((string) $value))
             ->filter()
@@ -124,6 +128,10 @@ class LocationPoiService
         foreach ($terms as $term) {
             if ($term === $needle) {
                 $best = max($best, 100000);
+                continue;
+            }
+
+            if (! $this->isUsableLooseTerm($term)) {
                 continue;
             }
 
@@ -139,6 +147,23 @@ class LocationPoiService
         }
 
         return $best === 0 ? 0 : $best + ((int) $poi->priority * 10) + (int) $poi->confidence;
+    }
+
+    private function isPricingCoveragePoi(LocationPoi $poi): bool
+    {
+        return str_starts_with($this->normalize((string) $poi->name), 'ring ')
+            || in_array(strtolower((string) $poi->source), ['geojson', 'generated'], true)
+                && preg_match('/^ring\s*\d+/u', $this->normalize((string) $poi->name)) === 1;
+    }
+
+    private function isRingQuery(string $needle): bool
+    {
+        return preg_match('/\bring\s*\d*\b/u', $needle) === 1;
+    }
+
+    private function isUsableLooseTerm(string $term): bool
+    {
+        return mb_strlen($term) >= 3;
     }
 
     private function withoutAddressNoise(string $value): string

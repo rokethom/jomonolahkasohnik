@@ -658,7 +658,9 @@ class JojoBotService
             );
 
             if ($googleResult !== null) {
-                return $this->pricingGeocodeMemo[$memoKey] = $googleResult;
+                if ($this->isGeocodeRelevantForPricing($address, $googleResult)) {
+                    return $this->pricingGeocodeMemo[$memoKey] = $googleResult;
+                }
             }
         }
 
@@ -670,10 +672,175 @@ class JojoBotService
         );
 
         if ($result !== null) {
-            return $this->pricingGeocodeMemo[$memoKey] = $result;
+            if ($this->isGeocodeRelevantForPricing($address, $result)) {
+                return $this->pricingGeocodeMemo[$memoKey] = $result;
+            }
+        }
+
+        if ($regionalResult = $this->geocodeRegionalPoiForPricing($address, $branch)) {
+            return $this->pricingGeocodeMemo[$memoKey] = $regionalResult;
         }
 
         return $this->pricingGeocodeMemo[$memoKey] = $this->geocodeAliasCanonicalForPricing($address, $branch);
+    }
+
+    private function geocodeRegionalPoiForPricing(string $address, ?Branch $branch): ?array
+    {
+        if (! $this->hasRegionalPoiSignal($address)) {
+            return null;
+        }
+
+        foreach ($this->regionalGeocodeCandidates($address, $branch) as $candidate) {
+            try {
+                $geocode = $this->geocoding->geocode($candidate, $this->geocodingContext($branch));
+                $result = [
+                    ...$geocode,
+                    'query' => $candidate,
+                    'provider' => 'regional_'.($geocode['provider'] ?? 'geocode'),
+                ];
+
+                if ($this->isRegionalGeocodeTooFar($result, $branch)) {
+                    continue;
+                }
+
+                if (! $this->isGeocodeRelevantForPricing($address, $result)) {
+                    continue;
+                }
+
+                return $result;
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    private function hasRegionalPoiSignal(string $address): bool
+    {
+        $normalized = $this->locationPois->normalize($address);
+
+        return preg_match('/\b(?:pelabuhan|puskesmas|rumah sakit|rsud|rs|terminal|stasiun|bandara|pasar|sekolah|smp|sma|sdn|polsek|polres|kantor|alun alun|taman)\b/u', $normalized) === 1;
+    }
+
+    private function regionalGeocodeCandidates(string $address, ?Branch $branch): array
+    {
+        $localName = $this->stripPoiWords($address);
+        $branchName = trim((string) $branch?->name);
+        $branchArea = trim((string) $branch?->area);
+
+        return collect([
+            $address.', Jawa Timur, Indonesia',
+            $address.', Indonesia',
+            $branchName !== '' ? $address.', '.$branchName.', Indonesia' : null,
+            $branchArea !== '' && $branchName !== '' ? $address.', '.$branchArea.', '.$branchName.', Indonesia' : null,
+            $localName !== $address && $branchName !== '' ? $localName.', '.$branchName.', Indonesia' : null,
+            $localName !== $address && $branchArea !== '' && $branchName !== '' ? $localName.', '.$branchArea.', '.$branchName.', Indonesia' : null,
+            $localName !== $address ? $localName.', Jawa Timur, Indonesia' : null,
+            $address,
+        ])
+            ->filter()
+            ->map(fn (string $value): string => trim($value))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function stripPoiWords(string $address): string
+    {
+        return str($address)
+            ->lower()
+            ->replaceMatches('/\b(?:puskesmas|rumah sakit|rsud|rs|kantor|kecamatan|desa|kelurahan|pasar|taman|terminal|stasiun|sekolah|smpn?|sman?|sdn?|polsek|polres)\b/u', ' ')
+            ->squish()
+            ->toString();
+    }
+
+    private function isGeocodeRelevantForPricing(string $address, array $result): bool
+    {
+        $tokens = $this->importantLocationTokens($address);
+        if ($tokens === []) {
+            return true;
+        }
+
+        $haystack = $this->locationPois->normalize(implode(' ', array_filter([
+            $result['formatted_address'] ?? null,
+            $result['location_poi_name'] ?? null,
+            $result['geojson_region_name'] ?? null,
+            $result['ai_alias_canonical_name'] ?? null,
+        ])));
+
+        foreach ($tokens as $token) {
+            if (! str_contains($haystack, $token)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function importantLocationTokens(string $address): array
+    {
+        $normalized = $this->locationPois->normalize($address);
+
+        return collect(preg_split('/\s+/u', $normalized) ?: [])
+            ->map(fn (string $token): string => trim($token))
+            ->filter(fn (string $token): bool => mb_strlen($token) >= 4)
+            ->reject(fn (string $token): bool => in_array($token, [
+                'jalan',
+                'jln',
+                'gang',
+                'blok',
+                'nomor',
+                'pelabuhan',
+                'puskesmas',
+                'rumah',
+                'sakit',
+                'rsud',
+                'terminal',
+                'stasiun',
+                'bandara',
+                'pasar',
+                'taman',
+                'sekolah',
+                'smpn',
+                'sman',
+                'sdn',
+                'polsek',
+                'polres',
+                'kantor',
+            ], true))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function isRegionalGeocodeTooFar(array $result, ?Branch $branch): bool
+    {
+        if (! $branch || ! is_numeric($branch->latitude) || ! is_numeric($branch->longitude)) {
+            return false;
+        }
+
+        $lat = $result['lat'] ?? null;
+        $lng = $result['lng'] ?? null;
+        if (! is_numeric($lat) || ! is_numeric($lng)) {
+            return true;
+        }
+
+        return $this->haversineKm((float) $branch->latitude, (float) $branch->longitude, (float) $lat, (float) $lng) > 180;
+    }
+
+    private function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $latDistance = deg2rad($lat2 - $lat1);
+        $lngDistance = deg2rad($lng2 - $lng1);
+        $a = sin($latDistance / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+            * sin($lngDistance / 2) ** 2;
+
+        return 6371.0 * (2 * atan2(sqrt($a), sqrt(1 - $a)));
     }
 
     private function geocodeAliasCanonicalForPricing(string $address, ?Branch $branch): ?array

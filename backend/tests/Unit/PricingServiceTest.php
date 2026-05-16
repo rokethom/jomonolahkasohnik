@@ -6,6 +6,7 @@ use App\Models\PricingKeywordRule;
 use App\Models\AiAliasMap;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
+use App\Models\LocationPoi;
 use App\Models\PriceSetting;
 use App\Models\RingPricingRule;
 use App\Services\JojoBotService;
@@ -14,6 +15,7 @@ use App\Services\GeocodingService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\PricingService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Tests\TestCase;
@@ -56,6 +58,77 @@ class PricingServiceTest extends TestCase
         $this->assertSame(10000, $quote['service_charge']);
         $this->assertSame(25800, $quote['total_before_round']);
         $this->assertSame(26000, $quote['final_price']);
+    }
+
+    public function test_location_poi_does_not_match_short_alias_inside_real_address(): void
+    {
+        Cache::flush();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STBASB-TST',
+            'name' => 'Situbondo',
+            'area' => 'Asembagus',
+            'latitude' => -7.75,
+            'longitude' => 114.21,
+            'radius_km' => 25,
+        ]);
+
+        LocationPoi::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Ring 1 Asembagus',
+            'aliases' => ['ra'],
+            'latitude' => -7.75,
+            'longitude' => 113.84,
+            'source' => 'geojson',
+            'confidence' => 85,
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->assertNull(app(\App\Services\LocationPoiService::class)->resolve('pesanggrahan', $branch->id));
+    }
+
+    public function test_ai_alias_map_does_not_use_pricing_ring_as_location(): void
+    {
+        Cache::flush();
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STBASB-ALIAS',
+            'name' => 'Situbondo',
+            'area' => 'Asembagus',
+            'latitude' => -7.75,
+            'longitude' => 114.21,
+            'radius_km' => 25,
+        ]);
+
+        $region = GeojsonRegion::query()->create([
+            'branch_id' => $branch->id,
+            'name' => 'Ring 3 Asembagus',
+            'geojson' => [],
+            'geometry_type' => 'Polygon',
+            'coordinates' => [],
+            'centroid_lat' => -7.75,
+            'centroid_lng' => 113.82,
+            'min_lat' => -7.8,
+            'max_lat' => -7.7,
+            'min_lng' => 113.8,
+            'max_lng' => 113.9,
+            'version' => 1,
+            'is_active' => true,
+        ]);
+
+        AiAliasMap::query()->create([
+            'branch_id' => $branch->id,
+            'geojson_region_id' => $region->id,
+            'canonical_name' => 'Ring 3 Asembagus',
+            'aliases' => ['Pelabuhan ketapang'],
+            'source' => 'generated',
+            'confidence' => 85,
+            'priority' => 10,
+            'is_active' => true,
+        ]);
+
+        $this->assertNull(app(AiAliasMapService::class)->resolve('pelabuhan ketapang', $branch->id));
     }
 
     public function test_distance_pricing_requires_matching_active_range(): void
