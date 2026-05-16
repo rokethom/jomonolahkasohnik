@@ -40,34 +40,39 @@ class DriverFinanceService
             ->first();
 
         if ($this->periodIsBeforeDriverJoined($driver, $end) && ! (bool) data_get($existing?->breakdown, 'manual_override', false)) {
-            $bpjs = 0;
-            $bpjsJht = 0;
-            $total = 0;
+            $bansos = $this->bansos($driver);
+            $bpjs = self::BPJS_PREMI_AMOUNT;
+            $bpjsJht = $this->bpjsJhtForDriver($driver);
+            $total = $bansos + $bpjs + $bpjsJht;
+            $paidAmount = min((int) ($existing?->paid_amount ?? 0), $total);
+            $paidAt = $paidAmount > 0 ? ($existing?->paid_at ?? now()) : null;
+            $status = $total > 0 && $paidAmount < $total ? 'unpaid' : 'paid';
 
             return DriverDeposit::query()->updateOrCreate(
                 ['driver_id' => $driver->id, 'year' => (int) $month->year, 'month' => (int) $month->month],
                 [
                     'handle_day_15' => 0,
                     'handle_day_30' => 0,
-                    'bansos' => 0,
+                    'bansos' => $bansos,
                     'bpjs' => $bpjs,
                     'bpjs_jht' => $bpjsJht,
                     'total' => $total,
                     'due_date' => $this->unpaidSuspendDate($month)->toDateString(),
-                    'paid_amount' => 0,
-                    'paid_at' => null,
-                    'status' => 'paid',
+                    'paid_amount' => $paidAmount,
+                    'paid_at' => $paidAt,
+                    'status' => $status,
                     'breakdown' => [
                         'before_driver_joined' => true,
+                        'driver_activation_charge' => true,
                         'handle_hari_15' => 0,
                         'handle_hari_30' => 0,
                         'setoran_hingga_hari_ini' => 0,
                         'tagihan_bulan_sebelumnya' => 0,
                         'cashback_bulan_sebelumnya' => 0,
-                        'bansos' => 0,
+                        'bansos' => $bansos,
                         'bpjs' => $bpjs,
                         'bpjs_jht' => $bpjsJht,
-                        'note' => 'Periode ini sebelum driver terdaftar. Tidak dibuat tagihan BPJS/JHT/Bansos dan status dianggap paid.',
+                        'note' => 'Tagihan aktivasi driver baru. Setoran order periode sebelum driver terdaftar tetap 0, tetapi BPJS/JHT/Bansos wajib dilunasi melalui tombol bayar/lunas.',
                     ],
                 ],
             );
