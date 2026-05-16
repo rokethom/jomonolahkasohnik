@@ -3388,6 +3388,22 @@
   line-height: 1.35;
 }
 
+.history-operator-chat-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: #0077ff;
+  color: #fff;
+  font-weight: 900;
+  box-shadow: 0 12px 24px rgba(0, 119, 255, 0.2);
+}
+
 .order-closed-modal .primary-action {
   width: 100%;
   min-height: 44px;

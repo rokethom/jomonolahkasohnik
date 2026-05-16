@@ -568,6 +568,7 @@ function App() {
     const target = readNotificationOpenTarget()
     return target?.screen === 'cs-chat' ? target.conversationId ?? null : null
   })
+  const [csInitialOrderId, setCsInitialOrderId] = useState<number | null>(null)
   const [screen, setScreen] = useState<Screen>(() => token ? window.location.pathname === '/profile/setup' ? 'profile-setup' : 'home' : 'login')
   const [services, setServices] = useState<DynamicService[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
@@ -786,6 +787,12 @@ function App() {
       screenPath(screen),
     )
   }, [screen, store.user, token])
+
+  useEffect(() => {
+    if (screen !== 'cs-chat' && csInitialOrderId !== null) {
+      setCsInitialOrderId(null)
+    }
+  }, [csInitialOrderId, screen])
 
   useEffect(() => {
     void fetchPublicSettings()
@@ -1461,13 +1468,18 @@ function App() {
         />
       )}
       {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
-      {screen === 'cs-chat' && <CsChatScreen initialConversationId={csConversationFromNotification} />}
+      {screen === 'cs-chat' && <CsChatScreen initialConversationId={csConversationFromNotification} initialOrderId={csInitialOrderId} />}
       {screen === 'history' && (
         <HistoryScreen
           orders={store.orders}
           onOpenDriverChat={(order) => {
             setActiveOrder(order)
             setScreen('driver-chat')
+          }}
+          onOpenOperatorChat={(order) => {
+            setCsConversationFromNotification(null)
+            setCsInitialOrderId(order.id)
+            setScreen('cs-chat')
           }}
           onOrdersChanged={(orders) => setOrders(orders)}
           onExtendWait={(order) => void extendTimeoutOrderWait(order)}
@@ -3365,7 +3377,7 @@ function DriverNameTagModal({ name, phone, photoUrl, onClose }: { name: string; 
   )
 }
 
-function CsChatScreen({ initialConversationId }: { initialConversationId?: number | null }) {
+function CsChatScreen({ initialConversationId, initialOrderId }: { initialConversationId?: number | null; initialOrderId?: number | null }) {
   const store = useCustomerStore()
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId ?? null)
   const [conversation, setConversation] = useState<ChatConversation | null>(null)
@@ -3388,6 +3400,12 @@ function CsChatScreen({ initialConversationId }: { initialConversationId?: numbe
     setMessages([])
     setError('')
   }, [conversationId, initialConversationId])
+
+  useEffect(() => {
+    if (!initialOrderId) return
+    const order = store.orders.find((row) => row.id === initialOrderId)
+    if (order) setSelectedOrder(order)
+  }, [initialOrderId, store.orders])
 
   const loadCsMessages = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -3582,11 +3600,13 @@ function ImagePreviewModal({ imageUrl, onClose, downloadLabel }: { imageUrl: str
 function OrderDetailModal({
   order,
   onClose,
+  onOpenOperatorChat,
   onExtendWait,
   onKeepCancelled,
 }: {
   order: Order
   onClose: () => void
+  onOpenOperatorChat?: (order: Order) => void
   onExtendWait?: (order: Order) => void
   onKeepCancelled?: (order: Order) => void
 }) {
@@ -3594,6 +3614,7 @@ function OrderDetailModal({
   const purchaseOrder = isPurchaseOrder(order)
   const pickupLabel = purchaseOrder ? 'Pembelian' : 'Jemput'
   const destinationLabel = purchaseOrder ? 'Alamat Antar' : 'Tujuan'
+  const showOperatorChat = shouldOfferOperatorChat(order)
 
   return (
     <div className="mini-modal-backdrop" onClick={onClose}>
@@ -3629,6 +3650,19 @@ function OrderDetailModal({
             onKeepCancelled={onKeepCancelled}
             block
           />
+        )}
+        {showOperatorChat && (
+          <button
+            className="history-operator-chat-button"
+            type="button"
+            onClick={() => {
+              onClose()
+              onOpenOperatorChat?.(order)
+            }}
+          >
+            <MessageCircle size={18} />
+            Chat Operator
+          </button>
         )}
       </section>
     </div>
@@ -3718,12 +3752,14 @@ function OrderClosedModal({ message, onClose }: { message: string; onClose: () =
 function HistoryScreen({
   orders,
   onOpenDriverChat,
+  onOpenOperatorChat,
   onOrdersChanged,
   onExtendWait,
   onKeepCancelled,
 }: {
   orders: Order[]
   onOpenDriverChat: (order: Order) => void
+  onOpenOperatorChat: (order: Order) => void
   onOrdersChanged: (orders: Order[]) => void
   onExtendWait: (order: Order) => void
   onKeepCancelled: (order: Order) => void
@@ -3820,6 +3856,7 @@ function HistoryScreen({
         <OrderDetailModal
           order={detailOrder}
           onClose={() => setDetailOrder(null)}
+          onOpenOperatorChat={onOpenOperatorChat}
           onExtendWait={onExtendWait}
           onKeepCancelled={onKeepCancelled}
         />
@@ -4404,6 +4441,15 @@ function statusLabel(status?: string) {
 
 function isAcceptedOrder(order: Order) {
   return ['accepted', 'driver_accepted', 'assigned', 'driver_on_the_way', 'arrived_pickup', 'on_going'].includes(String(order.status).toLowerCase())
+}
+
+function shouldOfferOperatorChat(order: Order) {
+  const status = String(order.status ?? '').toLowerCase()
+  const hasDriver = driverNameFromOrder(order) !== '-' || Boolean(order.driver?.id || order.driver?.user_id)
+  if (hasDriver) return false
+
+  return ['created', 'pending', 'searching_driver'].includes(status)
+    || isDriverTimeoutCancelledOrder(order)
 }
 
 function isCompletedStatus(status?: string) {
