@@ -2749,6 +2749,7 @@ class AdminController extends Controller
     {
         $permissionNames = $user->permissions();
         $isAdminOrGm = in_array($user->role, [UserRole::Admin, UserRole::GM], true);
+        $canManageDriverOperations = in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true);
 
         $permissions = [
             'backend_access' => $isAdminOrGm,
@@ -2761,6 +2762,8 @@ class AdminController extends Controller
                 || in_array($user->role, [UserRole::HRD, UserRole::Manager, UserRole::SPV], true),
             'can_suspend_drivers' => $isAdminOrGm || $user->hasPermission('suspend_driver'),
             'can_unsuspend_drivers' => $isAdminOrGm || $user->hasPermission('unsuspend_driver'),
+            'can_manage_driver_deposit' => $canManageDriverOperations,
+            'can_update_driver_config' => $canManageDriverOperations,
             'can_manage_driver_auth' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)
                 && ($isAdminOrGm || $user->hasPermission('suspend_driver')),
             'can_manage_all_branches' => app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($user->role),

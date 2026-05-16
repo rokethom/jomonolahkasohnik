@@ -110,7 +110,12 @@ class AdminRoleMenuOverrideService
             $views[] = 'users';
         }
 
-        if (($permissions['can_suspend_drivers'] ?? false) || ($permissions['can_unsuspend_drivers'] ?? false)) {
+        if (
+            ($permissions['can_suspend_drivers'] ?? false)
+            || ($permissions['can_unsuspend_drivers'] ?? false)
+            || ($permissions['can_manage_driver_deposit'] ?? false)
+            || ($permissions['can_update_driver_config'] ?? false)
+        ) {
             $views[] = 'drivers';
         }
 

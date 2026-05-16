@@ -381,6 +381,8 @@ type Permissions = {
   can_manage_all_branches?: boolean
   can_suspend_drivers: boolean
   can_unsuspend_drivers?: boolean
+  can_manage_driver_deposit?: boolean
+  can_update_driver_config?: boolean
   can_manage_driver_auth?: boolean
   can_manage_system_settings: boolean
   can_manage_cms?: boolean
@@ -635,7 +637,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   }
   if (permissions.can_assign_driver) views.add('drivers')
   if (permissions.can_manage_users) views.add('users')
-  if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers) views.add('drivers')
+  if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers || permissions.can_manage_driver_deposit || permissions.can_update_driver_config) views.add('drivers')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) {
     views.add('keyword-parsers')
@@ -1965,6 +1967,8 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
     () => filteredDrivers.find((driver) => driver.id === selectedDriverId) ?? filteredDrivers[0] ?? null,
     [filteredDrivers, selectedDriverId],
   )
+  const canManageDriverDeposit = permissions.can_manage_driver_deposit ?? permissions.can_suspend_drivers
+  const canUpdateDriverConfig = permissions.can_update_driver_config ?? permissions.can_suspend_drivers
 
   useEffect(() => {
     if (filteredDrivers.length === 0) {
@@ -2142,11 +2146,11 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                     <div>
                       <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id} onClick={() => void suspend(selectedDriver, 1, 'suspended')}>1h</button>
                       <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id} onClick={() => void suspend(selectedDriver, 12, 'suspended')}>12h</button>
-                      <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id || selectedDriver.deposit_status === 'unpaid'} onClick={() => void markDeposit(selectedDriver, 'unpaid')}>Unpaid</button>
+                      {canManageDriverDeposit && <button className="mini-button reject" type="button" disabled={!selectedDriver.driver_id || selectedDriver.deposit_status === 'unpaid'} onClick={() => void markDeposit(selectedDriver, 'unpaid')}>Unpaid</button>}
                     </div>
                   </div>
                 )}
-                {permissions.can_suspend_drivers && (
+                {canManageDriverDeposit && (
                   <div className="driver-action-group">
                     <span>Setoran</span>
                     <div>
@@ -2158,7 +2162,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
                 <div className="driver-action-group">
                   <span>Akun</span>
                   <div>
-                    {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => setConfigDriver(selectedDriver)}>Config</button>}
+                    {canUpdateDriverConfig && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => setConfigDriver(selectedDriver)}>Config</button>}
                     {permissions.can_suspend_drivers && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => void resetToken(selectedDriver)}>Reset Token</button>}
                     {permissions.can_manage_driver_auth && <button className="mini-button" type="button" disabled={!selectedDriver.driver_id} onClick={() => setAuthDriver(selectedDriver)}>Google Auth</button>}
                     {permissions.can_unsuspend_drivers && selectedDriver.driver_status !== 'active' && <button className="mini-button approve" type="button" onClick={() => void release(selectedDriver)}>Release</button>}
