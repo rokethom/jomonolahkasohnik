@@ -65,8 +65,6 @@ class UserLocationService
         $user->forceFill([
             'lat' => $lat,
             'lng' => $lng,
-            'branch_id' => $lockedBranch?->id,
-            'area_id' => $areaId,
         ])->save();
 
         Log::info('user_location.updated', [

@@ -737,6 +737,7 @@ function App() {
   const lastOperHandlePendingRef = useRef<number | null>(null)
 
   const clearAuthSession = useCallback(() => {
+    resetAdminEcho()
     localStorage.removeItem('admin_token')
     localStorage.removeItem('token')
     setToken('')
@@ -6051,6 +6052,7 @@ function makeApi(token: string, onUnauthorized?: () => void): ApiClient {
 }
 
 let adminEcho: Echo<'reverb'> | null = null
+let adminEchoToken = ''
 
 function isLocalRealtimeHost(host?: string) {
   return !host || ['localhost', '127.0.0.1', '::1'].includes(host)
@@ -6074,9 +6076,15 @@ function resolveRealtimeConfig() {
 }
 
 function makeEcho(token: string) {
-  if (adminEcho) return adminEcho
+  if (adminEcho && adminEchoToken === token) return adminEcho
+
+  if (adminEcho) {
+    adminEcho.disconnect()
+    adminEcho = null
+  }
 
   window.Pusher = Pusher
+  adminEchoToken = token
   const realtime = resolveRealtimeConfig()
   adminEcho = new Echo({
     broadcaster: 'reverb',
@@ -6096,6 +6104,12 @@ function makeEcho(token: string) {
   })
 
   return adminEcho
+}
+
+function resetAdminEcho() {
+  adminEcho?.disconnect()
+  adminEcho = null
+  adminEchoToken = ''
 }
 
 function RoleBadge({ role }: { role: Role }) {

@@ -57,7 +57,19 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 Broadcast::channel('orders', function ($user) {
-    return in_array($user->role->value ?? $user->role, ['admin', 'gm', 'hrd', 'manager', 'spv', 'operator', 'eksekutor', 'driver'], true);
+    $role = $user->role->value ?? $user->role;
+
+    if (! in_array($role, ['admin', 'gm', 'hrd', 'manager', 'spv', 'operator', 'eksekutor', 'driver'], true)) {
+        return false;
+    }
+
+    if ($role !== 'driver') {
+        return true;
+    }
+
+    $user->loadMissing('driver:id,user_id,status');
+
+    return $user->driver?->status === 'active';
 });
 
 Broadcast::channel('user.{id}', function ($user, $id) {
