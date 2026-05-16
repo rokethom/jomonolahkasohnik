@@ -4,6 +4,10 @@ import babel from '@rolldown/plugin-babel'
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    target: 'es2018',
+    cssTarget: 'safari15',
+  },
   server: {
     port: 5173,
     strictPort: true,
