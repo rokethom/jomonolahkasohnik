@@ -14,7 +14,9 @@ class FindDriver
 {
     public function handle(Order $order): array
     {
-        return DB::transaction(function () use ($order): array {
+        $rejectionMessage = null;
+
+        $result = DB::transaction(function () use ($order, &$rejectionMessage): array {
             $order = Order::query()->lockForUpdate()->findOrFail($order->id);
 
             if ($order->status->isTerminal()) {
@@ -28,18 +30,26 @@ class FindDriver
                     'cancelled_at' => now(),
                     'notes' => trim(((string) $order->notes)."\nAuto-cancel: driver timeout 10 menit."),
                 ]);
+                $freshOrder = $order->fresh(['user', 'driver']);
 
-                try {
-                    OrderStatusUpdated::dispatch($order->fresh(['user', 'driver']), $oldStatus, OrderStatus::Cancelled);
-                } catch (\Throwable $exception) {
-                    Log::warning('broadcast.order_status_failed', [
-                        'order_id' => $order->id,
-                        'status' => OrderStatus::Cancelled->value,
-                        'message' => $exception->getMessage(),
-                    ]);
-                }
+                DB::afterCommit(function () use ($freshOrder, $oldStatus): void {
+                    try {
+                        OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::Cancelled);
+                    } catch (\Throwable $exception) {
+                        Log::warning('broadcast.order_status_failed', [
+                            'order_id' => $freshOrder->id,
+                            'status' => OrderStatus::Cancelled->value,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                });
 
-                throw new RuntimeException('Order sudah timeout dan tidak bisa mencari driver.');
+                $rejectionMessage = 'Order sudah timeout dan tidak bisa mencari driver.';
+
+                return [
+                    'order' => $freshOrder,
+                    'driver' => null,
+                ];
             }
 
             $driver = Driver::query()
@@ -90,21 +100,30 @@ class FindDriver
 
             $oldStatus = $order->status;
             $order->update(['status' => OrderStatus::SearchingDriver]);
+            $freshOrder = $order->fresh(['user', 'driver']);
 
-            try {
-                OrderStatusUpdated::dispatch($order->fresh(['user', 'driver']), $oldStatus, OrderStatus::SearchingDriver);
-            } catch (\Throwable $exception) {
-                Log::warning('broadcast.order_status_failed', [
-                    'order_id' => $order->id,
-                    'status' => OrderStatus::SearchingDriver->value,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            DB::afterCommit(function () use ($freshOrder, $oldStatus): void {
+                try {
+                    OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.order_status_failed', [
+                        'order_id' => $freshOrder->id,
+                        'status' => OrderStatus::SearchingDriver->value,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            });
 
             return [
                 'order' => $order->fresh(['user', 'driver']),
                 'driver' => $driver,
             ];
         });
+
+        if ($rejectionMessage !== null) {
+            throw new RuntimeException($rejectionMessage);
+        }
+
+        return $result;
     }
 }

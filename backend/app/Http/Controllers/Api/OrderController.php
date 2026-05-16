@@ -234,14 +234,16 @@ class OrderController extends Controller
 
                 $freshOrder = $lockedOrder->fresh(['user', 'driver.user', 'items', 'payments', 'rating', 'adjustments.driver.user', 'crews.driver.user']);
 
-                try {
-                    OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
-                } catch (\Throwable $exception) {
-                    Log::warning('broadcast.order_wait_extended_failed', [
-                        'order_id' => $freshOrder->id,
-                        'message' => $exception->getMessage(),
-                    ]);
-                }
+                DB::afterCommit(function () use ($freshOrder, $oldStatus): void {
+                    try {
+                        OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                    } catch (\Throwable $exception) {
+                        Log::warning('broadcast.order_wait_extended_failed', [
+                            'order_id' => $freshOrder->id,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                });
 
                 return $freshOrder;
             });

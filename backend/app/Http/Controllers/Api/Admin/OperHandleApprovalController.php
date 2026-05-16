@@ -62,26 +62,28 @@ class OperHandleApprovalController extends Controller
                 ]);
 
                 if ($oldStatus && $order) {
-                    try {
-                        $freshOrder = $order->fresh(['user', 'driver.user']);
-                        OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
-                        $feedback = app(OrderFeedbackService::class)->statusUpdated($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
-                        $notifications->sendToUser(
-                            $freshOrder->user,
-                            $feedback['title'] ?? 'Order dialihkan ke driver lain',
-                            $feedback['message'] ?? 'Order sedang dicari ulang karena driver sebelumnya melakukan oper handle.',
-                            [
-                                'type' => 'order_oper_handle_approved',
+                    $freshOrder = $order->fresh(['user', 'driver.user']);
+                    DB::afterCommit(function () use ($freshOrder, $oldStatus, $notifications): void {
+                        try {
+                            OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                            $feedback = app(OrderFeedbackService::class)->statusUpdated($freshOrder, $oldStatus, OrderStatus::SearchingDriver);
+                            $notifications->sendToUser(
+                                $freshOrder->user,
+                                $feedback['title'] ?? 'Order dialihkan ke driver lain',
+                                $feedback['message'] ?? 'Order sedang dicari ulang karena driver sebelumnya melakukan oper handle.',
+                                [
+                                    'type' => 'order_oper_handle_approved',
+                                    'order_id' => $freshOrder->id,
+                                    'order_code' => $freshOrder->order_code,
+                                ],
+                            );
+                        } catch (\Throwable $exception) {
+                            Log::warning('broadcast.oper_handle_order_status_failed', [
                                 'order_id' => $freshOrder->id,
-                                'order_code' => $freshOrder->order_code,
-                            ],
-                        );
-                    } catch (\Throwable $exception) {
-                        Log::warning('broadcast.oper_handle_order_status_failed', [
-                            'order_id' => $order->id,
-                            'message' => $exception->getMessage(),
-                        ]);
-                    }
+                                'message' => $exception->getMessage(),
+                            ]);
+                        }
+                    });
                 }
 
                 $suspensions->suspendForOperHandle($operHandle->driver->load('user'), $request->user());

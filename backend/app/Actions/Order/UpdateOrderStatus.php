@@ -36,16 +36,19 @@ class UpdateOrderStatus
 
             $oldStatus = $order->status;
             $order->update(['status' => $status]);
+            $freshOrder = $order->fresh(['user', 'driver.user']);
 
-            try {
-                OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, $status);
-            } catch (\Throwable $exception) {
-                Log::warning('broadcast.order_status_failed', [
-                    'order_id' => $order->id,
-                    'status' => $status->value,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            DB::afterCommit(function () use ($freshOrder, $oldStatus, $status): void {
+                try {
+                    OrderStatusUpdated::dispatch($freshOrder, $oldStatus, $status);
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.order_status_failed', [
+                        'order_id' => $freshOrder->id,
+                        'status' => $status->value,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            });
 
             return $order->fresh(['user', 'driver.user', 'items']);
         });

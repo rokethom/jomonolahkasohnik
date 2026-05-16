@@ -37,11 +37,14 @@ class OrderStatusUpdated implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
+        $order = $this->order->fresh(['driver.user']) ?? $this->order;
+
         return [
-            'order' => $this->order->toArray(),
+            'order' => $order->toArray(),
             'old_status' => $this->oldStatus->value,
             'new_status' => $this->newStatus->value,
-            'feedback' => app(OrderFeedbackService::class)->statusUpdated($this->order, $this->oldStatus, $this->newStatus),
+            'feedback' => app(OrderFeedbackService::class)->statusUpdated($order, $this->oldStatus, $this->newStatus),
+            'broadcasted_at' => now()->toIso8601String(),
         ];
     }
 }

@@ -59,16 +59,19 @@ class CompleteOrder
                 ->get()
                 ->each(fn ($crew) => $crew->driver?->update(['is_available' => true]));
             $this->chatService->closeForOrder($order);
+            $freshOrder = $order->fresh(['user', 'driver.user']);
 
-            try {
-                OrderStatusUpdated::dispatch($order->fresh(['user', 'driver.user']), $oldStatus, OrderStatus::Completed);
-            } catch (\Throwable $exception) {
-                Log::warning('broadcast.order_status_failed', [
-                    'order_id' => $order->id,
-                    'status' => OrderStatus::Completed->value,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            DB::afterCommit(function () use ($freshOrder, $oldStatus): void {
+                try {
+                    OrderStatusUpdated::dispatch($freshOrder, $oldStatus, OrderStatus::Completed);
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.order_status_failed', [
+                        'order_id' => $freshOrder->id,
+                        'status' => OrderStatus::Completed->value,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            });
 
             return $order->fresh(['user', 'driver.user', 'items']);
         });

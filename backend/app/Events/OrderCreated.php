@@ -31,8 +31,11 @@ class OrderCreated implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
+        $order = $this->order->fresh() ?? $this->order;
+
         return [
-            'order' => $this->order->toArray(),
+            'order' => $order->toArray(),
+            'broadcasted_at' => now()->toIso8601String(),
         ];
     }
 }

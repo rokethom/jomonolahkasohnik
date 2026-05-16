@@ -32,29 +32,32 @@ class OrderFeedChanged implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        $status = $this->order->status;
+        $order = $this->order->fresh(['driver.user']) ?? $this->order;
+        $status = $order->status;
 
         return [
             'order' => [
-                'id' => $this->order->id,
-                'order_code' => $this->order->order_code,
-                'code' => $this->order->order_code,
-                'branch_id' => $this->order->branch_id,
-                'area_id' => $this->order->area_id,
-                'driver_id' => $this->order->driver_id,
-                'service_type' => $this->order->service_type,
-                'service' => $this->order->service_type,
+                'id' => $order->id,
+                'order_code' => $order->order_code,
+                'code' => $order->order_code,
+                'branch_id' => $order->branch_id,
+                'area_id' => $order->area_id,
+                'driver_id' => $order->driver_id,
+                'driver' => $order->driver?->user?->name,
+                'service_type' => $order->service_type,
+                'service' => $order->service_type,
                 'status' => is_object($status) && method_exists($status, '__toString')
                     ? (string) $status
                     : ($status->value ?? $status),
-                'price' => $this->order->price,
-                'service_charge' => $this->order->service_charge,
-                'service_fee' => $this->order->service_charge,
-                'extra_charge' => $this->order->extra_charge,
-                'total_price' => $this->order->total_price,
-                'total' => $this->order->total_price,
-                'updated_at' => $this->order->updated_at?->toIso8601String(),
+                'price' => $order->price,
+                'service_charge' => $order->service_charge,
+                'service_fee' => $order->service_charge,
+                'extra_charge' => $order->extra_charge,
+                'total_price' => $order->total_price,
+                'total' => $order->total_price,
+                'updated_at' => $order->updated_at?->toIso8601String(),
             ],
+            'broadcasted_at' => now()->toIso8601String(),
             ...$this->meta,
         ];
     }

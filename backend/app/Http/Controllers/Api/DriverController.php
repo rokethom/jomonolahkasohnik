@@ -299,7 +299,7 @@ class DriverController extends Controller
         $payload = $request->validate([
             'online' => ['required', 'boolean'],
         ]);
-        $wasOnline = (bool) $driver->is_available;
+        $online = (bool) $payload['online'];
 
         $deposit = $finance->monthlyDeposit($driver, now()->subMonth());
 
@@ -313,7 +313,7 @@ class DriverController extends Controller
             ], $request->boolean('online') ? 422 : 200);
         }
 
-        if ($driver->status !== 'active' && $request->boolean('online')) {
+        if ($driver->status !== 'active' && $online) {
             $driver->update(['is_available' => false]);
 
             return response()->json([
@@ -323,13 +323,20 @@ class DriverController extends Controller
             ], 422);
         }
 
-        $driver->update(['is_available' => $request->boolean('online')]);
-        $priorityMessage = $request->boolean('online')
-            ? $dailyPriority->markOnline($driver->fresh(['user', 'setting']), $wasOnline)
+        [$driver, $wasOnline] = DB::transaction(function () use ($driver, $online): array {
+            $locked = Driver::query()->lockForUpdate()->findOrFail($driver->id);
+            $wasOnline = (bool) $locked->is_available;
+            $locked->forceFill(['is_available' => $online])->save();
+
+            return [$locked->fresh(['user', 'setting']), $wasOnline];
+        });
+
+        $priorityMessage = $online
+            ? $dailyPriority->markOnline($driver, $wasOnline)
             : null;
 
         return response()->json([
-            'message' => $priorityMessage ?: ($request->boolean('online') ? 'Driver ON dan bisa menerima/request order.' : 'Driver OFF. Order baru dan request order nonaktif.'),
+            'message' => $priorityMessage ?: ($online ? 'Driver ON dan bisa menerima/request order.' : 'Driver OFF. Order baru dan request order nonaktif.'),
             'driver' => $this->driverPayload($request, $deposit),
             'finance' => $this->financePayload($finance->monthlyDeposit($driver)),
         ]);
@@ -581,7 +588,7 @@ class DriverController extends Controller
 
     private function driverPayload(Request $request, ?DriverDeposit $deposit = null): array
     {
-        $user = $request->user()->load('driver.suspensions');
+        $user = $request->user()->refresh()->load('driver.suspensions');
         $driver = $user->driver;
         if ($driver && app(DriverSuspendService::class)->releaseIfExpired($driver)) {
             $user->load('driver.suspensions');

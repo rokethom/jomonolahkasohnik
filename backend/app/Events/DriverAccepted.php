@@ -33,9 +33,12 @@ class DriverAccepted implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
+        $order = $this->order->fresh(['driver.user']) ?? $this->order;
+
         return [
-            'order' => $this->order->toArray(),
-            'feedback' => app(OrderFeedbackService::class)->driverAccepted($this->order),
+            'order' => $order->toArray(),
+            'feedback' => app(OrderFeedbackService::class)->driverAccepted($order),
+            'broadcasted_at' => now()->toIso8601String(),
         ];
     }
 }

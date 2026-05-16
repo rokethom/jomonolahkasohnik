@@ -484,6 +484,8 @@ function App() {
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null
   const chatOrder = chatTarget === 'operator' ? null : selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
   const updateInfo = useBuildUpdate('driver')
+  const bootstrapRequestSeqRef = useRef(0)
+  const orderFeedRequestSeqRef = useRef(0)
 
   const api = useMemo(() => makeApi(token), [token])
 
@@ -543,10 +545,12 @@ function App() {
 
   const load = useCallback(async (silent = false) => {
     if (!token) return null
+    const requestSeq = ++bootstrapRequestSeqRef.current
     if (!silent) setApiState({ loading: true, error: '' })
     let loaded = false
     try {
       const payload = await api<BootstrapResponse>('/driver/bootstrap')
+      if (requestSeq !== bootstrapRequestSeqRef.current) return null
       setBootstrap(payload)
       loaded = true
       return payload
@@ -566,8 +570,10 @@ function App() {
 
   const loadOrderFeeds = useCallback(async () => {
     if (!token) return null
+    const requestSeq = ++orderFeedRequestSeqRef.current
     try {
       const payload = await api<DriverOrdersFeedResponse>('/driver/orders-feed')
+      if (requestSeq !== orderFeedRequestSeqRef.current) return null
       setOrderFeeds(payload)
       return payload
     } catch (error) {
@@ -2371,6 +2377,7 @@ function makeApi(token: string): ApiClient {
     const isFormData = options.body instanceof FormData
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
+      cache: options.cache ?? 'no-store',
       headers: {
         Accept: 'application/json',
         ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
