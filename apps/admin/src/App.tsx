@@ -1598,11 +1598,42 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
   const [rows, setRows] = useState<LivePriceReview[]>(reviews)
   const [selectedId, setSelectedId] = useState<number | null>(reviews[0]?.id ?? null)
   const [savingId, setSavingId] = useState<number | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const syncingRef = useRef(false)
 
   useEffect(() => {
     setRows(reviews)
     setSelectedId((current) => (current && reviews.some((review) => review.id === current)) ? current : (reviews[0]?.id ?? null))
   }, [reviews])
+
+  const syncReviews = useCallback(async () => {
+    if (syncingRef.current || savingId || isEditing || document.visibilityState !== 'visible') return
+    syncingRef.current = true
+    try {
+      const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-reviews')
+      const currentIds = rows.map((review) => `${review.id}:${review.status}`).join('|')
+      const nextIds = response.data.map((review) => `${review.id}:${review.status}`).join('|')
+      setRows(response.data)
+      setSelectedId((current) => (current && response.data.some((review) => review.id === current)) ? current : (response.data[0]?.id ?? null))
+      if (currentIds !== nextIds) await onChanged()
+    } finally {
+      syncingRef.current = false
+    }
+  }, [api, isEditing, onChanged, rows, savingId])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void syncReviews(), 7000)
+    const onFocus = () => void syncReviews()
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [syncReviews])
 
   const selected = rows.find((review) => review.id === selectedId) ?? rows[0] ?? null
   const payload = selected?.order_payload ?? null
@@ -1623,13 +1654,14 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
       await api(`/admin/live-price-reviews/${selected.id}/approve`, {
         method: 'POST',
         body: JSON.stringify({
-          corrected_price: correctedPrice,
-          corrected_service_fee: correctedFee,
-          corrected_extra_charge: correctedExtra,
-          correction_reason: selected.correction_reason || 'Live dashboard correction',
+          price: correctedPrice,
+          service_fee: correctedFee,
+          extra_charge: correctedExtra,
+          reason: selected.correction_reason || 'Live dashboard correction',
         }),
       })
       await onChanged()
+      await syncReviews()
     } finally {
       setSavingId(null)
     }
@@ -1683,10 +1715,10 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
           {!selected && <EmptyPanel title="Belum ada koreksi" copy="Kolom edit aktif setelah ada order customer masuk." />}
           {selected && (
             <div className="live-price-dashboard-editor">
-              <label>Tarif final<input type="number" value={correctedPrice} onChange={(event) => updateSelected({ corrected_price: Number(event.target.value) })} /></label>
-              <label>Service fee<input type="number" value={correctedFee} onChange={(event) => updateSelected({ corrected_service_fee: Number(event.target.value) })} /></label>
-              <label>Tambahan/potongan<input type="number" value={correctedExtra} onChange={(event) => updateSelected({ corrected_extra_charge: Number(event.target.value) })} /></label>
-              <label>Catatan koreksi<textarea value={selected.correction_reason ?? ''} onChange={(event) => updateSelected({ correction_reason: event.target.value })} /></label>
+              <label>Tarif final<input type="number" value={correctedPrice} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ corrected_price: Number(event.target.value) })} /></label>
+              <label>Service fee<input type="number" value={correctedFee} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ corrected_service_fee: Number(event.target.value) })} /></label>
+              <label>Tambahan/potongan<input type="number" value={correctedExtra} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ corrected_extra_charge: Number(event.target.value) })} /></label>
+              <label>Catatan koreksi<textarea value={selected.correction_reason ?? ''} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ correction_reason: event.target.value })} /></label>
               <div className="manual-preview-total"><span>Total customer</span><strong>Rp {correctedTotal.toLocaleString('id-ID')}</strong></div>
               <button className="primary-button compact" type="button" disabled={savingId === selected.id || selected.status !== 'pending'} onClick={() => void approveSelected()}>
                 {savingId === selected.id ? 'Mengirim...' : selected.status === 'pending' ? 'Konfirmasi harga' : 'Sudah diproses'}
@@ -5590,13 +5622,38 @@ function ManualOrderPreviewCard({
 function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void> }) {
   const [rows, setRows] = useState(reviews)
   const [savingId, setSavingId] = useState<number | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const syncingRef = useRef(false)
 
   useEffect(() => setRows(reviews), [reviews])
 
-  const refreshReviews = async () => {
-    const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-reviews')
-    setRows(response.data)
-  }
+  const refreshReviews = useCallback(async (force = false) => {
+    if (!force && (syncingRef.current || savingId || isEditing || document.visibilityState !== 'visible')) return
+    syncingRef.current = true
+    try {
+      const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-reviews')
+      const currentIds = rows.map((review) => `${review.id}:${review.status}`).join('|')
+      const nextIds = response.data.map((review) => `${review.id}:${review.status}`).join('|')
+      setRows(response.data)
+      if (currentIds !== nextIds) await onChanged()
+    } finally {
+      syncingRef.current = false
+    }
+  }, [api, isEditing, onChanged, rows, savingId])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void refreshReviews(), 7000)
+    const onFocus = () => void refreshReviews()
+
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [refreshReviews])
 
   const updateRow = (id: number, patch: Partial<LivePriceReview>) => {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row))
@@ -5614,7 +5671,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
           reason: review.correction_reason ?? 'Harga dikonfirmasi live.',
         }),
       })
-      await refreshReviews()
+      await refreshReviews(true)
       await onChanged()
     } finally {
       setSavingId(null)
@@ -5630,7 +5687,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
         method: 'POST',
         body: JSON.stringify({ reason }),
       })
-      await refreshReviews()
+      await refreshReviews(true)
       await onChanged()
     } finally {
       setSavingId(null)
@@ -5642,7 +5699,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
       <PanelHeader title="Live Edit Harga Customer" action={`${rows.length} review`} />
       <div className="notice">Khusus order dari FE customer. Operator/eksekutor koreksi harga di sini, lalu customer menerima preview harga final dan tombol konfirmasi aktif setelah delay CMS.</div>
       <div className="manual-ai-actions">
-        <button className="secondary-button compact" type="button" onClick={() => void refreshReviews()}>Refresh review</button>
+        <button className="secondary-button compact" type="button" onClick={() => void refreshReviews(true)}>Refresh review</button>
       </div>
       <div className="live-price-review-list">
         {rows.length === 0 && <EmptyPanel title="Tidak ada review harga" copy="Preview customer yang butuh koreksi harga akan muncul di sini." />}
@@ -5680,10 +5737,10 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
                 </div>
                 <div className="manual-workspace-card live-correction-card">
                   <strong>Live Correction</strong>
-                  <label>Tarif final<input type="number" value={correctedPrice} onChange={(event) => updateRow(review.id, { corrected_price: Number(event.target.value) })} /></label>
-                  <label>Service fee<input type="number" value={correctedFee} onChange={(event) => updateRow(review.id, { corrected_service_fee: Number(event.target.value) })} /></label>
-                  <label>Tambahan/potongan<input type="number" value={correctedExtra} onChange={(event) => updateRow(review.id, { corrected_extra_charge: Number(event.target.value) })} /></label>
-                  <label>Alasan<textarea value={review.correction_reason ?? ''} onChange={(event) => updateRow(review.id, { correction_reason: event.target.value })} /></label>
+                  <label>Tarif final<input type="number" value={correctedPrice} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(review.id, { corrected_price: Number(event.target.value) })} /></label>
+                  <label>Service fee<input type="number" value={correctedFee} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(review.id, { corrected_service_fee: Number(event.target.value) })} /></label>
+                  <label>Tambahan/potongan<input type="number" value={correctedExtra} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(review.id, { corrected_extra_charge: Number(event.target.value) })} /></label>
+                  <label>Alasan<textarea value={review.correction_reason ?? ''} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(review.id, { correction_reason: event.target.value })} /></label>
                   <div className="manual-preview-total"><span>Total customer</span><strong>Rp {correctedTotal.toLocaleString('id-ID')}</strong></div>
                   <div className="manual-preview-actions">
                     <button className="primary-button compact" type="button" disabled={savingId === review.id} onClick={() => void approve({ ...review, corrected_price: correctedPrice, corrected_service_fee: correctedFee, corrected_extra_charge: correctedExtra, corrected_total_price: correctedTotal })}>{savingId === review.id ? 'Menyimpan...' : 'Konfirmasi harga'}</button>
