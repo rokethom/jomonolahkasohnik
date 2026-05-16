@@ -2979,7 +2979,8 @@
   resize: vertical;
 }
 
-.profile-edit-form button {
+.profile-edit-form button,
+.profile-edit-form .google-login-button {
   min-height: 46px;
   border: 0;
   border-radius: 999px;
@@ -2988,7 +2989,8 @@
   font-weight: 900;
 }
 
-.login-page .profile-edit-form button {
+.login-page .profile-edit-form button,
+.login-page .profile-edit-form .google-login-button {
   min-height: 50px;
 }
 
@@ -3039,6 +3041,13 @@
   background: #fff;
   color: #17213b;
   border: 1px solid #dce8e4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .pwa-install-button {

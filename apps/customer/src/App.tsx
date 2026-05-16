@@ -3961,6 +3961,8 @@ function ProfileField({ icon, label, hint, children }: { icon: ReactNode; label:
 }
 
 function CustomerLoginScreen(_props: { onDone: () => void }) {
+  const googleHref = googleLoginUrl()
+
   return (
     <div className="simple-page login-page">
       <div className="login-heading">
@@ -3969,9 +3971,9 @@ function CustomerLoginScreen(_props: { onDone: () => void }) {
       </div>
       <PwaInstallButton />
       <div className="profile-edit-form">
-        <button type="button" className="google-login-button" onClick={() => { window.location.href = googleLoginUrl() }}>
+        <a className="google-login-button" href={googleHref}>
           Login / Register by Google
-        </button>
+        </a>
         <small>Akun customer baru akan dibuat otomatis setelah Google berhasil diverifikasi.</small>
       </div>
     </div>
