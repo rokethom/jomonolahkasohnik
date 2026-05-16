@@ -90,6 +90,8 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
+const DEFAULT_DRIVER_PROFILE_PHOTO = '/jojohome.webp'
+
 const DEFAULT_CUSTOMER_NOTIFICATION_SOUND = '/customernotif.mpeg'
 const CUSTOMER_SOUND_DB = 'jojo-customer-settings'
 const CUSTOMER_SOUND_STORE = 'notification-sound'
@@ -374,7 +376,7 @@ function driverPhotoFromOrder(order?: Order | null) {
   if (directUrl) return cmsAssetUrl(directUrl)
 
   const photoPath = order?.driver?.user?.profile_photo_path
-  if (!photoPath) return ''
+  if (!photoPath) return DEFAULT_DRIVER_PROFILE_PHOTO
 
   return assetUrl(`/api/media/${photoPath.replace(/^\/+/, '')}`)
 }
@@ -3262,7 +3264,7 @@ function DriverNameTagModal({ name, phone, photoUrl, onClose }: { name: string; 
       <section className="driver-name-tag-modal" onClick={(event) => event.stopPropagation()} aria-label="Detail driver">
         <button type="button" className="driver-name-tag-close" onClick={onClose} aria-label="Tutup detail driver">x</button>
         <div className="driver-name-tag-photo">
-          {photoUrl ? <img src={photoUrl} alt={`Foto ${name}`} /> : <UserRound size={44} />}
+          <img src={photoUrl || DEFAULT_DRIVER_PROFILE_PHOTO} alt={`Foto ${name}`} />
         </div>
         <div className="driver-name-tag-content">
           <span className="driver-name-tag-eyebrow">Name Tag Driver</span>

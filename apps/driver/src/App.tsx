@@ -31,6 +31,8 @@ type DriverNotificationTarget = {
   orderId?: number
 }
 
+const DEFAULT_DRIVER_PROFILE_PHOTO = '/jojohome.webp'
+
 type OrderStatus = 'pending' | 'accepted' | 'on_delivery' | 'pending_cancel' | 'done' | 'cancelled'
 
 type Driver = {
@@ -1866,7 +1868,7 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
       )}
       <form className="panel profile-form" onSubmit={submit}>
         <div className="driver-profile-photo">
-          {photoPreview || driver.profile_photo_url ? <img src={photoPreview ?? cmsAssetUrl(driver.profile_photo_url ?? '')} alt="Foto driver" /> : <UserRound size={36} />}
+          <img src={photoPreview ?? (driver.profile_photo_url ? cmsAssetUrl(driver.profile_photo_url) : DEFAULT_DRIVER_PROFILE_PHOTO)} alt="Foto driver" />
           <label>
             <Camera size={18} />
             Ganti Foto
