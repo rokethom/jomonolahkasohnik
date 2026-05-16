@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Models\Driver;
 use App\Models\Order;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Carbon;
 
 class MultiOrderService
 {
@@ -207,18 +208,14 @@ class MultiOrderService
 
     private function isSameArea(Driver $driver, Order $order): bool
     {
-        if ((bool) $driver->can_accept_all_areas) {
-            return true;
-        }
-
-        $driverAreaId = $driver->user?->area_id;
+        $driverAreaId = $this->effectiveDriverAreaId($driver);
         $orderAreaId = $order->area_id;
 
         if ($driverAreaId !== null && $orderAreaId !== null) {
             return (int) $driverAreaId === (int) $orderAreaId;
         }
 
-        $driverBranchId = $driver->user?->branch_id;
+        $driverBranchId = $this->effectiveDriverBranchId($driver);
         $orderBranchId = $order->branch_id;
 
         if ($driverBranchId === null || $orderBranchId === null) {
@@ -226,6 +223,43 @@ class MultiOrderService
         }
 
         return (int) $driverBranchId === (int) $orderBranchId;
+    }
+
+    private function effectiveDriverAreaId(Driver $driver): ?int
+    {
+        $driver->loadMissing(['user.currentLocation']);
+
+        if ((bool) $driver->can_accept_all_areas) {
+            $location = $driver->user?->currentLocation;
+
+            return $this->recentLocation($location) && $location?->area_id
+                ? (int) $location->area_id
+                : null;
+        }
+
+        return $driver->user?->area_id ? (int) $driver->user->area_id : null;
+    }
+
+    private function effectiveDriverBranchId(Driver $driver): ?int
+    {
+        $driver->loadMissing(['user.currentLocation']);
+
+        if ((bool) $driver->can_accept_all_areas) {
+            $location = $driver->user?->currentLocation;
+
+            return $this->recentLocation($location) && $location?->branch_id
+                ? (int) $location->branch_id
+                : null;
+        }
+
+        return $driver->user?->branch_id ? (int) $driver->user->branch_id : null;
+    }
+
+    private function recentLocation(mixed $location): bool
+    {
+        return $location
+            && $location->updated_at instanceof Carbon
+            && $location->updated_at->greaterThanOrEqualTo(now()->subMinutes(30));
     }
 
     private function canServe(Driver $driver, Order $order): bool

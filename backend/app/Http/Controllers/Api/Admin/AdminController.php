@@ -3264,7 +3264,7 @@ class AdminController extends Controller
         $blockedDriverIds = $this->blockedDriverIdsForCustomer($order);
 
         return Driver::query()
-            ->with(['user.branch'])
+            ->with(['user.branch', 'user.currentLocation', 'setting'])
             ->withAvg('ratings as rating_average', 'rating')
             ->where('status', 'active')
             ->where(fn (Builder $query) => $query->where('is_suspend', false)->orWhereNull('is_suspend'))
@@ -3297,13 +3297,17 @@ class AdminController extends Controller
                 ->where('is_suspended', false))
             ->limit(12)
             ->get()
-            ->reject(function (Driver $driver) use ($blockedDriverIds): bool {
+            ->reject(function (Driver $driver) use ($blockedDriverIds, $order): bool {
                 $deposit = app(\App\Services\DriverFinanceService::class)->monthlyDeposit($driver, now()->subMonth());
                 if (($deposit->status ?? 'unpaid') !== 'paid' && $deposit->due_date?->endOfDay()->isPast()) {
                     if ($driver->is_available) {
                         $driver->forceFill(['is_available' => false])->save();
                     }
 
+                    return true;
+                }
+
+                if (! (bool) data_get(app(\App\Services\MultiOrderService::class)->canAcceptOrder($driver, $order), 'can_accept')) {
                     return true;
                 }
 

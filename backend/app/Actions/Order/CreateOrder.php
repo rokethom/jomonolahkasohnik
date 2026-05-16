@@ -176,7 +176,7 @@ class CreateOrder
     private function notifyEligibleDrivers(Order $order): void
     {
         $drivers = Driver::query()
-            ->with(['user', 'setting'])
+            ->with(['user.currentLocation', 'setting'])
             ->where('status', 'active')
             ->where('is_available', true)
             ->where(function ($query) use ($order): void {
@@ -201,7 +201,7 @@ class CreateOrder
                     return false;
                 }
 
-                $driver = $driver->fresh(['user', 'setting']);
+                $driver = $driver->fresh(['user.currentLocation', 'setting']);
 
                 return (bool) data_get($this->multiOrder->canAcceptOrder($driver, $order), 'can_accept')
                     && $this->dailyPriority->canSeeOrder($driver, $order);

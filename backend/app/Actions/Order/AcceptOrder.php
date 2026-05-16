@@ -202,9 +202,9 @@ class AcceptOrder
                 $branchId = $acceptedOrder->branch_id;
                 $mainDriverId = $driver->id;
 
-                DB::afterCommit(function () use ($orderId, $branchId, $mainDriverId, $helperLabel): void {
+                DB::afterCommit(function () use ($acceptedOrder, $orderId, $branchId, $mainDriverId, $helperLabel): void {
                     Driver::query()
-                        ->with('user')
+                        ->with(['user.currentLocation', 'setting'])
                         ->where('status', 'active')
                         ->where('is_available', true)
                         ->where('id', '!=', $mainDriverId)
@@ -214,6 +214,9 @@ class AcceptOrder
                         })
                         ->limit(50)
                         ->get()
+                        ->filter(function (Driver $candidate) use ($acceptedOrder): bool {
+                            return (bool) data_get($this->multiOrder->canAcceptOrder($candidate, $acceptedOrder), 'can_accept');
+                        })
                         ->each(function (Driver $candidate) use ($helperLabel, $orderId): void {
                             try {
                                 $this->notifications->sendToUser(

@@ -35,7 +35,7 @@ class DriverController extends Controller
 {
     public function bootstrap(Request $request, MultiOrderService $multiOrder, SettingService $settings, DriverFinanceService $finance, OrderService $orders, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
-        $driver = $this->ensureDriver($request)->load('user.branch');
+        $driver = $this->ensureDriver($request)->load('user.branch', 'user.currentLocation');
         $deposit = $finance->monthlyDeposit($driver);
         $billingDeposit = $finance->monthlyDeposit($driver, now()->subMonth());
         $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
@@ -50,7 +50,7 @@ class DriverController extends Controller
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->when(! $driver->can_accept_all_areas, fn ($query) => $this->applyOperationalOrderScope($query, $driver))
+                            ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -175,7 +175,7 @@ class DriverController extends Controller
 
     public function ordersFeed(Request $request, MultiOrderService $multiOrder, DriverFinanceService $finance, OrderService $ordersService, DriverDailyPriorityService $dailyPriority): JsonResponse
     {
-        $driver = $this->ensureDriver($request)->load('user.branch');
+        $driver = $this->ensureDriver($request)->load('user.branch', 'user.currentLocation');
         $billingDeposit = $finance->monthlyDeposit($driver, now()->subMonth());
         $canReceiveOrders = $this->canReceiveOrders($driver, $billingDeposit);
         $branchId = $driver->user?->branch_id;
@@ -190,7 +190,7 @@ class DriverController extends Controller
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->when(! $driver->can_accept_all_areas, fn ($query) => $this->applyOperationalOrderScope($query, $driver))
+                            ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -402,7 +402,7 @@ class DriverController extends Controller
                     throw new RuntimeException('Status driver OFF atau tidak aktif.');
                 }
 
-                if (! $driver->can_accept_all_areas && ! $this->orderBelongsToDriverArea($order, $driver)) {
+                if (! $this->orderBelongsToDriverArea($order, $driver)) {
                     throw new RuntimeException('Order helper berada di luar cabang driver.');
                 }
 
@@ -747,8 +747,8 @@ class DriverController extends Controller
 
     private function applyOperationalOrderScope(Builder $query, Driver $driver): Builder
     {
-        $areaId = $driver->user?->area_id ? (int) $driver->user->area_id : null;
-        $branchId = $driver->user?->branch_id ? (int) $driver->user->branch_id : null;
+        $areaId = $this->effectiveDriverAreaId($driver);
+        $branchId = $this->effectiveDriverBranchId($driver);
 
         return $query->where(function (Builder $query) use ($areaId, $branchId): void {
             if ($areaId !== null) {
@@ -797,13 +797,15 @@ class DriverController extends Controller
 
     private function orderBelongsToDriverArea(Order $order, Driver $driver): bool
     {
-        $driverAreaId = $driver->user?->area_id ? (int) $driver->user->area_id : null;
+        $driverAreaId = $this->effectiveDriverAreaId($driver);
         if ($driverAreaId !== null && $order->area_id !== null) {
             return (int) $order->area_id === $driverAreaId;
         }
 
-        return $driver->user?->branch_id !== null
-            && (int) $driver->user->branch_id === (int) $order->branch_id;
+        $driverBranchId = $this->effectiveDriverBranchId($driver);
+
+        return $driverBranchId !== null
+            && (int) $driverBranchId === (int) $order->branch_id;
     }
 
     private function availabilityBlockReason(?Driver $driver, ?DriverDeposit $deposit = null): ?string
@@ -842,10 +844,44 @@ class DriverController extends Controller
             ->whereHas('crews', fn ($query) => $query
                 ->where('status', 'pending')
                 ->where('role', '!=', 'rider'))
-            ->when(! (bool) $driver->can_accept_all_areas, fn ($query) => $this->applyOperationalOrderScope($query, $driver))
+            ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
             ->latest('updated_at')
             ->limit(20)
             ->get();
+    }
+
+    private function effectiveDriverAreaId(Driver $driver): ?int
+    {
+        $driver->loadMissing(['user.currentLocation']);
+
+        if ((bool) $driver->can_accept_all_areas) {
+            $location = $driver->user?->currentLocation;
+
+            return $location
+                && $location->updated_at?->greaterThanOrEqualTo(now()->subMinutes(30))
+                && $location->area_id
+                    ? (int) $location->area_id
+                    : null;
+        }
+
+        return $driver->user?->area_id ? (int) $driver->user->area_id : null;
+    }
+
+    private function effectiveDriverBranchId(Driver $driver): ?int
+    {
+        $driver->loadMissing(['user.currentLocation']);
+
+        if ((bool) $driver->can_accept_all_areas) {
+            $location = $driver->user?->currentLocation;
+
+            return $location
+                && $location->updated_at?->greaterThanOrEqualTo(now()->subMinutes(30))
+                && $location->branch_id
+                    ? (int) $location->branch_id
+                    : null;
+        }
+
+        return $driver->user?->branch_id ? (int) $driver->user->branch_id : null;
     }
 
     private function orderPayload(Order $order, ?Driver $forDriver = null): array

@@ -6,12 +6,17 @@ use App\Enums\OrderStatus;
 use App\Events\OrderStatusUpdated;
 use App\Models\Driver;
 use App\Models\Order;
+use App\Services\MultiOrderService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class FindDriver
 {
+    public function __construct(private readonly MultiOrderService $multiOrder)
+    {
+    }
+
     public function handle(Order $order): array
     {
         $rejectionMessage = null;
@@ -53,7 +58,7 @@ class FindDriver
             }
 
             $driver = Driver::query()
-                ->with('user')
+                ->with(['user.currentLocation', 'setting'])
                 ->where('is_available', true)
                 ->where(function ($query) use ($order): void {
                     $query->where('can_accept_all_areas', true)
@@ -96,7 +101,8 @@ class FindDriver
                     fn ($query) => $query->where('is_ladies_driver', true)
                 )
                 ->orderByRaw('current_lat IS NULL, current_lng IS NULL')
-                ->first();
+                ->get()
+                ->first(fn (Driver $driver): bool => (bool) data_get($this->multiOrder->canAcceptOrder($driver, $order), 'can_accept'));
 
             $oldStatus = $order->status;
             $order->update(['status' => OrderStatus::SearchingDriver]);
