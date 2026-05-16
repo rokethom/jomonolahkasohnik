@@ -35,9 +35,9 @@ class PricingServiceTest extends TestCase
     {
         $quote = app(PricingService::class)->calculate('ojek', 22, 1);
 
-        $this->assertSame(34800, $quote['tarif']);
+        $this->assertSame(35000, $quote['tarif']);
         $this->assertSame(1000, $quote['service_charge']);
-        $this->assertSame(35800, $quote['total_before_round']);
+        $this->assertSame(36000, $quote['total_before_round']);
         $this->assertSame(36000, $quote['final_price']);
     }
 
@@ -54,9 +54,9 @@ class PricingServiceTest extends TestCase
     {
         $quote = app(PricingService::class)->calculate('kurir', 12, 5);
 
-        $this->assertSame(15800, $quote['tarif']);
+        $this->assertSame(16000, $quote['tarif']);
         $this->assertSame(10000, $quote['service_charge']);
-        $this->assertSame(25800, $quote['total_before_round']);
+        $this->assertSame(26000, $quote['total_before_round']);
         $this->assertSame(26000, $quote['final_price']);
     }
 
@@ -453,7 +453,7 @@ class PricingServiceTest extends TestCase
         $this->assertSame('payload', $ringTwo['routing_provider']);
 
         $this->assertSame('ring_3', $ringThree['ring']);
-        $this->assertSame(15800, $ringThree['tarif']);
+        $this->assertSame(16000, $ringThree['tarif']);
         $this->assertSame(16000, $ringThree['total_price']);
         $this->assertSame('payload', $ringThree['routing_provider']);
     }

@@ -58,10 +58,11 @@ class ZonePricingService
             $tarif += $adjustment;
         }
 
+        $tarif = $this->roundUpPrice($tarif);
         $serviceCharge = (int) ($quote['service_charge'] ?? $quote['service_fee'] ?? 0);
         $extraCharge = (int) ($quote['extra_charge'] ?? 0);
         $totalBeforeRound = $tarif + $serviceCharge + $extraCharge;
-        $finalPrice = (int) (ceil($totalBeforeRound / 1000) * 1000);
+        $finalPrice = $this->roundUpPrice($totalBeforeRound);
 
         return [
             ...$quote,
@@ -120,6 +121,11 @@ class ZonePricingService
             'both' => $pickupMatches && $destinationMatches,
             default => $destinationMatches,
         } && (! $this->isBroadBranchArea($area) || $this->ruleNameMatchesPayload($rule, $payload));
+    }
+
+    private function roundUpPrice(int|float $price): int
+    {
+        return max(0, (int) (ceil(((float) $price) / 1000) * 1000));
     }
 
     private function payloadPointMatches(array $payload, string $latKey, string $lngKey, GeofenceArea $area): bool

@@ -161,7 +161,12 @@ class RingPricingService
 
         $price = ($distanceKm * (int) ($rule->per_km_rate ?? 0)) - (int) ($rule->subtract_value ?? 0);
 
-        return max(0, (int) ceil($price));
+        return $this->roundUpPrice($price);
+    }
+
+    private function roundUpPrice(int|float $price): int
+    {
+        return max(0, (int) (ceil(((float) $price) / 1000) * 1000));
     }
 
     public function recordPriceEdit(Order $order, User $actor, int $previousPrice, int $newPrice): ?RingPricingSuggestion

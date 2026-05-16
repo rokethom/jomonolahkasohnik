@@ -134,7 +134,7 @@ class PricingService
 
         $price = ($distanceKm * (int) $setting->per_km_rate) - (int) $setting->subtract_value;
 
-        return max(0, (int) ceil($price));
+        return max(0, $this->roundUpPrice($price));
     }
 
     public function calculateServiceFee(int $stops): int
