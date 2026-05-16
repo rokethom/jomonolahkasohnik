@@ -319,6 +319,7 @@ class UserResource extends Resource
                                 if ($record->driver) {
                                     $record->driver->forceFill([
                                         'status' => 'suspended',
+                                        'is_suspend' => true,
                                         'is_available' => false,
                                         'suspended_until' => $until,
                                     ])->save();
@@ -349,10 +350,7 @@ class UserResource extends Resource
                                 ])->save();
 
                                 if ($record->driver && $record->driver->status !== 'permanent') {
-                                    $record->driver->forceFill([
-                                        'status' => 'active',
-                                        'suspended_until' => null,
-                                    ])->save();
+                                    app(\App\Services\DriverSuspendService::class)->release($record->driver->load('user'), Auth::user());
                                 }
                             });
 

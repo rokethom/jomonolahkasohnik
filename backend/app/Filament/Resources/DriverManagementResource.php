@@ -547,7 +547,12 @@ class DriverManagementResource extends Resource
     {
         $role = Auth::user()?->role;
 
-        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true);
+        return in_array($role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true)
+            && (
+                Auth::user()?->hasPermission('suspend_driver') === true
+                || Auth::user()?->hasPermission('unsuspend_driver') === true
+                || $role === UserRole::SPV
+            );
     }
 
     public static function canManageDriverAuth(): bool

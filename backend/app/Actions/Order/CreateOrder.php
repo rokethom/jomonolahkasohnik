@@ -167,11 +167,6 @@ class CreateOrder
             ->where('status', 'active')
             ->where('is_available', true)
             ->whereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id))
-            ->whereDoesntHave('deposits', fn ($query) => $query
-                ->where('year', now()->subMonth()->year)
-                ->where('month', now()->subMonth()->month)
-                ->where('status', 'unpaid')
-                ->whereDate('due_date', '<=', now()->toDateString()))
             ->get()
             ->filter(function (Driver $driver) use ($order): bool {
                 $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());

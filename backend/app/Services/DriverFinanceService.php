@@ -58,6 +58,7 @@ class DriverFinanceService
                     'paid_at' => null,
                     'status' => $total > 0 ? 'unpaid' : 'paid',
                     'breakdown' => [
+                        'before_driver_joined' => true,
                         'handle_hari_15' => 0,
                         'handle_hari_30' => 0,
                         'setoran_hingga_hari_ini' => 0,
@@ -219,6 +220,22 @@ class DriverFinanceService
     {
         if (! $deposit || ($deposit->status ?? 'paid') === 'paid') {
             return false;
+        }
+
+        if ((bool) data_get($deposit->breakdown, 'manual_suspend_release', false)) {
+            return false;
+        }
+
+        if ((bool) data_get($deposit->breakdown, 'before_driver_joined', false)) {
+            return false;
+        }
+
+        $driver = $deposit->relationLoaded('driver') ? $deposit->driver : Driver::query()->find($deposit->driver_id);
+        if ($driver instanceof Driver) {
+            $periodEnd = Carbon::create((int) $deposit->year, (int) $deposit->month, 1)->endOfMonth();
+            if ($this->periodIsBeforeDriverJoined($driver, $periodEnd)) {
+                return false;
+            }
         }
 
         $now ??= now();

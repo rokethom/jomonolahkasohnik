@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Driver;
+use App\Models\DriverDeposit;
 use App\Models\DriverSuspension;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -39,6 +40,7 @@ class DriverSuspendService
 
             $driver->update([
                 'status' => $status,
+                'is_suspend' => true,
                 'is_available' => false,
                 'suspended_until' => $endAt,
             ]);
@@ -72,7 +74,7 @@ class DriverSuspendService
 
     public function release(Driver $driver, ?User $actor = null): void
     {
-        DB::transaction(function () use ($driver): void {
+        DB::transaction(function () use ($driver, $actor): void {
             DriverSuspension::query()
                 ->where('driver_id', $driver->id)
                 ->whereIn('status', ['active', 'suspended', 'suspended_unpaid'])
@@ -80,6 +82,7 @@ class DriverSuspendService
 
             $driver->update([
                 'status' => 'active',
+                'is_suspend' => false,
                 'suspended_until' => null,
             ]);
 
@@ -88,6 +91,20 @@ class DriverSuspendService
                 'suspension_reason' => null,
                 'suspended_until' => null,
             ]);
+
+            DriverDeposit::query()
+                ->where('driver_id', $driver->id)
+                ->where('status', 'unpaid')
+                ->whereDate('due_date', '<=', now()->toDateString())
+                ->get()
+                ->each(function (DriverDeposit $deposit) use ($actor): void {
+                    $breakdown = $deposit->breakdown ?? [];
+                    $breakdown['manual_suspend_release'] = true;
+                    $breakdown['manual_suspend_release_at'] = now()->toIso8601String();
+                    $breakdown['manual_suspend_release_by'] = $actor?->id;
+
+                    $deposit->forceFill(['breakdown' => $breakdown])->save();
+                });
         });
     }
 

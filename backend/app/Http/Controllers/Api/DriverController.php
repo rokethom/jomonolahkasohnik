@@ -672,6 +672,7 @@ class DriverController extends Controller
 
             if (! in_array($driver->status, ['suspended_unpaid', 'permanent'], true)) {
                 $payload['status'] = 'suspended_unpaid';
+                $payload['is_suspend'] = true;
                 $payload['suspended_until'] = null;
             }
 
