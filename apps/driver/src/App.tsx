@@ -445,15 +445,30 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     branchPerformance: payload.branch_performance ?? [],
     isOnline: Boolean(payload.driver.is_available),
   }),
-  setOrderFeeds: (payload) => set((state) => ({
-    driver: payload.driver ?? state.driver,
-    orders: payload.orders.map(mapOrder),
-    branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
-    branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
-    branchOperHandleOrders: (payload.branch_oper_handle_orders ?? []).map(mapOrder),
-    branchSuspendHistory: payload.branch_suspend_history ?? [],
-    ...(payload.driver ? { isOnline: Boolean(payload.driver.is_available) } : {}),
-  })),
+  setOrderFeeds: (payload) => set((state) => {
+    const incomingDriver = payload.driver
+    const keepLocalOnline = Boolean(
+      incomingDriver
+      && state.driver
+      && state.isOnline
+      && state.driver.is_available
+      && state.driver.status === 'active'
+      && incomingDriver.status === 'active'
+      && incomingDriver.is_available === false,
+    )
+
+    return {
+      driver: incomingDriver
+        ? { ...incomingDriver, ...(keepLocalOnline ? { is_available: true } : {}) }
+        : state.driver,
+      orders: payload.orders.map(mapOrder),
+      branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
+      branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
+      branchOperHandleOrders: (payload.branch_oper_handle_orders ?? []).map(mapOrder),
+      branchSuspendHistory: payload.branch_suspend_history ?? [],
+      ...(incomingDriver && !keepLocalOnline ? { isOnline: Boolean(incomingDriver.is_available) } : {}),
+    }
+  }),
   updateOrder: (order) => set((state) => ({
     orders: state.orders.map((item) => item.id === order.id ? { ...item, ...mapOrderPatch(order) } : item),
   })),
