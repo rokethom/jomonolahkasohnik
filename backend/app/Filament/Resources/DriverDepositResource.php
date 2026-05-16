@@ -127,8 +127,8 @@ class DriverDepositResource extends Resource
                             'status' => ($isPaid || $paidAmount > 0) ? 'paid' : 'unpaid',
                         ])->save();
 
-                        if ($isPaid && $record->driver?->status === 'suspended_unpaid') {
-                            app(DriverSuspendService::class)->release($record->driver->load('user'), auth()->user());
+                        if ($isPaid && $record->driver) {
+                            app(DriverSuspendService::class)->releaseDepositSuspension($record->driver->load('user'), auth()->user());
                         }
 
                         $record->driver?->update(['is_available' => false]);
@@ -153,8 +153,8 @@ class DriverDepositResource extends Resource
                             'status' => 'paid',
                         ])->save();
 
-                        if ($record->driver?->status === 'suspended_unpaid') {
-                            app(DriverSuspendService::class)->release($record->driver->load('user'), auth()->user());
+                        if ($record->driver) {
+                            app(DriverSuspendService::class)->releaseDepositSuspension($record->driver->load('user'), auth()->user());
                         }
 
                         $record->driver?->update(['is_available' => false]);

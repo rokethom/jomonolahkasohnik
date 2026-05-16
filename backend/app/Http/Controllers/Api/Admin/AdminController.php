@@ -654,8 +654,8 @@ class AdminController extends Controller
             'status' => $isPaid ? 'paid' : 'unpaid',
         ])->save();
 
-        if ($isPaid && $driver->status === 'suspended_unpaid') {
-            $suspensions->release($driver->fresh('user'), $request->user());
+        if ($isPaid) {
+            $suspensions->releaseDepositSuspension($driver->fresh('user'), $request->user());
         }
 
         $driver->fresh()->update(['is_available' => false]);
@@ -1998,6 +1998,10 @@ class AdminController extends Controller
         $breakdown['bpjs_jht'] = (int) $deposit->bpjs_jht;
         $deposit->breakdown = $breakdown;
         $deposit->save();
+
+        if ($deposit->status === 'paid') {
+            app(DriverSuspendService::class)->releaseDepositSuspension($driver->fresh('user'), $actor);
+        }
 
         $this->recordAudit($actor, 'edited_driver_deposit_report_row', $deposit, [
             'driver_id' => $driver->id,

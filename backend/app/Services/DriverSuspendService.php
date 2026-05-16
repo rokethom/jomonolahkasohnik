@@ -108,6 +108,64 @@ class DriverSuspendService
         });
     }
 
+    public function releaseDepositSuspension(Driver $driver, ?User $actor = null): void
+    {
+        DB::transaction(function () use ($driver, $actor): void {
+            $driver = Driver::query()
+                ->with('user')
+                ->lockForUpdate()
+                ->findOrFail($driver->id);
+
+            DriverSuspension::query()
+                ->where('driver_id', $driver->id)
+                ->whereIn('status', ['active', 'suspended', 'suspended_unpaid'])
+                ->where(function ($query): void {
+                    $query->where('type', 'deposit')
+                        ->orWhere('status', 'suspended_unpaid')
+                        ->orWhere('reason', 'like', '%setoran%')
+                        ->orWhere('reason', 'like', '%Belum bayar%');
+                })
+                ->update(['status' => 'released', 'end_at' => Carbon::now()]);
+
+            $hasActiveNonDepositSuspension = DriverSuspension::query()
+                ->where('driver_id', $driver->id)
+                ->whereIn('status', ['active', 'suspended'])
+                ->where(function ($query): void {
+                    $query->whereNull('type')
+                        ->orWhere('type', '!=', 'deposit');
+                })
+                ->exists();
+
+            if (! $hasActiveNonDepositSuspension && $driver->status !== 'permanent') {
+                $driver->update([
+                    'status' => 'active',
+                    'is_suspend' => false,
+                    'suspended_until' => null,
+                ]);
+
+                $driver->user?->update([
+                    'is_suspended' => false,
+                    'suspension_reason' => null,
+                    'suspended_until' => null,
+                ]);
+            }
+
+            DriverDeposit::query()
+                ->where('driver_id', $driver->id)
+                ->where('status', 'unpaid')
+                ->whereDate('due_date', '<=', now()->toDateString())
+                ->get()
+                ->each(function (DriverDeposit $deposit) use ($actor): void {
+                    $breakdown = $deposit->breakdown ?? [];
+                    $breakdown['manual_suspend_release'] = true;
+                    $breakdown['manual_suspend_release_at'] = now()->toIso8601String();
+                    $breakdown['manual_suspend_release_by'] = $actor?->id;
+
+                    $deposit->forceFill(['breakdown' => $breakdown])->save();
+                });
+        });
+    }
+
     public function releaseIfExpired(Driver $driver): bool
     {
         if (
