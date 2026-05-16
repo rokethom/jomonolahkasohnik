@@ -43,6 +43,7 @@ import {
   getApiErrorMessage,
   googleLoginUrl,
   logout,
+  fetchLivePriceReview,
   previewJojoBot,
   requestCancelOrder,
   sendChatMessage,
@@ -577,6 +578,7 @@ function App() {
   ])
   const [typing, setTyping] = useState(false)
   const [pendingOrder, setPendingOrder] = useState<OrderPayload | null>(null)
+  const [activeLivePriceReviewToken, setActiveLivePriceReviewToken] = useState<string | null>(null)
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [showBelanjaForm, setShowBelanjaForm] = useState(false)
   const [showKurirForm, setShowKurirForm] = useState(false)
@@ -682,6 +684,7 @@ function App() {
     })
     if (isAcceptedOrder(assignedOrder)) setScreen('driver-chat')
     setPendingOrder(null)
+    setActiveLivePriceReviewToken(null)
     setOrderSubmitBlocked(false)
 
     return assignedOrder
@@ -1043,6 +1046,53 @@ function App() {
     setMessages((rows) => [...rows, { ...message, id: crypto.randomUUID(), time: nowTime() }])
   }
 
+  useEffect(() => {
+    if (!activeLivePriceReviewToken || !token) return
+
+    let cancelled = false
+    const timer = window.setInterval(() => {
+      void fetchLivePriceReview(activeLivePriceReviewToken)
+        .then((review) => {
+          if (cancelled) return
+
+          if (review.status === 'approved' && review.can_confirm && review.order_payload) {
+            const preview: JojoBotPreview = {
+              intent: 'order_preview',
+              services: [],
+              selected_service: review.order_payload.service_type,
+              service_type: review.order_payload.service_type,
+              parsed: {
+                pickup_address: review.order_payload.pickup_address,
+                destination_address: review.order_payload.destination_address,
+                notes: review.correction_reason ?? undefined,
+              },
+              quote: review.quote ?? null,
+              order_payload: review.order_payload,
+              live_price_review: review,
+              actions: ['preview_order'],
+              reply: 'Harga sudah dikonfirmasi operator. Silakan cek summary final lalu kirim order.',
+            }
+            setPendingOrder(review.order_payload)
+            setOrderSubmitBlocked(false)
+            setActiveLivePriceReviewToken(null)
+            pushMessage({ from: 'bot', text: preview.reply, preview })
+          }
+
+          if (review.status === 'rejected') {
+            setActiveLivePriceReviewToken(null)
+            setPendingOrder(null)
+            pushMessage({ from: 'bot', text: review.correction_reason || 'Order perlu dicek ulang. Silakan kirim ulang alamat pickup dan tujuan.' })
+          }
+        })
+        .catch(() => undefined)
+    }, 2500)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [activeLivePriceReviewToken, token])
+
   const closeManualForms = () => {
     setShowBelanjaForm(false)
     setShowKurirForm(false)
@@ -1057,6 +1107,7 @@ function App() {
 
     closeManualForms()
     setPendingOrder(null)
+    setActiveLivePriceReviewToken(null)
     setOrderSubmitBlocked(false)
     setActiveManualService(service)
     setShowBelanjaForm(kind === 'belanja')
@@ -1131,6 +1182,7 @@ function App() {
     if (requestedService) {
       closeManualForms()
       setPendingOrder(null)
+      setActiveLivePriceReviewToken(null)
       setOrderSubmitBlocked(false)
 
       if (mustUseGiftOrder(store.user) && !isOutsideAreaService(requestedService)) {
@@ -1188,6 +1240,7 @@ function App() {
 
     if (/^tidak$/i.test(text) && pendingOrder) {
       setPendingOrder(null)
+      setActiveLivePriceReviewToken(null)
       setOrderSubmitBlocked(false)
       pushMessage({
         from: 'bot',
@@ -1209,8 +1262,13 @@ function App() {
     setTyping(true)
     try {
       const preview = await previewJojoBot(text, await previewDeviceLocation(text, store.user) ?? undefined)
-      if (preview.order_payload) setPendingOrder(preview.order_payload)
-      if (preview.order_payload) setOrderSubmitBlocked(false)
+      if (preview.live_price_review?.status === 'pending') {
+        setActiveLivePriceReviewToken(preview.live_price_review.token)
+        setPendingOrder(null)
+      } else if (preview.order_payload) {
+        setPendingOrder(preview.order_payload)
+        setOrderSubmitBlocked(false)
+      }
       pushMessage({ from: 'bot', text: preview.reply, preview })
     } catch (error) {
       const message = getApiErrorMessage(error, 'JOJOBOT belum bisa memproses pesan ini. Silakan pakai form manual.')
@@ -1263,8 +1321,13 @@ function App() {
         return null
       }
 
-      setPendingOrder(preview.order_payload)
-      setOrderSubmitBlocked(false)
+      if (preview.live_price_review?.status === 'pending') {
+        setActiveLivePriceReviewToken(preview.live_price_review.token)
+        setPendingOrder(null)
+      } else {
+        setPendingOrder(preview.order_payload)
+        setOrderSubmitBlocked(false)
+      }
       pushMessage({
         from: 'bot',
         text: preview.reply,
@@ -2369,6 +2432,17 @@ function ChatOrderActions({
       ? [publicSettings.payment.transfer_account]
       : []
   const selectedPaymentMethod = paymentMethods.find((method) => method.key === selectedPayment)
+  const liveReview = preview?.live_price_review
+  if (liveReview?.status === 'pending' || (liveReview?.status === 'approved' && !liveReview.can_confirm)) {
+    return (
+      <div className="chat-action-panel live-price-loading">
+        <div className="live-price-spinner" />
+        <strong>{liveReview.status === 'approved' ? 'Harga sudah dikonfirmasi' : 'Harga sedang dicek operator'}</strong>
+        <p>{liveReview.status === 'approved' ? 'Tombol konfirmasi akan aktif sebentar lagi.' : 'Mohon tunggu. Operator/eksekutor sedang memastikan harga agar tidak salah.'}</p>
+      </div>
+    )
+  }
+
   const updateVehicle = (vehicle: 'motor' | 'mobil') => {
     if (!pendingOrder) return
     onPendingOrderChange({

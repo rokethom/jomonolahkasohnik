@@ -17,6 +17,7 @@ use App\Models\Driver;
 use App\Models\DriverDeposit;
 use App\Models\GeofenceArea;
 use App\Models\KeywordParser;
+use App\Models\LivePriceReview;
 use App\Models\LocationLog;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
@@ -39,6 +40,7 @@ use App\Services\DriverReportService;
 use App\Services\DriverSuspendService;
 use App\Services\JojoBotService;
 use App\Services\KeywordParserService;
+use App\Services\LivePriceReviewService;
 use App\Services\MultiOrderService;
 use App\Services\NotificationService;
 use App\Services\OrderFeedbackService;
@@ -109,6 +111,7 @@ class AdminController extends Controller
             'pricing_keyword_rules' => $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)),
             'ring_pricing_rules' => $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
             'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),
+            'live_price_reviews' => $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)),
             'zone_pricing_rules' => $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)),
             'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
@@ -1148,6 +1151,66 @@ class AdminController extends Controller
             'message' => 'Manual order created',
             'data' => $this->orderPayload($order->fresh(['user.branch', 'driver.user.branch'])),
         ], 201);
+    }
+
+    public function livePriceReviews(Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        abort_unless($this->canHandleLivePriceReview($request->user()), 403);
+
+        return response()->json([
+            'data' => $this->livePriceReviewsQuery($request->user())
+                ->limit(100)
+                ->get()
+                ->map(fn (LivePriceReview $review): array => $liveReviews->payload($review)),
+        ]);
+    }
+
+    public function approveLivePriceReview(LivePriceReview $review, Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        abort_unless($this->canHandleLivePriceReview($request->user()), 403);
+        $this->assertLivePriceReviewScope($request->user(), $review);
+
+        $payload = $request->validate([
+            'price' => ['required', 'integer', 'min:0'],
+            'service_fee' => ['required', 'integer', 'min:0'],
+            'extra_charge' => ['sometimes', 'integer', 'min:-1000000', 'max:1000000'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $review = $liveReviews->approve($review, $request->user(), $payload);
+        $this->recordAudit($request->user(), 'approved_live_price_review', $review, [
+            'review_id' => $review->id,
+            'service_type' => $review->service_type,
+            'system_price' => $review->system_price,
+            'corrected_price' => $review->corrected_price,
+            'corrected_total_price' => $review->corrected_total_price,
+        ]);
+
+        return response()->json([
+            'message' => 'Harga live dikonfirmasi. Customer dapat konfirmasi setelah delay.',
+            'data' => $liveReviews->payload($review),
+        ]);
+    }
+
+    public function rejectLivePriceReview(LivePriceReview $review, Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        abort_unless($this->canHandleLivePriceReview($request->user()), 403);
+        $this->assertLivePriceReviewScope($request->user(), $review);
+
+        $payload = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $review = $liveReviews->reject($review, $request->user(), $payload['reason'] ?? null);
+        $this->recordAudit($request->user(), 'rejected_live_price_review', $review, [
+            'review_id' => $review->id,
+            'reason' => $review->correction_reason,
+        ]);
+
+        return response()->json([
+            'message' => 'Review harga ditolak.',
+            'data' => $liveReviews->payload($review),
+        ]);
     }
 
     private function assertManualOrderCustomerScope(User $actor, User $customer): void
@@ -2263,6 +2326,8 @@ class AdminController extends Controller
             'night_tariff_rules.*.end' => ['required_with:night_tariff_rules', 'date_format:H:i'],
             'night_tariff_rules.*.percent' => ['required_with:night_tariff_rules', 'integer', 'min:0', 'max:300'],
             'zone_pricing_enabled' => ['sometimes', 'boolean'],
+            'live_price_review_enabled' => ['sometimes', 'boolean'],
+            'live_price_review_delay_seconds' => ['sometimes', 'integer', 'min:5', 'max:10'],
             'assign_driver_allowed_roles' => ['sometimes', 'array'],
             'assign_driver_allowed_roles.*' => ['string', Rule::in(['manager', 'spv', 'operator', 'eksekutor'])],
             'edit_tarif_allowed_roles' => ['sometimes', 'array'],
@@ -2281,7 +2346,7 @@ class AdminController extends Controller
         if (array_key_exists('order_cancelled', $templates)) {
             $settings->set(OrderFeedbackService::CANCELLED_KEY, $templates['order_cancelled']);
         }
-        foreach (['order_close_enabled', 'order_close_start', 'order_close_end', 'order_close_message', 'multi_crew_auto_cancel_enabled', 'multi_crew_auto_cancel_minutes', 'multi_crew_auto_cancel_message', 'driver_daily_priority_enabled', 'driver_daily_priority_hold_minutes', 'night_tariff_enabled', 'zone_pricing_enabled'] as $key) {
+        foreach (['order_close_enabled', 'order_close_start', 'order_close_end', 'order_close_message', 'multi_crew_auto_cancel_enabled', 'multi_crew_auto_cancel_minutes', 'multi_crew_auto_cancel_message', 'driver_daily_priority_enabled', 'driver_daily_priority_hold_minutes', 'night_tariff_enabled', 'zone_pricing_enabled', 'live_price_review_enabled', 'live_price_review_delay_seconds'] as $key) {
             if (array_key_exists($key, $payload)) {
                 $settings->set($key, $payload[$key]);
             }
@@ -2764,6 +2829,44 @@ class AdminController extends Controller
         }
 
         return $query;
+    }
+
+    private function livePriceReviewsQuery(User $actor): Builder
+    {
+        $query = LivePriceReview::query()
+            ->with(['customer.branch', 'branch', 'reviewer'])
+            ->whereIn('status', [LivePriceReview::STATUS_PENDING, LivePriceReview::STATUS_APPROVED])
+            ->latest();
+
+        if (! $this->canHandleLivePriceReview($actor)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->where(function (Builder $query) use ($branchIds): void {
+                $query->whereIn('branch_id', $branchIds)
+                    ->orWhereHas('customer', fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
+            });
+        }
+
+        return $query;
+    }
+
+    private function canHandleLivePriceReview(User $actor): bool
+    {
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::Eksekutor], true)
+            || $actor->hasPermission('manual_order');
+    }
+
+    private function assertLivePriceReviewScope(User $actor, LivePriceReview $review): void
+    {
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds === null) {
+            return;
+        }
+
+        abort_unless($review->branch_id !== null && in_array((int) $review->branch_id, $branchIds, true), 403, 'Review harga di luar area akun ini.');
     }
 
     private function stats(User $user): array
@@ -3842,6 +3945,8 @@ class AdminController extends Controller
             'night_tariff_enabled' => $settings->bool('night_tariff_enabled', true),
             'night_tariff_rules' => app(OrderOperationService::class)->nightRules(),
             'zone_pricing_enabled' => $settings->bool('zone_pricing_enabled', true),
+            'live_price_review_enabled' => $settings->bool('live_price_review_enabled', false),
+            'live_price_review_delay_seconds' => max(5, min(10, $settings->int('live_price_review_delay_seconds', 5))),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'edit_tarif_allowed_roles' => app(RolePermissionSettingService::class)->editTarifAllowedRoles(),
         ];

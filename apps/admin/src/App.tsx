@@ -17,7 +17,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'web_admin' | 'cms_editor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'live-price-reviews' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
 type DriverListMode = 'all' | 'online'
 const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
 const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
@@ -260,6 +260,31 @@ type KeywordParser = { id: number; keyword: string; service_type: string; respon
 type PricingKeywordRule = { id: number; name: string; keywords: string; amount: number; service_scopes?: string[] | null; is_active: boolean; priority: number; description?: string | null; created_at?: string | null; updated_at?: string | null }
 type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'branch_code' | 'name' | 'area' | 'display_name'> | null; service_type?: string | null; name: string; area_mode?: 'text' | 'polygon' | string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; polygon_coordinates?: Array<{ lat: number; lng: number }>; polygon_match_point?: string | null; match_type?: 'point' | 'cross' | string; pickup_ring?: string | null; destination_ring?: string | null; ring: string; min_km?: string | number | null; max_km?: string | number | null; pricing_mode?: 'flat' | 'formula' | string; price: number; per_km_rate?: number | null; subtract_value?: number | null; service_fee?: number | null; priority?: number | null; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
 type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggestion_type?: string | null; learning_source?: string | null; suggested_price: number; previous_price?: number | null; system_price?: number | null; price_delta?: number | null; confidence?: number | null; occurrence_count: number; sample_order_ids?: number[]; evidence?: Record<string, unknown> | null; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
+type LivePriceReview = {
+  id: number
+  token: string
+  status: 'pending' | 'approved' | 'rejected' | 'consumed' | string
+  service_type?: string | null
+  customer?: string | null
+  branch?: string | null
+  raw_text?: string | null
+  parsed?: Record<string, unknown> | null
+  system_price: number
+  system_service_fee: number
+  system_total_price: number
+  corrected_price?: number | null
+  corrected_service_fee?: number | null
+  corrected_extra_charge?: number | null
+  corrected_total_price?: number | null
+  correction_reason?: string | null
+  reviewed_by?: string | null
+  confirmation_available_at?: string | null
+  can_confirm?: boolean
+  order_payload?: ManualOrderPayload | null
+  quote?: ManualOrderPreview['quote']
+  created_at?: string | null
+  updated_at?: string | null
+}
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; shape_type?: 'circle' | 'polygon' | string; polygon_coordinates?: Array<{ lat: number; lng: number }> | null; is_active: boolean }
 type ZonePricingRule = {
   id: number
@@ -346,6 +371,8 @@ type SystemSettings = {
   night_tariff_enabled?: boolean
   night_tariff_rules?: NightTariffRule[]
   zone_pricing_enabled?: boolean
+  live_price_review_enabled?: boolean
+  live_price_review_delay_seconds?: number
   assign_driver_allowed_roles?: Role[]
   edit_tarif_allowed_roles?: Role[]
   feedback_templates?: {
@@ -425,6 +452,7 @@ type Bootstrap = {
   pricing_keyword_rules?: PricingKeywordRule[]
   ring_pricing_rules?: RingPricingRule[]
   ring_pricing_suggestions?: RingPricingSuggestion[]
+  live_price_reviews?: LivePriceReview[]
   zone_pricing_rules?: ZonePricingRule[]
   geofences: Geofence[]
   location_logs: LocationLog[]
@@ -562,6 +590,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
       { id: 'sticky-notes', label: 'Sticky Notes', icon: 'note' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
+      { id: 'live-price-reviews', label: 'Live Edit Harga', icon: 'cash' },
     ],
   },
   {
@@ -655,7 +684,10 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_monitor_live_chat) views.add('chats')
   if (permissions.can_use_internal_chat) views.add('internal-chat')
   if (permissions.can_use_internal_notes) views.add('sticky-notes')
-  if (permissions.can_create_manual_order) views.add('manual-order')
+  if (permissions.can_create_manual_order) {
+    views.add('manual-order')
+    views.add('live-price-reviews')
+  }
   if (permissions.can_manage_system_settings) {
     views.add('settings')
   }
@@ -1084,6 +1116,7 @@ function App() {
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
+        {safeView === 'live-price-reviews' && <LivePriceReviewPanel reviews={data.live_price_reviews ?? []} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
         {safeView === 'locations' && <LocationLogsPanel logs={data.location_logs} branches={data.branches} canViewMaps={data.me.role === 'admin'} />}
@@ -2532,6 +2565,8 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [nightTariffEnabled, setNightTariffEnabled] = useState(settings.night_tariff_enabled ?? true)
   const [nightTariffRules, setNightTariffRules] = useState<NightTariffRule[]>(settings.night_tariff_rules ?? defaultNightTariffRules())
   const [zonePricingEnabled, setZonePricingEnabled] = useState(settings.zone_pricing_enabled ?? true)
+  const [livePriceReviewEnabled, setLivePriceReviewEnabled] = useState(settings.live_price_review_enabled ?? false)
+  const [livePriceReviewDelaySeconds, setLivePriceReviewDelaySeconds] = useState(settings.live_price_review_delay_seconds ?? 5)
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
   const [editTarifAllowedRoles, setEditTarifAllowedRoles] = useState<Role[]>(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
   const [feedbackTemplates, setFeedbackTemplates] = useState({
@@ -2557,6 +2592,8 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setNightTariffEnabled(settings.night_tariff_enabled ?? true)
     setNightTariffRules(settings.night_tariff_rules ?? defaultNightTariffRules())
     setZonePricingEnabled(settings.zone_pricing_enabled ?? true)
+    setLivePriceReviewEnabled(settings.live_price_review_enabled ?? false)
+    setLivePriceReviewDelaySeconds(settings.live_price_review_delay_seconds ?? 5)
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
     setEditTarifAllowedRoles(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
     setFeedbackTemplates({
@@ -2588,6 +2625,8 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           night_tariff_enabled: nightTariffEnabled,
           night_tariff_rules: nightTariffRules,
           zone_pricing_enabled: zonePricingEnabled,
+          live_price_review_enabled: livePriceReviewEnabled,
+          live_price_review_delay_seconds: livePriceReviewDelaySeconds,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
           edit_tarif_allowed_roles: editTarifAllowedRoles,
           feedback_templates: feedbackTemplates,
@@ -2627,6 +2666,38 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
             onChange={(event) => setMaxMultiOrder(Math.max(1, Math.min(3, Number(event.target.value))))}
           />
         </label>
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Live Edit Harga Customer</h2>
+            <p>Jika aktif, preview order customer masuk antrean operator/eksekutor. Customer melihat loading harga sampai operator mengonfirmasi harga.</p>
+          </div>
+          <span className="status info">{livePriceReviewEnabled ? 'Aktif' : 'Nonaktif'}</span>
+        </div>
+        <div className="settings-grid">
+          <label className="admin-toggle-row">
+            <input
+              type="checkbox"
+              checked={livePriceReviewEnabled}
+              disabled={!permissions.can_manage_system_settings}
+              onChange={(event) => setLivePriceReviewEnabled(event.target.checked)}
+            />
+            <span>Aktifkan live correction harga customer</span>
+          </label>
+          <label>
+            Delay tombol konfirmasi
+            <input
+              type="number"
+              min={5}
+              max={10}
+              value={livePriceReviewDelaySeconds}
+              disabled={!permissions.can_manage_system_settings}
+              onChange={(event) => setLivePriceReviewDelaySeconds(Math.max(5, Math.min(10, Number(event.target.value))))}
+            />
+          </label>
+        </div>
+        <div className="notice">Manual Order operator tetap langsung memakai halaman manual order saat ini. Fitur ini khusus order dari FE customer.</div>
       </div>
       <div className="feedback-cms daily-priority-card">
         <div className="section-head">
@@ -5462,6 +5533,118 @@ function ManualOrderPreviewCard({
   )
 }
 
+function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void> }) {
+  const [rows, setRows] = useState(reviews)
+  const [savingId, setSavingId] = useState<number | null>(null)
+
+  useEffect(() => setRows(reviews), [reviews])
+
+  const refreshReviews = async () => {
+    const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-reviews')
+    setRows(response.data)
+  }
+
+  const updateRow = (id: number, patch: Partial<LivePriceReview>) => {
+    setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row))
+  }
+
+  const approve = async (review: LivePriceReview) => {
+    setSavingId(review.id)
+    try {
+      await api(`/admin/live-price-reviews/${review.id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({
+          price: Number(review.corrected_price ?? review.system_price),
+          service_fee: Number(review.corrected_service_fee ?? review.system_service_fee),
+          extra_charge: Number(review.corrected_extra_charge ?? 0),
+          reason: review.correction_reason ?? 'Harga dikonfirmasi live.',
+        }),
+      })
+      await refreshReviews()
+      await onChanged()
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const reject = async (review: LivePriceReview) => {
+    const reason = window.prompt('Alasan tolak / minta customer ulang order', review.correction_reason ?? 'Alamat atau harga perlu dicek ulang.')
+    if (reason === null) return
+    setSavingId(review.id)
+    try {
+      await api(`/admin/live-price-reviews/${review.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      })
+      await refreshReviews()
+      await onChanged()
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  return (
+    <section className="panel live-price-review-panel">
+      <PanelHeader title="Live Edit Harga Customer" action={`${rows.length} review`} />
+      <div className="notice">Khusus order dari FE customer. Operator/eksekutor koreksi harga di sini, lalu customer menerima preview harga final dan tombol konfirmasi aktif setelah delay CMS.</div>
+      <div className="manual-ai-actions">
+        <button className="secondary-button compact" type="button" onClick={() => void refreshReviews()}>Refresh review</button>
+      </div>
+      <div className="live-price-review-list">
+        {rows.length === 0 && <EmptyPanel title="Tidak ada review harga" copy="Preview customer yang butuh koreksi harga akan muncul di sini." />}
+        {rows.map((review) => {
+          const correctedPrice = Number(review.corrected_price ?? review.system_price)
+          const correctedFee = Number(review.corrected_service_fee ?? review.system_service_fee)
+          const correctedExtra = Number(review.corrected_extra_charge ?? 0)
+          const correctedTotal = correctedPrice + correctedFee + correctedExtra
+          const payload = review.order_payload ?? null
+
+          return (
+            <article className="live-price-review-card" key={review.id}>
+              <div className="section-head">
+                <div>
+                  <h2>{serviceDisplayName(review.service_type ?? payload?.service_type ?? 'Order')}</h2>
+                  <p>{review.customer ?? 'Customer'} · {review.branch ?? 'Cabang belum terbaca'} · {formatShortDateTime(review.created_at ?? null)}</p>
+                </div>
+                <span className={`status ${review.status === 'pending' ? 'warning' : 'success'}`}>{review.status}</span>
+              </div>
+              <div className="live-price-grid">
+                <div className="manual-workspace-card">
+                  <strong>Order Customer</strong>
+                  <p className="preserve-lines">{review.raw_text || '-'}</p>
+                  <small>Pickup: {payload?.pickup_address ?? String(review.parsed?.pickup_address ?? '-')}</small>
+                  <small>Tujuan: {payload?.destination_address ?? String(review.parsed?.destination_address ?? '-')}</small>
+                </div>
+                <div className="manual-workspace-card">
+                  <strong>Harga Sistem</strong>
+                  <div className="manual-preview-detail">
+                    <div><span>Tarif</span><b>Rp {Number(review.system_price).toLocaleString('id-ID')}</b></div>
+                    <div><span>Service fee</span><b>Rp {Number(review.system_service_fee).toLocaleString('id-ID')}</b></div>
+                    <div><span>Total</span><b>Rp {Number(review.system_total_price).toLocaleString('id-ID')}</b></div>
+                  </div>
+                  <small>AI/OSRM tetap dicatat sebagai pembanding learning.</small>
+                </div>
+                <div className="manual-workspace-card live-correction-card">
+                  <strong>Live Correction</strong>
+                  <label>Tarif final<input type="number" value={correctedPrice} onChange={(event) => updateRow(review.id, { corrected_price: Number(event.target.value) })} /></label>
+                  <label>Service fee<input type="number" value={correctedFee} onChange={(event) => updateRow(review.id, { corrected_service_fee: Number(event.target.value) })} /></label>
+                  <label>Tambahan/potongan<input type="number" value={correctedExtra} onChange={(event) => updateRow(review.id, { corrected_extra_charge: Number(event.target.value) })} /></label>
+                  <label>Alasan<textarea value={review.correction_reason ?? ''} onChange={(event) => updateRow(review.id, { correction_reason: event.target.value })} /></label>
+                  <div className="manual-preview-total"><span>Total customer</span><strong>Rp {correctedTotal.toLocaleString('id-ID')}</strong></div>
+                  <div className="manual-preview-actions">
+                    <button className="primary-button compact" type="button" disabled={savingId === review.id} onClick={() => void approve({ ...review, corrected_price: correctedPrice, corrected_service_fee: correctedFee, corrected_extra_charge: correctedExtra, corrected_total_price: correctedTotal })}>{savingId === review.id ? 'Menyimpan...' : 'Konfirmasi harga'}</button>
+                    <button className="mini-button reject" type="button" disabled={savingId === review.id} onClick={() => void reject(review)}>Tolak</button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function previewCustomer(preview: ManualOrderPreview | null) {
   const parsed = preview?.parsed ?? {}
   const customer = (parsed.customer && typeof parsed.customer === 'object' ? parsed.customer : {}) as Record<string, unknown>
@@ -5507,6 +5690,12 @@ function manualDisplayValue(value: unknown) {
 
   return undefined
 }
+
+function serviceDisplayName(value: unknown) {
+  const service = String(value ?? '').replace(/_/g, ' ').trim()
+  return service ? service.replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Order'
+}
+
 function BranchesPanel({ branches, me, api, onChanged }: { branches: Branch[]; me: User; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showForm, setShowForm] = useState(false)
   const canCreate = ['admin', 'gm'].includes(me.role)
@@ -6029,7 +6218,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'live-price-reviews': 'Live Edit Harga', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
 }
 
 function internalNoteStatusLabel(status: InternalNoteStatus) {

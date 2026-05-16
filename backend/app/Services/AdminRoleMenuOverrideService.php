@@ -26,6 +26,7 @@ class AdminRoleMenuOverrideService
                 'internal-chat' => 'Internal Chat',
                 'sticky-notes' => 'Sticky Notes',
                 'manual-order' => 'Manual Order',
+                'live-price-reviews' => 'Live Edit Harga',
             ],
             'Management' => [
                 'users' => 'Users',
@@ -142,6 +143,7 @@ class AdminRoleMenuOverrideService
 
         if ($permissions['can_create_manual_order'] ?? false) {
             $views[] = 'manual-order';
+            $views[] = 'live-price-reviews';
         }
 
         if ($permissions['can_manage_system_settings'] ?? false) {

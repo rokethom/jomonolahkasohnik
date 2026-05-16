@@ -87,6 +87,19 @@ export type OrderPayload = {
   preferred_vehicle_type?: 'motor' | 'mobil'
   vehicle_seat_rows?: 2 | 3
   driver_preference?: 'general' | 'ladies'
+  live_price_review_token?: string
+}
+
+export type LivePriceReview = {
+  id: number
+  token: string
+  status: 'pending' | 'approved' | 'rejected' | 'consumed' | string
+  can_confirm?: boolean
+  correction_reason?: string | null
+  confirmation_available_at?: string | null
+  corrected_total_price?: number | null
+  order_payload?: OrderPayload | null
+  quote?: PriceQuote | null
 }
 
 export type GeocodePayload = {
@@ -283,6 +296,7 @@ export type JojoBotPreview = {
   }
   quote?: PriceQuote | null
   order_payload?: OrderPayload | null
+  live_price_review?: LivePriceReview | null
   actions?: Array<'add_point' | 'preview_order' | string>
   fallback_format?: string
   reply: string
@@ -305,6 +319,11 @@ export async function previewJojoBot(rawText: string, deviceLocation?: { lat: nu
     raw_text: rawText,
     ...(deviceLocation ? { device_location: deviceLocation } : {}),
   })
+  return data.data
+}
+
+export async function fetchLivePriceReview(token: string) {
+  const { data } = await api.get<{ data: LivePriceReview }>(`/jojobot/live-price-reviews/${token}`)
   return data.data
 }
 

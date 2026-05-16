@@ -13,6 +13,7 @@ use App\Services\OrderCodeGenerator;
 use App\Services\MultiOrderService;
 use App\Services\GeocodingService;
 use App\Services\LocationValidationService;
+use App\Services\LivePriceReviewService;
 use App\Services\OrderService;
 use App\Services\OrderCrewDecisionService;
 use App\Services\PricingService;
@@ -35,6 +36,7 @@ class CreateOrder
         private readonly OrderService $orders,
         private readonly OrderCrewDecisionService $crewDecisions,
         private readonly LocationValidationService $locations,
+        private readonly LivePriceReviewService $livePriceReviews,
         private readonly SettingService $settings,
         private readonly NotificationService $notifications,
         private readonly DriverFinanceService $finance,
@@ -73,6 +75,11 @@ class CreateOrder
                 $pricing['service_fee_breakdown'] = [];
                 $pricing['final_price'] = (int) ($pricing['tarif'] ?? 0) + (int) ($pricing['extra_charge'] ?? 0);
                 $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nFlag: helper kue tart tanpa service charge.");
+            }
+            $livePriceReview = $this->livePriceReviews->approvedReviewForOrder($user, $payload);
+            if ($livePriceReview) {
+                $pricing = $this->livePriceReviews->applyApprovedPricing($pricing, $livePriceReview);
+                $payload['notes'] = trim((string) ($payload['notes'] ?? '')."\nHarga dikonfirmasi via Live Price Review #{$livePriceReview->id}.");
             }
             $service = $this->resolveService((string) ($payload['service_type'] ?? 'ojek'));
             $branch = $payload['branch_id'] ? Branch::query()->find($payload['branch_id']) : $user->branch;
@@ -152,6 +159,10 @@ class CreateOrder
                     'price' => $item['price'] ?? 0,
                     'notes' => $item['notes'] ?? null,
                 ]);
+            }
+
+            if (isset($livePriceReview)) {
+                $this->livePriceReviews->markConsumed($livePriceReview, $order);
             }
 
             DB::afterCommit(function () use ($order): void {

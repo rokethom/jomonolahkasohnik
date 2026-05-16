@@ -3,14 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\LivePriceReview;
 use App\Services\JojoBotService;
+use App\Services\LivePriceReviewService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class JojoBotController extends Controller
 {
-    public function preview(Request $request, JojoBotService $jojoBot): JsonResponse
+    public function preview(Request $request, JojoBotService $jojoBot, LivePriceReviewService $liveReviews): JsonResponse
     {
         $data = $request->validate([
             'raw_text' => ['required', 'string', 'max:4000'],
@@ -29,6 +31,10 @@ class JojoBotController extends Controller
             }
 
             $preview = $jojoBot->preview($user, $data['raw_text']);
+            $review = $liveReviews->createFromPreview($user, $data['raw_text'], $preview);
+            if ($review) {
+                $preview = $liveReviews->attachToPreview($preview, $review);
+            }
         } catch (\Throwable $exception) {
             Log::warning('jojobot.preview_failed', [
                 'user_id' => $request->user()?->id,
@@ -51,6 +57,19 @@ class JojoBotController extends Controller
             'form_schema' => $preview['form_schema'] ?? null,
             'service_type' => $preview['service_type'] ?? $preview['selected_service'] ?? null,
             'data' => $preview,
+        ]);
+    }
+
+    public function livePriceReviewStatus(string $token, Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        $review = LivePriceReview::query()
+            ->with(['customer.branch', 'branch', 'reviewer'])
+            ->where('token', $token)
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => $liveReviews->payload($review),
         ]);
     }
 }

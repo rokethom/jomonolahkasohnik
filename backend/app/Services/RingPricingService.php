@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Models\LivePriceReview;
 use App\Models\RingPricingRule;
 use App\Models\RingPricingSuggestion;
 use App\Models\User;
@@ -229,6 +230,57 @@ class RingPricingService
                 'request_deposit_jasa' => data_get($order->pricing_breakdown, 'request_deposit_jasa'),
                 'raw_text' => $order->raw_text,
                 'notes' => $order->notes,
+            ],
+        ]);
+    }
+
+    public function recordLivePriceReview(LivePriceReview $review, ?User $actor = null): ?RingPricingSuggestion
+    {
+        $payload = $review->order_payload ?? [];
+        $quote = $review->quote ?? [];
+        $pickup = (string) ($payload['pickup_address'] ?? '');
+        $destination = (string) ($payload['destination_address'] ?? '');
+        $suggestedPrice = (int) ($review->corrected_price ?? $review->system_price);
+
+        if ($pickup === '' || $destination === '' || $suggestedPrice <= 0) {
+            return null;
+        }
+
+        $order = new Order([
+            'branch_id' => $review->branch_id,
+            'service_type' => $review->service_type,
+            'pickup_address' => $pickup,
+            'destination_address' => $destination,
+            'price' => $suggestedPrice,
+            'service_charge' => (int) ($review->corrected_service_fee ?? $review->system_service_fee),
+            'total_price' => (int) ($review->corrected_total_price ?? $review->system_total_price),
+            'distance_km' => (float) ($quote['distance'] ?? $quote['distance_km'] ?? 0),
+            'source' => 'live_price_review',
+            'raw_text' => $review->raw_text,
+            'pricing_breakdown' => $quote,
+        ]);
+        $order->exists = true;
+        $order->id = $review->order_id;
+        $order->order_code = $review->order?->order_code ?? ('LIVE-'.$review->id);
+
+        return $this->recordSuggestion($order, [
+            'suggestion_type' => 'live_price_review',
+            'learning_source' => 'operator_live_correction',
+            'suggested_price' => $suggestedPrice,
+            'previous_price' => $review->system_price,
+            'system_price' => $review->system_price,
+            'price_delta' => $suggestedPrice - (int) $review->system_price,
+            'confidence' => $this->confidenceForDelta((int) $review->system_price, $suggestedPrice, 88),
+            'last_edited_by' => $actor?->id,
+            'evidence' => [
+                'reason' => $review->correction_reason ?: 'Harga dikonfirmasi dari Live Price Review.',
+                'live_price_review_id' => $review->id,
+                'order_id' => $review->order_id,
+                'system_price' => $review->system_price,
+                'corrected_price' => $suggestedPrice,
+                'system_total_price' => $review->system_total_price,
+                'corrected_total_price' => $review->corrected_total_price,
+                'raw_text' => $review->raw_text,
             ],
         ]);
     }

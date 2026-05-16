@@ -88,6 +88,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/{order}/repost-dispatch', [AdminController::class, 'repostDispatchOrder'])->middleware('permission:monitor_live_order');
         Route::post('/orders/manual/preview', [AdminController::class, 'previewManualOrder'])->middleware('permission:manual_order');
         Route::post('/orders/manual', [AdminController::class, 'manualOrder'])->middleware('permission:manual_order');
+        Route::get('/live-price-reviews', [AdminController::class, 'livePriceReviews'])->middleware('permission:manual_order');
+        Route::post('/live-price-reviews/{review}/approve', [AdminController::class, 'approveLivePriceReview'])->middleware('permission:manual_order');
+        Route::post('/live-price-reviews/{review}/reject', [AdminController::class, 'rejectLivePriceReview'])->middleware('permission:manual_order');
         Route::patch('/orders/{order}/price', [AdminController::class, 'updateOrderPrice'])->middleware('permission:edit_tarif');
         Route::post('/drivers/{driver}/suspend', [AdminController::class, 'suspendDriver'])->middleware('permission:suspend_driver');
         Route::post('/drivers/{driver}/release-suspend', [AdminController::class, 'releaseDriverSuspend'])->middleware('permission:unsuspend_driver');
@@ -155,6 +158,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/location/validate', [LocationController::class, 'validateLocation']);
     Route::post('/pricing/calculate', [PricingController::class, 'calculate'])->middleware('profile.complete');
     Route::post('/jojobot/preview', [JojoBotController::class, 'preview'])->middleware('profile.complete');
+    Route::get('/jojobot/live-price-reviews/{token}', [JojoBotController::class, 'livePriceReviewStatus'])->middleware('profile.complete');
 
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders/quote', [OrderController::class, 'quote'])->middleware('profile.complete');
