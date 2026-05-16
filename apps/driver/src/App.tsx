@@ -893,6 +893,9 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
         body: JSON.stringify({ online }),
       })
       setDriverState(payload.driver, payload.finance ?? finance)
+      if (online) {
+        await onRefreshOrders()
+      }
       toast(payload.message, online ? 'success' : 'warning')
     } catch (error) {
       setOnline(previousOnline)

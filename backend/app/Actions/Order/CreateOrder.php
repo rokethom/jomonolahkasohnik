@@ -145,16 +145,20 @@ class CreateOrder
                 ]);
             }
 
-            try {
-                OrderCreated::dispatch($order->fresh(['user', 'items']));
-            } catch (\Throwable $exception) {
-                Log::warning('broadcast.order_created_failed', [
-                    'order_id' => $order->id,
-                    'message' => $exception->getMessage(),
-                ]);
-            }
+            DB::afterCommit(function () use ($order): void {
+                $freshOrder = $order->fresh(['user', 'items']);
 
-            DB::afterCommit(fn () => $this->notifyEligibleDrivers($order->fresh(['user', 'items'])));
+                try {
+                    OrderCreated::dispatch($freshOrder);
+                } catch (\Throwable $exception) {
+                    Log::warning('broadcast.order_created_failed', [
+                        'order_id' => $order->id,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+
+                $this->notifyEligibleDrivers($freshOrder);
+            });
 
             return $order->fresh(['user', 'items']);
         });
@@ -166,7 +170,10 @@ class CreateOrder
             ->with(['user', 'setting'])
             ->where('status', 'active')
             ->where('is_available', true)
-            ->whereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id))
+            ->where(function ($query) use ($order): void {
+                $query->where('can_accept_all_areas', true)
+                    ->orWhereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id));
+            })
             ->get()
             ->filter(function (Driver $driver) use ($order): bool {
                 $deposit = $this->finance->monthlyDeposit($driver, now()->subMonth());
