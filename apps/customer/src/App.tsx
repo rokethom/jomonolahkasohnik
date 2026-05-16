@@ -363,6 +363,22 @@ function driverNameFromOrder(order?: Order | null) {
   return order?.driver?.user?.name ?? order?.driver_name ?? '-'
 }
 
+function driverPhoneFromOrder(order?: Order | null) {
+  return order?.driver?.user?.phone ?? order?.driver_phone ?? ''
+}
+
+function driverPhotoFromOrder(order?: Order | null) {
+  const directUrl = order?.driver?.user?.profile_photo_url
+    ?? order?.driver_photo_url
+    ?? order?.driver_profile_photo_url
+  if (directUrl) return cmsAssetUrl(directUrl)
+
+  const photoPath = order?.driver?.user?.profile_photo_path
+  if (!photoPath) return ''
+
+  return assetUrl(`/api/media/${photoPath.replace(/^\/+/, '')}`)
+}
+
 function isPurchaseOrder(order?: Order | null) {
   const service = String(order?.service_type ?? order?.service ?? '').toLowerCase()
   return ['do', 'delivery', 'belanja', 'gift_order', 'gift'].includes(service)
@@ -3113,9 +3129,12 @@ function FallbackForm({ onSend }: { onSend: (text: string) => void }) {
 function DriverChatScreen({ order }: { order: Order | null }) {
   const store = useCustomerStore()
   const driverName = driverNameFromOrder(order)
+  const driverPhone = driverPhoneFromOrder(order)
+  const driverPhotoUrl = driverPhotoFromOrder(order)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [showDriverTag, setShowDriverTag] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -3181,10 +3200,10 @@ function DriverChatScreen({ order }: { order: Order | null }) {
     <div className="driver-chat">
       <div className="chat-date">{todayLabel()}</div>
       {order && (
-        <div className="chat-participant-card">
+        <button type="button" className="chat-participant-card driver-card-trigger" onClick={() => setShowDriverTag(true)}>
           <span>Driver</span>
           <strong>{driverName !== '-' ? driverName : 'Driver belum tersedia'}</strong>
-        </div>
+        </button>
       )}
       <div className="message-list" ref={listRef}>
         {!order && <MessageBubble message={{ id: 'no-order', from: 'system', text: 'Belum ada order yang diterima driver.', time: nowTime() }} />}
@@ -3222,6 +3241,50 @@ function DriverChatScreen({ order }: { order: Order | null }) {
       </div>
       <InputBar onSend={(text) => void sendDriverChat(text)} onImage={(file, caption) => void sendDriverChat(caption || file.name, file)} replyTarget={replyTarget} onClearReply={() => setReplyTarget(null)} />
       {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
+      {showDriverTag && (
+        <DriverNameTagModal
+          name={driverName !== '-' ? driverName : 'Driver belum tersedia'}
+          phone={driverPhone}
+          photoUrl={driverPhotoUrl}
+          onClose={() => setShowDriverTag(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function DriverNameTagModal({ name, phone, photoUrl, onClose }: { name: string; phone?: string | null; photoUrl?: string; onClose: () => void }) {
+  const whatsappNumber = normalizeWhatsappNumber(phone ?? '')
+  const whatsappUrl = whatsappNumber ? `https://wa.me/${whatsappNumber}` : ''
+
+  return (
+    <div className="mini-modal-backdrop" onClick={onClose}>
+      <section className="driver-name-tag-modal" onClick={(event) => event.stopPropagation()} aria-label="Detail driver">
+        <button type="button" className="driver-name-tag-close" onClick={onClose} aria-label="Tutup detail driver">x</button>
+        <div className="driver-name-tag-photo">
+          {photoUrl ? <img src={photoUrl} alt={`Foto ${name}`} /> : <UserRound size={44} />}
+        </div>
+        <div className="driver-name-tag-content">
+          <span className="driver-name-tag-eyebrow">Name Tag Driver</span>
+          <h3>{name}</h3>
+          <dl>
+            <div>
+              <dt>Nama</dt>
+              <dd>{name}</dd>
+            </div>
+            <div>
+              <dt>Whatsapp</dt>
+              <dd>{phone || '-'}</dd>
+            </div>
+          </dl>
+          {whatsappUrl && (
+            <a className="driver-name-tag-call" href={whatsappUrl} target="_blank" rel="noreferrer">
+              <Phone size={16} />
+              Hubungi driver
+            </a>
+          )}
+        </div>
+      </section>
     </div>
   )
 }

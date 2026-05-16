@@ -108,9 +108,14 @@ export type Order = {
       id?: number
       name?: string
       phone?: string
+      profile_photo_path?: string | null
+      profile_photo_url?: string | null
     } | null
   } | null
   driver_name?: string | null
+  driver_phone?: string | null
+  driver_photo_url?: string | null
+  driver_profile_photo_url?: string | null
   cancel_reason?: string | null
   notes?: string | null
   adjustments?: OrderAdjustment[]
