@@ -13,6 +13,7 @@ class GeofenceArea extends Model
 
     protected $fillable = [
         'branch_id',
+        'area_id',
         'name',
         'description',
         'shape_type',
@@ -36,6 +37,11 @@ class GeofenceArea extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function area(): BelongsTo
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function locationLogs(): HasMany

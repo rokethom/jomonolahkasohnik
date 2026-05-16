@@ -19,6 +19,7 @@ class Order extends Model
         'driver_id',
         'service_id',
         'branch_id',
+        'area_id',
         'service_type',
         'service_code',
         'pickup_address',
@@ -60,6 +61,7 @@ class Order extends Model
         'is_multi_order' => 'boolean',
         'service_id' => 'integer',
         'branch_id' => 'integer',
+        'area_id' => 'integer',
         'price' => 'integer',
         'service_charge' => 'integer',
         'extra_charge' => 'integer',
@@ -104,6 +106,11 @@ class Order extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function area(): BelongsTo
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function items(): HasMany

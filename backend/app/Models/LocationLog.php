@@ -24,6 +24,7 @@ class LocationLog extends Model
         'is_valid',
         'geofence_area_id',
         'branch_id',
+        'area_id',
         'is_suspicious',
         'suspicion_reason',
     ];
@@ -49,6 +50,11 @@ class LocationLog extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function area(): BelongsTo
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function geofenceArea(): BelongsTo

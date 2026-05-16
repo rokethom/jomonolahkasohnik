@@ -34,6 +34,7 @@ class User extends Authenticatable implements FilamentUser
         'password',
         'role',
         'branch_id',
+        'area_id',
         'lat',
         'lng',
         'address',
@@ -70,6 +71,7 @@ class User extends Authenticatable implements FilamentUser
         'suspended_until' => 'datetime',
         'lat' => 'decimal:8',
         'lng' => 'decimal:8',
+        'area_id' => 'integer',
     ];
 
     protected static function booted(): void
@@ -117,6 +119,11 @@ class User extends Authenticatable implements FilamentUser
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function area(): BelongsTo
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function branchScopes(): BelongsToMany

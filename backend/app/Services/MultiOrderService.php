@@ -211,6 +211,13 @@ class MultiOrderService
             return true;
         }
 
+        $driverAreaId = $driver->user?->area_id;
+        $orderAreaId = $order->area_id;
+
+        if ($driverAreaId !== null && $orderAreaId !== null) {
+            return (int) $driverAreaId === (int) $orderAreaId;
+        }
+
         $driverBranchId = $driver->user?->branch_id;
         $orderBranchId = $order->branch_id;
 

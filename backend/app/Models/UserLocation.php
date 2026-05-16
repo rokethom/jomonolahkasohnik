@@ -16,6 +16,7 @@ class UserLocation extends Model
         'lng',
         'accuracy',
         'branch_id',
+        'area_id',
         'geofence_area_id',
         'distance_meters',
         'status',
@@ -38,6 +39,11 @@ class UserLocation extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function area(): BelongsTo
+    {
+        return $this->belongsTo(Area::class);
     }
 
     public function geofenceArea(): BelongsTo

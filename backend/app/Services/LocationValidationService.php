@@ -9,8 +9,10 @@ use Illuminate\Support\Carbon;
 
 class LocationValidationService
 {
-    public function __construct(private readonly GeofenceService $geofenceService)
-    {
+    public function __construct(
+        private readonly GeofenceService $geofenceService,
+        private readonly OperationalAreaService $operationalAreas,
+    ) {
     }
 
     public function validateLocation(
@@ -26,6 +28,8 @@ class LocationValidationService
         $branchId = isset($metadata['branch_id']) ? (int) $metadata['branch_id'] : null;
         $geofence = $this->geofenceService->findValidGeofence($branchId, $lat, $lng);
         $branch = $geofence?->branch;
+        $areaId = $geofence?->area_id
+            ?? $this->operationalAreas->resolveAreaId(null, $branch?->id, $lat, $lng);
         $fakeGps = $this->detectFakeGps($user, $lat, $lng, $speed, $accuracy, $gpsTimestamp, $metadata);
         $isValid = $geofence !== null && ! $fakeGps['is_suspicious'];
 
@@ -43,6 +47,7 @@ class LocationValidationService
             'is_valid' => $isValid,
             'geofence_area_id' => $geofence?->id,
             'branch_id' => $branch?->id,
+            'area_id' => $areaId,
             'is_suspicious' => $fakeGps['is_suspicious'],
             'suspicion_reason' => $fakeGps['reason'],
         ]);
@@ -53,7 +58,7 @@ class LocationValidationService
             'branch' => $branch,
             'is_suspicious' => $fakeGps['is_suspicious'],
             'reason' => $fakeGps['reason'],
-            'location_log' => $log->fresh(['user', 'branch', 'geofenceArea']),
+            'location_log' => $log->fresh(['user', 'branch', 'area', 'geofenceArea']),
         ];
     }
 

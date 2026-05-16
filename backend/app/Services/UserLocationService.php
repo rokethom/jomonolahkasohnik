@@ -14,6 +14,7 @@ class UserLocationService
     public function __construct(
         private readonly GeofenceService $geofenceService,
         private readonly LocationValidationService $locationValidationService,
+        private readonly OperationalAreaService $operationalAreas,
     ) {
     }
 
@@ -40,6 +41,7 @@ class UserLocationService
             ?? Branch::resolveOperationalAreaId($user->branch_id, $lat, $lng)
             ?? Branch::resolveOperationalAreaId($nearest['branch']?->id ?? null, $lat, $lng);
         $lockedBranch = $branchId ? Branch::query()->find($branchId) : null;
+        $areaId = $this->operationalAreas->resolveAreaId(null, $lockedBranch?->id, $lat, $lng);
         $geofence = $inside ? $validation['geofence_area'] : null;
         $distance = $geofence
             ? $this->distanceToGeofence($lat, $lng, $geofence)
@@ -52,6 +54,7 @@ class UserLocationService
                 'lng' => $lng,
                 'accuracy' => $accuracy,
                 'branch_id' => $lockedBranch?->id,
+                'area_id' => $areaId,
                 'geofence_area_id' => $geofence?->id,
                 'distance_meters' => $distance,
                 'status' => $inside ? 'inside_branch' : 'outside_branch',
@@ -63,6 +66,7 @@ class UserLocationService
             'lat' => $lat,
             'lng' => $lng,
             'branch_id' => $lockedBranch?->id,
+            'area_id' => $areaId,
         ])->save();
 
         Log::info('user_location.updated', [
@@ -70,6 +74,7 @@ class UserLocationService
             'user_lat' => $lat,
             'user_lng' => $lng,
             'branch_id' => $lockedBranch?->id,
+            'area_id' => $areaId,
             'branch_name' => $lockedBranch?->display_name,
             'branch_lat' => $lockedBranch?->latitude,
             'branch_lng' => $lockedBranch?->longitude,
@@ -91,7 +96,7 @@ class UserLocationService
             'distance_meters' => $distance,
             'nearest_branch' => $nearest['branch'],
             'nearest_distance_meters' => $nearest['distance_meters'],
-            'location' => $location->fresh(['branch', 'geofenceArea']),
+            'location' => $location->fresh(['branch', 'area', 'geofenceArea']),
             'reason' => $validation['reason'],
             'is_suspicious' => $validation['is_suspicious'],
         ];

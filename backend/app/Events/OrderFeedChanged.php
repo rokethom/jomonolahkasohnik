@@ -40,6 +40,7 @@ class OrderFeedChanged implements ShouldBroadcastNow
                 'order_code' => $this->order->order_code,
                 'code' => $this->order->order_code,
                 'branch_id' => $this->order->branch_id,
+                'area_id' => $this->order->area_id,
                 'driver_id' => $this->order->driver_id,
                 'service_type' => $this->order->service_type,
                 'service' => $this->order->service_type,

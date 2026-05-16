@@ -14,6 +14,7 @@ class LocationService
         private readonly GeocodingService $geocodingService,
         private readonly BranchDetectionService $branchDetectionService,
         private readonly LocationValidationService $locationValidationService,
+        private readonly OperationalAreaService $operationalAreas,
     ) {
     }
 
@@ -24,6 +25,7 @@ class LocationService
         $branch = $detected['branch'] ?? null;
         $operationalBranchId = Branch::resolveOperationalAreaId($branch?->id, $lat, $lng);
         $branch = $operationalBranchId ? Branch::query()->find($operationalBranchId) : $branch;
+        $areaId = $this->operationalAreas->resolveAreaId(null, $branch?->id, $lat, $lng);
         $geofence = $detected['area'] ?? null;
 
         $this->locationValidationService->validateLocation(
@@ -44,6 +46,7 @@ class LocationService
             'lng' => $lng,
             'address' => $address['formatted_address'],
             'branch_id' => $branch?->id,
+            'area_id' => $areaId,
         ])->save();
 
         $location = UserLocation::query()->updateOrCreate(
@@ -53,6 +56,7 @@ class LocationService
                 'lng' => $lng,
                 'accuracy' => $accuracy,
                 'branch_id' => $branch?->id,
+                'area_id' => $areaId,
                 'geofence_area_id' => $geofence?->id,
                 'distance_meters' => $detected['distance_meters'] ?? null,
                 'status' => $branch ? 'inside_branch' : 'outside_branch',
@@ -66,6 +70,7 @@ class LocationService
             'lng' => $lng,
             'address' => $address,
             'branch_id' => $branch?->id,
+            'area_id' => $areaId,
             'branch_name' => $branch?->display_name,
             'branch_lat' => $branch?->latitude,
             'branch_lng' => $branch?->longitude,
@@ -79,7 +84,7 @@ class LocationService
             'branch' => $branch,
             'geofence_area' => $geofence,
             'distance_meters' => $detected['distance_meters'] ?? null,
-            'location' => $location->fresh(['branch', 'geofenceArea']),
+            'location' => $location->fresh(['branch', 'area', 'geofenceArea']),
         ];
     }
 }

@@ -22,6 +22,7 @@ class StoreOrderRequest extends FormRequest
             'destination_lat' => ['nullable', 'numeric', 'between:-90,90'],
             'destination_lng' => ['nullable', 'numeric', 'between:-180,180'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'area_id' => ['nullable', 'integer', 'exists:areas,id'],
             'stops' => ['sometimes', 'integer', 'min:1'],
             'stop_count' => ['sometimes', 'integer', 'min:1'],
             'minimum_price' => ['sometimes', 'integer', 'min:0'],

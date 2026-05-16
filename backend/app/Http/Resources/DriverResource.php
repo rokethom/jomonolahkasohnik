@@ -11,7 +11,7 @@ class DriverResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $this->loadMissing('user.branch');
+        $this->loadMissing('user.branch', 'user.area');
 
         return [
             'id' => $this->id,
@@ -21,6 +21,8 @@ class DriverResource extends JsonResource
             'phone' => $this->user?->phone,
             'branch_id' => $this->user?->branch_id,
             'branch' => $this->user?->branch?->name,
+            'area_id' => $this->user?->area_id,
+            'area' => $this->user?->area?->name,
             'vehicle_type' => $this->vehicle_type,
             'vehicle_types' => $this->vehicleTypes(),
             'vehicle_seat_rows' => $this->vehicle_seat_rows,

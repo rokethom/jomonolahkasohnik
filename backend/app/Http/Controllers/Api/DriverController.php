@@ -24,6 +24,7 @@ use App\Services\SettingService;
 use App\Services\SuspendService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
@@ -52,7 +53,7 @@ class DriverController extends Controller
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->when(! $driver->can_accept_all_areas, fn ($query) => $query->where('branch_id', $driver->user?->branch_id))
+                            ->when(! $driver->can_accept_all_areas, fn ($query) => $this->applyOperationalOrderScope($query, $driver))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -90,7 +91,7 @@ class DriverController extends Controller
         $branchAcceptedOrders = $branchId
             ? Order::query()
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
-                ->where('branch_id', $branchId)
+                ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
                 ->get()
@@ -98,7 +99,7 @@ class DriverController extends Controller
         $branchRequestOrders = $branchId
             ? Order::query()
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
-                ->where('branch_id', $branchId)
+                ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
                 ->get()
@@ -106,14 +107,14 @@ class DriverController extends Controller
         $branchOperHandleOrders = $branchId
             ? OperHandleRequest::query()
                 ->with(['order.user', 'order.driver.user', 'driver.user'])
-                ->whereHas('order', fn ($query) => $query->where('branch_id', $branchId))
+                ->whereHas('order', fn ($query) => $this->applyOperationalOrderScope($query, $driver))
                 ->latest('updated_at')
                 ->get()
             : collect();
         $branchSuspendHistory = $branchId
             ? DriverSuspension::query()
                 ->with('driver.user')
-                ->whereHas('driver.user', fn ($query) => $query->where('branch_id', $branchId))
+                ->whereHas('driver.user', fn ($query) => $this->applyOperationalUserScope($query, $driver))
                 ->latest('updated_at')
                 ->limit(20)
                 ->get()
@@ -121,7 +122,7 @@ class DriverController extends Controller
         $branchPerformance = $branchId
             ? Driver::query()
                 ->with('user.branch')
-                ->whereHas('user', fn ($query) => $query->where('branch_id', $branchId))
+                ->whereHas('user', fn ($query) => $this->applyOperationalUserScope($query, $driver))
                 ->orderBy('id')
                 ->limit(50)
                 ->get()
@@ -195,7 +196,7 @@ class DriverController extends Controller
                 if ($canReceiveOrders) {
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->when(! $driver->can_accept_all_areas, fn ($query) => $query->where('branch_id', $driver->user?->branch_id))
+                            ->when(! $driver->can_accept_all_areas, fn ($query) => $this->applyOperationalOrderScope($query, $driver))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -233,7 +234,7 @@ class DriverController extends Controller
         $branchAcceptedOrders = $branchId
             ? Order::query()
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
-                ->where('branch_id', $branchId)
+                ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->whereNotNull('driver_id')
                 ->latest('updated_at')
                 ->get()
@@ -241,7 +242,7 @@ class DriverController extends Controller
         $branchRequestOrders = $branchId
             ? Order::query()
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
-                ->where('branch_id', $branchId)
+                ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
                 ->get()
@@ -249,14 +250,14 @@ class DriverController extends Controller
         $branchOperHandleOrders = $branchId
             ? OperHandleRequest::query()
                 ->with(['order.user', 'order.driver.user', 'driver.user'])
-                ->whereHas('order', fn ($query) => $query->where('branch_id', $branchId))
+                ->whereHas('order', fn ($query) => $this->applyOperationalOrderScope($query, $driver))
                 ->latest('updated_at')
                 ->get()
             : collect();
         $branchSuspendHistory = $branchId
             ? DriverSuspension::query()
                 ->with('driver.user')
-                ->whereHas('driver.user', fn ($query) => $query->where('branch_id', $branchId))
+                ->whereHas('driver.user', fn ($query) => $this->applyOperationalUserScope($query, $driver))
                 ->latest('updated_at')
                 ->limit(20)
                 ->get()
@@ -400,7 +401,7 @@ class DriverController extends Controller
                     throw new RuntimeException('Status driver OFF atau tidak aktif.');
                 }
 
-                if (! $driver->can_accept_all_areas && (int) $driver->user?->branch_id !== (int) $order->branch_id) {
+                if (! $driver->can_accept_all_areas && ! $this->orderBelongsToDriverArea($order, $driver)) {
                     throw new RuntimeException('Order helper berada di luar cabang driver.');
                 }
 
@@ -743,6 +744,67 @@ class DriverController extends Controller
             && ! $this->depositBlocksOrders($deposit);
     }
 
+    private function applyOperationalOrderScope(Builder $query, Driver $driver): Builder
+    {
+        $areaId = $driver->user?->area_id ? (int) $driver->user->area_id : null;
+        $branchId = $driver->user?->branch_id ? (int) $driver->user->branch_id : null;
+
+        return $query->where(function (Builder $query) use ($areaId, $branchId): void {
+            if ($areaId !== null) {
+                $query->where('area_id', $areaId);
+
+                if ($branchId !== null) {
+                    $query->orWhere(fn (Builder $query) => $query->whereNull('area_id')->where('branch_id', $branchId));
+                }
+
+                return;
+            }
+
+            if ($branchId !== null) {
+                $query->where('branch_id', $branchId);
+                return;
+            }
+
+            $query->whereRaw('1 = 0');
+        });
+    }
+
+    private function applyOperationalUserScope(Builder $query, Driver $driver): Builder
+    {
+        $areaId = $driver->user?->area_id ? (int) $driver->user->area_id : null;
+        $branchId = $driver->user?->branch_id ? (int) $driver->user->branch_id : null;
+
+        return $query->where(function (Builder $query) use ($areaId, $branchId): void {
+            if ($areaId !== null) {
+                $query->where('area_id', $areaId);
+
+                if ($branchId !== null) {
+                    $query->orWhere(fn (Builder $query) => $query->whereNull('area_id')->where('branch_id', $branchId));
+                }
+
+                return;
+            }
+
+            if ($branchId !== null) {
+                $query->where('branch_id', $branchId);
+                return;
+            }
+
+            $query->whereRaw('1 = 0');
+        });
+    }
+
+    private function orderBelongsToDriverArea(Order $order, Driver $driver): bool
+    {
+        $driverAreaId = $driver->user?->area_id ? (int) $driver->user->area_id : null;
+        if ($driverAreaId !== null && $order->area_id !== null) {
+            return (int) $order->area_id === $driverAreaId;
+        }
+
+        return $driver->user?->branch_id !== null
+            && (int) $driver->user->branch_id === (int) $order->branch_id;
+    }
+
     private function availabilityBlockReason(?Driver $driver, ?DriverDeposit $deposit = null): ?string
     {
         if (! $driver) {
@@ -779,7 +841,7 @@ class DriverController extends Controller
             ->whereHas('crews', fn ($query) => $query
                 ->where('status', 'pending')
                 ->where('role', '!=', 'rider'))
-            ->when(! (bool) $driver->can_accept_all_areas, fn ($query) => $query->where('branch_id', $driver->user?->branch_id))
+            ->when(! (bool) $driver->can_accept_all_areas, fn ($query) => $this->applyOperationalOrderScope($query, $driver))
             ->latest('updated_at')
             ->limit(20)
             ->get();

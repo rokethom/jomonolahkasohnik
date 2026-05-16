@@ -17,6 +17,7 @@ use App\Models\Order;
 use App\Services\OrderService;
 use App\Services\OrderOperationService;
 use App\Services\PricingService;
+use App\Services\OperationalAreaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,7 @@ use RuntimeException;
 
 class OrderController extends Controller
 {
-    public function index(Request $request, OrderService $orders): JsonResponse
+    public function index(Request $request, OrderService $orders, OperationalAreaService $areas): JsonResponse
     {
         $orders->cancelExpiredCreatedOrders();
 
@@ -44,7 +45,21 @@ class OrderController extends Controller
                 $query->whereHas('driver', fn ($query) => $query->where('user_id', $user->id))
                     ->orWhere(function ($query) use ($user): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
-                            ->when($user->branch_id, fn ($query) => $query->where('branch_id', $user->branch_id), fn ($query) => $query->whereRaw('1 = 0'));
+                            ->where(function ($query) use ($user, $areas): void {
+                                $areaId = $areas->userAreaId($user);
+                                if ($areaId !== null) {
+                                    $query->where('area_id', $areaId)
+                                        ->orWhere(function ($query) use ($user): void {
+                                            $query->whereNull('area_id')->where('branch_id', $user->branch_id);
+                                        });
+
+                                    return;
+                                }
+
+                                $user->branch_id
+                                    ? $query->where('branch_id', $user->branch_id)
+                                    : $query->whereRaw('1 = 0');
+                            });
                     });
             })->where('status', '!=', OrderStatus::Cancelled->value);
         }

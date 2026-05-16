@@ -20,6 +20,7 @@ use App\Services\SettingService;
 use App\Services\NotificationService;
 use App\Services\DriverFinanceService;
 use App\Services\DriverDailyPriorityService;
+use App\Services\OperationalAreaService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -38,6 +39,7 @@ class CreateOrder
         private readonly NotificationService $notifications,
         private readonly DriverFinanceService $finance,
         private readonly DriverDailyPriorityService $dailyPriority,
+        private readonly OperationalAreaService $areas,
     ) {
     }
 
@@ -47,6 +49,12 @@ class CreateOrder
             $this->orders->assertCustomerCanCreate($user, (string) ($payload['service_type'] ?? 'ojek'));
             $payload = $this->hydrateHiddenLocations($user, $payload);
             $payload['branch_id'] = $this->orders->resolveTargetBranchId($payload, $user->branch_id);
+            $payload['area_id'] = $this->areas->resolveAreaId(
+                isset($payload['area_id']) ? (int) $payload['area_id'] : null,
+                isset($payload['branch_id']) ? (int) $payload['branch_id'] : null,
+                isset($payload['pickup_lat']) ? (float) $payload['pickup_lat'] : null,
+                isset($payload['pickup_lng']) ? (float) $payload['pickup_lng'] : null,
+            );
             $pricing = $this->pricingService->calculate($payload);
             $crewDecision = is_array($pricing['crew_decision'] ?? null)
                 ? $pricing['crew_decision']
@@ -102,6 +110,7 @@ class CreateOrder
                 'user_id' => $user->id,
                 'service_id' => $service?->id,
                 'branch_id' => $payload['branch_id'],
+                'area_id' => $payload['area_id'] ?? null,
                 'service_code' => $service?->code,
                 'order_code' => $this->orderCodeGenerator->generate($service?->code, $branch),
                 'distance_km' => $pricing['distance'],
@@ -172,7 +181,18 @@ class CreateOrder
             ->where('is_available', true)
             ->where(function ($query) use ($order): void {
                 $query->where('can_accept_all_areas', true)
-                    ->orWhereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id));
+                    ->orWhereHas('user', function ($query) use ($order): void {
+                        if ($order->area_id !== null) {
+                            $query->where('area_id', $order->area_id)
+                                ->orWhere(function ($query) use ($order): void {
+                                    $query->whereNull('area_id')->where('branch_id', $order->branch_id);
+                                });
+
+                            return;
+                        }
+
+                        $query->where('branch_id', $order->branch_id);
+                    });
             })
             ->get()
             ->filter(function (Driver $driver) use ($order): bool {

@@ -43,6 +43,7 @@ use App\Services\NotificationService;
 use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
+use App\Services\OperationalAreaService;
 use App\Services\PricingService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\Pricing\DistanceCalculator;
@@ -198,6 +199,7 @@ class AdminController extends Controller
         $role = UserRole::from($payload['role']);
         abort_unless($this->canAssignRole($actor, $role), 403);
         $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, $role);
+        $payload['area_id'] = app(OperationalAreaService::class)->resolveAreaId(null, $payload['branch_id'] ?? null);
         $branchScopeIds = $this->branchScopeIdsForUserWrite($actor, $role, $payload['branch_scope_ids'] ?? [], $payload['branch_id'] ?? null);
         if ($role === UserRole::Driver) {
             $payload['is_suspended'] = false;
@@ -243,7 +245,7 @@ class AdminController extends Controller
         return response()->json([
             'message' => 'User created',
             'temporary_password' => $password,
-            'data' => $this->userPayload($user->fresh('branch', 'branchScopes', 'driver')),
+            'data' => $this->userPayload($user->fresh('branch', 'area', 'branchScopes', 'driver')),
         ], 201);
     }
 
@@ -283,6 +285,7 @@ class AdminController extends Controller
 
         if (array_key_exists('branch_id', $payload)) {
             $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, isset($payload['role']) ? UserRole::from($payload['role']) : $user->role);
+            $payload['area_id'] = app(OperationalAreaService::class)->resolveAreaId(null, $payload['branch_id'] ?? null);
         }
 
         $isExistingDriver = ($user->role instanceof UserRole ? $user->role : UserRole::tryFrom((string) $user->role)) === UserRole::Driver;
@@ -358,7 +361,7 @@ class AdminController extends Controller
 
         return response()->json([
             'message' => 'User updated',
-            'data' => $this->userPayload($user->fresh('branch', 'branchScopes', 'driver')),
+            'data' => $this->userPayload($user->fresh('branch', 'area', 'branchScopes', 'driver')),
         ]);
     }
 
@@ -453,8 +456,10 @@ class AdminController extends Controller
         $order->loadMissing(['user.branch', 'driver.user.branch']);
         $this->assertOrderAreaScope($actor, $order);
 
-        $driver = Driver::query()->with(['user.branch'])->findOrFail($payload['driver_id']);
-        $driverMatchesOrderArea = (int) $driver->user?->branch_id === (int) ($order->branch_id ?? $order->user?->branch_id);
+        $driver = Driver::query()->with(['user.branch', 'user.area'])->findOrFail($payload['driver_id']);
+        $driverMatchesOrderArea = $order->area_id !== null && $driver->user?->area_id !== null
+            ? (int) $driver->user->area_id === (int) $order->area_id
+            : (int) $driver->user?->branch_id === (int) ($order->branch_id ?? $order->user?->branch_id);
         abort_unless($driverMatchesOrderArea || (bool) $driver->can_accept_all_areas || in_array($actor->role, [UserRole::Admin, UserRole::GM], true), 403, 'Driver di luar area dan belum diberi akses all area.');
         abort_unless($driver->status === 'active' && ! $driver->is_suspend, 422, 'Driver tidak aktif.');
         abort_unless($driver->is_available, 422, 'Driver sedang tidak idle/online.');
@@ -3001,7 +3006,7 @@ class AdminController extends Controller
 
     private function userPayload(User $user): array
     {
-        $user->loadMissing(['branchScopes', 'currentLocation.branch', 'latestLocationLog.branch']);
+        $user->loadMissing(['area', 'branchScopes', 'currentLocation.branch', 'currentLocation.area', 'latestLocationLog.branch', 'latestLocationLog.area']);
         $registrationLocation = $user->lat !== null && $user->lng !== null
             ? [
                 'lat' => (float) $user->lat,
@@ -3018,6 +3023,9 @@ class AdminController extends Controller
                 'branch' => $user->currentLocation->branch?->name,
                 'branch_code' => $user->currentLocation->branch?->branch_code,
                 'branch_display_name' => $user->currentLocation->branch?->display_name,
+                'area' => $user->currentLocation->area?->name,
+                'area_code' => $user->currentLocation->area?->code,
+                'area_display_name' => $user->currentLocation->area?->display_name,
                 'status' => $user->currentLocation->status,
                 'updated_at' => $user->currentLocation->updated_at?->toDateTimeString(),
                 'maps_url' => $this->mapsUrl((float) $user->currentLocation->lat, (float) $user->currentLocation->lng),
@@ -3031,6 +3039,9 @@ class AdminController extends Controller
                 'branch' => $user->latestLocationLog->branch?->name,
                 'branch_code' => $user->latestLocationLog->branch?->branch_code,
                 'branch_display_name' => $user->latestLocationLog->branch?->display_name,
+                'area' => $user->latestLocationLog->area?->name,
+                'area_code' => $user->latestLocationLog->area?->code,
+                'area_display_name' => $user->latestLocationLog->area?->display_name,
                 'is_suspicious' => (bool) $user->latestLocationLog->is_suspicious,
                 'is_mock_location' => (bool) $user->latestLocationLog->is_mock_location,
                 'reason' => $user->latestLocationLog->suspicion_reason,
@@ -3065,6 +3076,10 @@ class AdminController extends Controller
             'branch_code' => $user->branch?->branch_code,
             'branch_area' => $user->branch?->area,
             'branch_display_name' => $user->branch?->display_name,
+            'area_id' => $user->area_id,
+            'area_name' => $user->area?->name,
+            'area_code' => $user->area?->code,
+            'area_display_name' => $user->area?->display_name,
             'branch_scope_ids' => $user->branchScopes->pluck('id')->values()->all(),
             'branch_scopes' => $user->branchScopes
                 ->map(fn (Branch $branch): array => [
@@ -3092,7 +3107,7 @@ class AdminController extends Controller
 
     private function orderPayload(Order $order, ?User $actor = null): array
     {
-        $order->loadMissing(['user.branch', 'driver.user.branch', 'operHandleRequests.driver.user', 'crews.driver.user']);
+        $order->loadMissing(['area', 'user.branch', 'user.area', 'driver.user.branch', 'driver.user.area', 'operHandleRequests.driver.user', 'crews.driver.user']);
         $operHandle = $order->operHandleRequests->sortByDesc('updated_at')->first();
         $branch = $order->branch ?? $order->user?->branch ?? $order->driver?->user?->branch;
 
@@ -3111,6 +3126,10 @@ class AdminController extends Controller
             'branch_code' => $branch?->branch_code,
             'branch_area' => $branch?->area,
             'branch_display_name' => $branch?->display_name,
+            'area_id' => $order->area_id,
+            'area' => $order->area?->name,
+            'area_code' => $order->area?->code,
+            'area_display_name' => $order->area?->display_name,
             'pickup_address' => $order->pickup_address,
             'destination_address' => $order->destination_address,
             'distance_km' => $order->distance_km !== null ? (float) $order->distance_km : null,

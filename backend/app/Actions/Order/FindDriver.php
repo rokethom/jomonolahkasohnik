@@ -47,7 +47,18 @@ class FindDriver
                 ->where('is_available', true)
                 ->where(function ($query) use ($order): void {
                     $query->where('can_accept_all_areas', true)
-                        ->orWhereHas('user', fn ($query) => $query->where('branch_id', $order->branch_id));
+                        ->orWhereHas('user', function ($query) use ($order): void {
+                            if ($order->area_id !== null) {
+                                $query->where('area_id', $order->area_id)
+                                    ->orWhere(function ($query) use ($order): void {
+                                        $query->whereNull('area_id')->where('branch_id', $order->branch_id);
+                                    });
+
+                                return;
+                            }
+
+                            $query->where('branch_id', $order->branch_id);
+                        });
                 })
                 ->when(
                     data_get($order->pricing_breakdown, 'preferred_vehicle_type') === 'motor',
