@@ -1317,10 +1317,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
           </div>
         </article>
       </section>
-      <section className="dashboard-live-grid">
-        <LiveOrders orders={data.orders} onOpenOrder={onOpenOrder} onViewAll={() => onNavigate('orders')} />
-        <DashboardLivePriceReview reviews={data.live_price_reviews ?? []} api={api} onChanged={onChanged} onNavigate={() => onNavigate('live-price-reviews')} />
-      </section>
+      <DashboardLivePriceReview reviews={data.live_price_reviews ?? []} api={api} onChanged={onChanged} onNavigate={() => onNavigate('live-price-reviews')} />
       <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />
       <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
       <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
@@ -1596,31 +1593,6 @@ function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; 
   )
 }
 
-function LiveOrders({ orders, onOpenOrder, onViewAll }: { orders: Order[]; onOpenOrder: (code: string) => void; onViewAll: () => void }) {
-  const liveOrders = orders.filter(isActiveOrderStatus).slice(0, 6)
-  return (
-    <section className="panel live-panel">
-      <PanelHeader title="Live Order" action={`${liveOrders.length} aktif`} />
-      <div className="live-order-list">
-        {liveOrders.length === 0 && <EmptyPanel title="Tidak ada live order" copy="Order aktif akan muncul otomatis di sini." />}
-        {liveOrders.map((order) => (
-          <button className="live-order-row" type="button" key={order.id} onClick={() => onOpenOrder(order.code)}>
-            <span className="live-dot" />
-            <div>
-              <strong>{order.code}</strong>
-              <small>{order.customer || '-'} - {order.service}</small>
-              <em>{displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} - {shortOrderRoute(order)}</em>
-            </div>
-            <b>Rp {Number(order.total || 0).toLocaleString('id-ID')}</b>
-            <StatusBadge status={order.status} />
-          </button>
-        ))}
-      </div>
-      <button className="secondary-button compact" type="button" onClick={onViewAll}>Lihat semua order</button>
-    </section>
-  )
-}
-
 function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void>; onNavigate: () => void }) {
   const [rows, setRows] = useState<LivePriceReview[]>(reviews)
   const [selectedId, setSelectedId] = useState<number | null>(reviews[0]?.id ?? null)
@@ -1664,7 +1636,14 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
 
   return (
     <section className="panel live-price-dashboard-panel">
-      <PanelHeader title="Live Edit Harga" action={`${rows.length} review`} />
+      <div className="live-price-dashboard-title">
+        <div>
+          <span>Customer live correction</span>
+          <h2>Live Edit Harga</h2>
+          <p>Order customer menunggu koreksi harga sebelum tombol konfirmasi aktif.</p>
+        </div>
+        <button className="secondary-button compact" type="button" onClick={onNavigate}>Buka halaman lengkap</button>
+      </div>
       <div className="live-price-dashboard-grid">
         <div className="live-price-dashboard-column">
           <div className="live-price-dashboard-head"><span>Live order</span><b>{rows.length}</b></div>
@@ -1715,7 +1694,6 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
           )}
         </div>
       </div>
-      <button className="secondary-button compact" type="button" onClick={onNavigate}>Buka halaman Live Edit Harga</button>
     </section>
   )
 }
@@ -6529,13 +6507,6 @@ function driverVehicleLabel(driver: Pick<DriverRow, 'vehicle_type' | 'vehicle_ty
 function driverPreferenceLabel(preference?: string | null) {
   if (preference === 'ladies') return 'Ladies'
   return 'Umum'
-}
-
-function shortOrderRoute(order: Order) {
-  const pickup = stringValue(order.pickup_address) || 'pickup'
-  const destination = stringValue(order.destination_address) || 'tujuan'
-
-  return `${pickup.slice(0, 24)} ? ${destination.slice(0, 24)}`
 }
 
 function displayBranchValue(branch: unknown, area?: string | null) {
