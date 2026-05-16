@@ -18,6 +18,7 @@ declare global {
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'web_admin' | 'cms_editor' | 'driver' | 'customer'
 type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
+type DriverListMode = 'all' | 'online'
 const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
 const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
 type AdminHistoryState = {
@@ -666,6 +667,7 @@ function App() {
   const [token, setToken] = useState(() => localStorage.getItem('admin_token') || localStorage.getItem('token') || '')
   const [data, setData] = useState<Bootstrap | null>(null)
   const [view, setView] = useState<View>('dashboard')
+  const [driverListMode, setDriverListMode] = useState<DriverListMode>('all')
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
   const [serverUsers, setServerUsers] = useState<User[] | null>(null)
@@ -1003,7 +1005,7 @@ function App() {
                 {isOpen && (
                   <div className="nav-group-items">
                     {group.items.map((item) => (
-                      <button key={item.id} type="button" className={safeView === item.id ? 'nav-item active' : 'nav-item'} onClick={() => { setView(item.id); setMobileNavOpen(false) }}>
+                      <button key={item.id} type="button" className={safeView === item.id ? 'nav-item active' : 'nav-item'} onClick={() => { if (item.id === 'drivers') setDriverListMode('all'); setView(item.id); setMobileNavOpen(false) }}>
                         <Icon name={item.icon} /><span>{item.label}</span>
                       </button>
                     ))}
@@ -1059,11 +1061,11 @@ function App() {
           </header>
 
         {adminNotice && <div className="dispatch-toast oper-handle-toast">{adminNotice}</div>}
-        {safeView === 'dashboard' && <Dashboard data={data} api={api} buildInfo={buildInfo} onChanged={refresh} onNavigate={setView} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'dashboard' && <Dashboard data={data} api={api} buildInfo={buildInfo} onChanged={refresh} onNavigate={setView} onOpenDrivers={(mode) => { setDriverListMode(mode); setView('drivers') }} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'orders' && <OrdersTable orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} searchQuery={query} permissions={data.permissions} api={api} onChanged={refresh} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'request-orders' && <RequestOrdersPanel orders={data.orders} searchQuery={query} permissions={data.permissions} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'users' && <UsersPanel users={filteredUsers} totalUsers={serverUsersTotal} isLoading={usersLoading} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
-        {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} initialListMode={driverListMode} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
         {isBackendCmsView(safeView) && <BackendCmsLinkPanel view={safeView} />}
         {safeView === 'keyword-parsers' && <KeywordParsersPanel parsers={data.keyword_parsers ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
@@ -1233,7 +1235,7 @@ function PwaInstallButton() {
   )
 }
 
-function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; buildInfo: BuildInfo | null; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
+function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers, onOpenOrder }: { data: Bootstrap; api: ApiClient; buildInfo: BuildInfo | null; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenDrivers: (mode: DriverListMode) => void; onOpenOrder: (code: string) => void }) {
   if (data.me.role === 'eksekutor') {
     return <EksekutorDashboard data={data} api={api} onChanged={onChanged} onNavigate={onNavigate} onOpenOrder={onOpenOrder} />
   }
@@ -1251,7 +1253,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenOrder }:
       {['admin', 'gm'].includes(data.me.role) && <AdminUpdateStatusCard buildInfo={buildInfo} />}
       <StatsRow stats={[
         { label: 'Active Order Realtime', value: activeOrders, icon: 'bag', tone: 'amber', action: 'Orders', onClick: () => onNavigate('orders') },
-        { label: 'Online Driver', value: onlineDrivers, icon: 'truck', tone: 'green', action: 'Drivers', onClick: () => onNavigate('drivers') },
+        { label: 'Online Driver', value: onlineDrivers, icon: 'truck', tone: 'green', action: 'Drivers', onClick: () => onOpenDrivers('online') },
         { label: 'Belum Diambil', value: unassignedOrders, icon: 'receipt', tone: 'violet', action: 'Cari driver', onClick: () => onNavigate('orders') },
         pendingOperHandles > 0
           ? { label: 'Oper Handle Pending', value: pendingOperHandles, icon: 'shield', tone: 'red', action: 'Approval', onClick: () => onNavigate('orders') }
@@ -1279,7 +1281,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenOrder }:
         <LiveOrders orders={data.orders} onOpenOrder={onOpenOrder} onViewAll={() => onNavigate('orders')} />
         <LiveChatDashboard chats={data.chats} onNavigate={() => onNavigate('chats')} onOpenOrder={onOpenOrder} />
       </section>
-      <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onNavigate('drivers')} />
+      <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />
       <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
       <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
       <PriceEditActivity auditLogs={data.audit_logs} />
@@ -1798,6 +1800,13 @@ function driverBranchKey(driver: DriverRow) {
   return driverBranchLabel(driver).toLowerCase()
 }
 
+function isOnlineDriverRow(driver: DriverRow) {
+  return driver.driver_state === 'online'
+    && driver.driver_status === 'active'
+    && driver.is_active
+    && !driver.is_suspended
+}
+
 function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, onRoleFilterChange, permissions, api, onChanged }: { users: User[]; totalUsers: number | null; isLoading: boolean; branches: Branch[]; me: User; roleFilter: Role | 'all'; onRoleFilterChange: (role: Role | 'all') => void; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
@@ -1949,10 +1958,11 @@ function UserLocationSummary({ user, canViewMaps }: { user: User; canViewMaps: b
   )
 }
 
-function DriverManagementPanel({ drivers, services, permissions, api, onChanged }: { drivers: DriverRow[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
+function DriverManagementPanel({ drivers, services, permissions, api, onChanged, initialListMode = 'all' }: { drivers: DriverRow[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void>; initialListMode?: DriverListMode }) {
   const [configDriver, setConfigDriver] = useState<DriverRow | null>(null)
   const [authDriver, setAuthDriver] = useState<DriverRow | null>(null)
   const [branchFilter, setBranchFilter] = useState('all')
+  const [listMode, setListMode] = useState<DriverListMode>(initialListMode)
   const [performancePeriod, setPerformancePeriod] = useState<'today' | 'month' | 'all'>('month')
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null)
   const [importOpen, setImportOpen] = useState(false)
@@ -1962,7 +1972,16 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
     drivers.forEach((driver) => unique.set(driverBranchKey(driver), driverBranchLabel(driver)))
     return [...unique.entries()].sort((first, second) => first[1].localeCompare(second[1]))
   }, [drivers])
-  const filteredDrivers = useMemo(() => drivers.filter((driver) => branchFilter === 'all' || driverBranchKey(driver) === branchFilter), [branchFilter, drivers])
+  useEffect(() => {
+    setListMode(initialListMode)
+  }, [initialListMode])
+
+  const filteredDrivers = useMemo(() => drivers.filter((driver) => {
+    if (branchFilter !== 'all' && driverBranchKey(driver) !== branchFilter) return false
+    if (listMode === 'online') return isOnlineDriverRow(driver)
+
+    return true
+  }), [branchFilter, drivers, listMode])
   const selectedDriver = useMemo(
     () => filteredDrivers.find((driver) => driver.id === selectedDriverId) ?? filteredDrivers[0] ?? null,
     [filteredDrivers, selectedDriverId],
@@ -2037,6 +2056,13 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged 
     <section className="panel driver-management-panel">
       <PanelHeader title="Driver Management" action={`${filteredDrivers.length}/${drivers.length} driver`} />
       <div className="driver-filter-bar">
+        <label>
+          Status tampilan
+          <select value={listMode} onChange={(event) => setListMode(event.target.value as DriverListMode)}>
+            <option value="all">Semua driver</option>
+            <option value="online">Driver ON saja</option>
+          </select>
+        </label>
         <label>
           Cabang / Area
           <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
