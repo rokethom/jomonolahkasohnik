@@ -1725,6 +1725,26 @@ class AdminController extends Controller
         ]);
     }
 
+    public function learnRingPricingFromRequestOrders(Request $request, RingPricingService $learning): JsonResponse
+    {
+        $this->authorizeRingPricing($request);
+        $payload = $request->validate([
+            'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        $branchIds = $this->canManageGlobalPricing($request->user())
+            ? null
+            : ($this->staffBranchScopeIds($request->user()) ?? []);
+
+        $result = $learning->learnFromRequestOrders($branchIds, (int) ($payload['limit'] ?? 250));
+        $this->recordAudit($request->user(), 'learned_pricing_from_request_orders', $request->user(), $result);
+
+        return response()->json([
+            'message' => "Learning selesai: {$result['created']} baru, {$result['updated']} update, {$result['skipped']} skip.",
+            ...$result,
+        ]);
+    }
+
     public function rejectRingPricingSuggestion(Request $request, RingPricingSuggestion $suggestion): JsonResponse
     {
         $this->authorizeRingPricing($request);
@@ -4129,10 +4149,16 @@ class AdminController extends Controller
             'pickup_area' => $suggestion->pickup_area,
             'destination_area' => $suggestion->destination_area,
             'ring' => $suggestion->ring,
+            'suggestion_type' => $suggestion->suggestion_type ?? 'price_edit',
+            'learning_source' => $suggestion->learning_source,
             'suggested_price' => $suggestion->suggested_price,
             'previous_price' => $suggestion->previous_price,
+            'system_price' => $suggestion->system_price,
+            'price_delta' => $suggestion->price_delta ?? 0,
+            'confidence' => $suggestion->confidence ?? 60,
             'occurrence_count' => $suggestion->occurrence_count,
             'sample_order_ids' => $suggestion->sample_order_ids ?? [],
+            'evidence' => $suggestion->evidence ?? [],
             'last_order_code' => $suggestion->lastOrder?->order_code,
             'last_edited_by' => $suggestion->editor?->name,
             'status' => $suggestion->status,

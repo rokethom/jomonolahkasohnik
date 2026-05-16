@@ -16,6 +16,7 @@ class DriverRequestOrderService
         private readonly OrderCodeGenerator $codeGenerator,
         private readonly MultiOrderService $multiOrder,
         private readonly ServiceFeeCalculator $serviceFees,
+        private readonly RingPricingService $ringPricing,
     ) {
     }
 
@@ -29,7 +30,7 @@ class DriverRequestOrderService
         $depositJasa = max(0, (int) ($parsed['deposit_jasa'] ?? $parsed['price']));
         $basePrice = max(0, (int) $parsed['price'] - $serviceFee);
 
-        return DB::transaction(fn (): Order => Order::query()->create([
+        $order = DB::transaction(fn (): Order => Order::query()->create([
             'order_code' => $this->codeGenerator->generateRequest($parsed['service'], $branch),
             'user_id' => $driver->user_id,
             'driver_id' => $driver->id,
@@ -68,5 +69,9 @@ class DriverRequestOrderService
             'notes' => $parsed['notes'],
             'status' => OrderStatus::Completed,
         ]))->fresh(['service', 'driver.user']);
+
+        $this->ringPricing->recordDriverRequestOrder($order, $driver->user);
+
+        return $order;
     }
 }

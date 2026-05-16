@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\RingPricingRule;
 use App\Models\RingPricingSuggestion;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -175,16 +176,114 @@ class RingPricingService
             return null;
         }
 
+        return $this->recordSuggestion($order, [
+            'suggestion_type' => 'price_edit',
+            'learning_source' => 'admin_price_correction',
+            'suggested_price' => $newPrice,
+            'previous_price' => $previousPrice,
+            'system_price' => $previousPrice,
+            'price_delta' => $newPrice - $previousPrice,
+            'confidence' => $this->confidenceForDelta($previousPrice, $newPrice, 90),
+            'last_edited_by' => $actor->id,
+            'evidence' => [
+                'reason' => 'Harga order diedit manual oleh admin/operator.',
+                'order_code' => $order->order_code,
+                'previous_price' => $previousPrice,
+                'corrected_price' => $newPrice,
+                'total_price' => (int) $order->total_price,
+                'distance_km' => (float) $order->distance_km,
+                'source' => $order->source,
+            ],
+        ]);
+    }
+
+    public function recordDriverRequestOrder(Order $order, ?User $actor = null): ?RingPricingSuggestion
+    {
+        if ($order->source !== 'driver_request' || ! $order->pickup_address || ! $order->destination_address) {
+            return null;
+        }
+
+        $acceptedTotal = (int) ($order->total_price ?: $order->price);
+        $serviceFee = (int) ($order->service_charge ?? 0);
+        $suggestedBasePrice = max(0, $acceptedTotal - $serviceFee);
+
+        if ($suggestedBasePrice <= 0) {
+            return null;
+        }
+
+        return $this->recordSuggestion($order, [
+            'suggestion_type' => 'request_order_sample',
+            'learning_source' => 'driver_request_order',
+            'suggested_price' => $suggestedBasePrice,
+            'previous_price' => (int) data_get($order->pricing_breakdown, 'system_price', 0) ?: null,
+            'system_price' => (int) data_get($order->pricing_breakdown, 'system_price', 0) ?: null,
+            'price_delta' => 0,
+            'confidence' => 65,
+            'last_edited_by' => $actor?->id,
+            'evidence' => [
+                'reason' => 'Harga berasal dari request order driver/manual yang sudah masuk sebagai order selesai.',
+                'order_code' => $order->order_code,
+                'accepted_total' => $acceptedTotal,
+                'service_fee' => $serviceFee,
+                'suggested_base_price' => $suggestedBasePrice,
+                'request_deposit_jasa' => data_get($order->pricing_breakdown, 'request_deposit_jasa'),
+                'raw_text' => $order->raw_text,
+                'notes' => $order->notes,
+            ],
+        ]);
+    }
+
+    public function learnFromRequestOrders(?array $branchIds = null, int $limit = 250): array
+    {
+        $created = 0;
+        $updated = 0;
+        $skipped = 0;
+
+        Order::query()
+            ->where('source', 'driver_request')
+            ->whereNotNull('pickup_address')
+            ->whereNotNull('destination_address')
+            ->when($branchIds !== null, fn (Builder $query): Builder => $query->whereIn('branch_id', $branchIds))
+            ->latest()
+            ->limit(max(1, min(1000, $limit)))
+            ->get()
+            ->each(function (Order $order) use (&$created, &$updated, &$skipped): void {
+                $before = RingPricingSuggestion::query()->count();
+                $suggestion = $this->recordDriverRequestOrder($order);
+                if (! $suggestion) {
+                    $skipped++;
+                    return;
+                }
+
+                RingPricingSuggestion::query()->count() > $before ? $created++ : $updated++;
+            });
+
+        return compact('created', 'updated', 'skipped');
+    }
+
+    private function recordSuggestion(Order $order, array $data): ?RingPricingSuggestion
+    {
+        if (! $order->pickup_address || ! $order->destination_address) {
+            return null;
+        }
+
         $pickupArea = $this->areaName($order->pickup_address);
         $destinationArea = $this->areaName($order->destination_address);
         $serviceType = $this->normalizeServiceType((string) ($order->service_type ?? $order->service_code ?? ''));
+        $suggestedPrice = max(0, (int) ($data['suggested_price'] ?? 0));
+        if ($suggestedPrice <= 0) {
+            return null;
+        }
+
+        $type = (string) ($data['suggestion_type'] ?? 'price_edit');
         $suggestion = RingPricingSuggestion::query()
             ->where('status', 'pending')
             ->where('branch_id', $order->branch_id)
             ->where('service_type', $serviceType ?: null)
             ->where('pickup_area', $pickupArea)
             ->where('destination_area', $destinationArea)
-            ->where('suggested_price', $newPrice)
+            ->where('suggested_price', $suggestedPrice)
+            ->when(Schema::hasColumn('ring_pricing_suggestions', 'suggestion_type'), fn (Builder $query): Builder => $query->where('suggestion_type', $type))
             ->first();
 
         $samples = array_values(array_unique(array_filter([
@@ -192,29 +291,64 @@ class RingPricingService
             $order->id,
         ])));
 
+        $evidence = $suggestion?->evidence ?? [];
+        if (! is_array($evidence)) {
+            $evidence = [];
+        }
+        $evidence['latest'] = $data['evidence'] ?? [];
+        $evidence['samples'] = array_slice([...(array) ($evidence['samples'] ?? []), [
+            'order_id' => $order->id,
+            'order_code' => $order->order_code,
+            'price' => $suggestedPrice,
+            'created_at' => now()->toIso8601String(),
+        ]], -10);
+
         $payload = [
             'branch_id' => $order->branch_id,
             'service_type' => $serviceType ?: null,
             'pickup_area' => $pickupArea,
             'destination_area' => $destinationArea,
-            'ring' => null,
-            'suggested_price' => $newPrice,
-            'previous_price' => $previousPrice,
+            'ring' => data_get($order->pricing_breakdown, 'ring'),
+            'suggested_price' => $suggestedPrice,
+            'previous_price' => $data['previous_price'] ?? null,
             'sample_order_ids' => array_slice($samples, -10),
             'last_order_id' => $order->id,
-            'last_edited_by' => $actor->id,
+            'last_edited_by' => $data['last_edited_by'] ?? null,
         ];
 
+        if (Schema::hasColumn('ring_pricing_suggestions', 'suggestion_type')) {
+            $payload += [
+                'suggestion_type' => $type,
+                'learning_source' => $data['learning_source'] ?? null,
+                'system_price' => $data['system_price'] ?? null,
+                'price_delta' => (int) ($data['price_delta'] ?? (($data['system_price'] ?? null) !== null ? $suggestedPrice - (int) $data['system_price'] : 0)),
+                'confidence' => max(1, min(100, (int) ($data['confidence'] ?? 60))),
+                'evidence' => $evidence,
+            ];
+        }
+
         if ($suggestion) {
-            $suggestion->forceFill([
-                ...$payload,
-                'occurrence_count' => $suggestion->occurrence_count + 1,
-            ])->save();
+            $payload['occurrence_count'] = $suggestion->occurrence_count + 1;
+            if (Schema::hasColumn('ring_pricing_suggestions', 'confidence')) {
+                $payload['confidence'] = max((int) $suggestion->confidence, (int) ($payload['confidence'] ?? 60));
+            }
+            $suggestion->forceFill($payload)->save();
 
             return $suggestion->fresh(['branch', 'lastOrder', 'editor']);
         }
 
         return RingPricingSuggestion::create($payload)->load(['branch', 'lastOrder', 'editor']);
+    }
+
+    private function confidenceForDelta(int $systemPrice, int $correctedPrice, int $base): int
+    {
+        if ($systemPrice <= 0) {
+            return $base;
+        }
+
+        $ratio = abs($correctedPrice - $systemPrice) / max(1, $systemPrice);
+
+        return max(1, min(100, $base + (int) min(10, round($ratio * 10))));
     }
 
     public function normalizeServiceType(string $serviceType): string

@@ -259,7 +259,7 @@ type PriceSetting = { id: number; name: string; branch_id: number | null; min_km
 type KeywordParser = { id: number; keyword: string; service_type: string; response_template: string; form_schema?: { fields?: Array<{ label?: string; name?: string; type?: string; required?: boolean; options?: string[] }> } | null; parser_type: 'simple' | 'advanced' | string; is_active: boolean; priority: number; created_at?: string | null; updated_at?: string | null }
 type PricingKeywordRule = { id: number; name: string; keywords: string; amount: number; service_scopes?: string[] | null; is_active: boolean; priority: number; description?: string | null; created_at?: string | null; updated_at?: string | null }
 type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'branch_code' | 'name' | 'area' | 'display_name'> | null; service_type?: string | null; name: string; area_mode?: 'text' | 'polygon' | string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; polygon_coordinates?: Array<{ lat: number; lng: number }>; polygon_match_point?: string | null; match_type?: 'point' | 'cross' | string; pickup_ring?: string | null; destination_ring?: string | null; ring: string; min_km?: string | number | null; max_km?: string | number | null; pricing_mode?: 'flat' | 'formula' | string; price: number; per_km_rate?: number | null; subtract_value?: number | null; service_fee?: number | null; priority?: number | null; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
-type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggested_price: number; previous_price?: number | null; occurrence_count: number; sample_order_ids?: number[]; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
+type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggestion_type?: string | null; learning_source?: string | null; suggested_price: number; previous_price?: number | null; system_price?: number | null; price_delta?: number | null; confidence?: number | null; occurrence_count: number; sample_order_ids?: number[]; evidence?: Record<string, unknown> | null; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; shape_type?: 'circle' | 'polygon' | string; polygon_coordinates?: Array<{ lat: number; lng: number }> | null; is_active: boolean }
 type ZonePricingRule = {
   id: number
@@ -3143,6 +3143,7 @@ export function PricingPanel({ ringRules, ringSuggestions, branches, services, p
   const [showImportForm, setShowImportForm] = useState(false)
   const [ringFormula, setRingFormula] = useState(false)
   const [importingGeojson, setImportingGeojson] = useState(false)
+  const [learningRequests, setLearningRequests] = useState(false)
   const [geojsonImportMessage, setGeojsonImportMessage] = useState<string | null>(null)
   const [geojsonImportError, setGeojsonImportError] = useState<string | null>(null)
   const createRing = async (event: FormEvent<HTMLFormElement>) => {
@@ -3239,6 +3240,23 @@ export function PricingPanel({ ringRules, ringSuggestions, branches, services, p
     await api(`/admin/ring-pricing-suggestions/${suggestion.id}/reject`, { method: 'POST' })
     await onChanged()
   }
+  const learnRequestOrders = async () => {
+    setLearningRequests(true)
+    setGeojsonImportMessage(null)
+    setGeojsonImportError(null)
+    try {
+      const payload = await api<{ message?: string }>('/admin/ring-pricing-suggestions/learn-request-orders', {
+        method: 'POST',
+        body: JSON.stringify({ limit: 500 }),
+      })
+      setGeojsonImportMessage(payload.message ?? 'Learning request order selesai.')
+      await onChanged()
+    } catch (error) {
+      setGeojsonImportError(error instanceof Error ? error.message : 'Learning request order gagal.')
+    } finally {
+      setLearningRequests(false)
+    }
+  }
   const canManageRing = Boolean(permissions.can_manage_ring_pricing)
   const activeRingCount = ringRules.filter((rule) => rule.is_active).length
   const learnedRingCount = ringRules.filter((rule) => rule.source === 'learned').length
@@ -3248,6 +3266,7 @@ export function PricingPanel({ ringRules, ringSuggestions, branches, services, p
       <div className="section-head master-ring-head">
         <div><h2>Master Ring Pricing</h2><p>Min/max jarak, polygon, service fee, dan formula harga dikelola dari Master Ring.</p></div>
         <div className="section-actions">
+          {canManageRing && <button className="secondary-button compact" type="button" disabled={learningRequests} onClick={() => void learnRequestOrders()}><Icon name="shield" />{learningRequests ? 'Learning...' : 'Learn Request Order'}</button>}
           {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowImportForm((value) => !value)}><Icon name="upload" />{showImportForm ? 'Tutup Import' : 'Import GeoJSON'}</button>}
           {canManageRing && <button className="secondary-button compact" type="button" onClick={() => setShowRingForm((value) => !value)}><Icon name="plus" />{showRingForm ? 'Tutup Form' : 'Master Ring'}</button>}
         </div>
@@ -3306,8 +3325,8 @@ export function PricingPanel({ ringRules, ringSuggestions, branches, services, p
       </div>
       {canManageRing && ringSuggestions.length > 0 && (
         <div className="pricing-subsection">
-          <PanelHeader title="Suggestion dari edit harga" action={`${ringSuggestions.length} pending`} />
-          <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} ? {suggestion.destination_area}</strong><span className="status warning">Learn</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')}</span><small>{suggestion.occurrence_count}x koreksi · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
+          <PanelHeader title="AI Pricing Learning Suggestions" action={`${ringSuggestions.length} pending`} />
+          <div className="pricing-list ring-pricing-list">{ringSuggestions.map((suggestion) => <article className="pricing-card ring-card suggestion" key={suggestion.id}><div className="pricing-card-main"><div className="ring-card-title"><strong>{suggestion.pickup_area} ? {suggestion.destination_area}</strong><span className="status warning">{suggestionTypeLabel(suggestion.suggestion_type)}</span></div><span>{suggestion.branch ? branchLabel(suggestion.branch as Branch) : 'Global'} · {suggestion.service_type ?? 'semua layanan'} · {ringLabel(suggestion.ring ?? '-')} · confidence {suggestion.confidence ?? 60}%</span><small>{suggestion.occurrence_count}x data · system Rp {Number(suggestion.system_price ?? suggestion.previous_price ?? 0).toLocaleString('id-ID')} · saran Rp {suggestion.suggested_price.toLocaleString('id-ID')} · delta Rp {Number(suggestion.price_delta ?? 0).toLocaleString('id-ID')}</small><small>Source: {suggestion.learning_source ?? '-'} · terakhir {suggestion.last_order_code ?? '-'} oleh {suggestion.last_edited_by ?? '-'}</small></div><em>Rp {suggestion.suggested_price.toLocaleString('id-ID')}</em><div className="ring-card-actions"><button className="mini-button" type="button" onClick={() => void approveSuggestion(suggestion)}>Approve</button><button className="mini-button reject" type="button" onClick={() => void rejectSuggestion(suggestion)}>Reject</button></div></article>)}</div>
         </div>
       )}
     </section>
@@ -3331,6 +3350,12 @@ function formatRingPrice(rule: RingPricingRule) {
 
 function ringLabel(value: string) {
   return value.replace(/_/g, ' ').replace(/\bring\b/i, 'Ring').replace(/\b(\d)\b/, '$1')
+}
+
+function suggestionTypeLabel(value?: string | null) {
+  if (value === 'request_order_sample') return 'Request order'
+  if (value === 'price_edit') return 'Edit harga'
+  return 'AI Learn'
 }
 
 export function MasterPricingPanel({ data, onNavigate }: { data: Bootstrap; onNavigate: (view: View) => void }) {
