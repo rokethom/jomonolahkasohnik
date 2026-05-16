@@ -2151,6 +2151,150 @@ svg {
   font-weight: 950;
 }
 
+.live-price-dashboard-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.live-price-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.82fr) minmax(220px, 1fr) minmax(220px, 0.95fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.live-price-dashboard-column {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.82);
+  padding: 12px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.live-price-dashboard-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #0f172a;
+}
+
+.live-price-dashboard-head span {
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.live-price-dashboard-head b {
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.live-price-dashboard-queue {
+  display: grid;
+  gap: 8px;
+  max-height: 330px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.live-price-queue-item {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 14px;
+  padding: 10px;
+  background: #ffffff;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.live-price-queue-item.active,
+.live-price-queue-item:hover {
+  border-color: rgba(14, 165, 233, 0.5);
+  background: #eff6ff;
+}
+
+.live-price-queue-item strong,
+.live-price-queue-item span,
+.live-price-queue-item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-price-queue-item strong {
+  font-size: 13px;
+}
+
+.live-price-queue-item span,
+.live-price-queue-item small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.live-price-dashboard-preview,
+.live-price-dashboard-editor {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.live-price-dashboard-preview > strong {
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.live-price-dashboard-preview .preserve-lines {
+  max-height: 128px;
+  overflow: auto;
+  border-radius: 12px;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  color: #334155;
+  font-size: 12px;
+}
+
+.live-price-dashboard-editor label {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.live-price-dashboard-editor input,
+.live-price-dashboard-editor textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.live-price-dashboard-editor textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
 .compact-activity {
   padding: 16px;
 }

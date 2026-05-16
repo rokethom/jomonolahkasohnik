@@ -1319,7 +1319,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
       </section>
       <section className="dashboard-live-grid">
         <LiveOrders orders={data.orders} onOpenOrder={onOpenOrder} onViewAll={() => onNavigate('orders')} />
-        <LiveChatDashboard chats={data.chats} onNavigate={() => onNavigate('chats')} onOpenOrder={onOpenOrder} />
+        <DashboardLivePriceReview reviews={data.live_price_reviews ?? []} api={api} onChanged={onChanged} onNavigate={() => onNavigate('live-price-reviews')} />
       </section>
       <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />
       <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
@@ -1621,26 +1621,101 @@ function LiveOrders({ orders, onOpenOrder, onViewAll }: { orders: Order[]; onOpe
   )
 }
 
-function LiveChatDashboard({ chats, onNavigate, onOpenOrder }: { chats: Chat[]; onNavigate: () => void; onOpenOrder: (code: string) => void }) {
-  const liveChats = chats.slice(0, 6)
+function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void>; onNavigate: () => void }) {
+  const [rows, setRows] = useState<LivePriceReview[]>(reviews)
+  const [selectedId, setSelectedId] = useState<number | null>(reviews[0]?.id ?? null)
+  const [savingId, setSavingId] = useState<number | null>(null)
+
+  useEffect(() => {
+    setRows(reviews)
+    setSelectedId((current) => (current && reviews.some((review) => review.id === current)) ? current : (reviews[0]?.id ?? null))
+  }, [reviews])
+
+  const selected = rows.find((review) => review.id === selectedId) ?? rows[0] ?? null
+  const payload = selected?.order_payload ?? null
+  const correctedPrice = Number(selected?.corrected_price ?? selected?.system_price ?? 0)
+  const correctedFee = Number(selected?.corrected_service_fee ?? selected?.system_service_fee ?? 0)
+  const correctedExtra = Number(selected?.corrected_extra_charge ?? 0)
+  const correctedTotal = correctedPrice + correctedFee + correctedExtra
+
+  const updateSelected = (patch: Partial<LivePriceReview>) => {
+    if (!selected) return
+    setRows((current) => current.map((review) => review.id === selected.id ? { ...review, ...patch } : review))
+  }
+
+  const approveSelected = async () => {
+    if (!selected) return
+    setSavingId(selected.id)
+    try {
+      await api(`/admin/live-price-reviews/${selected.id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({
+          corrected_price: correctedPrice,
+          corrected_service_fee: correctedFee,
+          corrected_extra_charge: correctedExtra,
+          correction_reason: selected.correction_reason || 'Live dashboard correction',
+        }),
+      })
+      await onChanged()
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   return (
-    <section className="panel live-panel">
-      <PanelHeader title="Live Chat" action={`${liveChats.length} room`} />
-      <div className="dashboard-chat-list">
-        {liveChats.length === 0 && <EmptyPanel title="Belum ada chat" copy="Chat customer/operator akan muncul di sini." />}
-        {liveChats.map((chat) => (
-          <button className="dashboard-chat-row" type="button" key={chat.id} onClick={onNavigate}>
-            <div className="activity-icon"><Icon name="chat" /></div>
-            <div>
-              <strong>{chat.customer || chat.driver || 'Chat room'}</strong>
-              <span>{chat.latest_message || chat.last_message || 'Belum ada pesan terbaru'}</span>
-              {chat.order_code && <em onClick={(event) => { event.stopPropagation(); onOpenOrder(chat.order_code!) }}>{chat.order_code}</em>}
+    <section className="panel live-price-dashboard-panel">
+      <PanelHeader title="Live Edit Harga" action={`${rows.length} review`} />
+      <div className="live-price-dashboard-grid">
+        <div className="live-price-dashboard-column">
+          <div className="live-price-dashboard-head"><span>Live order</span><b>{rows.length}</b></div>
+          <div className="live-price-dashboard-queue">
+            {rows.length === 0 && <EmptyPanel title="Tidak ada live correction" copy="Order customer yang menunggu koreksi harga akan muncul di sini." />}
+            {rows.slice(0, 8).map((review) => (
+              <button className={selected?.id === review.id ? 'live-price-queue-item active' : 'live-price-queue-item'} type="button" key={review.id} onClick={() => setSelectedId(review.id)}>
+                <strong>{review.customer ?? 'Customer'}</strong>
+                <span>{serviceDisplayName(review.service_type ?? review.order_payload?.service_type ?? 'Order')} - {review.branch ?? 'Cabang belum terbaca'}</span>
+                <small>Rp {Number(review.system_total_price ?? 0).toLocaleString('id-ID')} - {formatShortDateTime(review.created_at ?? null)}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="live-price-dashboard-column preview">
+          <div className="live-price-dashboard-head"><span>Preview order</span><b>{selected?.status ?? '-'}</b></div>
+          {!selected && <EmptyPanel title="Belum ada preview" copy="Pilih live order untuk melihat detail parsing dan harga sistem." />}
+          {selected && (
+            <div className="live-price-dashboard-preview">
+              <strong>{serviceDisplayName(selected.service_type ?? payload?.service_type ?? 'Order')}</strong>
+              <p className="preserve-lines">{selected.raw_text || '-'}</p>
+              <div className="manual-preview-detail">
+                <div><span>Pickup</span><b>{payload?.pickup_address ?? String(selected.parsed?.pickup_address ?? '-')}</b></div>
+                <div><span>Tujuan</span><b>{payload?.destination_address ?? String(selected.parsed?.destination_address ?? '-')}</b></div>
+                <div><span>Tarif sistem</span><b>Rp {Number(selected.system_price ?? 0).toLocaleString('id-ID')}</b></div>
+                <div><span>Service fee</span><b>Rp {Number(selected.system_service_fee ?? 0).toLocaleString('id-ID')}</b></div>
+                <div><span>Total sistem</span><b>Rp {Number(selected.system_total_price ?? 0).toLocaleString('id-ID')}</b></div>
+              </div>
             </div>
-            {Number(chat.unread_count ?? 0) > 0 && <b>{chat.unread_count}</b>}
-          </button>
-        ))}
+          )}
+        </div>
+
+        <div className="live-price-dashboard-column edit">
+          <div className="live-price-dashboard-head"><span>Edit harga</span><b>Final</b></div>
+          {!selected && <EmptyPanel title="Belum ada koreksi" copy="Kolom edit aktif setelah ada order customer masuk." />}
+          {selected && (
+            <div className="live-price-dashboard-editor">
+              <label>Tarif final<input type="number" value={correctedPrice} onChange={(event) => updateSelected({ corrected_price: Number(event.target.value) })} /></label>
+              <label>Service fee<input type="number" value={correctedFee} onChange={(event) => updateSelected({ corrected_service_fee: Number(event.target.value) })} /></label>
+              <label>Tambahan/potongan<input type="number" value={correctedExtra} onChange={(event) => updateSelected({ corrected_extra_charge: Number(event.target.value) })} /></label>
+              <label>Catatan koreksi<textarea value={selected.correction_reason ?? ''} onChange={(event) => updateSelected({ correction_reason: event.target.value })} /></label>
+              <div className="manual-preview-total"><span>Total customer</span><strong>Rp {correctedTotal.toLocaleString('id-ID')}</strong></div>
+              <button className="primary-button compact" type="button" disabled={savingId === selected.id || selected.status !== 'pending'} onClick={() => void approveSelected()}>
+                {savingId === selected.id ? 'Mengirim...' : selected.status === 'pending' ? 'Konfirmasi harga' : 'Sudah diproses'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-      <button className="secondary-button compact" type="button" onClick={onNavigate}>Buka live chat</button>
+      <button className="secondary-button compact" type="button" onClick={onNavigate}>Buka halaman Live Edit Harga</button>
     </section>
   )
 }
