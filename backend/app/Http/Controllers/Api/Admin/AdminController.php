@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Enums\UserRole;
 use App\Actions\Order\AcceptOrder;
 use App\Events\OrderPriceUpdated;
+use App\Events\OrderStatusUpdated;
 use App\Actions\Order\CreateOrder;
 use App\Exceptions\OrderLimitExceededException;
 use App\Http\Controllers\Controller;
@@ -539,6 +540,128 @@ class AdminController extends Controller
         return response()->json([
             'message' => "Broadcast terkirim ke {$drivers->count()} driver idle area.",
             'driver_count' => $drivers->count(),
+        ]);
+    }
+
+    public function repostDispatchOrder(Request $request, Order $order, NotificationService $notifications): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($this->canAssignDriver($actor), 403, 'Role Anda tidak diizinkan repost order.');
+
+        $order->loadMissing(['branch', 'user.branch', 'driver.user.branch']);
+        $this->assertOrderAreaScope($actor, $order);
+
+        try {
+            $reposted = DB::transaction(function () use ($order, $actor): Order {
+                $locked = Order::query()
+                    ->with(['branch', 'user.branch', 'driver.user.branch'])
+                    ->lockForUpdate()
+                    ->findOrFail($order->id);
+
+                if (! $this->isDispatchRepostCandidate($locked)) {
+                    throw new \RuntimeException('Order ini belum memenuhi syarat release/repost eksekutor.');
+                }
+
+                $currentCount = (int) ($locked->dispatch_repost_count ?? 0);
+                if ($currentCount >= 4) {
+                    throw new \RuntimeException('Order sudah mencapai batas repost 4x. Buat order baru bila masih diperlukan.');
+                }
+
+                $oldStatus = $locked->status;
+                $nextCount = $currentCount + 1;
+                $breakdown = $locked->pricing_breakdown ?? [];
+                $history = data_get($breakdown, 'dispatch_repost_history', []);
+                if (! is_array($history)) {
+                    $history = [];
+                }
+
+                $actorRole = $actor->role instanceof UserRole ? $actor->role->value : (string) $actor->role;
+
+                $history[] = [
+                    'count' => $nextCount,
+                    'actor_id' => $actor->id,
+                    'actor_name' => $actor->name,
+                    'actor_role' => $actorRole,
+                    'reposted_at' => now()->toIso8601String(),
+                ];
+
+                data_set($breakdown, 'dispatch_repost.count', $nextCount);
+                data_set($breakdown, 'dispatch_repost.last_reposted_at', now()->toIso8601String());
+                data_set($breakdown, 'dispatch_repost.last_reposted_by', $actor->name);
+                data_set($breakdown, 'dispatch_repost_history', $history);
+
+                $locked->forceFill([
+                    'status' => OrderStatus::SearchingDriver,
+                    'driver_id' => null,
+                    'cancelled_at' => null,
+                    'expired_at' => now()->addMinutes(10),
+                    'dispatch_repost_count' => $nextCount,
+                    'last_reposted_at' => now(),
+                    'last_reposted_by' => $actor->id,
+                    'pricing_breakdown' => $breakdown,
+                    'notes' => trim(((string) $locked->notes)."\nRepost dispatch #{$nextCount} oleh {$actor->name} ({$actorRole}) - menunggu driver 10 menit lagi."),
+                ])->save();
+
+                $fresh = $locked->fresh(['branch', 'user.branch', 'driver.user.branch', 'operHandleRequests.driver.user', 'crews.driver.user']);
+
+                DB::afterCommit(function () use ($fresh, $oldStatus): void {
+                    try {
+                        OrderStatusUpdated::dispatch($fresh, $oldStatus, OrderStatus::SearchingDriver);
+                    } catch (\Throwable $exception) {
+                        Log::warning('broadcast.dispatch_repost_failed', [
+                            'order_id' => $fresh->id,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                });
+
+                return $fresh;
+            });
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        $drivers = Driver::query()
+            ->with('user')
+            ->whereIn('id', collect($this->suggestedDriversForOrder($reposted, $actor))->pluck('id')->all())
+            ->get();
+
+        $notifiedDriverCount = 0;
+        foreach ($drivers as $driver) {
+            try {
+                $notifications->sendToUser(
+                    $driver->user,
+                    'Order direpost eksekutor',
+                    "Order {$reposted->order_code} dibuka kembali oleh {$actor->name}.",
+                    [
+                        'type' => 'dispatcher_reposted_order',
+                        'order_id' => $reposted->id,
+                        'order_code' => $reposted->order_code,
+                        'repost_count' => $reposted->dispatch_repost_count,
+                        'url' => '/?open=orders&order_id='.$reposted->id,
+                    ],
+                );
+                $notifiedDriverCount++;
+            } catch (\Throwable $exception) {
+                Log::warning('notification.dispatch_repost_failed', [
+                    'order_id' => $reposted->id,
+                    'driver_id' => $driver->id,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $this->recordAudit($actor, 'reposted_timeout_order', $reposted, [
+            'order_code' => $reposted->order_code,
+            'repost_count' => $reposted->dispatch_repost_count,
+            'expires_at' => $reposted->expired_at?->toIso8601String(),
+            'notified_driver_count' => $notifiedDriverCount,
+        ]);
+
+        return response()->json([
+            'message' => "Order berhasil direpost #{$reposted->dispatch_repost_count}. Timeout baru 10 menit.",
+            'data' => $this->orderPayload($reposted, $actor),
+            'notified_driver_count' => $notifiedDriverCount,
         ]);
     }
 
@@ -2776,6 +2899,7 @@ class AdminController extends Controller
             'can_export_report' => $isAdminOrGm || $user->hasPermission('export_report'),
             'can_monitor_live_order' => $isAdminOrGm || $user->hasPermission('monitor_live_order'),
             'can_monitor_live_chat' => $isAdminOrGm || $user->hasPermission('monitor_live_chat'),
+            'can_view_dispatch_repost_audit' => in_array($user->role, [UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true),
             'can_use_internal_chat' => $isAdminOrGm || $user->hasPermission('internal_chat'),
             'can_use_internal_notes' => $isAdminOrGm || $user->hasPermission('internal_chat'),
             'can_approve_cancel_order' => $isAdminOrGm || $user->hasPermission('approve_cancel_order'),
@@ -3120,7 +3244,7 @@ class AdminController extends Controller
 
     private function orderPayload(Order $order, ?User $actor = null): array
     {
-        $order->loadMissing(['area', 'user.branch', 'user.area', 'driver.user.branch', 'driver.user.area', 'operHandleRequests.driver.user', 'crews.driver.user']);
+        $order->loadMissing(['area', 'user.branch', 'user.area', 'driver.user.branch', 'driver.user.area', 'lastRepostedBy', 'operHandleRequests.driver.user', 'crews.driver.user']);
         $operHandle = $order->operHandleRequests->sortByDesc('updated_at')->first();
         $branch = $order->branch ?? $order->user?->branch ?? $order->driver?->user?->branch;
 
@@ -3135,6 +3259,12 @@ class AdminController extends Controller
             'source' => $order->source,
             'status' => $order->status->value,
             'cancel_reason' => $this->cancelReasonFor($order),
+            'can_repost_dispatch' => $this->isDispatchRepostCandidate($order) && (int) ($order->dispatch_repost_count ?? 0) < 4,
+            'dispatch_repost_count' => (int) ($order->dispatch_repost_count ?? 0),
+            'dispatch_repost_remaining' => max(0, 4 - (int) ($order->dispatch_repost_count ?? 0)),
+            'last_reposted_at' => $order->last_reposted_at?->toDateTimeString(),
+            'last_reposted_by' => $order->lastRepostedBy?->name,
+            'dispatch_repost_history' => data_get($order->pricing_breakdown, 'dispatch_repost_history', []),
             'branch' => $branch?->name,
             'branch_code' => $branch?->branch_code,
             'branch_area' => $branch?->area,
@@ -3425,6 +3555,12 @@ class AdminController extends Controller
 
     private function waitingSeconds(Order $order): int
     {
+        if ($this->isDispatchRepostCandidate($order)) {
+            $from = $order->cancelled_at ?? $order->expired_at ?? $order->updated_at ?? $order->created_at;
+
+            return max(0, $from?->diffInSeconds(now()) ?? 0);
+        }
+
         if (! in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)) {
             return 0;
         }
@@ -3434,6 +3570,10 @@ class AdminController extends Controller
 
     private function dispatchSlaStatus(Order $order): string
     {
+        if ($this->isDispatchRepostCandidate($order)) {
+            return ((int) ($order->dispatch_repost_count ?? 0) >= 4) ? 'repost_locked' : 'needs_release';
+        }
+
         $seconds = $this->waitingSeconds($order);
 
         return match (true) {
@@ -3442,6 +3582,28 @@ class AdminController extends Controller
             $seconds > 0 => 'normal',
             default => 'assigned',
         };
+    }
+
+    private function isDispatchRepostCandidate(Order $order): bool
+    {
+        if ($order->driver_id !== null || $order->status === OrderStatus::Completed) {
+            return false;
+        }
+
+        $notes = strtolower((string) $order->notes);
+        if (str_contains($notes, 'multi-crew timeout')) {
+            return false;
+        }
+
+        if (
+            $order->status === OrderStatus::Cancelled
+            && (str_contains($notes, 'driver timeout') || str_contains($notes, 'batas waktu cari driver') || str_contains($notes, 'batas waktu mencari driver'))
+        ) {
+            return true;
+        }
+
+        return in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)
+            && ($order->expired_at?->lte(now()) ?? false);
     }
 
     private function driverHasActiveOrder(Driver $driver): bool

@@ -42,6 +42,9 @@ class Order extends Model
         'status',
         'cancelled_at',
         'expired_at',
+        'dispatch_repost_count',
+        'last_reposted_at',
+        'last_reposted_by',
         'geocoded_by',
         'locked_location_hash',
         'device_location_log_id',
@@ -71,6 +74,9 @@ class Order extends Model
         'status' => OrderStatus::class,
         'cancelled_at' => 'datetime',
         'expired_at' => 'datetime',
+        'dispatch_repost_count' => 'integer',
+        'last_reposted_at' => 'datetime',
+        'last_reposted_by' => 'integer',
         'device_location_log_id' => 'integer',
         'payment_meta' => 'array',
     ];
@@ -96,6 +102,11 @@ class Order extends Model
     public function driver(): BelongsTo
     {
         return $this->belongsTo(Driver::class);
+    }
+
+    public function lastRepostedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'last_reposted_by');
     }
 
     public function service(): BelongsTo

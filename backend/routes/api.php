@@ -85,6 +85,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/orders', [AdminController::class, 'orders'])->middleware('permission:monitor_live_order');
         Route::post('/orders/{order}/assign-driver', [AdminController::class, 'assignDriver'])->middleware('permission:monitor_live_order');
         Route::post('/orders/{order}/broadcast-drivers', [AdminController::class, 'broadcastDrivers'])->middleware('permission:monitor_live_order');
+        Route::post('/orders/{order}/repost-dispatch', [AdminController::class, 'repostDispatchOrder'])->middleware('permission:monitor_live_order');
         Route::post('/orders/manual/preview', [AdminController::class, 'previewManualOrder'])->middleware('permission:manual_order');
         Route::post('/orders/manual', [AdminController::class, 'manualOrder'])->middleware('permission:manual_order');
         Route::patch('/orders/{order}/price', [AdminController::class, 'updateOrderPrice'])->middleware('permission:edit_tarif');

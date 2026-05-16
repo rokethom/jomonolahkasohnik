@@ -136,6 +136,12 @@ type Order = {
   source?: string | null
   status: string
   cancel_reason?: string | null
+  can_repost_dispatch?: boolean
+  dispatch_repost_count?: number
+  dispatch_repost_remaining?: number
+  last_reposted_at?: string | null
+  last_reposted_by?: string | null
+  dispatch_repost_history?: Array<{ count?: number; actor_name?: string; actor_role?: string; reposted_at?: string }>
   branch: string | null
   branch_code?: string | null
   branch_area?: string | null
@@ -393,6 +399,7 @@ type Permissions = {
   can_export_report?: boolean
   can_monitor_live_order?: boolean
   can_monitor_live_chat?: boolean
+  can_view_dispatch_repost_audit?: boolean
   can_use_internal_chat?: boolean
   can_use_internal_notes?: boolean
   can_approve_cancel_order?: boolean
@@ -1285,6 +1292,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
       <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
       <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
       <PriceEditActivity auditLogs={data.audit_logs} />
+      {data.permissions.can_view_dispatch_repost_audit && <DispatchRepostActivity auditLogs={data.audit_logs} />}
     </div>
   )
 }
@@ -1379,6 +1387,7 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
   const [dispatchMessage, setDispatchMessage] = useState('')
   const dispatchOrders = data.orders.filter(isDispatchPendingOrder)
   const criticalOrders = dispatchOrders.filter((order) => order.sla_status === 'critical' || Number(order.waiting_seconds ?? 0) >= 600)
+  const firstAssignableOrder = dispatchOrders.find((order) => !isDispatchRepostOrder(order))
   const idleDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active' && !data.orders.some((order) => order.driver === driver.name && isActiveOrderStatus(order)))
   const acceptedDrivers = data.orders.filter((order) => order.driver && isActiveOrderStatus(order)).length
 
@@ -1420,15 +1429,24 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
                 <button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button>
                 <div>
                   <strong>{order.customer || 'Customer'}</strong>
-                  <span>{order.branch_area || order.branch || '-'} - {statusDispatchLabel(order.status)} - waiting {formatWaitingTime(order.waiting_seconds)}</span>
+                  <span>
+                    {order.branch_area || order.branch || '-'} - {isDispatchRepostOrder(order) ? 'butuh release/repost' : statusDispatchLabel(order.status)} - waiting {formatWaitingTime(order.waiting_seconds)}
+                    {Number(order.dispatch_repost_count ?? 0) > 0 ? ` - repost ${order.dispatch_repost_count}/4` : ''}
+                  </span>
                 </div>
                 <div className="suggested-driver">
                   <small>Suggested</small>
                   <b>{order.suggested_drivers?.[0]?.name ?? 'Belum ada idle driver'}</b>
                 </div>
                 <div className="dispatch-row-actions">
-                  <button className="secondary-button compact" type="button" onClick={() => void broadcastOrderToDrivers(api, order, setDispatchMessage)}>Broadcast</button>
-                  <button className="primary-button compact" type="button" onClick={() => setAssignOrder(order)}>Assign Driver</button>
+                  {isDispatchRepostOrder(order) ? (
+                    <button className="primary-button compact" type="button" onClick={() => void repostDispatchOrder(api, order, setDispatchMessage, onChanged)}>Release/Repost</button>
+                  ) : (
+                    <>
+                      <button className="secondary-button compact" type="button" onClick={() => void broadcastOrderToDrivers(api, order, setDispatchMessage)}>Broadcast</button>
+                      <button className="primary-button compact" type="button" onClick={() => setAssignOrder(order)}>Assign Driver</button>
+                    </>
+                  )}
                 </div>
               </article>
             ))}
@@ -1451,8 +1469,16 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
 
       <div className="floating-dispatch-actions">
         <button type="button" onClick={() => onNavigate('manual-order')}><Icon name="plus" />Order</button>
-        <button type="button" disabled={!dispatchOrders[0]} onClick={() => dispatchOrders[0] && setAssignOrder(dispatchOrders[0])}><Icon name="truck" />Assign Driver</button>
-        <button type="button" disabled={!dispatchOrders[0]} onClick={() => dispatchOrders[0] && void broadcastOrderToDrivers(api, dispatchOrders[0], setDispatchMessage)}><Icon name="shield" />Broadcast Driver</button>
+        <button type="button" disabled={!firstAssignableOrder} onClick={() => firstAssignableOrder && setAssignOrder(firstAssignableOrder)}><Icon name="truck" />Assign Driver</button>
+        <button type="button" disabled={!dispatchOrders[0]} onClick={() => {
+          const first = dispatchOrders[0]
+          if (!first) return
+          if (isDispatchRepostOrder(first)) {
+            void repostDispatchOrder(api, first, setDispatchMessage, onChanged)
+            return
+          }
+          void broadcastOrderToDrivers(api, first, setDispatchMessage)
+        }}><Icon name="shield" />{isDispatchRepostOrder(dispatchOrders[0]) ? 'Release' : 'Broadcast Driver'}</button>
         <button type="button" onClick={() => onNavigate('chats')}><Icon name="chat" />Chat Customer</button>
       </div>
       {dispatchMessage && <div className="dispatch-toast">{dispatchMessage}</div>}
@@ -1470,6 +1496,18 @@ async function broadcastOrderToDrivers(api: ApiClient, order: Order, setMessage:
     setMessage(error instanceof Error ? error.message : 'Broadcast driver gagal.')
   } finally {
     window.setTimeout(() => setMessage(''), 2600)
+  }
+}
+
+async function repostDispatchOrder(api: ApiClient, order: Order, setMessage: (value: string) => void, onChanged: () => Promise<void>) {
+  try {
+    const payload = await api<{ message?: string }>(`/admin/orders/${order.id}/repost-dispatch`, { method: 'POST' })
+    setMessage(payload.message ?? 'Order berhasil direpost.')
+    await onChanged()
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : 'Release/repost order gagal.')
+  } finally {
+    window.setTimeout(() => setMessage(''), 3200)
   }
 }
 
@@ -1600,6 +1638,29 @@ function PriceEditActivity({ auditLogs }: { auditLogs: AuditLog[] }) {
   )
 }
 
+function DispatchRepostActivity({ auditLogs }: { auditLogs: AuditLog[] }) {
+  const logs = auditLogs.filter((log) => log.action === 'reposted_timeout_order').slice(0, 8)
+
+  return (
+    <section className="panel activity-panel compact-activity">
+      <PanelHeader title="History repost eksekutor" action={`${logs.length} log`} />
+      <div className="activity-list">
+        {logs.length === 0 && <EmptyPanel title="Belum ada repost order" copy="Order timeout yang direlease/repost eksekutor akan tercatat di sini." />}
+        {logs.map((log) => (
+          <div className="activity-item order-activity-item compact" key={log.id}>
+            <div>
+              <strong>{log.subject_label ?? String(log.metadata?.order_code ?? 'Order')}</strong>
+              <span>Repost #{String(log.metadata?.repost_count ?? '-')} oleh {log.user}</span>
+              <em>Driver diberi notifikasi: {String(log.metadata?.notified_driver_count ?? 0)}</em>
+            </div>
+            <small>{formatShortDateTime(log.created_at)}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function DriverPerformanceSnapshot({ drivers, onOpenDrivers }: { drivers: DriverRow[]; onOpenDrivers: () => void }) {
   const rows = driverPerformanceRows(drivers)
   const best = {
@@ -1676,7 +1737,11 @@ function isWaitingDriverStatus(status: string) {
 }
 
 function isDispatchPendingOrder(order: Order) {
-  return isWaitingDriverStatus(order.status) && !order.driver
+  return ((isWaitingDriverStatus(order.status) && !order.driver) || isDispatchRepostOrder(order))
+}
+
+function isDispatchRepostOrder(order?: Order | null) {
+  return Boolean(order?.can_repost_dispatch)
 }
 
 function statusDispatchLabel(status: string) {
@@ -2751,11 +2816,23 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
   const filteredOrders = latestOrders.filter((order) => orderMatchesSearch(order, searchQuery))
   const selectedOrder = filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? null
   const priceLogs = auditLogs.filter((log) => log.action === 'updated_order_price').slice(0, 5)
+  const dispatchRepostLogs = permissions.can_view_dispatch_repost_audit ? auditLogs.filter((log) => log.action === 'reposted_timeout_order').slice(0, 5) : []
   void priceLogs.map(priceLogSummary)
   return (
     <section className="panel order-operations-panel">
       <PanelHeader title="Order operations" action={`${filteredOrders.length}/${orders.length} orders`} />
       {permissions.can_edit_order_price && <div className="notice">Edit harga hanya aktif saat order berjalan, lalu dikirim realtime ke customer dan driver.</div>}
+      {dispatchRepostLogs.length > 0 && (
+        <div className="order-audit-strip">
+          {dispatchRepostLogs.map((log) => (
+            <article key={log.id}>
+              <span>{log.subject_label ?? String(log.metadata?.order_code ?? 'Order')}</span>
+              <strong>Repost #{String(log.metadata?.repost_count ?? '-')}</strong>
+              <small>{log.user} · {formatShortDateTime(log.created_at)}</small>
+            </article>
+          ))}
+        </div>
+      )}
       <OperHandleQueue
         operHandles={operHandles}
         api={api}
