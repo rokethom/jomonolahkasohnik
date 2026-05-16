@@ -869,7 +869,7 @@ function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedRe
 }
 
 function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction, onRefreshOrders }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
-  const { isOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
+  const { isOnline, setOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
   const activeOrders = orders.filter((order) => isActiveOrder(order) && !isCrewOpportunity(order))
@@ -884,6 +884,8 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
 
   const updateAvailability = async (online: boolean) => {
     if (availabilitySaving) return
+    const previousOnline = isOnline
+    setOnline(online)
     setAvailabilitySaving(true)
     try {
       const payload = await api<{ message: string; driver: Driver; finance?: DriverFinance }>('/driver/availability', {
@@ -893,6 +895,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
       setDriverState(payload.driver, payload.finance ?? finance)
       toast(payload.message, online ? 'success' : 'warning')
     } catch (error) {
+      setOnline(previousOnline)
       toast(getErrorMessage(error, 'Gagal mengubah status driver'), 'danger')
     } finally {
       setAvailabilitySaving(false)
