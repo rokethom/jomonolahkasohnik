@@ -1796,6 +1796,9 @@ class AdminController extends Controller
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'radius_km' => ['nullable', 'numeric', 'min:0.1', 'max:100'],
+            'pricing_origin_name' => ['nullable', 'string', 'max:255'],
+            'pricing_origin_latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'pricing_origin_longitude' => ['nullable', 'numeric', 'between:-180,180'],
         ]);
 
         $payload['branch_code'] = strtoupper(trim((string) $payload['branch_code']));

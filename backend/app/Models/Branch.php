@@ -20,6 +20,9 @@ class Branch extends Model
         'latitude',
         'longitude',
         'radius_km',
+        'pricing_origin_name',
+        'pricing_origin_latitude',
+        'pricing_origin_longitude',
         'is_active',
     ];
 
@@ -27,6 +30,8 @@ class Branch extends Model
         'latitude' => 'decimal:8',
         'longitude' => 'decimal:8',
         'radius_km' => 'decimal:2',
+        'pricing_origin_latitude' => 'decimal:8',
+        'pricing_origin_longitude' => 'decimal:8',
         'is_active' => 'boolean',
         'parent_branch_id' => 'integer',
     ];
@@ -87,6 +92,34 @@ class Branch extends Model
     public function getIsOperationalAreaAttribute(): bool
     {
         return ! $this->is_regency;
+    }
+
+    public function hasPricingOrigin(): bool
+    {
+        return is_numeric($this->pricing_origin_latitude)
+            && is_numeric($this->pricing_origin_longitude);
+    }
+
+    /**
+     * @return array{lat: float, lng: float, name: string, source: string}|null
+     */
+    public function pricingOriginPoint(): ?array
+    {
+        $lat = $this->hasPricingOrigin() ? $this->pricing_origin_latitude : $this->latitude;
+        $lng = $this->hasPricingOrigin() ? $this->pricing_origin_longitude : $this->longitude;
+
+        if (! is_numeric($lat) || ! is_numeric($lng)) {
+            return null;
+        }
+
+        return [
+            'lat' => (float) $lat,
+            'lng' => (float) $lng,
+            'name' => filled($this->pricing_origin_name)
+                ? (string) $this->pricing_origin_name
+                : ($this->display_name ?: 'Titik Nol Pricing'),
+            'source' => $this->hasPricingOrigin() ? 'pricing_origin' : 'branch_center',
+        ];
     }
 
     public function scopeRegencies(Builder $query): Builder

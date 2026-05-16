@@ -51,6 +51,7 @@ Pricing engine bukan LLM. Pricing tetap deterministic dari Laravel:
 
 - route distance OSRM lokal
 - Google Maps fallback jika diaktifkan dan API key valid
+- titik nol pricing cabang/area dari CMS
 - Master Ring aktif di CMS
 - Pricing Keyword Rules
 - service fee dan formula dari CMS
@@ -100,11 +101,34 @@ GeoJSON bukan sumber harga.
 2. AI Parser membaca alamat, koordinat, layanan, dan keyword.
 3. AI Pricing menerima pickup lat/lng dan destination lat/lng.
 4. AI Pricing membaca `Master Data GeoJSON` untuk mencocokkan destination ke area/cabang.
-5. Sistem menghitung jarak pickup ke destination dengan route distance OSRM, lalu Google Distance jika diaktifkan.
-6. Sistem membaca `Master Ring` berdasarkan jarak dan range KM yang aktif di CMS.
-7. Sistem menjalankan formula harga dari Master Ring.
-8. Sistem menjalankan keyword charge.
-9. Sistem mengembalikan harga ke customer.
+5. Sistem menentukan titik acuan jarak:
+   - jika pickup masih berada di cabang/area pricing yang sama, jarak dihitung dari `Titik Nol Pricing` cabang/area ke destination.
+   - jika pickup terdeteksi dari luar cabang/area pricing, jarak dihitung dari pickup asli ke destination.
+6. Sistem menghitung route distance dengan OSRM lokal, lalu Google Distance jika diaktifkan.
+7. Sistem membaca `Master Ring` berdasarkan jarak dan range KM yang aktif di CMS.
+8. Sistem menjalankan formula harga dari Master Ring.
+9. Sistem menjalankan keyword charge.
+10. Sistem mengembalikan harga ke customer.
+
+## Titik Nol Pricing
+
+Titik nol pricing diisi dari CMS:
+
+- `Backend Filament > Location > Branches > Edit > Titik Nol Pricing`
+- jika `Lat/Lng titik nol` kosong, sistem fallback ke lat/lng cabang lama.
+
+Contoh titik nol:
+
+- STBKT: Alun-alun Situbondo
+- STBBSK: Alun-alun Besuki
+- STBASB: Taman Kota Asembagus
+- Paiton: Pasar Paiton
+- Kraksaan: Alun-alun Kraksaan
+- Bondowoso: Alun-alun Bondowoso
+- Banyuwangi: Alun-alun Banyuwangi
+- Genteng: Pasar Genteng
+- Rogojampi: Pasar Rogojampi
+- Muncar: RTH Blambangan
 
 ## Contoh
 

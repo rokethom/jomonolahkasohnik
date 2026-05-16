@@ -213,10 +213,7 @@ class PricingService
     {
         $serviceType = $this->normalizeServiceType((string) ($payload['service_type'] ?? 'ojek'));
         $stops = max(1, (int) ($payload['stops'] ?? $payload['stop_count'] ?? 1));
-        $routeDistance = $this->resolveDistanceResult($payload);
-        $distance = (float) $routeDistance['distance_km'];
         $route = $payload['route'] ?? $payload['travel_route'] ?? $payload['service_payload']['route'] ?? null;
-        $this->validate($serviceType, $distance, $stops);
 
         $pricingBranch = $this->resolvePricingBranch($payload);
         $pricingBranchId = $pricingBranch?->id ?? (isset($payload['branch_id']) ? (int) $payload['branch_id'] : null);
@@ -229,6 +226,11 @@ class PricingService
             $pricingBranchId = (int) $geojsonRegion->branch_id;
             $payload['branch_id'] = $pricingBranchId;
         }
+
+        $routeDistance = $this->resolveDistanceResult($payload, $pricingBranch, $serviceType);
+        $distance = (float) $routeDistance['distance_km'];
+        $this->validate($serviceType, $distance, $stops);
+
         if ($pricingBranch && $this->ringPricing->hasActiveCrossRules($serviceType, $pricingBranchId)) {
             $payload = [
                 ...$payload,
@@ -260,6 +262,12 @@ class PricingService
                 'distance_from_branch_km' => $distanceFromBranch,
                 'routing_provider' => $routeDistance['provider'],
                 'routing_fallback_used' => $routeDistance['fallback_used'],
+                'pricing_distance_origin' => $routeDistance['pricing_origin'] ?? 'pickup',
+                'pricing_origin_branch_id' => $routeDistance['pricing_origin_branch_id'] ?? null,
+                'pricing_origin_name' => $routeDistance['pricing_origin_name'] ?? null,
+                'pricing_origin_lat' => $routeDistance['pricing_origin_lat'] ?? null,
+                'pricing_origin_lng' => $routeDistance['pricing_origin_lng'] ?? null,
+                'pickup_outside_pricing_branch' => $routeDistance['pickup_outside_pricing_branch'] ?? false,
                 'service_fee_breakdown' => [['point' => 1, 'label' => 'Master Ring service fee', 'fee' => (int) ($masterRingMatch['rule']->service_fee ?? 0)]],
             ]);
             $quote = $this->ringPricing->applyMaster($quote, $masterRingMatch['rule'], $masterRingMatch);
@@ -286,6 +294,12 @@ class PricingService
 
         $quote['routing_provider'] = $routeDistance['provider'];
         $quote['routing_fallback_used'] = $routeDistance['fallback_used'];
+        $quote['pricing_distance_origin'] = $routeDistance['pricing_origin'] ?? 'pickup';
+        $quote['pricing_origin_branch_id'] = $routeDistance['pricing_origin_branch_id'] ?? null;
+        $quote['pricing_origin_name'] = $routeDistance['pricing_origin_name'] ?? null;
+        $quote['pricing_origin_lat'] = $routeDistance['pricing_origin_lat'] ?? null;
+        $quote['pricing_origin_lng'] = $routeDistance['pricing_origin_lng'] ?? null;
+        $quote['pickup_outside_pricing_branch'] = $routeDistance['pickup_outside_pricing_branch'] ?? false;
 
         $extraCharge = $this->extraServiceChargeForService($serviceType, [
             $payload['pickup_address'] ?? '',
@@ -500,6 +514,11 @@ class PricingService
 
     private function distanceFromBranchCenter(array $payload, Branch $branch): ?float
     {
+        $origin = $branch->pricingOriginPoint();
+        if ($origin === null) {
+            return null;
+        }
+
         foreach ([
             ['destination_lat', 'destination_lng'],
             ['dropoff_lat', 'dropoff_lng'],
@@ -510,8 +529,8 @@ class PricingService
             $lng = data_get($payload, $lngKey);
             if (is_numeric($lat) && is_numeric($lng)) {
                 return $this->distanceCalculator->haversine(
-                    (float) $branch->latitude,
-                    (float) $branch->longitude,
+                    $origin['lat'],
+                    $origin['lng'],
                     (float) $lat,
                     (float) $lng,
                 );
@@ -531,6 +550,11 @@ class PricingService
 
     private function endpointDistanceFromBranchCenter(array $payload, Branch $branch, string $type): ?float
     {
+        $origin = $branch->pricingOriginPoint();
+        if ($origin === null) {
+            return null;
+        }
+
         $keys = $type === 'pickup'
             ? [
                 ['pickup_lat', 'pickup_lng'],
@@ -554,8 +578,8 @@ class PricingService
 
             try {
                 return $this->distanceCalculator->drivingDistance(
-                    (float) $branch->latitude,
-                    (float) $branch->longitude,
+                    $origin['lat'],
+                    $origin['lng'],
                     (float) $lat,
                     (float) $lng,
                 );
@@ -578,13 +602,14 @@ class PricingService
         return (float) $this->resolveDistanceResult($payload)['distance_km'];
     }
 
-    private function resolveDistanceResult(array $payload): array
+    private function resolveDistanceResult(array $payload, ?Branch $pricingBranch = null, ?string $serviceType = null): array
     {
         if (isset($payload['distance'])) {
             return [
                 'distance_km' => (float) $payload['distance'],
                 'provider' => 'payload',
                 'fallback_used' => false,
+                'pricing_origin' => 'payload',
             ];
         }
 
@@ -593,15 +618,89 @@ class PricingService
                 'distance_km' => (float) $payload['distance_km'],
                 'provider' => 'payload',
                 'fallback_used' => false,
+                'pricing_origin' => 'payload',
             ];
         }
 
-        return $this->distanceCalculator->drivingDistanceResult(
-            (float) $payload['pickup_lat'],
-            (float) $payload['pickup_lng'],
-            (float) $payload['destination_lat'],
-            (float) $payload['destination_lng'],
-        );
+        $pickupLat = (float) $payload['pickup_lat'];
+        $pickupLng = (float) $payload['pickup_lng'];
+        $destinationLat = (float) $payload['destination_lat'];
+        $destinationLng = (float) $payload['destination_lng'];
+        $origin = $this->pricingDistanceOrigin($payload, $pricingBranch, $serviceType);
+
+        if ($origin !== null) {
+            try {
+                return [
+                    ...$this->distanceCalculator->drivingDistanceResult(
+                        $origin['lat'],
+                        $origin['lng'],
+                        $destinationLat,
+                        $destinationLng,
+                    ),
+                    'pricing_origin' => 'branch_pricing_origin',
+                    'pricing_origin_branch_id' => $pricingBranch?->id,
+                    'pricing_origin_name' => $origin['name'],
+                    'pricing_origin_lat' => $origin['lat'],
+                    'pricing_origin_lng' => $origin['lng'],
+                    'pricing_origin_source' => $origin['source'],
+                    'pickup_outside_pricing_branch' => false,
+                ];
+            } catch (\Throwable $exception) {
+                Log::warning('pricing.origin_distance_failed', [
+                    'branch_id' => $pricingBranch?->id,
+                    'origin' => $origin['name'],
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        return [
+            ...$this->distanceCalculator->drivingDistanceResult(
+                $pickupLat,
+                $pickupLng,
+                $destinationLat,
+                $destinationLng,
+            ),
+            'pricing_origin' => 'pickup',
+            'pickup_outside_pricing_branch' => $pricingBranch !== null && $this->pickupIsOutsidePricingBranch($payload, $pricingBranch),
+        ];
+    }
+
+    /**
+     * @return array{lat: float, lng: float, name: string, source: string}|null
+     */
+    private function pricingDistanceOrigin(array $payload, ?Branch $pricingBranch, ?string $serviceType): ?array
+    {
+        if ($pricingBranch === null || in_array($serviceType, ['travel', 'joker_mobil'], true)) {
+            return null;
+        }
+
+        if ($this->pickupIsOutsidePricingBranch($payload, $pricingBranch)) {
+            return null;
+        }
+
+        return $pricingBranch->pricingOriginPoint();
+    }
+
+    private function pickupIsOutsidePricingBranch(array $payload, Branch $pricingBranch): bool
+    {
+        $lat = data_get($payload, 'pickup_lat') ?? data_get($payload, 'origin_lat') ?? data_get($payload, 'service_payload.pickup_lat');
+        $lng = data_get($payload, 'pickup_lng') ?? data_get($payload, 'origin_lng') ?? data_get($payload, 'service_payload.pickup_lng');
+        if (! is_numeric($lat) || ! is_numeric($lng)) {
+            return false;
+        }
+
+        $detectedBranch = $this->branches->detect((float) $lat, (float) $lng)['branch'] ?? null;
+        if (! $detectedBranch instanceof Branch) {
+            return false;
+        }
+
+        return $this->branchRootId($detectedBranch) !== $this->branchRootId($pricingBranch);
+    }
+
+    private function branchRootId(Branch $branch): int
+    {
+        return (int) ($branch->parent_branch_id ?: $branch->id);
     }
 
     private function validate(string $serviceType, float $distance, int $stops): void

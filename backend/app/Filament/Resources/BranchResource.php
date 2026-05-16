@@ -78,6 +78,32 @@ class BranchResource extends Resource
                         Forms\Components\View::make('filament.forms.components.branch-map-picker')
                             ->columnSpanFull(),
                     ]),
+                Forms\Components\Section::make('Titik Nol Pricing')
+                    ->columns(3)
+                    ->description('Acuan jarak harga. Jika kosong, sistem memakai lat/lng cabang lama sebagai fallback.')
+                    ->schema([
+                        Forms\Components\TextInput::make('pricing_origin_name')
+                            ->label('Nama titik nol')
+                            ->placeholder('Alun-alun Situbondo / Pasar Paiton')
+                            ->maxLength(255)
+                            ->columnSpanFull(),
+                        Forms\Components\TextInput::make('pricing_origin_latitude')
+                            ->label('Lat titik nol')
+                            ->numeric()
+                            ->minValue(-90)
+                            ->maxValue(90)
+                            ->live(onBlur: true),
+                        Forms\Components\TextInput::make('pricing_origin_longitude')
+                            ->label('Lng titik nol')
+                            ->numeric()
+                            ->minValue(-180)
+                            ->maxValue(180)
+                            ->live(onBlur: true),
+                        Forms\Components\Placeholder::make('pricing_origin_hint')
+                            ->label('Cara pakai')
+                            ->content('Isi titik nol per area: STBKT = Alun-alun Situbondo, STBASB = Taman Kota Asembagus, STBBSK = Alun-alun Besuki, dan seterusnya.')
+                            ->columnSpan(1),
+                    ]),
             ]);
     }
 
@@ -111,6 +137,17 @@ class BranchResource extends Resource
                     ->label('Default KM')
                     ->suffix(' KM')
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('pricing_origin_name')
+                    ->label('Titik Nol')
+                    ->placeholder('Fallback lat/lng cabang')
+                    ->searchable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('pricing_origin_latitude')
+                    ->label('Lat Nol')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('pricing_origin_longitude')
+                    ->label('Lng Nol')
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('geofence_areas_count')
                     ->state(fn (Branch $record): string => $record->geofenceAreas

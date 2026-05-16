@@ -14,6 +14,7 @@ use App\Services\GeocodingService;
 use App\Services\PricingKeywordRuleService;
 use App\Services\PricingService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -100,6 +101,65 @@ class PricingServiceTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $pricing->calculateTarifFromDatabase(12, $branch->id);
+    }
+
+    public function test_customer_pricing_uses_branch_pricing_origin_instead_of_pickup_point(): void
+    {
+        app(\App\Services\SettingService::class)->set('night_tariff_enabled', false);
+        app(\App\Services\SettingService::class)->set('osrm_active', true);
+        app(\App\Services\SettingService::class)->set('osrm_base_url', 'https://router.project-osrm.org');
+        PriceSetting::query()->delete();
+        RingPricingRule::query()->delete();
+
+        Http::fake([
+            'router.project-osrm.org/*' => Http::response([
+                'routes' => [
+                    ['distance' => 30000, 'duration' => 1800],
+                ],
+            ]),
+        ]);
+
+        $branch = Branch::query()->create([
+            'branch_code' => 'STBKT-ZERO',
+            'name' => 'Situbondo',
+            'area' => 'Kota Zero',
+            'latitude' => -7.70686204,
+            'longitude' => 114.00550184,
+            'radius_km' => 5,
+            'pricing_origin_name' => 'Alun-alun Situbondo',
+            'pricing_origin_latitude' => -7.70686204,
+            'pricing_origin_longitude' => 114.00550184,
+        ]);
+
+        PriceSetting::query()->create([
+            'name' => 'Ring 3 formula from titik nol',
+            'branch_id' => $branch->id,
+            'min_km' => 10.01,
+            'max_km' => null,
+            'price' => 0,
+            'is_formula' => true,
+            'per_km_rate' => 1900,
+            'subtract_value' => 7000,
+            'is_active' => true,
+        ]);
+
+        $quote = app(PricingService::class)->calculate([
+            'service_type' => 'ojek',
+            'branch_id' => $branch->id,
+            'pickup_address' => 'SMAN 1 Kapongan',
+            'pickup_lat' => -7.7075,
+            'pickup_lng' => 114.0060,
+            'destination_address' => 'Pelabuhan Jangkar',
+            'destination_lat' => -7.734,
+            'destination_lng' => 114.223,
+            'stops' => 1,
+        ]);
+
+        $this->assertSame(30.0, $quote['distance_km']);
+        $this->assertSame(50000, $quote['tarif']);
+        $this->assertSame('branch_pricing_origin', $quote['pricing_distance_origin']);
+        $this->assertSame('Alun-alun Situbondo', $quote['pricing_origin_name']);
+        $this->assertFalse($quote['pickup_outside_pricing_branch']);
     }
 
     public function test_joker_mobil_distance_rounding_and_tarif(): void
