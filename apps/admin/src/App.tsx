@@ -1740,13 +1740,13 @@ function RecentActivity({ orders, onOpenOrder }: { orders: Order[]; onOpenOrder:
 }
 
 function PriceEditActivity({ auditLogs }: { auditLogs: AuditLog[] }) {
-  const logs = auditLogs.filter((log) => log.action === 'updated_order_price').slice(0, 6)
+  const logs = auditLogs.filter((log) => isPriceAuditLog(log)).slice(0, 6)
 
   return (
     <section className="panel activity-panel compact-activity">
       <PanelHeader title="History edit harga" action={`${logs.length} log`} />
       <div className="activity-list">
-        {logs.length === 0 && <EmptyPanel title="Belum ada edit harga" copy="Log operator yang mengubah harga akan tampil di sini." />}
+        {logs.length === 0 && <EmptyPanel title="Belum ada edit harga" copy="Log operator dan eksekutor yang mengubah harga akan tampil di sini." />}
         {logs.map((log) => (
           <div className="activity-item order-activity-item compact" key={log.id}>
             <div>
@@ -6738,10 +6738,22 @@ function displayBranchValue(branch: unknown, area?: string | null) {
 
 function priceLogSummary(log: AuditLog) {
   const metadata = log.metadata ?? {}
+  if (log.action === 'approved_live_price_review') {
+    const total = Number(metadata.corrected_total_price ?? 0)
+    return total > 0 ? `Live edit disetujui Rp ${total.toLocaleString('id-ID')}` : 'Live edit harga disetujui'
+  }
+  if (log.action === 'rejected_live_price_review') {
+    return 'Live edit harga ditolak'
+  }
+
   const after = metadata.after && typeof metadata.after === 'object' ? metadata.after as Record<string, unknown> : {}
   const total = Number(after.total ?? 0)
 
   return total > 0 ? `Total baru Rp ${total.toLocaleString('id-ID')}` : 'Harga diedit'
+}
+
+function isPriceAuditLog(log: AuditLog) {
+  return ['updated_order_price', 'approved_live_price_review', 'rejected_live_price_review'].includes(log.action)
 }
 
 function monthName(month: number) {

@@ -116,7 +116,7 @@ class AdminController extends Controller
             'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
             'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
             'chats' => $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)),
-            'audit_logs' => $this->auditLogsQuery($user)->limit(12)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)),
+            'audit_logs' => $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)),
         ]);
     }
 
