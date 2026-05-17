@@ -17,6 +17,10 @@ return new class extends Migration
                 $table->string('source', 80)->default('unknown')->index();
             }
 
+            if (! Schema::hasColumn('ai_logs', 'workflow')) {
+                $table->string('workflow', 100)->default('unknown')->index()->after('source');
+            }
+
             if (! Schema::hasColumn('ai_logs', 'event')) {
                 $table->string('event', 100)->default('unknown')->index();
             }

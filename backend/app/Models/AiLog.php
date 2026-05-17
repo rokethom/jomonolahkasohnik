@@ -18,6 +18,7 @@ class AiLog extends Model
 
     protected $fillable = [
         'source',
+        'workflow',
         'event',
         'status',
         'queue',

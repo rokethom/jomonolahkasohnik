@@ -452,10 +452,19 @@ class JojoBotService
             $parsed['pickup_address'] = $this->branch($user)?->name ?? 'Lokasi jemput';
             $parsed['used_fallback_location'] = true;
         } else {
+            $rawPickupAddress = (string) $parsed['pickup_address'];
             $parsed['pickup_address'] = $this->normalizeProfileAddressReference(
-                (string) $parsed['pickup_address'],
+                $rawPickupAddress,
                 $user,
             );
+
+            if (
+                $this->isCustomerHomeAddress($rawPickupAddress)
+                && (! is_numeric($user->lat ?? null) || ! is_numeric($user->lng ?? null))
+                && (! is_numeric($user->currentLocation?->lat) || ! is_numeric($user->currentLocation?->lng))
+            ) {
+                $parsed['used_fallback_location'] = true;
+            }
         }
 
         return $parsed;

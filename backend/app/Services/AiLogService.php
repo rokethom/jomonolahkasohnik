@@ -14,6 +14,10 @@ class AiLogService
             return null;
         }
 
+        if (Schema::hasColumn('ai_logs', 'workflow') && ! array_key_exists('workflow', $payload)) {
+            $payload['workflow'] = $payload['source'] ?? 'unknown';
+        }
+
         return AiLog::query()->create([
             ...$payload,
             'status' => AiLog::STATUS_STARTED,
