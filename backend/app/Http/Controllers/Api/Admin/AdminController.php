@@ -81,6 +81,9 @@ class AdminController extends Controller
         $driverSuspensions->releaseExpiredSuspensions();
 
         $user = $request->user()->load(['branch', 'branchScopes']);
+        $view = $request->query('view');
+        $wants = static fn (array $views): bool => $view === null || in_array((string) $view, $views, true);
+
         $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($user)));
 
         return response()->json([
@@ -88,11 +91,11 @@ class AdminController extends Controller
             'permissions' => $this->permissionsFor($user),
             'system_settings' => $this->systemSettingsPayload($settings),
             'stats' => $this->stats($user),
-            'users' => $this->usersQuery($user)->limit(100)->get()->map(fn (User $item) => $this->userPayload($item)),
-            'drivers' => $this->driverRows($user),
-            'operator_performance' => $this->operatorPerformanceRows($user),
-            'orders' => $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)),
-            'oper_handles' => $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)),
+            'users' => $wants(['users', 'internal-chat', 'sticky-notes', 'reports']) ? $this->usersQuery($user)->limit(100)->get()->map(fn (User $item) => $this->userPayload($item)) : [],
+            'drivers' => $wants(['dashboard', 'drivers', 'reports']) ? $this->driverRows($user) : [],
+            'operator_performance' => $wants(['dashboard']) ? $this->operatorPerformanceRows($user) : [],
+            'orders' => $wants(['dashboard', 'orders', 'request-orders', 'internal-chat', 'reports']) ? $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)) : [],
+            'oper_handles' => $wants(['dashboard', 'orders', 'request-orders']) ? $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)) : [],
             'branches' => Branch::query()
                 ->with([
                     'parent:id,branch_code,name,area,parent_branch_id',
@@ -106,17 +109,17 @@ class AdminController extends Controller
                 ->orderBy('area')
                 ->get(),
             'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
-            'price_settings' => PriceSetting::query()->with('branch')->latest()->get(),
-            'keyword_parsers' => $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)),
-            'pricing_keyword_rules' => $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)),
-            'ring_pricing_rules' => $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)),
-            'ring_pricing_suggestions' => $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)),
-            'live_price_reviews' => $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)),
-            'zone_pricing_rules' => $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)),
-            'geofences' => GeofenceArea::query()->with('branch')->latest()->get(),
-            'location_logs' => $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)),
-            'chats' => $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)),
-            'audit_logs' => $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)),
+            'price_settings' => $wants(['master-pricing', 'pricing', 'price-settings']) ? PriceSetting::query()->with('branch')->latest()->get() : [],
+            'keyword_parsers' => $wants(['keyword-parsers']) ? $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)) : [],
+            'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],
+            'ring_pricing_rules' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)) : [],
+            'ring_pricing_suggestions' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)) : [],
+            'live_price_reviews' => $wants(['dashboard', 'live-price-reviews']) ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)) : [],
+            'zone_pricing_rules' => $wants(['zone-pricing', 'zone-pricing-tester']) ? $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)) : [],
+            'geofences' => $wants(['geofence', 'zone-pricing', 'zone-pricing-tester']) ? GeofenceArea::query()->with('branch')->latest()->get() : [],
+            'location_logs' => $wants(['locations', 'reports']) ? $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)) : [],
+            'chats' => $wants(['dashboard', 'chats']) ? $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)) : [],
+            'audit_logs' => $wants(['orders', 'audit-logs']) ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : [],
         ]);
     }
 

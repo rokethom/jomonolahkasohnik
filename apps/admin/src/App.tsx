@@ -1,14 +1,23 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { AgGridReact } from 'ag-grid-react'
-import { AllCommunityModule, ModuleRegistry, type CellValueChangedEvent, type ColDef } from 'ag-grid-community'
+import { lazy, Suspense } from 'react'
+import type { CellValueChangedEvent, ColDef } from 'ag-grid-community'
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 import 'ag-grid-community/styles/ag-grid.css'
 import 'ag-grid-community/styles/ag-theme-quartz.css'
 import './App.css'
 
-ModuleRegistry.registerModules([AllCommunityModule])
+const LazyAgGridReact = lazy(async () => {
+  const [{ AgGridReact }, { AllCommunityModule, ModuleRegistry }] = await Promise.all([
+    import('ag-grid-react'),
+    import('ag-grid-community'),
+  ])
+
+  ModuleRegistry.registerModules([AllCommunityModule])
+
+  return { default: AgGridReact }
+})
 
 declare global {
   interface Window {
@@ -762,7 +771,7 @@ function App() {
     if (!silent) setLoading(true)
     setError('')
     try {
-      const payload = await api<Bootstrap>('/admin/bootstrap')
+      const payload = await api<Bootstrap>(`/admin/bootstrap?view=${encodeURIComponent(view)}`)
       const pendingOperHandles = (payload.oper_handles ?? []).filter((item) => item.status === 'pending').length
 
       if (silent && lastOperHandlePendingRef.current !== null && pendingOperHandles > lastOperHandlePendingRef.current) {
@@ -781,7 +790,7 @@ function App() {
       if (!silent) setLoading(false)
       isRefreshingRef.current = false
     }
-  }, [api, token])
+  }, [api, token, view])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -4197,7 +4206,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     <div className="reports-stack">
       <section className="panel reports-panel">
         <div className="section-head"><div><h2>Reports</h2><p>Ringkasan operasional berdasarkan data yang bisa diakses role kamu.</p></div></div>
-        <div className="report-grid"><ReportCard title="Orders" value={String(data.orders.length)} meta={`${completed} selesai`} tone="order" /><ReportCard title="Drivers" value={String(data.users.filter((user) => user.role === 'driver').length)} meta="visible drivers" tone="driver" /><ReportCard title="Suspicious GPS" value={String(data.location_logs.filter((log) => log.is_suspicious).length)} meta="needs review" tone="risk" /></div>
+        <div className="report-grid"><ReportCard title="Orders" value={String(data.orders.length)} meta={`${completed} selesai`} tone="order" /><ReportCard title="Drivers" value={String(data.stats.total_drivers)} meta="visible drivers" tone="driver" /><ReportCard title="Suspicious GPS" value={String(data.location_logs.filter((log) => log.is_suspicious).length)} meta="needs review" tone="risk" /></div>
       </section>
 
       <section className={`panel deposit-report-panel${depositFullscreen ? ' is-fullscreen' : ''}`}>
@@ -4223,17 +4232,19 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
           </div>
         </div>
         <div className="deposit-report-wrap ag-theme-quartz-dark jojo-deposit-grid">
-          <AgGridReact<DepositReportRow>
-            rowData={depositRows}
-            columnDefs={depositColumnDefs}
-            getRowId={(params) => String(params.data.driver_id)}
-            defaultColDef={{ sortable: true, resizable: true, filter: true, wrapHeaderText: true, autoHeaderHeight: true }}
-            headerHeight={76}
-            floatingFiltersHeight={42}
-            singleClickEdit
-            stopEditingWhenCellsLoseFocus
-            onCellValueChanged={(event) => void saveDepositCell(event)}
-          />
+          <Suspense fallback={<EmptyPanel title="Memuat grid report" copy="Komponen tabel besar sedang disiapkan." />}>
+            <LazyAgGridReact
+              rowData={depositRows}
+              columnDefs={depositColumnDefs as never}
+              getRowId={((params: { data: DepositReportRow }) => String(params.data.driver_id)) as never}
+              defaultColDef={{ sortable: true, resizable: true, filter: true, wrapHeaderText: true, autoHeaderHeight: true }}
+              headerHeight={76}
+              floatingFiltersHeight={42}
+              singleClickEdit
+              stopEditingWhenCellsLoseFocus
+              onCellValueChanged={(event) => void saveDepositCell(event as CellValueChangedEvent<DepositReportRow>)}
+            />
+          </Suspense>
           {loadingDeposits && <EmptyPanel title="Memuat report setoran" copy="Data sedang diambil dari backend." />}
           {!loadingDeposits && depositRows.length === 0 && <EmptyPanel title="Belum ada data setoran" copy="Report akan tampil setelah ada driver/deposit bulan ini." />}
         </div>
