@@ -24,6 +24,7 @@ class AdminRoleMenuOverrideService
                 'request-orders' => 'Request Order',
                 'chats' => 'Chat Monitor',
                 'internal-chat' => 'Internal Chat',
+                'audit-logs' => 'Audit Logs',
                 'sticky-notes' => 'Sticky Notes',
                 'manual-order' => 'Manual Order',
                 'live-price-reviews' => 'Live Edit Harga',
@@ -135,6 +136,7 @@ class AdminRoleMenuOverrideService
 
         if ($permissions['can_use_internal_chat'] ?? false) {
             $views[] = 'internal-chat';
+            $views[] = 'audit-logs';
         }
 
         if ($permissions['can_use_internal_notes'] ?? false) {

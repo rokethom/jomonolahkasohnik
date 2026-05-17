@@ -1177,6 +1177,40 @@ class AdminController extends Controller
         ]);
     }
 
+    public function auditLogs(Request $request): JsonResponse
+    {
+        abort_unless($this->canViewAuditLogs($request->user()), 403);
+
+        $payload = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'limit' => ['nullable', 'integer', 'min:50', 'max:1000'],
+        ]);
+
+        $query = $this->auditLogsQuery($request->user());
+        $search = trim((string) ($payload['q'] ?? ''));
+
+        if ($search !== '') {
+            $query->where(function (Builder $query) use ($search): void {
+                $query->where('action', 'like', "%{$search}%")
+                    ->orWhere('subject_type', 'like', "%{$search}%")
+                    ->orWhere('subject_label', 'like', "%{$search}%")
+                    ->orWhere('metadata', 'like', "%{$search}%")
+                    ->orWhereHas('user', function (Builder $query) use ($search): void {
+                        $query->where('name', 'like', "%{$search}%")
+                            ->orWhere('username', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        return response()->json([
+            'data' => $query
+                ->limit((int) ($payload['limit'] ?? 500))
+                ->get()
+                ->map(fn (AuditLog $log): array => $this->auditLogPayload($log)),
+        ]);
+    }
+
     public function approveLivePriceReview(LivePriceReview $review, Request $request, LivePriceReviewService $liveReviews): JsonResponse
     {
         abort_unless($this->canHandleLivePriceReview($request->user()), 403);
@@ -3027,6 +3061,11 @@ class AdminController extends Controller
         }
 
         return $query;
+    }
+
+    private function canViewAuditLogs(User $user): bool
+    {
+        return ! in_array($user->role, [UserRole::WebAdmin, UserRole::CmsEditor, UserRole::Driver, UserRole::Customer], true);
     }
 
     private function permissionsFor(User $user): array

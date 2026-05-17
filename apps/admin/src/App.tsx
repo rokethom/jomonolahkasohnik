@@ -17,7 +17,7 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'web_admin' | 'cms_editor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'sticky-notes' | 'manual-order' | 'live-price-reviews' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'audit-logs' | 'sticky-notes' | 'manual-order' | 'live-price-reviews' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
 type DriverListMode = 'all' | 'online'
 const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
 const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
@@ -592,6 +592,7 @@ const menuGroups: MenuGroup[] = [
       { id: 'request-orders', label: 'Request Order', icon: 'receipt' },
       { id: 'chats', label: 'Chat Monitor', icon: 'chat' },
       { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
+      { id: 'audit-logs', label: 'Audit Logs', icon: 'receipt' },
       { id: 'sticky-notes', label: 'Sticky Notes', icon: 'note' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
       { id: 'live-price-reviews', label: 'Live Edit Harga', icon: 'cash' },
@@ -687,6 +688,7 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_view_report) views.add('reports')
   if (permissions.can_monitor_live_chat) views.add('chats')
   if (permissions.can_use_internal_chat) views.add('internal-chat')
+  if (permissions.can_use_internal_chat || permissions.can_view_report) views.add('audit-logs')
   if (permissions.can_use_internal_notes) views.add('sticky-notes')
   if (permissions.can_create_manual_order) {
     views.add('manual-order')
@@ -1119,6 +1121,7 @@ function App() {
         {safeView === 'reports' && <ReportsPanel data={data} api={api} token={token} />}
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} notificationSound={notificationSound} targetDriverUserId={chatDriverTargetId} onTargetDriverHandled={clearChatDriverTarget} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
+        {safeView === 'audit-logs' && <AuditLogsPanel initialLogs={data.audit_logs} api={api} />}
         {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
         {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
         {safeView === 'live-price-reviews' && <LivePriceReviewPanel reviews={data.live_price_reviews ?? []} api={api} onChanged={refresh} />}
@@ -4714,6 +4717,176 @@ function ChatStatusBadge({ status }: { status: string }) {
   return <span className={`status ${tone}`}>{status}</span>
 }
 
+type AuditSection = {
+  id: string
+  title: string
+  description: string
+  match: (log: AuditLog) => boolean
+}
+
+const auditSections: AuditSection[] = [
+  {
+    id: 'price',
+    title: 'Audit Harga',
+    description: 'Edit harga manual, live correction, approval dan reject harga customer.',
+    match: (log) => isPriceAuditLog(log) || log.action.includes('live_price'),
+  },
+  {
+    id: 'dispatch',
+    title: 'Audit Dispatch & Order',
+    description: 'Assign driver, repost, timeout, cancel, oper handle, dan perubahan order.',
+    match: (log) => ['order', 'dispatch', 'assign', 'repost', 'cancel', 'oper'].some((keyword) => log.action.includes(keyword)),
+  },
+  {
+    id: 'driver',
+    title: 'Audit Driver & Setoran',
+    description: 'Suspend, unsuspend, token driver, BPJS, setoran, dan konfigurasi driver.',
+    match: (log) => ['driver', 'suspend', 'deposit', 'setoran', 'bpjs', 'bansos'].some((keyword) => log.action.includes(keyword)),
+  },
+  {
+    id: 'security',
+    title: 'Audit Security',
+    description: 'Login gagal, reset token, session, auth Google, lock/unlock akun.',
+    match: (log) => ['login', 'token', 'session', 'auth', 'google', 'lock'].some((keyword) => log.action.includes(keyword)),
+  },
+]
+
+function AuditLogsPanel({ initialLogs, api }: { initialLogs: AuditLog[]; api: ApiClient }) {
+  const [logs, setLogs] = useState<AuditLog[]>(initialLogs)
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const params = new URLSearchParams({ limit: '1000' })
+      if (query.trim() !== '') params.set('q', query.trim())
+      const response = await api<{ data: AuditLog[] }>(`/admin/audit-logs?${params.toString()}`)
+      setLogs(response.data)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Audit logs belum bisa dimuat.')
+    } finally {
+      setLoading(false)
+    }
+  }, [api, query])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refresh(), 250)
+    return () => window.clearTimeout(timer)
+  }, [refresh])
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredLogs = logs.filter((log) => {
+    if (normalizedQuery === '') return true
+    return [
+      log.user,
+      log.role ?? '',
+      log.action,
+      log.subject_type,
+      log.subject_label ?? '',
+      JSON.stringify(log.metadata ?? {}),
+    ].join(' ').toLowerCase().includes(normalizedQuery)
+  })
+
+  const sections = [
+    ...auditSections.map((section) => ({ ...section, logs: filteredLogs.filter(section.match).slice(0, 250) })),
+    {
+      id: 'all',
+      title: 'Semua Audit Logs',
+      description: 'Gabungan seluruh audit terbaru sesuai scope role dan cabang.',
+      match: () => true,
+      logs: filteredLogs.slice(0, 500),
+    },
+  ]
+
+  return (
+    <section className="panel audit-logs-page">
+      <PanelHeader title="Audit Logs" action={`${filteredLogs.length}/${logs.length} log`} />
+      <div className="audit-logs-toolbar">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari actor, action, subject, metadata..." />
+        <button className="secondary-button compact" type="button" disabled={loading} onClick={() => void refresh()}>{loading ? 'Memuat...' : 'Refresh'}</button>
+      </div>
+      {error && <div className="notice danger">{error}</div>}
+      <div className="audit-section-grid">
+        {sections.map((section) => (
+          <AuditLogSection key={section.id} title={section.title} description={section.description} logs={section.logs} filename={`audit-${section.id}`} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AuditLogSection({ title, description, logs, filename }: { title: string; description: string; logs: AuditLog[]; filename: string }) {
+  return (
+    <article className="audit-log-card">
+      <div className="section-head compact">
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+        <div className="manual-ai-actions">
+          <span className="status muted">{logs.length} log</span>
+          <button className="secondary-button compact" type="button" disabled={logs.length === 0} onClick={() => downloadAuditLogsXls(logs, filename)}>Export XLS</button>
+        </div>
+      </div>
+      {logs.length === 0 && <EmptyPanel title="Belum ada data" copy="Audit log untuk kategori ini belum tersedia." />}
+      {logs.length > 0 && (
+        <div className="responsive-table audit-log-table-wrap">
+          <table className="audit-log-table">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Actor</th>
+                <th>Role</th>
+                <th>Action</th>
+                <th>Subject</th>
+                <th>Label</th>
+                <th>Metadata</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr key={`${filename}-${log.id}`}>
+                  <td>{formatShortDateTime(log.created_at)}</td>
+                  <td>{log.user}</td>
+                  <td><span className={`role-chip ${roleColors[(log.role ?? 'customer') as Role] ?? 'role-muted'}`}>{roleLabels[(log.role ?? 'customer') as Role] ?? '-'}</span></td>
+                  <td><span className="status info">{log.action}</span></td>
+                  <td>{log.subject_type}{log.subject_id ? ` #${log.subject_id}` : ''}</td>
+                  <td>{log.subject_label ?? '-'}</td>
+                  <td>{compactMetadata(log.metadata)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+  )
+}
+
+function compactMetadata(metadata?: Record<string, unknown> | null) {
+  const text = JSON.stringify(metadata ?? {}, null, 0)
+  return text.length > 160 ? `${text.slice(0, 160)}...` : text
+}
+
+function downloadAuditLogsXls(logs: AuditLog[], prefix: string) {
+  const headers = ['Waktu', 'Actor', 'Role', 'Action', 'Subject', 'Subject ID', 'Label', 'Metadata']
+  const data = logs.map((log) => [
+    formatShortDateTime(log.created_at),
+    log.user,
+    roleLabels[(log.role ?? 'customer') as Role] ?? '-',
+    log.action,
+    log.subject_type,
+    log.subject_id ?? '',
+    log.subject_label ?? '',
+    JSON.stringify(log.metadata ?? {}),
+  ])
+  const html = `<table border="1"><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${data.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+  downloadTextFile(html, `${prefix}-${new Date().toISOString().slice(0, 10)}.xls`, 'application/vnd.ms-excel;charset=utf-8')
+}
+
 function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { api: ApiClient; me: User; branches: Branch[]; users: User[]; orders: Order[]; onOpenOrder: (code: string) => void }) {
   const [rooms, setRooms] = useState<InternalChatRoom[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
@@ -6510,7 +6683,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'live-price-reviews': 'Live Edit Harga', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'audit-logs': 'Audit Logs', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'live-price-reviews': 'Live Edit Harga', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
 }
 
 function internalNoteStatusLabel(status: InternalNoteStatus) {

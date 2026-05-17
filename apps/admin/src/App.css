@@ -8324,6 +8324,80 @@ textarea::placeholder {
   font-weight: 900;
 }
 
+.audit-logs-page {
+  display: grid;
+  gap: 18px;
+}
+
+.audit-logs-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.audit-logs-toolbar input {
+  flex: 1 1 320px;
+  min-width: 0;
+  border: 1px solid rgba(83, 117, 158, 0.58);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(8, 18, 34, 0.86);
+  color: #f8fafc;
+  font-weight: 800;
+}
+
+.audit-section-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.audit-log-card {
+  border: 1px solid rgba(83, 117, 158, 0.44);
+  border-radius: 18px;
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(15, 29, 52, 0.94), rgba(10, 20, 38, 0.94));
+}
+
+.audit-log-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+}
+
+.audit-log-table {
+  min-width: 1080px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.audit-log-table th,
+.audit-log-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  text-align: left;
+  vertical-align: top;
+  color: #dbeafe;
+  font-size: 12px;
+}
+
+.audit-log-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #0b1626;
+  color: #f8fafc;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.audit-log-table td:last-child {
+  max-width: 340px;
+  overflow-wrap: anywhere;
+  color: #9fb1ca;
+}
+
 @media (max-width: 1100px) {
   .live-price-dashboard-grid,
   .live-price-grid {

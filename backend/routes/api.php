@@ -141,6 +141,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/internal-chat/rooms', [InternalChatController::class, 'storeRoom'])->middleware('permission:internal_chat');
         Route::get('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'messages'])->middleware('permission:internal_chat');
         Route::post('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'sendMessage'])->middleware('permission:internal_chat');
+        Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
         Route::get('/internal-notes', [InternalNoteController::class, 'index'])->middleware('permission:internal_chat');
         Route::post('/internal-notes', [InternalNoteController::class, 'store'])->middleware('permission:internal_chat');
         Route::patch('/internal-notes/{internalNote}', [InternalNoteController::class, 'update'])->middleware('permission:internal_chat');
