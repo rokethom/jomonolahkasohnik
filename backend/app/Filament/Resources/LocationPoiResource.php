@@ -23,7 +23,7 @@ class LocationPoiResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-map-pin';
 
-    protected static ?string $navigationGroup = 'JojoBot';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'Master Location POI';
 

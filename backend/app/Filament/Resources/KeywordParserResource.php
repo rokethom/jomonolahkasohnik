@@ -21,7 +21,7 @@ class KeywordParserResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-command-line';
 
-    protected static ?string $navigationGroup = 'JojoBot';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'Keyword & Form Builder';
 

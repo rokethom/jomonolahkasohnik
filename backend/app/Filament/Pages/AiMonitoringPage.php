@@ -14,7 +14,7 @@ class AiMonitoringPage extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-cpu-chip';
 
-    protected static ?string $navigationGroup = 'AI Management';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'AI Monitoring';
 

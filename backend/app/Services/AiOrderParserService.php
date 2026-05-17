@@ -516,7 +516,7 @@ PROMPT;
 
     private function provider(): string
     {
-        return strtolower((string) $this->settings->get('ai_provider', 'openai'));
+        return strtolower((string) $this->settings->get('ai_provider', 'openrouter'));
     }
 
     private function apiKey(): ?string

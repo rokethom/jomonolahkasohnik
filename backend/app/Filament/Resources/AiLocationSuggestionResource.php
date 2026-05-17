@@ -21,7 +21,7 @@ class AiLocationSuggestionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-sparkles';
 
-    protected static ?string $navigationGroup = 'JojoBot';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'AI Location Learning';
 

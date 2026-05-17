@@ -17,7 +17,7 @@ class AiEngineeringCenterPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-command-line';
 
-    protected static ?string $navigationGroup = 'AI Management';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'Hermes Engineering';
 

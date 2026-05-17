@@ -9,7 +9,7 @@ class JojoBotFieldSchemaReference extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-document-magnifying-glass';
 
-    protected static ?string $navigationGroup = 'JojoBot';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'Field Schema Reference';
 

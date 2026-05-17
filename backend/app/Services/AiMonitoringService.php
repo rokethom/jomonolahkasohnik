@@ -34,7 +34,7 @@ class AiMonitoringService
         return [
             'active_status' => [
                 'enabled' => $this->settings->bool('ai_assistant_enabled', false),
-                'provider' => strtolower((string) $this->settings->get('ai_provider', 'openai')),
+                'provider' => strtolower((string) $this->settings->get('ai_provider', 'openrouter')),
                 'configured_model' => $this->settings->bool('ai_openrouter_free_auto_enabled', false)
                     ? 'openrouter/free'
                     : ($this->settings->get('ai_model') ?: 'openrouter/auto'),

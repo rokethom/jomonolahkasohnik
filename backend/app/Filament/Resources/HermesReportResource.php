@@ -17,7 +17,7 @@ class HermesReportResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-magnifying-glass';
 
-    protected static ?string $navigationGroup = 'AI Management';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'AI Reports';
 

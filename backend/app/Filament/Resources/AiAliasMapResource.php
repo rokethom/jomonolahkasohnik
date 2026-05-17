@@ -24,7 +24,7 @@ class AiAliasMapResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-map';
 
-    protected static ?string $navigationGroup = 'JojoBot';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'AI Alias Map';
 

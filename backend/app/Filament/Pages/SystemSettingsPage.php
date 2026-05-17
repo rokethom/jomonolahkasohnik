@@ -99,7 +99,7 @@ class SystemSettingsPage extends Page implements HasForms
             'qris_image' => $this->normalizeUploadState($settings->get('payment_qris_image')),
             'complaint_whatsapp_number' => $settings->get('complaint_whatsapp_number', '6281299232918'),
             'ai_assistant_enabled' => $settings->bool('ai_assistant_enabled', false),
-            'ai_provider' => $settings->get('ai_provider', 'openai'),
+            'ai_provider' => $settings->get('ai_provider', 'openrouter'),
             'ai_model' => $settings->get('ai_model'),
             'ai_model_custom' => null,
             'ai_openrouter_free_auto_enabled' => $settings->bool('ai_openrouter_free_auto_enabled', false),
@@ -767,7 +767,7 @@ class SystemSettingsPage extends Page implements HasForms
             $settings->set('firebase_web_config', $data['firebase_web_config'] ?? null, (bool) ($data['firebase_web_config_active'] ?? false));
             $settings->set('firebase_vapid_key', $data['firebase_vapid_key'] ?? null, (bool) ($data['firebase_vapid_active'] ?? false));
             $settings->set('ai_assistant_enabled', (bool) ($data['ai_assistant_enabled'] ?? false));
-            $settings->set('ai_provider', $data['ai_provider'] ?? 'openai');
+            $settings->set('ai_provider', $data['ai_provider'] ?? 'openrouter');
             $freeAuto = (bool) ($data['ai_openrouter_free_auto_enabled'] ?? false);
             $settings->set('ai_openrouter_free_auto_enabled', $freeAuto);
             $settings->set('ai_location_learning_openrouter_enabled', (bool) ($data['ai_location_learning_openrouter_enabled'] ?? false));

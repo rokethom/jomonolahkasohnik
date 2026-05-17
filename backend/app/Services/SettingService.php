@@ -209,7 +209,7 @@ class SettingService
             'jojo.map' => $this->getMapProvider(),
             'jojo.oauth.google_enabled' => $this->bool('google_oauth_enabled'),
             'jojo.ai.enabled' => $this->bool('ai_assistant_enabled', false),
-            'jojo.ai.provider' => $this->get('ai_provider', 'openai'),
+            'jojo.ai.provider' => $this->get('ai_provider', 'openrouter'),
             'jojo.ai.model' => $this->get('ai_model'),
             'jojo.ai.base_url' => $this->get('ai_base_url'),
             'jojo.ai.max_tokens' => $this->int('ai_max_tokens', 700),

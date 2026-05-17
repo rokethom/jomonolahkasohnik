@@ -168,7 +168,7 @@ class AiLocationLearningService
     private function openRouterLearningReady(): bool
     {
         return $this->settings->bool('ai_location_learning_openrouter_enabled', false)
-            && strtolower((string) $this->settings->get('ai_provider', 'openai')) === 'openrouter'
+            && strtolower((string) $this->settings->get('ai_provider', 'openrouter')) === 'openrouter'
             && filled($this->settings->get('openrouter_api_key'));
     }
 

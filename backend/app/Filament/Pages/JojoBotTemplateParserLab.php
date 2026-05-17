@@ -19,7 +19,7 @@ class JojoBotTemplateParserLab extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-beaker';
 
-    protected static ?string $navigationGroup = 'JojoBot';
+    protected static ?string $navigationGroup = 'AI';
 
     protected static ?string $navigationLabel = 'Template Parser Lab';
 
