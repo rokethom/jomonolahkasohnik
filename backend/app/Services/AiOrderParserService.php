@@ -29,7 +29,7 @@ class AiOrderParserService
     ];
 
     private const FALLBACK_STATUSES = [400, 404, 408, 429, 500, 502, 503, 504];
-    private const REQUEST_TIMEOUT_SECONDS = 4;
+    private const REQUEST_TIMEOUT_SECONDS = 6;
     private const CONNECT_TIMEOUT_SECONDS = 2;
     private const SLOW_THRESHOLD_SECONDS = 4.0;
     private const SLOW_CACHE_SECONDS = 600;
@@ -191,8 +191,8 @@ class AiOrderParserService
                 if (! is_array($decoded)) {
                     $lastError = 'invalid json response';
                     $this->logAiAttempt('warning', 'ai_order_parser.invalid_json', $model, $elapsed, $fallbackCount, $lastError);
-
-                    return null;
+                    $fallbackCount++;
+                    continue;
                 }
 
                 $decoded['_model_used'] = $model;
@@ -260,7 +260,7 @@ class AiOrderParserService
     private function modelsForRequest(): array
     {
         if ($this->provider() === 'openrouter' && $this->settings->bool('ai_openrouter_free_auto_enabled', false)) {
-            return ['openrouter/free'];
+            return array_values(array_unique(self::OPENROUTER_FREE_MODELS));
         }
 
         $models = $this->provider() === 'openrouter'

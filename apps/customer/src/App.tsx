@@ -2970,11 +2970,14 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
   const finalTranscriptRef = useRef('')
   const lastEmittedTranscriptRef = useRef('')
   const restartTimerRef = useRef<number | null>(null)
+  const emitTimerRef = useRef<number | null>(null)
+  const pendingTranscriptRef = useRef('')
 
   useEffect(() => {
     return () => {
       shouldListenRef.current = false
       if (restartTimerRef.current) window.clearTimeout(restartTimerRef.current)
+      if (emitTimerRef.current) window.clearTimeout(emitTimerRef.current)
       recognitionRef.current?.abort?.()
       recognitionRef.current = null
     }
@@ -2987,6 +2990,34 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       onTranscript(corrected)
     }
   }, [onTranscript])
+
+  const flushTranscript = useCallback(() => {
+    if (emitTimerRef.current) {
+      window.clearTimeout(emitTimerRef.current)
+      emitTimerRef.current = null
+    }
+
+    emitTranscript(pendingTranscriptRef.current || finalTranscriptRef.current)
+  }, [emitTranscript])
+
+  const scheduleTranscript = useCallback((text: string, immediate = false) => {
+    pendingTranscriptRef.current = text
+
+    if (emitTimerRef.current) {
+      window.clearTimeout(emitTimerRef.current)
+      emitTimerRef.current = null
+    }
+
+    if (immediate) {
+      flushTranscript()
+      return
+    }
+
+    emitTimerRef.current = window.setTimeout(() => {
+      emitTimerRef.current = null
+      emitTranscript(pendingTranscriptRef.current)
+    }, 180)
+  }, [emitTranscript, flushTranscript])
 
   const start = useCallback(() => {
     const SpeechRecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -3024,7 +3055,7 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
 
       const nextText = appendSpeechSegment(finalTranscriptRef.current, interimTranscript)
       setStatus(interimTranscript ? 'processing' : 'listening')
-      emitTranscript(nextText)
+      scheduleTranscript(nextText, !interimTranscript)
     }
     recognition.onerror = (event: BrowserSpeechRecognitionErrorEvent) => {
       if (!shouldListenRef.current) {
@@ -3046,12 +3077,13 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       shouldListenRef.current = false
       setListening(false)
       setStatus('stopped')
-      emitTranscript(finalTranscriptRef.current)
+      flushTranscript()
     }
     recognition.onend = () => {
       if (!shouldListenRef.current) {
         setListening(false)
         setStatus('stopped')
+        flushTranscript()
         return
       }
 
@@ -3070,7 +3102,7 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       setListening(false)
       setStatus('stopped')
     }
-  }, [emitTranscript, onTranscript])
+  }, [flushTranscript, onTranscript, scheduleTranscript])
 
   const toggle = () => {
     if (listening) {
@@ -3079,12 +3111,13 @@ function VoiceRecorder({ onTranscript, compact = false, hidden = false }: { onTr
       recognitionRef.current?.stop()
       setListening(false)
       setStatus('stopped')
-      emitTranscript(finalTranscriptRef.current)
+      flushTranscript()
       return
     }
 
     finalTranscriptRef.current = ''
     lastEmittedTranscriptRef.current = ''
+    pendingTranscriptRef.current = ''
     shouldListenRef.current = true
     start()
   }
