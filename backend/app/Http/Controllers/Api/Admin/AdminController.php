@@ -2847,7 +2847,7 @@ class AdminController extends Controller
     {
         $query = LivePriceReview::query()
             ->with(['customer.branch', 'branch', 'reviewer', 'order'])
-            ->whereIn('status', [LivePriceReview::STATUS_PENDING, LivePriceReview::STATUS_APPROVED])
+            ->where('status', LivePriceReview::STATUS_PENDING)
             ->latest();
 
         if (! $this->canHandleLivePriceReview($actor)) {

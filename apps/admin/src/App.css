@@ -8222,6 +8222,19 @@ textarea::placeholder {
   gap: 18px;
 }
 
+.live-price-review-workspace {
+  align-items: start;
+}
+
+.live-price-review-workspace .live-price-dashboard-queue,
+.live-price-review-workspace .live-price-dashboard-preview .preserve-lines {
+  max-height: 52vh;
+}
+
+.live-price-review-workspace .live-price-dashboard-column {
+  min-height: 0;
+}
+
 .live-price-review-card {
   border: 1px solid rgba(59, 130, 246, 0.18);
   border-radius: 18px;
@@ -8312,7 +8325,13 @@ textarea::placeholder {
 }
 
 @media (max-width: 1100px) {
+  .live-price-dashboard-grid,
   .live-price-grid {
     grid-template-columns: 1fr;
+  }
+
+  .live-price-review-workspace .live-price-dashboard-queue,
+  .live-price-review-workspace .live-price-dashboard-preview .preserve-lines {
+    max-height: 340px;
   }
 }
