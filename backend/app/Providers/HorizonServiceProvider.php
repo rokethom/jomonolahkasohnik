@@ -37,9 +37,9 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
                 ? $user->role
                 : UserRole::tryFrom((string) $user->role);
 
-            return ($role === UserRole::Admin || (method_exists($user, 'hasPermission') && $user->hasPermission('manage_system_settings')))
-                && (bool) $user->is_active
-                && ! (bool) $user->is_suspended;
+            return $role === UserRole::Admin
+                && (bool) ($user->is_active ?? false)
+                && ! (bool) ($user->is_suspended ?? false);
         });
     }
 }
