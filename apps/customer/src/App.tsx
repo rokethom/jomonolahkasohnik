@@ -3614,7 +3614,15 @@ function OrderDetailModal({
   const purchaseOrder = isPurchaseOrder(order)
   const pickupLabel = purchaseOrder ? 'Pembelian' : 'Jemput'
   const destinationLabel = purchaseOrder ? 'Alamat Antar' : 'Tujuan'
-  const showOperatorChat = shouldOfferOperatorChat(order)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (isDriverTimeoutCancelledOrder(order)) return undefined
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15000)
+    return () => window.clearInterval(timer)
+  }, [order])
+
+  const showOperatorChat = shouldOfferOperatorChat(order, nowMs)
 
   return (
     <div className="mini-modal-backdrop" onClick={onClose}>
@@ -4443,13 +4451,22 @@ function isAcceptedOrder(order: Order) {
   return ['accepted', 'driver_accepted', 'assigned', 'driver_on_the_way', 'arrived_pickup', 'on_going'].includes(String(order.status).toLowerCase())
 }
 
-function shouldOfferOperatorChat(order: Order) {
+function shouldOfferOperatorChat(order: Order, nowMs = Date.now()) {
   const status = String(order.status ?? '').toLowerCase()
   const hasDriver = driverNameFromOrder(order) !== '-' || Boolean(order.driver?.id || order.driver?.user_id)
   if (hasDriver) return false
 
-  return ['created', 'pending', 'searching_driver'].includes(status)
-    || isDriverTimeoutCancelledOrder(order)
+  if (isDriverTimeoutCancelledOrder(order)) return true
+  if (!['created', 'pending', 'searching_driver'].includes(status)) return false
+
+  return orderAgeMinutes(order, nowMs) >= 5
+}
+
+function orderAgeMinutes(order: Order, nowMs = Date.now()) {
+  const createdAt = order.created_at ? new Date(order.created_at).getTime() : NaN
+  if (!Number.isFinite(createdAt)) return 0
+
+  return Math.floor(Math.max(0, nowMs - createdAt) / 60000)
 }
 
 function isCompletedStatus(status?: string) {
