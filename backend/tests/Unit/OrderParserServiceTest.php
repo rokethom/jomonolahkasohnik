@@ -197,6 +197,68 @@ class OrderParserServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_free_text_purchase_order_with_trailing_customer_identity_is_parsed_without_ai(): void
+    {
+        app(SettingService::class)->set('ai_assistant_enabled', false);
+        Http::fake();
+
+        $user = new User([
+            'id' => 95,
+            'name' => 'Profile Customer',
+            'phone' => '0800000001',
+            'address' => 'Alamat Profile',
+            'branch_id' => null,
+        ]);
+
+        $text = "Beli lalapan tempe penyet 1 porsi. Beli di warung bebas.\n\nHuda\nPerumnas istana Banyuputih blok b1 no. 12\n085231729890";
+
+        $parsed = app(OrderParserService::class)->parse($user, $text);
+
+        $this->assertNotNull($parsed);
+        $this->assertSame('DO', $parsed['service_type']);
+        $this->assertSame('Huda', $parsed['name']);
+        $this->assertSame('085231729890', $parsed['phone']);
+        $this->assertSame('Perumnas istana Banyuputih blok b1 no. 12', $parsed['payload']['destination_address']);
+        $this->assertSame('warung bebas', $parsed['payload']['pickup_address']);
+        $this->assertSame([['name' => 'Lalapan tempe penyet', 'quantity' => 1]], $parsed['items']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_free_text_purchase_order_with_pesan_field_and_multiple_stores_is_parsed_without_ai(): void
+    {
+        app(SettingService::class)->set('ai_assistant_enabled', false);
+        Http::fake();
+
+        $user = new User([
+            'id' => 96,
+            'name' => 'Profile Customer',
+            'phone' => '0800000002',
+            'address' => 'Alamat Profile',
+            'branch_id' => null,
+        ]);
+
+        $text = "Pesan atas nama:habib Abdullah\nAlamat:Mojosari sltan\nNo hp:081336693962\nPesan:nasi Padang ikan rendang d seblh BRI asembgus,jus apukat 2,pangsit 2 d paskam putian ,martabak ayam 1,nasi mawut 3 area asembgus";
+
+        $parsed = app(OrderParserService::class)->parse($user, $text);
+
+        $this->assertNotNull($parsed);
+        $this->assertSame('DO', $parsed['service_type']);
+        $this->assertSame('habib Abdullah', $parsed['name']);
+        $this->assertSame('081336693962', $parsed['phone']);
+        $this->assertSame('Mojosari sltan', $parsed['payload']['destination_address']);
+        $this->assertStringContainsString('BRI asembgus', $parsed['payload']['pickup_address']);
+        $this->assertSame([
+            ['name' => 'Nasi padang ikan rendang', 'quantity' => 1],
+            ['name' => 'Jus apukat', 'quantity' => 2],
+            ['name' => 'Pangsit', 'quantity' => 2],
+            ['name' => 'Martabak ayam', 'quantity' => 1],
+            ['name' => 'Nasi mawut', 'quantity' => 3],
+        ], $parsed['items']);
+
+        Http::assertNothingSent();
+    }
+
     public function test_ojek_pickup_home_reference_uses_profile_address(): void
     {
         $user = new User([

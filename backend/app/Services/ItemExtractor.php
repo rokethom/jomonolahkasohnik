@@ -49,6 +49,11 @@ class ItemExtractor
             $line = trim(substr($line, 0, -strlen($match[0])));
         }
 
+        if (preg_match('/\s+(\d+)\s*(?:x|pcs?|porsi|bungkus|buah|gelas|botol|pack|kotak)\s*$/iu', $line, $match) === 1) {
+            $quantity = max(1, (int) $match[1]);
+            $line = trim(substr($line, 0, -strlen($match[0])));
+        }
+
         return [
             'name' => $this->normalizeName($line),
             'quantity' => $quantity,

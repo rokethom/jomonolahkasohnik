@@ -84,6 +84,13 @@ class OrderParserService
         }
 
         if ($items === [] || ! $storeLocation) {
+            if (in_array($serviceType, ['DO', 'belanja'], true)) {
+                $freeTextPurchase = $this->parseFreeTextPurchase($user, $text, $normalizedText, $branch, $profileAddress, $pickupLat, $pickupLng);
+                if ($freeTextPurchase !== null) {
+                    return $freeTextPurchase;
+                }
+            }
+
             return null;
         }
 
@@ -149,7 +156,7 @@ class OrderParserService
             return 'gift_order';
         }
 
-        return preg_match('/delivery\s+order|(?:^|\W)do(?:\W|$)/iu', $text) === 1 ? 'DO' : null;
+        return preg_match('/delivery\s+order|(?:^|\W)do(?:\W|$)|(?:^|\W)(?:beli|belikan|pesan|pesanan)(?:\W|$)/iu', $text) === 1 ? 'DO' : null;
     }
 
     private function parseCourier(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng, ?string $rawText = null): ?array
@@ -325,6 +332,188 @@ class OrderParserService
                 'points' => [],
             ],
         ];
+    }
+
+    private function parseFreeTextPurchase(User $user, string $text, string $normalizedText, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng): ?array
+    {
+        $contact = $this->freeTextContact($text, $profileAddress);
+        $items = $this->freeTextPurchaseItems($text, $normalizedText);
+        $storeLocation = $this->freeTextStoreLocation($text, $normalizedText);
+        $destinationAddress = $this->destinationAddress($text, $profileAddress)
+            ?: $this->destinationAddress($normalizedText, $profileAddress)
+            ?: $contact['address']
+            ?: $profileAddress;
+
+        if ($items === [] || ! $storeLocation || ! $destinationAddress) {
+            return null;
+        }
+
+        return [
+            'service_type' => 'DO',
+            'customer_id' => $user->id,
+            'name' => $contact['name'] ?: $user->name,
+            'phone' => $contact['phone'] ?: $user->phone,
+            'address' => $destinationAddress,
+            'items' => $items,
+            'store_location' => $storeLocation,
+            'stops' => [],
+            'branch' => $branch,
+            'customer' => [
+                'name' => $contact['name'] ?: $user->name,
+                'phone' => $contact['phone'] ?: $user->phone,
+                'address' => $destinationAddress,
+            ],
+            'destination' => $destinationAddress,
+            'payload' => [
+                'service_type' => 'DO',
+                'pickup_address' => $storeLocation,
+                'pickup_lat' => $pickupLat,
+                'pickup_lng' => $pickupLng,
+                'destination_address' => $destinationAddress,
+                'destination_lat' => $pickupLat + 0.018,
+                'destination_lng' => $pickupLng + 0.018,
+                'branch_id' => $branch?->id,
+                'stops' => 1,
+                'destination_text' => $destinationAddress,
+                'notes' => $text,
+                'service_payload' => [
+                    'store_location' => $storeLocation,
+                    'purchase_address' => $storeLocation,
+                    'customer' => $contact,
+                    'source' => 'free_text_purchase_parser',
+                    'normalized_text' => $normalizedText,
+                ],
+                'items' => $items,
+                'points' => [],
+            ],
+        ];
+    }
+
+    /**
+     * @return array{name: ?string, phone: ?string, address: ?string}
+     */
+    private function freeTextContact(string $text, string $profileAddress): array
+    {
+        $name = $this->field($text, 'pesan\s+atas\s+nama|atas\s+nama|nama');
+        $phone = $this->field($text, '(?:no\s*)?(?:hp|telepon|whatsapp|wa)(?:\s*\/\s*(?:hp|telepon|whatsapp|wa))*');
+        $address = $this->field($text, 'alamat\s+antar|alamat\s+tujuan|alamat');
+
+        $lines = collect(preg_split('/\R/u', $text) ?: [])
+            ->map(fn (string $line): string => trim($line))
+            ->filter()
+            ->values();
+
+        if (! $phone) {
+            $phone = $lines->first(fn (string $line): bool => preg_match('/(?:\+?62|0)8\d{7,13}/u', $line) === 1);
+        }
+
+        if (! $address && $phone) {
+            $phoneIndex = $lines->search($phone);
+            if (is_int($phoneIndex) && $phoneIndex > 0) {
+                $address = $lines->get($phoneIndex - 1);
+            }
+        }
+
+        if (! $name && $phone) {
+            $phoneIndex = $lines->search($phone);
+            if (is_int($phoneIndex) && $phoneIndex > 1) {
+                $candidate = $lines->get($phoneIndex - 2);
+                if (is_string($candidate) && preg_match('/\b(?:beli|belikan|pesan|alamat|no|hp|wa|telepon)\b/iu', $candidate) !== 1) {
+                    $name = $candidate;
+                }
+            }
+        }
+
+        $address = $address ? $this->normalizeDestination($address, $profileAddress) : null;
+
+        return [
+            'name' => $name ? $this->cleanAddress($name) : null,
+            'phone' => $phone ? preg_replace('/[^\d+]/u', '', $phone) : null,
+            'address' => $address,
+        ];
+    }
+
+    private function freeTextStoreLocation(string $text, string $normalizedText): ?string
+    {
+        foreach (array_filter([
+            $this->field($text, 'pesan|pesanan|belikan|pembelian|order'),
+            $this->field($normalizedText, 'pesan|pesanan|belikan|pembelian|order'),
+        ]) as $orderBlock) {
+            if (preg_match('/\b(?:d|di|dari|sebelah|seblh|sblh|samping|depan)\s+(.+?)(?=\s*,|\R|$)/iu', $orderBlock, $match) === 1) {
+                return $this->cleanAddress($match[1]);
+            }
+        }
+
+        foreach ([$text, $normalizedText] as $candidate) {
+            $storeLocation = $this->storeLocation($candidate);
+            if ($storeLocation) {
+                return $storeLocation;
+            }
+
+            if (preg_match('/\b(?:beli|belikan|pesan)\s*:?\s*(?:\s+.+?)?\s+(?:d|di|dari|sebelah|seblh|sblh|samping|depan)\s+(.+?)(?=(?:[,.;]|\R|$))/iu', $candidate, $match) === 1) {
+                return $this->cleanAddress($match[1]);
+            }
+        }
+
+        return null;
+    }
+
+    private function freeTextPurchaseItems(string $text, string $normalizedText): array
+    {
+        $labelBlock = $this->field($text, 'pesan|pesanan|belikan|pembelian|order');
+        if ($labelBlock) {
+            return $this->parsePurchaseItemList($labelBlock);
+        }
+
+        foreach ([$text, $normalizedText] as $candidate) {
+            if (preg_match('/\b(?:beli|belikan|pesan)\s+(.+?)(?=\s+(?:beli\s+)?(?:di|dari|sebelah|samping|depan)\b|[,.;]|\R|$)/iu', $candidate, $match) === 1) {
+                $items = $this->parsePurchaseItemList($match[1]);
+                if ($items !== []) {
+                    return $items;
+                }
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, array{name: string, quantity: int}>
+     */
+    private function parsePurchaseItemList(string $value): array
+    {
+        $parts = preg_split('/\s*,\s*|\R+/u', trim($value)) ?: [];
+
+        return collect($parts)
+            ->map(fn (string $item): string => preg_replace('/\s+(?:d|di|dari|sebelah|seblh|sblh|samping|depan)\s+.+$/iu', '', trim($item)) ?? trim($item))
+            ->map(fn (string $item): string => trim($item, " \t\n\r\0\x0B.,;"))
+            ->filter()
+            ->map(function (string $item): array {
+                $quantity = 1;
+
+                if (preg_match('/^(\d+)\s*(?:x|pcs?|porsi|bungkus|buah|gelas|botol|pack|kotak)?\s+(.+)$/iu', $item, $match) === 1) {
+                    $quantity = max(1, (int) $match[1]);
+                    $item = trim($match[2]);
+                } elseif (preg_match('/\s+(\d+)\s+area\s+.+$/iu', $item, $match) === 1) {
+                    $quantity = max(1, (int) $match[1]);
+                    $item = trim(substr($item, 0, -strlen($match[0])));
+                } elseif (preg_match('/\s+(\d+)\s*(?:x|pcs?|porsi|bungkus|buah|gelas|botol|pack|kotak)?\s*$/iu', $item, $match) === 1) {
+                    $quantity = max(1, (int) $match[1]);
+                    $item = trim(substr($item, 0, -strlen($match[0])));
+                }
+
+                $item = preg_replace('/^(?:[-*]\s*|[a-z0-9]+\s*[:.)-]\s*)/iu', '', $item) ?? $item;
+                $item = preg_replace('/\s+/u', ' ', trim($item)) ?? trim($item);
+                $lower = mb_strtolower($item);
+
+                return [
+                    'name' => mb_strtoupper(mb_substr($lower, 0, 1)).mb_substr($lower, 1),
+                    'quantity' => $quantity,
+                ];
+            })
+            ->filter(fn (array $item): bool => $item['name'] !== '')
+            ->values()
+            ->all();
     }
 
     private function field(string $text, string $label): ?string
