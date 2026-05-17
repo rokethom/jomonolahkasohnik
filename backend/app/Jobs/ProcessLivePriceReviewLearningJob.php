@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\LivePriceReview;
 use App\Services\AiLocationLearningService;
 use App\Services\AiLogService;
+use App\Services\AiParserRuleService;
 use App\Services\RingPricingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,6 +33,7 @@ class ProcessLivePriceReviewLearningJob implements ShouldQueue
         AiLogService $logs,
         RingPricingService $pricing,
         AiLocationLearningService $locations,
+        AiParserRuleService $parserRules,
     ): void {
         $review = LivePriceReview::query()
             ->with(['customer', 'branch', 'reviewer', 'order'])
@@ -80,9 +82,21 @@ class ProcessLivePriceReviewLearningJob implements ShouldQueue
                 );
             }
 
+            $parserRule = null;
+            if (filled($review->raw_text) && is_array($review->order_payload)) {
+                $parserRule = $parserRules->remember(
+                    (string) $review->raw_text,
+                    $this->parserMemoryPayload($review),
+                    'jojo-native',
+                    'live-price-review-learning',
+                );
+            }
+
             $logs->success($log, [
                 'pricing_suggestion_id' => $suggestion?->id,
                 'pricing_suggestion_created' => $suggestion !== null,
+                'parser_rule_id' => $parserRule?->id,
+                'parser_rule_saved' => $parserRule !== null,
                 'location_learning' => [
                     'created' => (int) ($locationLearning['created'] ?? 0),
                     'updated' => (int) ($locationLearning['updated'] ?? 0),
@@ -94,5 +108,26 @@ class ProcessLivePriceReviewLearningJob implements ShouldQueue
 
             throw $exception;
         }
+    }
+
+    private function parserMemoryPayload(LivePriceReview $review): array
+    {
+        $payload = $review->order_payload ?? [];
+        $servicePayload = is_array($payload['service_payload'] ?? null) ? $payload['service_payload'] : [];
+
+        return [
+            'service_type' => $review->service_type ?: ($payload['service_type'] ?? null),
+            'pickup_address' => $payload['pickup_address'] ?? null,
+            'destination_address' => $payload['destination_address'] ?? null,
+            'store_location' => $servicePayload['store_location'] ?? $payload['pickup_address'] ?? null,
+            'purchase_address' => $servicePayload['purchase_address'] ?? $servicePayload['store_location'] ?? null,
+            'customer_name' => $review->customer?->name,
+            'customer_phone' => $review->customer?->phone,
+            'customer_address' => $review->customer?->address,
+            'items' => is_array($payload['items'] ?? null) ? $payload['items'] : [],
+            'passengers' => $servicePayload['passengers'] ?? null,
+            'notes' => $payload['notes'] ?? $review->correction_reason,
+            'missing_fields' => [],
+        ];
     }
 }

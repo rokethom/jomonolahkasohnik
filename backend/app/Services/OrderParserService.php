@@ -450,7 +450,7 @@ class OrderParserService
                 return $storeLocation;
             }
 
-            if (preg_match('/\b(?:beli|belikan|pesan)\s*:?\s*(?:\s+.+?)?\s+(?:d|di|dari|sebelah|seblh|sblh|samping|depan)\s+(.+?)(?=(?:[,.;]|\R|$))/iu', $candidate, $match) === 1) {
+            if (preg_match('/\b(?:beli|belikan|pesan)\s*:?\s*(?:\s+.+?)?\s+(?:d|di|dari|sebelah|seblh|sblh|samping|depan)\s+(.+?)(?=\s+(?:antar|kirim|ke)\b|[,.;]|\R|$)/iu', $candidate, $match) === 1) {
                 return $this->cleanAddress($match[1]);
             }
         }
@@ -491,13 +491,13 @@ class OrderParserService
             ->map(function (string $item): array {
                 $quantity = 1;
 
-                if (preg_match('/^(\d+)\s*(?:x|pcs?|porsi|bungkus|buah|gelas|botol|pack|kotak)?\s+(.+)$/iu', $item, $match) === 1) {
+                if (preg_match('/^(\d+)\s*(?:x|pcs?|porsi|portions?|bungkus|buah|gelas|botol|pack|kotak)?\s+(.+)$/iu', $item, $match) === 1) {
                     $quantity = max(1, (int) $match[1]);
                     $item = trim($match[2]);
                 } elseif (preg_match('/\s+(\d+)\s+area\s+.+$/iu', $item, $match) === 1) {
                     $quantity = max(1, (int) $match[1]);
                     $item = trim(substr($item, 0, -strlen($match[0])));
-                } elseif (preg_match('/\s+(\d+)\s*(?:x|pcs?|porsi|bungkus|buah|gelas|botol|pack|kotak)?\s*$/iu', $item, $match) === 1) {
+                } elseif (preg_match('/\s+(\d+)\s*(?:x|pcs?|porsi|portions?|bungkus|buah|gelas|botol|pack|kotak)?\s*$/iu', $item, $match) === 1) {
                     $quantity = max(1, (int) $match[1]);
                     $item = trim(substr($item, 0, -strlen($match[0])));
                 }

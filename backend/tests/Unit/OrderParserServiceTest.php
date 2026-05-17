@@ -259,6 +259,33 @@ class OrderParserServiceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_english_purchase_order_is_parsed_to_indonesian_order_payload_without_ai(): void
+    {
+        app(SettingService::class)->set('ai_assistant_enabled', false);
+        Http::fake();
+
+        $user = new User([
+            'id' => 97,
+            'name' => 'English Customer',
+            'phone' => '0800000003',
+            'address' => 'Customer Home Address',
+            'branch_id' => null,
+        ]);
+
+        $parsed = app(OrderParserService::class)->parse(
+            $user,
+            'Buy fried chicken 2 portions at any stall deliver to my home',
+        );
+
+        $this->assertNotNull($parsed);
+        $this->assertSame('DO', $parsed['service_type']);
+        $this->assertSame('any stall', $parsed['payload']['pickup_address']);
+        $this->assertSame('Customer Home Address', $parsed['payload']['destination_address']);
+        $this->assertSame([['name' => 'Fried chicken', 'quantity' => 2]], $parsed['items']);
+
+        Http::assertNothingSent();
+    }
+
     public function test_ojek_pickup_home_reference_uses_profile_address(): void
     {
         $user = new User([

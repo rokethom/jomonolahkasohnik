@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\ProcessLivePriceReviewLearningJob;
+use App\Models\Branch;
 use App\Models\LivePriceReview;
 use App\Models\Order;
 use App\Models\User;
@@ -36,7 +37,7 @@ class LivePriceReviewService
         $payload = $preview['order_payload'] ?? null;
         $quote = $preview['quote'] ?? null;
         if (! is_array($payload) || ! is_array($quote)) {
-            return null;
+            return $this->createFallbackReview($user, $rawText, $preview);
         }
 
         return LivePriceReview::query()->create([
@@ -52,6 +53,70 @@ class LivePriceReviewService
             'system_price' => (int) ($quote['tarif'] ?? $quote['price'] ?? 0),
             'system_service_fee' => (int) ($quote['service_fee'] ?? $quote['service_charge'] ?? 0),
             'system_total_price' => (int) ($quote['total_price'] ?? $quote['final_price'] ?? 0),
+            'expires_at' => now()->addMinutes(15),
+        ])->load(['customer.branch', 'branch', 'reviewer']);
+    }
+
+    private function createFallbackReview(User $user, string $rawText, array $preview): LivePriceReview
+    {
+        $branch = $this->branch($user);
+        $serviceType = (string) ($preview['service_type'] ?? $preview['selected_service'] ?? $this->inferServiceType($rawText));
+        $parsed = is_array($preview['parsed'] ?? null) ? $preview['parsed'] : [];
+        $pickupAddress = (string) ($parsed['store_location'] ?? $parsed['pickup_address'] ?? $branch?->name ?? 'Belum terbaca - cek raw text');
+        $destinationAddress = (string) ($parsed['destination_address'] ?? $parsed['address'] ?? $user->address ?? 'Belum terbaca - cek raw text');
+
+        $payload = [
+            'service_type' => $serviceType,
+            'pickup_address' => $pickupAddress,
+            'pickup_lat' => (float) ($branch?->latitude ?: $user->lat ?: -7.7063),
+            'pickup_lng' => (float) ($branch?->longitude ?: $user->lng ?: 114.0098),
+            'destination_address' => $destinationAddress,
+            'destination_lat' => (float) ($branch?->latitude ?: $user->lat ?: -7.7063),
+            'destination_lng' => (float) ($branch?->longitude ?: $user->lng ?: 114.0098),
+            'branch_id' => $branch?->id ?? $user->branch_id,
+            'stops' => 1,
+            'destination_text' => $destinationAddress,
+            'notes' => trim("Parser otomatis belum yakin. Operator wajib cek raw text.\n".$rawText),
+            'service_payload' => [
+                'source' => 'live_price_review_fallback',
+                'parser_needs_human_review' => true,
+                'raw_text' => $rawText,
+            ],
+            'items' => [],
+            'points' => [],
+        ];
+
+        $quote = [
+            'tarif' => 0,
+            'price' => 0,
+            'base_price' => 0,
+            'service_fee' => 0,
+            'service_charge' => 0,
+            'extra_charge' => 0,
+            'subtotal' => 0,
+            'final_price' => 0,
+            'total_price' => 0,
+            'pricing_unresolved' => true,
+            'live_price_review_fallback' => true,
+        ];
+
+        return LivePriceReview::query()->create([
+            'token' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'branch_id' => $payload['branch_id'],
+            'service_type' => $serviceType,
+            'status' => LivePriceReview::STATUS_PENDING,
+            'raw_text' => $rawText,
+            'parsed' => [
+                ...$parsed,
+                'parser_needs_human_review' => true,
+                'message' => $preview['message'] ?? $preview['reply'] ?? null,
+            ],
+            'order_payload' => $payload,
+            'quote' => $quote,
+            'system_price' => 0,
+            'system_service_fee' => 0,
+            'system_total_price' => 0,
             'expires_at' => now()->addMinutes(15),
         ])->load(['customer.branch', 'branch', 'reviewer']);
     }
@@ -235,5 +300,36 @@ class LivePriceReviewService
     private function pendingMessage(): string
     {
         return "Harga sedang dicek operator.\nMohon tunggu sebentar, tombol konfirmasi akan aktif setelah harga dikonfirmasi.";
+    }
+
+    private function branch(User $user): ?Branch
+    {
+        if ($user->branch_id) {
+            $branchId = Branch::resolveOperationalAreaId((int) $user->branch_id, (float) $user->lat ?: null, (float) $user->lng ?: null)
+                ?? (int) $user->branch_id;
+
+            return Branch::query()->find($branchId);
+        }
+
+        return Branch::query()->operationalAreas()->whereNotNull('latitude')->whereNotNull('longitude')->first();
+    }
+
+    private function inferServiceType(string $rawText): string
+    {
+        $text = str($rawText)->lower()->squish()->toString();
+
+        if (preg_match('/\b(?:ojek|motorbike|motorcycle|ride|pickup|pick up|jemput)\b/u', $text) === 1) {
+            return 'ojek';
+        }
+
+        if (preg_match('/\b(?:courier|kurir|send package|parcel|document|dokumen|paket)\b/u', $text) === 1) {
+            return 'kurir';
+        }
+
+        if (preg_match('/\b(?:car|mobil|joker mobil|citycar)\b/u', $text) === 1) {
+            return 'joker_mobil';
+        }
+
+        return 'delivery';
     }
 }

@@ -428,6 +428,7 @@ class AiOrderParserService
 Kamu adalah smart parser order JOJOBOT. Tugasmu hanya ekstrak data order ke JSON valid.
 Jangan menentukan harga, jangan membuat order, jangan menebak koordinat.
 Input berisi text asli dan normalized_text. Pakai normalized_text untuk memahami typo, slang, singkatan, dan bahasa Indonesia informal, tapi tetap jaga maksud dari text asli.
+Input bisa berbahasa Indonesia, Madura/Jawa ringan, atau Inggris. Jika input berbahasa Inggris, pahami maksudnya lalu tetap isi field JSON dengan nilai alamat/item asli yang relevan; hasil order di aplikasi akan ditampilkan dalam bahasa Indonesia oleh backend.
 Input sering berasal dari voice-to-text Android sehingga bisa berisi pengulangan kata/frasa. Abaikan pengulangan seperti "pesan pesan pesan", "belikan belikan", atau frasa yang muncul berulang karena noise.
 Return JSON object saja dengan schema:
 {
@@ -453,15 +454,21 @@ Definisi field:
 - Untuk ojek/joker_mobil, frasa "dari/jemput di/alamat jemput" adalah pickup_address dan "ke/tujuan/alamat antar" adalah destination_address. Jangan tertukar.
 Aturan layanan:
 - beli/belikan/pesan makanan/barang => DO atau belanja
+- buy/order food/item/groceries => DO atau belanja
 - antar/kirim barang/dokumen => kurir
+- send/deliver package/document => kurir
 - ojek/antar orang/penumpang => ojek
+- ride/pick up passenger/motorbike taxi => ojek
 - mobil/joker mobil/citycar/penumpang mobil => joker_mobil
+- car ride/city car => joker_mobil
 - gift/kado/hadiah => gift_order
 - travel => travel
 Jika user berkata alamat saya/rumah/profile, gunakan alamat profile yang diberikan.
+Jika user berkata my home/my address/my house, gunakan alamat profile yang diberikan.
 Contoh:
 "pesen ojol jemput di smasa ke katolik penumpang 2" => service_type ojek, pickup_address smasa, destination_address katolik, passengers 2.
 "belikan bakso pak gani antar ke rumah saya" => service_type DO, items bakso, store_location pak gani, destination_address profile.address.
+"buy fried chicken at any stall deliver to my home" => service_type DO, items fried chicken, store_location any stall, destination_address profile.address.
 PROMPT;
     }
 
