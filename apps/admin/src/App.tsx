@@ -6181,6 +6181,8 @@ function GeofencePanel({ geofences }: { geofences: Geofence[] }) {
 
 function LocationLogsPanel({ logs, branches, canViewMaps }: { logs: LocationLog[]; branches: Branch[]; canViewMaps: boolean }) {
   const [branchFilter, setBranchFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
   const branchOptions = useMemo(() => {
     const values = new Map<string, string>()
     branches.forEach((branch) => values.set(branchLocationKey(branchLabel(branch)), branchLabel(branch)))
@@ -6191,8 +6193,79 @@ function LocationLogsPanel({ logs, branches, canViewMaps }: { logs: LocationLog[
     return [...values.entries()].sort((first, second) => first[1].localeCompare(second[1]))
   }, [branches, logs])
   const filteredLogs = logs.filter((log) => branchFilter === 'all' || branchLocationKey(log.branch || '') === branchFilter)
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pagedLogs = filteredLogs.slice((safePage - 1) * pageSize, safePage * pageSize)
 
-  return <section className="panel"><PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} /><div className="table-toolbar location-log-toolbar"><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">Semua branch</option>{branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span></div><div className="activity-list">{filteredLogs.map((log) => <div className="activity-item location-log-item" key={log.id}><div className={log.is_suspicious || log.is_mock_location ? 'activity-icon danger' : 'activity-icon'}><Icon name="pin" /></div><div><strong>{log.user || '-'}</strong><span>{canViewMaps ? `${log.branch || '-'} - ${log.latitude}, ${log.longitude}` : `${log.branch || '-'} - titik GPS disembunyikan`}</span><small>{[log.provider, log.accuracy ? `akurasi ${Math.round(log.accuracy)}m` : null, log.created_at ? formatShortDateTime(log.created_at) : null].filter(Boolean).join(' - ')}</small>{log.reason && <em>{log.reason}</em>}</div><div className="location-log-actions">{canViewMaps && log.maps_url && <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a>}<span className={log.is_mock_location || log.is_suspicious ? 'status danger' : log.is_valid ? 'status success' : 'status muted'}>{log.is_mock_location ? 'GPS tidak valid' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'}</span></div></div>)}{filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}</div></section>
+  useEffect(() => {
+    setPage(1)
+  }, [branchFilter, pageSize, logs.length])
+
+  return (
+    <section className="panel location-log-panel">
+      <PanelHeader title="Location logs" action={`${filteredLogs.length}/${logs.length} logs`} />
+      <div className="table-toolbar location-log-toolbar">
+        <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+          <option value="all">Semua branch</option>
+          {branchOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+        <span className="toolbar-hint">Filter global untuk audit GPS per cabang.</span>
+        <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+          {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size} / page</option>)}
+        </select>
+      </div>
+      {filteredLogs.length === 0 && <EmptyPanel title="Log lokasi kosong" copy="Tidak ada GPS log untuk filter branch ini." />}
+      {filteredLogs.length > 0 && (
+        <>
+          <div className="responsive-table location-log-table-wrap">
+            <table className="location-log-table">
+              <thead>
+                <tr>
+                  <th>Waktu</th>
+                  <th>User</th>
+                  <th>Branch</th>
+                  <th>Latitude</th>
+                  <th>Longitude</th>
+                  <th>Akurasi</th>
+                  <th>Provider</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedLogs.map((log) => {
+                  const statusClass = log.is_mock_location || log.is_suspicious ? 'danger' : log.is_valid ? 'success' : 'muted'
+                  const statusLabel = log.is_mock_location ? 'GPS tidak valid' : log.is_suspicious ? 'Suspicious' : log.is_valid ? 'Valid' : 'Invalid'
+                  return (
+                    <tr key={log.id}>
+                      <td>{formatShortDateTime(log.created_at)}</td>
+                      <td><strong>{log.user || '-'}</strong></td>
+                      <td>{log.branch || '-'}</td>
+                      <td>{canViewMaps ? log.latitude : 'Disembunyikan'}</td>
+                      <td>{canViewMaps ? log.longitude : 'Disembunyikan'}</td>
+                      <td>{log.accuracy ? `${Math.round(log.accuracy)} m` : '-'}</td>
+                      <td>{log.provider || '-'}</td>
+                      <td><span className={`status ${statusClass}`}>{statusLabel}</span></td>
+                      <td>{log.reason || '-'}</td>
+                      <td>{canViewMaps && log.maps_url ? <a className="mini-button" href={log.maps_url} target="_blank" rel="noreferrer">Maps</a> : '-'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-pagination">
+            <span>Page {safePage} / {totalPages}</span>
+            <div>
+              <button className="secondary-button compact" type="button" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Prev</button>
+              <button className="secondary-button compact" type="button" disabled={safePage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  )
 }
 
 function openMapsFromForm(form: HTMLFormElement | null, point: 'pickup' | 'destination') {
