@@ -1468,7 +1468,11 @@ function App() {
         />
       )}
       {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
-      {screen === 'cs-chat' && <CsChatScreen initialConversationId={csConversationFromNotification} initialOrderId={csInitialOrderId} />}
+      {screen === 'cs-chat' && <CsChatScreen
+        initialConversationId={csConversationFromNotification}
+        initialOrderId={csInitialOrderId}
+        onCancelApproved={() => window.setTimeout(() => setScreen('history'), 4000)}
+      />}
       {screen === 'history' && (
         <HistoryScreen
           orders={store.orders}
@@ -3410,7 +3414,7 @@ function DriverNameTagModal({ name, phone, photoUrl, onClose }: { name: string; 
   )
 }
 
-function CsChatScreen({ initialConversationId, initialOrderId }: { initialConversationId?: number | null; initialOrderId?: number | null }) {
+function CsChatScreen({ initialConversationId, initialOrderId, onCancelApproved }: { initialConversationId?: number | null; initialOrderId?: number | null; onCancelApproved?: () => void }) {
   const store = useCustomerStore()
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId ?? null)
   const [conversation, setConversation] = useState<ChatConversation | null>(null)
@@ -3423,6 +3427,7 @@ function CsChatScreen({ initialConversationId, initialOrderId }: { initialConver
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
+  const cancelApprovedRedirectRef = useRef(false)
   const cancellableOrders = store.orders.filter((order) => !['cancelled', 'CANCELLED', 'completed', 'COMPLETED', 'pending_cancel', 'PENDING_CANCEL'].includes(String(order.status)))
 
   useEffect(() => {
@@ -3477,6 +3482,11 @@ function CsChatScreen({ initialConversationId, initialOrderId }: { initialConver
       setMessages((rows) => {
         if (rows.some((row) => String(row.id) === String(incoming.id))) return rows
         if (incoming.sender_type !== 'customer' && incoming.sender_id !== store.user?.id) void playCustomerNotificationSound()
+        if (isCancelApprovedMessage(incoming.message) && !cancelApprovedRedirectRef.current) {
+          cancelApprovedRedirectRef.current = true
+          store.showToast('success', 'Permintaan batal order diterima. Kamu akan diarahkan ke halaman order.')
+          onCancelApproved?.()
+        }
 
         return [...rows, incoming]
       })
@@ -3484,7 +3494,16 @@ function CsChatScreen({ initialConversationId, initialOrderId }: { initialConver
     return () => {
       getEcho().leave(`chat.${conversationId}`)
     }
-  }, [conversationId])
+  }, [conversationId, onCancelApproved])
+
+  useEffect(() => {
+    if (cancelApprovedRedirectRef.current) return
+    if (!messages.some((message) => isCancelApprovedMessage(message.message ?? message.text))) return
+
+    cancelApprovedRedirectRef.current = true
+    store.showToast('success', 'Permintaan batal order diterima. Kamu akan diarahkan ke halaman order.')
+    onCancelApproved?.()
+  }, [messages, onCancelApproved, store])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -4508,6 +4527,10 @@ function isCompletedStatus(status?: string) {
 
 function isCancelledStatus(status?: string) {
   return ['cancelled', 'canceled'].includes(String(status ?? '').toLowerCase())
+}
+
+function isCancelApprovedMessage(text?: string | null) {
+  return /permintaan\s+batal\s+order.+diterima/i.test(String(text ?? ''))
 }
 
 function isDriverTimeoutCancelledOrder(order: Order) {

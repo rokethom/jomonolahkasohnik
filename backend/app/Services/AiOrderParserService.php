@@ -371,6 +371,8 @@ class AiOrderParserService
             }
         }
 
+        $pickupAddress = $this->normalizeProfileAddress($pickupAddress, $profileAddress);
+
         $servicePayload = [
             'source' => $source,
             'provider' => $this->provider(),
@@ -599,6 +601,24 @@ PROMPT;
     private function profileAddress(User $user, ?Branch $branch): string
     {
         return $user->address ?: ($branch?->display_name ?? $branch?->name ?? 'Alamat customer');
+    }
+
+    private function normalizeProfileAddress(?string $value, string $profileAddress): ?string
+    {
+        $address = $this->clean($value);
+        if ($address === null) {
+            return null;
+        }
+
+        $normalized = str($address)
+            ->lower()
+            ->replaceMatches('/\b(?:saya|aku|ku|di|ke|jemput|alamat|lokasi|titik)\b/u', ' ')
+            ->squish()
+            ->toString();
+
+        return in_array($normalized, ['rumah', 'profile', 'home'], true)
+            ? $profileAddress
+            : $address;
     }
 
     private function clean(mixed $value): ?string

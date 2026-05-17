@@ -208,7 +208,10 @@ class OrderParserService
     private function parseOjek(User $user, string $text, ?Branch $branch, string $profileAddress, float $pickupLat, float $pickupLng, ?string $rawText = null): ?array
     {
         [$loosePickup, $looseDestination] = $this->routeAddresses($text);
-        $pickupAddress = $this->field($text, 'alamat\s+jemput') ?: $loosePickup ?: $profileAddress;
+        $pickupAddress = $this->normalizeProfileAddress(
+            $this->field($text, 'alamat\s+jemput') ?: $loosePickup ?: $profileAddress,
+            $profileAddress,
+        );
         $destinationAddress = $this->field($text, 'alamat\s+antar') ?: $looseDestination;
         $passengers = $this->field($text, 'jumlah\s+penumpang') ?: $this->passengers($text) ?: '1';
         $seatRows = $this->vehicleSeatRows($text);
@@ -441,9 +444,30 @@ class OrderParserService
         $destination = $this->cleanAddress($value);
         $normalized = mb_strtolower($destination);
 
-        return in_array($normalized, ['alamat saya', 'rumah saya', 'rumah', 'profile'], true)
+        return $this->isProfileAddressReference($normalized)
             ? $profileAddress
             : $destination;
+    }
+
+    private function normalizeProfileAddress(string $value, string $profileAddress): string
+    {
+        $address = $this->cleanAddress($value);
+        $normalized = mb_strtolower($address);
+
+        return $this->isProfileAddressReference($normalized)
+            ? $profileAddress
+            : $address;
+    }
+
+    private function isProfileAddressReference(string $normalized): bool
+    {
+        $normalized = str($normalized)
+            ->lower()
+            ->replaceMatches('/\b(?:saya|aku|ku|di|ke|jemput|alamat|lokasi|titik)\b/u', ' ')
+            ->squish()
+            ->toString();
+
+        return in_array($normalized, ['rumah', 'profile', 'home'], true);
     }
 
     private function profileAddress(User $user, ?Branch $branch): string

@@ -451,6 +451,11 @@ class JojoBotService
         if (blank($parsed['pickup_address'] ?? null)) {
             $parsed['pickup_address'] = $this->branch($user)?->name ?? 'Lokasi jemput';
             $parsed['used_fallback_location'] = true;
+        } else {
+            $parsed['pickup_address'] = $this->normalizeProfileAddressReference(
+                (string) $parsed['pickup_address'],
+                $user,
+            );
         }
 
         return $parsed;
@@ -556,6 +561,20 @@ class JojoBotService
         }
 
         return $this->hydratePayloadCoordinates($payload, $branch, $user);
+    }
+
+    private function normalizeProfileAddressReference(string $value, User $user): string
+    {
+        $address = trim($value);
+        $normalized = str($address)
+            ->lower()
+            ->replaceMatches('/\b(?:saya|aku|ku|di|ke|jemput|alamat|lokasi|titik)\b/u', ' ')
+            ->squish()
+            ->toString();
+
+        return in_array($normalized, ['rumah', 'profile', 'home'], true)
+            ? ($user->address ?: $address)
+            : $address;
     }
 
     private function hydratePayloadCoordinates(array $payload, ?Branch $branch = null, ?User $user = null): array

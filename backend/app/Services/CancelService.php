@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Enums\OrderStatus;
+use App\Events\OrderStatusUpdated;
 use App\Models\CancelRequest;
 use App\Models\ChatConversation;
 use App\Models\Order;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 class CancelService
 {
@@ -46,13 +48,38 @@ class CancelService
 
     public function approve(CancelRequest $cancelRequest, User $operator): CancelRequest
     {
-        $cancelRequest->order->forceFill([
+        $cancelRequest->loadMissing(['order', 'conversation']);
+        $order = $cancelRequest->order;
+
+        if ($cancelRequest->conversation) {
+            $this->messageService->send($cancelRequest->conversation, $operator, [
+                'sender_type' => 'bot',
+                'message' => sprintf(
+                    "Permintaan batal order %s diterima.\nAlasan: %s\nCustomer akan diarahkan kembali ke halaman order.",
+                    $order->order_code ?? '#'.$order->id,
+                    $cancelRequest->reason,
+                ),
+            ]);
+        }
+
+        $oldStatus = $order->status;
+
+        $order->forceFill([
             'status' => OrderStatus::Cancelled,
             'cancelled_at' => now(),
-            'notes' => trim(((string) $cancelRequest->order->notes)."\nCancel approved: {$cancelRequest->reason}"),
+            'notes' => trim(((string) $order->notes)."\nCancel approved: {$cancelRequest->reason}"),
         ])->save();
-        $cancelRequest->order->driver?->update(['is_available' => true]);
-        $this->chatService->closeForOrder($cancelRequest->order);
+        $order->driver?->update(['is_available' => true]);
+        $this->chatService->closeForOrder($order);
+
+        try {
+            OrderStatusUpdated::dispatch($order->fresh() ?? $order, $oldStatus, OrderStatus::Cancelled);
+        } catch (\Throwable $exception) {
+            Log::warning('broadcast.cancel_approved_status_failed', [
+                'order_id' => $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
 
         $cancelRequest->update([
             'status' => 'approved',
