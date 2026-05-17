@@ -39,12 +39,12 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
             return false;
         }
 
-        $role = $user->role instanceof UserRole
-            ? $user->role->value
-            : strtolower((string) ($user->role ?? ''));
+        $rawRole = method_exists($user, 'getRawOriginal')
+            ? $user->getRawOriginal('role')
+            : ($user->role ?? '');
 
-        return in_array($role, [UserRole::Admin->value, 'superadmin', 'super_admin'], true)
-            && (bool) ($user->is_active ?? true)
-            && ! (bool) ($user->is_suspended ?? false);
+        $role = strtolower(trim((string) ($rawRole instanceof UserRole ? $rawRole->value : $rawRole)));
+
+        return in_array($role, [UserRole::Admin->value, 'admin', 'sa', 'superadmin', 'super_admin'], true);
     }
 }
