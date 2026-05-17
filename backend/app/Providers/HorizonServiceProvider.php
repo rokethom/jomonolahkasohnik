@@ -16,6 +16,8 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     {
         parent::boot();
 
+        Horizon::auth(fn ($request): bool => $this->canViewHorizon($request->user()));
+
         // Horizon::routeSmsNotificationsTo('15556667777');
         // Horizon::routeMailNotificationsTo('example@example.com');
         // Horizon::routeSlackNotificationsTo('slack-webhook-url', '#channel');
@@ -28,18 +30,21 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
      */
     protected function gate(): void
     {
-        Gate::define('viewHorizon', function ($user = null) {
-            if (! $user) {
-                return false;
-            }
+        Gate::define('viewHorizon', fn ($user = null): bool => $this->canViewHorizon($user));
+    }
 
-            $role = $user->role instanceof UserRole
-                ? $user->role
-                : UserRole::tryFrom((string) $user->role);
+    private function canViewHorizon($user = null): bool
+    {
+        if (! $user) {
+            return false;
+        }
 
-            return $role === UserRole::Admin
-                && (bool) ($user->is_active ?? false)
-                && ! (bool) ($user->is_suspended ?? false);
-        });
+        $role = $user->role instanceof UserRole
+            ? $user->role->value
+            : strtolower((string) ($user->role ?? ''));
+
+        return in_array($role, [UserRole::Admin->value, 'superadmin', 'super_admin'], true)
+            && (bool) ($user->is_active ?? true)
+            && ! (bool) ($user->is_suspended ?? false);
     }
 }
