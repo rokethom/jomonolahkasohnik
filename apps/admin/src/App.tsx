@@ -278,10 +278,14 @@ type LivePriceReview = {
   corrected_total_price?: number | null
   correction_reason?: string | null
   reviewed_by?: string | null
+  order_id?: number | null
+  order_code?: string | null
   confirmation_available_at?: string | null
   can_confirm?: boolean
   order_payload?: ManualOrderPayload | null
   quote?: ManualOrderPreview['quote']
+  reviewed_at?: string | null
+  consumed_at?: string | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -5621,11 +5625,31 @@ function ManualOrderPreviewCard({
 
 function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void> }) {
   const [rows, setRows] = useState(reviews)
+  const [auditRows, setAuditRows] = useState<LivePriceReview[]>([])
+  const [auditError, setAuditError] = useState('')
+  const [auditAllowed, setAuditAllowed] = useState(true)
   const [savingId, setSavingId] = useState<number | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const syncingRef = useRef(false)
 
   useEffect(() => setRows(reviews), [reviews])
+
+  const refreshAuditRows = useCallback(async () => {
+    setAuditError('')
+    try {
+      const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-review-audits')
+      setAuditRows(response.data)
+      setAuditAllowed(true)
+    } catch (error) {
+      setAuditRows([])
+      if (error instanceof Error && error.message.includes('HTTP 403')) {
+        setAuditAllowed(false)
+        setAuditError('')
+        return
+      }
+      setAuditError(error instanceof Error ? error.message : 'Audit live edit harga belum bisa dimuat.')
+    }
+  }, [api])
 
   const refreshReviews = useCallback(async (force = false) => {
     if (!force && (syncingRef.current || savingId || isEditing || document.visibilityState !== 'visible')) return
@@ -5655,6 +5679,10 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
     }
   }, [refreshReviews])
 
+  useEffect(() => {
+    void refreshAuditRows()
+  }, [refreshAuditRows])
+
   const updateRow = (id: number, patch: Partial<LivePriceReview>) => {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row))
   }
@@ -5672,6 +5700,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
         }),
       })
       await refreshReviews(true)
+      await refreshAuditRows()
       await onChanged()
     } finally {
       setSavingId(null)
@@ -5688,6 +5717,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
         body: JSON.stringify({ reason }),
       })
       await refreshReviews(true)
+      await refreshAuditRows()
       await onChanged()
     } finally {
       setSavingId(null)
@@ -5752,8 +5782,124 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
           )
         })}
       </div>
+      {auditAllowed && <LivePriceAuditTable rows={auditRows} error={auditError} onRefresh={() => void refreshAuditRows()} />}
     </section>
   )
+}
+
+function LivePriceAuditTable({ rows, error, onRefresh }: { rows: LivePriceReview[]; error: string; onRefresh: () => void }) {
+  return (
+    <div className="live-price-audit-card">
+      <div className="section-head compact">
+        <div>
+          <h2>History Audit Live Edit Harga</h2>
+          <p>Download performa koreksi harga operator dan eksekutor untuk evaluasi manajemen.</p>
+        </div>
+        <div className="manual-ai-actions">
+          <button className="secondary-button compact" type="button" onClick={onRefresh}>Refresh audit</button>
+          <button className="secondary-button compact" type="button" disabled={rows.length === 0} onClick={() => downloadLivePriceAudit(rows, 'xls')}>Export XLS</button>
+          <button className="secondary-button compact" type="button" disabled={rows.length === 0} onClick={() => downloadLivePriceAudit(rows, 'csv')}>Export CSV</button>
+        </div>
+      </div>
+      {error && <div className="notice danger">{error}</div>}
+      {!error && rows.length === 0 && <EmptyPanel title="Belum ada audit" copy="Riwayat approve/reject live edit harga akan muncul setelah operator atau eksekutor memproses order." />}
+      {!error && rows.length > 0 && (
+        <div className="responsive-table live-price-audit-table-wrap">
+          <table className="live-price-audit-table">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Status</th>
+                <th>Reviewer</th>
+                <th>Customer</th>
+                <th>Cabang</th>
+                <th>Layanan</th>
+                <th>Order</th>
+                <th>Sistem</th>
+                <th>Koreksi</th>
+                <th>Selisih</th>
+                <th>Alasan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const systemTotal = Number(row.system_total_price ?? 0)
+                const correctedTotal = Number(row.corrected_total_price ?? row.system_total_price ?? 0)
+                const delta = correctedTotal - systemTotal
+                return (
+                  <tr key={row.id}>
+                    <td>{formatShortDateTime(row.reviewed_at ?? row.updated_at ?? row.created_at ?? null)}</td>
+                    <td><span className={`status ${row.status === 'rejected' ? 'danger' : row.status === 'pending' ? 'warning' : 'success'}`}>{row.status}</span></td>
+                    <td>{row.reviewed_by ?? '-'}</td>
+                    <td>{row.customer ?? '-'}</td>
+                    <td>{row.branch ?? '-'}</td>
+                    <td>{serviceDisplayName(row.service_type ?? '-')}</td>
+                    <td>{row.order_code ?? '-'}</td>
+                    <td>Rp {systemTotal.toLocaleString('id-ID')}</td>
+                    <td>Rp {correctedTotal.toLocaleString('id-ID')}</td>
+                    <td className={delta < 0 ? 'negative' : delta > 0 ? 'positive' : ''}>Rp {delta.toLocaleString('id-ID')}</td>
+                    <td>{row.correction_reason ?? '-'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function downloadLivePriceAudit(rows: LivePriceReview[], format: 'xls' | 'csv') {
+  const headers = ['Waktu', 'Status', 'Reviewer', 'Customer', 'Cabang', 'Layanan', 'Order', 'Total Sistem', 'Total Koreksi', 'Selisih', 'Alasan']
+  const data = rows.map((row) => {
+    const systemTotal = Number(row.system_total_price ?? 0)
+    const correctedTotal = Number(row.corrected_total_price ?? row.system_total_price ?? 0)
+    return [
+      formatShortDateTime(row.reviewed_at ?? row.updated_at ?? row.created_at ?? null),
+      row.status,
+      row.reviewed_by ?? '-',
+      row.customer ?? '-',
+      row.branch ?? '-',
+      serviceDisplayName(row.service_type ?? '-'),
+      row.order_code ?? '-',
+      systemTotal,
+      correctedTotal,
+      correctedTotal - systemTotal,
+      row.correction_reason ?? '-',
+    ]
+  })
+
+  const filename = `audit-live-edit-harga-${new Date().toISOString().slice(0, 10)}.${format}`
+  if (format === 'csv') {
+    const csv = [headers, ...data]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    downloadTextFile(csv, filename, 'text/csv;charset=utf-8')
+    return
+  }
+
+  const html = `<table border="1"><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${data.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+  downloadTextFile(html, filename, 'application/vnd.ms-excel;charset=utf-8')
+}
+
+function downloadTextFile(content: string, filename: string, type: string) {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
 }
 
 function previewCustomer(preview: ManualOrderPreview | null) {

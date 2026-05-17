@@ -89,6 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/orders/manual/preview', [AdminController::class, 'previewManualOrder'])->middleware('permission:manual_order');
         Route::post('/orders/manual', [AdminController::class, 'manualOrder'])->middleware('permission:manual_order');
         Route::get('/live-price-reviews', [AdminController::class, 'livePriceReviews'])->middleware('permission:manual_order');
+        Route::get('/live-price-review-audits', [AdminController::class, 'livePriceReviewAudits'])->middleware('permission:manual_order');
         Route::post('/live-price-reviews/{review}/approve', [AdminController::class, 'approveLivePriceReview'])->middleware('permission:manual_order');
         Route::post('/live-price-reviews/{review}/reject', [AdminController::class, 'rejectLivePriceReview'])->middleware('permission:manual_order');
         Route::patch('/orders/{order}/price', [AdminController::class, 'updateOrderPrice'])->middleware('permission:edit_tarif');

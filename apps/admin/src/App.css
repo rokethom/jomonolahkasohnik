@@ -8256,6 +8256,61 @@ textarea::placeholder {
   width: 100%;
 }
 
+.live-price-audit-card {
+  margin-top: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.live-price-audit-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+}
+
+.live-price-audit-table {
+  min-width: 1120px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.live-price-audit-table th,
+.live-price-audit-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  text-align: left;
+  vertical-align: top;
+}
+
+.live-price-audit-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #0b1626;
+  color: #dbeafe;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.live-price-audit-table td {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.live-price-audit-table .positive {
+  color: #34d399;
+  font-weight: 900;
+}
+
+.live-price-audit-table .negative {
+  color: #fb7185;
+  font-weight: 900;
+}
+
 @media (max-width: 1100px) {
   .live-price-grid {
     grid-template-columns: 1fr;

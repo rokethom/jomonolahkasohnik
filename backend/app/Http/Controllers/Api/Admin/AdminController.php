@@ -1165,6 +1165,18 @@ class AdminController extends Controller
         ]);
     }
 
+    public function livePriceReviewAudits(Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        abort_unless($this->canViewLivePriceReviewAudit($request->user()), 403);
+
+        return response()->json([
+            'data' => $this->livePriceReviewAuditQuery($request->user())
+                ->limit(500)
+                ->get()
+                ->map(fn (LivePriceReview $review): array => $liveReviews->payload($review, exposeApprovedOrder: false)),
+        ]);
+    }
+
     public function approveLivePriceReview(LivePriceReview $review, Request $request, LivePriceReviewService $liveReviews): JsonResponse
     {
         abort_unless($this->canHandleLivePriceReview($request->user()), 403);
@@ -2834,7 +2846,7 @@ class AdminController extends Controller
     private function livePriceReviewsQuery(User $actor): Builder
     {
         $query = LivePriceReview::query()
-            ->with(['customer.branch', 'branch', 'reviewer'])
+            ->with(['customer.branch', 'branch', 'reviewer', 'order'])
             ->whereIn('status', [LivePriceReview::STATUS_PENDING, LivePriceReview::STATUS_APPROVED])
             ->latest();
 
@@ -2853,10 +2865,36 @@ class AdminController extends Controller
         return $query;
     }
 
+    private function livePriceReviewAuditQuery(User $actor): Builder
+    {
+        $query = LivePriceReview::query()
+            ->with(['customer.branch', 'branch', 'reviewer', 'order'])
+            ->latest('updated_at');
+
+        if (! $this->canViewLivePriceReviewAudit($actor)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->where(function (Builder $query) use ($branchIds): void {
+                $query->whereIn('branch_id', $branchIds)
+                    ->orWhereHas('customer', fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
+            });
+        }
+
+        return $query;
+    }
+
     private function canHandleLivePriceReview(User $actor): bool
     {
         return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::Operator, UserRole::Eksekutor], true)
             || $actor->hasPermission('manual_order');
+    }
+
+    private function canViewLivePriceReviewAudit(User $actor): bool
+    {
+        return in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true);
     }
 
     private function assertLivePriceReviewScope(User $actor, LivePriceReview $review): void
