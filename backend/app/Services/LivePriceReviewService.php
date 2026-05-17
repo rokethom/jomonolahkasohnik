@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\ProcessLivePriceReviewLearningJob;
 use App\Models\LivePriceReview;
 use App\Models\Order;
 use App\Models\User;
@@ -13,7 +14,6 @@ class LivePriceReviewService
 {
     public function __construct(
         private readonly SettingService $settings,
-        private readonly RingPricingService $learning,
     ) {
     }
 
@@ -109,6 +109,8 @@ class LivePriceReviewService
             'reviewed_at' => now(),
         ])->save();
 
+        ProcessLivePriceReviewLearningJob::dispatch($review->id, 'approved');
+
         return $review->fresh(['customer.branch', 'branch', 'reviewer']);
     }
 
@@ -191,7 +193,7 @@ class LivePriceReviewService
             'consumed_at' => now(),
         ])->save();
 
-        $this->learning->recordLivePriceReview($review, $review->reviewer);
+        ProcessLivePriceReviewLearningJob::dispatch($review->id, 'consumed');
     }
 
     public function payload(LivePriceReview $review, bool $exposeApprovedOrder = true): array
