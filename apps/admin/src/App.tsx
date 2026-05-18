@@ -4832,12 +4832,12 @@ function AuditLogsPanel({ initialLogs, api }: { initialLogs: AuditLog[]; api: Ap
 function AuditLogSection({ title, description, logs, filename }: { title: string; description: string; logs: AuditLog[]; filename: string }) {
   return (
     <article className="audit-log-card">
-      <div className="section-head compact">
+      <div className="audit-log-card-head">
         <div>
           <h2>{title}</h2>
           <p>{description}</p>
         </div>
-        <div className="manual-ai-actions">
+        <div className="audit-log-actions">
           <span className="status muted">{logs.length} log</span>
           <button className="secondary-button compact" type="button" disabled={logs.length === 0} onClick={() => downloadAuditLogsXls(logs, filename)}>Export XLS</button>
         </div>
@@ -4848,13 +4848,13 @@ function AuditLogSection({ title, description, logs, filename }: { title: string
           <table className="audit-log-table">
             <thead>
               <tr>
-                <th>Waktu</th>
-                <th>Actor</th>
-                <th>Role</th>
-                <th>Action</th>
-                <th>Subject</th>
-                <th>Label</th>
-                <th>Metadata</th>
+                <th className="audit-col-time">Waktu</th>
+                <th className="audit-col-actor">Actor</th>
+                <th className="audit-col-role">Role</th>
+                <th className="audit-col-action">Action</th>
+                <th className="audit-col-subject">Subject</th>
+                <th className="audit-col-label">Label</th>
+                <th className="audit-col-meta">Metadata</th>
               </tr>
             </thead>
             <tbody>

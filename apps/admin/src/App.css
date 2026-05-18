@@ -8435,49 +8435,191 @@ textarea::placeholder {
 }
 
 .audit-log-card {
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid rgba(83, 117, 158, 0.44);
   border-radius: 18px;
   padding: 16px;
   background: linear-gradient(180deg, rgba(15, 29, 52, 0.94), rgba(10, 20, 38, 0.94));
 }
 
+.audit-log-card-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.audit-log-card-head > div:first-child {
+  min-width: 0;
+}
+
+.audit-log-card-head h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.audit-log-card-head p {
+  margin: 6px 0 0;
+  color: #b8c7dc;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.audit-log-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.audit-log-actions .secondary-button {
+  min-width: 118px;
+}
+
 .audit-log-table-wrap {
+  width: 100%;
+  max-width: 100%;
   max-height: 360px;
   overflow: auto;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 14px;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
 }
 
 .audit-log-table {
-  min-width: 1080px;
+  min-width: 980px;
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .audit-log-table th,
 .audit-log-table td {
-  padding: 11px 12px;
+  padding: 12px 13px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
   color: #dbeafe;
   font-size: 12px;
+  line-height: 1.35;
 }
 
 .audit-log-table th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   background: #0b1626;
   color: #f8fafc;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
+.audit-log-table .audit-col-time {
+  width: 92px;
+}
+
+.audit-log-table .audit-col-actor {
+  width: 130px;
+}
+
+.audit-log-table .audit-col-role {
+  width: 84px;
+}
+
+.audit-log-table .audit-col-action {
+  width: 210px;
+}
+
+.audit-log-table .audit-col-subject {
+  width: 142px;
+}
+
+.audit-log-table .audit-col-label {
+  width: 140px;
+}
+
+.audit-log-table .audit-col-meta {
+  width: 260px;
+}
+
+.audit-log-table td:nth-child(2),
+.audit-log-table td:nth-child(5),
+.audit-log-table td:nth-child(6) {
+  overflow-wrap: anywhere;
+}
+
+.audit-log-table td:nth-child(4) .status {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .audit-log-table td:last-child {
-  max-width: 340px;
+  max-width: 260px;
   overflow-wrap: anywhere;
   color: #9fb1ca;
+}
+
+@media (max-width: 760px) {
+  .audit-logs-page {
+    gap: 14px;
+  }
+
+  .audit-logs-toolbar {
+    gap: 10px;
+  }
+
+  .audit-logs-toolbar input,
+  .audit-logs-toolbar .secondary-button {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .audit-log-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .audit-log-card-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .audit-log-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .audit-log-actions .secondary-button {
+    width: auto;
+    min-width: 132px;
+  }
+
+  .audit-log-table-wrap {
+    max-height: 430px;
+    border-radius: 12px;
+  }
+
+  .audit-log-table {
+    min-width: 860px;
+  }
+
+  .audit-log-table th,
+  .audit-log-table td {
+    padding: 11px 12px;
+    font-size: 12px;
+  }
 }
 
 @media (max-width: 1100px) {
