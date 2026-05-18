@@ -64,26 +64,29 @@ class DriverReportService
         return min(10000, (int) ceil($tarif * 0.2));
     }
 
-    public function monthlyDepositRows(?int $month = null, ?int $year = null, ?User $actor = null): Collection
+    public function monthlyDepositRows(?int $month = null, ?int $year = null, ?User $actor = null, ?string $vehicleType = null): Collection
     {
         $reportPeriod = Carbon::create($year ?: now()->year, $month ?: now()->month, 1)->startOfMonth();
         $earningPeriod = $reportPeriod->copy();
         $previous = $earningPeriod->copy()->subMonth();
         $start = $earningPeriod->copy()->startOfMonth();
         $end = $earningPeriod->copy()->endOfMonth();
+        $vehicleType = $this->normalizeVehicleType($vehicleType);
 
         return Driver::query()
             ->with(['user.branch'])
             ->whereHas('user')
+            ->when($vehicleType !== null, fn (Builder $query): Builder => $this->scopeVehicleType($query, $vehicleType))
             ->when($actor !== null && $this->scopedBranchIds($actor) !== null, function (Builder $query) use ($actor): Builder {
                 return $query->whereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds($actor) ?? []));
             })
             ->get()
-            ->map(function (Driver $driver) use ($reportPeriod, $earningPeriod, $previous, $start, $end): array {
+            ->map(function (Driver $driver) use ($reportPeriod, $earningPeriod, $previous, $start, $end, $vehicleType): array {
                 $orders = Order::query()
                     ->where('driver_id', $driver->id)
                     ->where('status', OrderStatus::Completed->value)
                     ->whereBetween('created_at', [$start, $end])
+                    ->when($vehicleType !== null, fn (Builder $query): Builder => $this->scopeOrderVehicleType($query, $vehicleType))
                     ->get(['id', 'source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown']);
 
                 $finance = app(DriverFinanceService::class);
@@ -119,7 +122,9 @@ class DriverReportService
                 return [
                     'driver_id' => $driver->id,
                     'deposit_id' => $deposit?->id,
-                    'driver' => $driver->user?->name ?? 'Driver #'.$driver->id,
+                    'driver' => $driver->user?->username ?: ($driver->user?->name ?? 'Driver #'.$driver->id),
+                    'driver_name' => $driver->user?->name,
+                    'vehicle_type' => $vehicleType ?? ($driver->vehicleTypes()[0] ?? 'motor'),
                     'area' => $driver->user?->branch?->area ?? $driver->user?->branch?->name ?? '-',
                     'orders_count' => (int) (data_get($breakdown, 'manual_orders_count') ?? $orders->count()),
                     'base_service_omset' => $baseServiceOmset,
@@ -170,6 +175,65 @@ class DriverReportService
     private function depositAmount(Order $order): int
     {
         return app(DriverFinanceService::class)->depositAmount($order);
+    }
+
+    private function normalizeVehicleType(?string $vehicleType): ?string
+    {
+        $vehicleType = strtolower(trim((string) $vehicleType));
+
+        return in_array($vehicleType, ['motor', 'mobil'], true) ? $vehicleType : null;
+    }
+
+    private function scopeVehicleType(Builder $query, string $vehicleType): Builder
+    {
+        return $query->where(function (Builder $query) use ($vehicleType): void {
+            $query
+                ->where('vehicle_type', $vehicleType)
+                ->orWhereJsonContains('vehicle_types', $vehicleType);
+
+            if ($vehicleType === 'motor') {
+                $query->orWhere(function (Builder $query): void {
+                    $query
+                        ->whereNull('vehicle_type')
+                        ->where(function (Builder $query): void {
+                            $query
+                                ->whereNull('vehicle_types')
+                                ->orWhereJsonContains('vehicle_types', 'motor');
+                        });
+                });
+            }
+        });
+    }
+
+    private function scopeOrderVehicleType(Builder $query, string $vehicleType): Builder
+    {
+        if ($vehicleType === 'mobil') {
+            return $query->where(function (Builder $query): void {
+                $query
+                    ->whereIn('service_type', ['joker_mobil', 'joker mobil', 'Joker Mobil'])
+                    ->orWhereIn('service_code', ['jm', 'JM', 'joker_mobil'])
+                    ->orWhere('pricing_breakdown->preferred_vehicle_type', 'mobil');
+            });
+        }
+
+        return $query->where(function (Builder $query): void {
+            $query
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('service_type')
+                        ->orWhereNotIn('service_type', ['joker_mobil', 'joker mobil', 'Joker Mobil']);
+                })
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('service_code')
+                        ->orWhereNotIn('service_code', ['jm', 'JM', 'joker_mobil']);
+                })
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('pricing_breakdown->preferred_vehicle_type')
+                        ->orWhere('pricing_breakdown->preferred_vehicle_type', '!=', 'mobil');
+                });
+        });
     }
 
     private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, int $previousBaseDeposit): int

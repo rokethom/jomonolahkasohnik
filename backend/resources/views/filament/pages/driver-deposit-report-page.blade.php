@@ -322,12 +322,12 @@
 
         <div class="deposit-action-row">
             <div>
-                <div class="text-lg font-bold text-white">Rekap Setoran Driver</div>
+                <div class="text-lg font-bold text-white">Rekap Setoran Driver {{ $this->vehicleType() === 'mobil' ? 'Mobil' : 'Motor' }}</div>
                 @php
                     $reportPeriod = \Illuminate\Support\Carbon::create($this->data['year'], $this->data['month'], 1);
                 @endphp
                 <div class="deposit-period">
-                    Periode rekap {{ $reportPeriod->translatedFormat('F Y') }}
+                    Periode rekap {{ $reportPeriod->translatedFormat('F Y') }} - data driver memakai username.
                 </div>
             </div>
             <div class="flex flex-wrap gap-3">
@@ -352,7 +352,7 @@
         <div class="deposit-table-card deposit-grid-shell">
             <div
                 wire:ignore
-                wire:key="driver-deposit-ag-grid-{{ $this->data['year'] }}-{{ $this->data['month'] }}"
+                wire:key="driver-deposit-ag-grid-{{ $this->data['year'] }}-{{ $this->data['month'] }}-{{ $this->vehicleType() }}"
                 x-data
                 x-init="window.initDriverDepositReportGrid($el, @js($rows->values()->all()), $wire)"
             >

@@ -43,6 +43,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
     public ?array $data = [
         'month' => null,
         'year' => null,
+        'vehicle_type' => 'motor',
     ];
 
     public static function shouldRegisterNavigation(): bool
@@ -55,6 +56,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
         $this->form->fill([
             'month' => now()->month,
             'year' => now()->year,
+            'vehicle_type' => 'motor',
         ]);
     }
 
@@ -76,11 +78,19 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
                     ->maxValue(2100)
                     ->live()
                     ->required(),
+                Forms\Components\Select::make('vehicle_type')
+                    ->label('Jenis driver')
+                    ->options([
+                        'motor' => 'Driver Motor',
+                        'mobil' => 'Driver Mobil',
+                    ])
+                    ->live()
+                    ->required(),
             ])
             ->columns([
                 'default' => 1,
-                'md' => 2,
-                'xl' => 2,
+                'md' => 3,
+                'xl' => 3,
             ])
             ->statePath('data');
     }
@@ -116,7 +126,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
 
     public function rows(): Collection
     {
-        return app(DriverReportService::class)->monthlyDepositRows($this->month(), $this->year(), Auth::user());
+        return app(DriverReportService::class)->monthlyDepositRows($this->month(), $this->year(), Auth::user(), $this->vehicleType());
     }
 
     public function headers(): array
@@ -126,12 +136,12 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
 
     public function exportCsv(): StreamedResponse
     {
-        return $this->download('driver-setoran-'.$this->period()->format('Y-m').'.csv', ',');
+        return $this->download('driver-setoran-'.$this->vehicleType().'-'.$this->period()->format('Y-m').'.csv', ',');
     }
 
     public function exportExcel(): StreamedResponse
     {
-        return $this->download('driver-setoran-'.$this->period()->format('Y-m').'.xls', "\t");
+        return $this->download('driver-setoran-'.$this->vehicleType().'-'.$this->period()->format('Y-m').'.xls', "\t");
     }
 
     public function downloadTemplateCsv(): StreamedResponse
@@ -325,6 +335,7 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
         $this->form->fill([
             'month' => $this->month(),
             'year' => $this->year(),
+            'vehicle_type' => $this->vehicleType(),
         ]);
 
         $body = "{$result['updated']} driver diperbarui.";
@@ -663,6 +674,13 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
     private function year(): int
     {
         return max(2020, min(2100, (int) ($this->data['year'] ?? now()->year)));
+    }
+
+    public function vehicleType(): string
+    {
+        $vehicleType = strtolower(trim((string) ($this->data['vehicle_type'] ?? 'motor')));
+
+        return in_array($vehicleType, ['motor', 'mobil'], true) ? $vehicleType : 'motor';
     }
 
     private function period(): Carbon

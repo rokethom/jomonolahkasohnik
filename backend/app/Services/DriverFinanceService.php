@@ -6,6 +6,7 @@ use App\Models\Driver;
 use App\Models\DriverDeposit;
 use App\Models\Order;
 use App\Enums\OrderStatus;
+use App\Services\Pricing\JokerPricing;
 use App\Services\Pricing\ServiceFeeCalculator;
 use Illuminate\Support\Carbon;
 
@@ -340,11 +341,7 @@ class DriverFinanceService
         $distance = (float) ($order->distance_km ?: data_get($order->pricing_breakdown, 'distance', 0));
         $jasa = max(0, (int) ($order->total_price ?: $order->price));
 
-        if ($distance <= 3) {
-            return 1000;
-        }
-
-        return (int) floor($jasa * 0.1);
+        return app(JokerPricing::class)->depositAmount($jasa, $distance);
     }
 
     private function cashbackForPreviousDeposit(?DriverDeposit $previousDeposit, Carbon $period, int $previousBaseDeposit): int

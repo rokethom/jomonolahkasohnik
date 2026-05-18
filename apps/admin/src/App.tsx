@@ -403,6 +403,8 @@ type DepositReportRow = {
   driver_id: number
   deposit_id?: number | null
   driver: string
+  driver_name?: string | null
+  vehicle_type?: 'motor' | 'mobil' | string | null
   area: string
   orders_count: number
   base_service_omset: number
@@ -4117,6 +4119,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
+  const [depositVehicleType, setDepositVehicleType] = useState<'motor' | 'mobil'>('motor')
   const [depositRows, setDepositRows] = useState<DepositReportRow[]>([])
   const [loadingDeposits, setLoadingDeposits] = useState(false)
   const [depositFullscreen, setDepositFullscreen] = useState(false)
@@ -4125,12 +4128,12 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   const loadDeposits = useCallback(async () => {
     setLoadingDeposits(true)
     try {
-      const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits?month=${month}&year=${year}`)
+      const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits?month=${month}&year=${year}&vehicle_type=${depositVehicleType}`)
       setDepositRows(payload.data.rows)
     } finally {
       setLoadingDeposits(false)
     }
-  }, [api, month, year])
+  }, [api, month, year, depositVehicleType])
 
   useEffect(() => {
     void loadDeposits()
@@ -4179,7 +4182,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     if (!['orders_count', 'base_service_omset', 'base_service_deposit', 'previous_bill', 'previous_cashback_reward', 'bill_before_bansos', 'bansos', 'total_bill', 'paid_amount', 'remaining_bill', 'status', 'next_cashback'].includes(field)) return
 
     try {
-      const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits/${row.driver_id}?month=${month}&year=${year}`, {
+      const payload = await api<{ data: { rows: DepositReportRow[] } }>(`/admin/reports/driver-deposits/${row.driver_id}?month=${month}&year=${year}&vehicle_type=${depositVehicleType}`, {
         method: 'PATCH',
         body: JSON.stringify({ [field]: event.newValue === '' ? null : event.newValue }),
       })
@@ -4188,10 +4191,10 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
       alert(error instanceof Error ? error.message : 'Update setoran gagal.')
       await loadDeposits()
     }
-  }, [api, loadDeposits, month, year])
+  }, [api, loadDeposits, month, year, depositVehicleType])
 
   const exportExcel = async () => {
-    const response = await fetch(`${API_BASE}/admin/reports/driver-deposits/export?month=${month}&year=${year}`, {
+    const response = await fetch(`${API_BASE}/admin/reports/driver-deposits/export?month=${month}&year=${year}&vehicle_type=${depositVehicleType}`, {
       headers: {
         Accept: 'application/vnd.ms-excel',
         Authorization: `Bearer ${token}`,
@@ -4202,7 +4205,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `rekap-setoran-driver-${year}-${String(month).padStart(2, '0')}.xls`
+    anchor.download = `rekap-setoran-driver-${depositVehicleType}-${year}-${String(month).padStart(2, '0')}.xls`
     anchor.click()
     URL.revokeObjectURL(url)
   }
@@ -4217,14 +4220,18 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
       <section className={`panel deposit-report-panel${depositFullscreen ? ' is-fullscreen' : ''}`}>
         <div className="section-head">
           <div>
-            <h2>Rekap Setoran Driver</h2>
-            <p>Format mengikuti report setoran bulanan dan export Excel.</p>
+            <h2>Rekap Setoran Driver {depositVehicleType === 'mobil' ? 'Mobil' : 'Motor'}</h2>
+            <p>Format mengikuti report setoran bulanan, data driver memakai username.</p>
           </div>
           <div className="deposit-report-actions">
             <select value={month} onChange={(event) => setMonth(Number(event.target.value))}>
               {Array.from({ length: 12 }, (_, index) => index + 1).map((item) => <option key={item} value={item}>{monthName(item)}</option>)}
             </select>
             <input type="number" value={year} min={2020} max={2100} onChange={(event) => setYear(Number(event.target.value))} />
+            <select value={depositVehicleType} onChange={(event) => setDepositVehicleType(event.target.value as 'motor' | 'mobil')}>
+              <option value="motor">Driver Motor</option>
+              <option value="mobil">Driver Mobil</option>
+            </select>
             {data.permissions.can_export_report && <button className="secondary-button compact" type="button" onClick={() => void exportExcel()}>Export Excel</button>}
             <button
               className="secondary-button compact"

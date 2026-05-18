@@ -274,7 +274,7 @@ class PricingService
             $quote = $this->ringPricing->applyMaster($quote, $masterRingMatch['rule'], $masterRingMatch);
         } else {
             $quote = match ($serviceType) {
-                'joker_mobil' => $this->calculateJokerMobil($serviceType, $distance, $stops),
+                'joker_mobil' => $this->calculateJokerMobil($serviceType, $distance, $stops, $payload),
                 'travel' => $this->calculateTravel($serviceType, $distance, $stops, $route),
                 default => $this->calculateGeneral($serviceType, $distance, $stops, $pricingBranchId),
             };
@@ -375,9 +375,9 @@ class PricingService
         ]);
     }
 
-    private function calculateJokerMobil(string $serviceType, float $distance, int $stops): array
+    private function calculateJokerMobil(string $serviceType, float $distance, int $stops, array $payload = []): array
     {
-        $joker = $this->jokerPricing->calculate($distance);
+        $joker = $this->jokerPricing->calculate($distance, $payload);
         $tarif = $joker['tarif'];
         $totalBeforeRound = $tarif;
 
@@ -385,11 +385,18 @@ class PricingService
             'service_type' => $serviceType,
             'distance' => $distance,
             'billing_distance' => $joker['billing_distance'],
+            'joker_mobil_ring' => $joker['ring'],
+            'joker_mobil_formula' => $joker['formula'],
             'tarif' => $tarif,
             'service_charge' => 0,
             'total_before_round' => $totalBeforeRound,
             'final_price' => $this->roundUpPrice($totalBeforeRound),
             'stops' => $stops,
+            'joker_mobil_pickup_charge' => $joker['pickup_charge'],
+            'joker_mobil_wait_charge' => $joker['wait_charge'],
+            'joker_mobil_helper_charge' => $joker['helper_charge'],
+            'joker_mobil_night_charge' => $joker['night_charge'],
+            'joker_mobil_config' => $joker['config'],
             'service_fee_breakdown' => [],
         ]);
     }
@@ -629,6 +636,35 @@ class PricingService
         $destinationLng = (float) $payload['destination_lng'];
         $origin = $this->pricingDistanceOrigin($payload, $pricingBranch, $serviceType);
 
+        if ($serviceType === 'joker_mobil') {
+            $jokerOrigin = $this->jokerMobilPricingOrigin($payload);
+            if ($jokerOrigin !== null) {
+                try {
+                    return [
+                        ...$this->distanceCalculator->drivingDistanceResult(
+                            $jokerOrigin['lat'],
+                            $jokerOrigin['lng'],
+                            $destinationLat,
+                            $destinationLng,
+                        ),
+                        'pricing_origin' => 'joker_mobil_origin',
+                        'pricing_origin_branch_id' => $pricingBranch?->id,
+                        'pricing_origin_name' => $jokerOrigin['name'],
+                        'pricing_origin_lat' => $jokerOrigin['lat'],
+                        'pricing_origin_lng' => $jokerOrigin['lng'],
+                        'pricing_origin_source' => 'joker_mobil_cms',
+                        'joker_mobil_origin_distance_to_pickup_km' => $jokerOrigin['distance_to_pickup_km'] ?? null,
+                        'pickup_outside_pricing_branch' => false,
+                    ];
+                } catch (\Throwable $exception) {
+                    Log::warning('pricing.joker_mobil_origin_distance_failed', [
+                        'origin' => $jokerOrigin['name'],
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            }
+        }
+
         if ($origin !== null) {
             try {
                 return [
@@ -681,6 +717,17 @@ class PricingService
         }
 
         return $pricingBranch->pricingOriginPoint();
+    }
+
+    private function jokerMobilPricingOrigin(array $payload): ?array
+    {
+        $pickupLat = data_get($payload, 'pickup_lat') ?? data_get($payload, 'origin_lat') ?? data_get($payload, 'service_payload.pickup_lat');
+        $pickupLng = data_get($payload, 'pickup_lng') ?? data_get($payload, 'origin_lng') ?? data_get($payload, 'service_payload.pickup_lng');
+        if (! is_numeric($pickupLat) || ! is_numeric($pickupLng)) {
+            return null;
+        }
+
+        return $this->jokerPricing->nearestOriginPoint((float) $pickupLat, (float) $pickupLng, $this->distanceCalculator);
     }
 
     private function pickupIsOutsidePricingBranch(array $payload, Branch $pricingBranch): bool

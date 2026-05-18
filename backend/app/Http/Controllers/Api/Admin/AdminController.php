@@ -2132,12 +2132,14 @@ class AdminController extends Controller
     public function driverDepositReport(Request $request, DriverReportService $reports): JsonResponse
     {
         [$month, $year] = $this->reportPeriod($request);
+        $vehicleType = $this->depositVehicleType($request);
 
         return response()->json([
             'data' => [
                 'month' => $month,
                 'year' => $year,
-                'rows' => $reports->monthlyDepositRows($month, $year, $request->user())->values(),
+                'vehicle_type' => $vehicleType,
+                'rows' => $reports->monthlyDepositRows($month, $year, $request->user(), $vehicleType)->values(),
             ],
         ]);
     }
@@ -2281,7 +2283,7 @@ class AdminController extends Controller
         return response()->json([
             'message' => 'Setoran driver berhasil diperbarui.',
             'data' => [
-                'rows' => $reports->monthlyDepositRows($month, $year, $actor)->values(),
+                'rows' => $reports->monthlyDepositRows($month, $year, $actor, $this->depositVehicleType($request))->values(),
             ],
         ]);
     }
@@ -2290,9 +2292,10 @@ class AdminController extends Controller
     {
         [$month, $year] = $this->reportPeriod($request);
         $period = now()->setDate($year, $month, 1)->startOfMonth();
-        $rows = $reports->monthlyDepositRows($month, $year, $request->user());
+        $vehicleType = $this->depositVehicleType($request);
+        $rows = $reports->monthlyDepositRows($month, $year, $request->user(), $vehicleType);
         $headers = $reports->monthlyDepositHeaders($period);
-        $filename = 'rekap-setoran-driver-'.$period->format('Y-m').'.xls';
+        $filename = 'rekap-setoran-driver-'.$vehicleType.'-'.$period->format('Y-m').'.xls';
 
         return response()->streamDownload(function () use ($rows, $headers): void {
             echo '<html><head><meta charset="UTF-8"><style>';
@@ -2979,6 +2982,13 @@ class AdminController extends Controller
         $year = max(2020, min(2100, $request->integer('year', now()->year)));
 
         return [$month, $year];
+    }
+
+    private function depositVehicleType(Request $request): string
+    {
+        $vehicleType = strtolower(trim((string) $request->query('vehicle_type', 'motor')));
+
+        return in_array($vehicleType, ['motor', 'mobil'], true) ? $vehicleType : 'motor';
     }
 
     private function usersQuery(User $actor): Builder
