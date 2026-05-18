@@ -62,7 +62,15 @@ class AuditLogResource extends Resource
 
     public static function scopedQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with('user')->latest();
+        $query = parent::getEloquentQuery()
+            ->with('user')
+            ->where('action', 'not like', 'system_control_%')
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('subject_label')
+                    ->orWhere('subject_label', 'not like', '%System Control Center%');
+            })
+            ->latest();
         $user = auth()->user();
 
         if (! $user || app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($user->role)) {
@@ -113,6 +121,7 @@ class AuditLogResource extends Resource
                 SelectFilter::make('action')
                     ->label('Action')
                     ->options(fn (): array => AuditLog::query()
+                        ->where('action', 'not like', 'system_control_%')
                         ->select('action')
                         ->distinct()
                         ->orderBy('action')

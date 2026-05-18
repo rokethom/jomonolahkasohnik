@@ -3081,7 +3081,15 @@ class AdminController extends Controller
 
     private function auditLogsQuery(User $actor): Builder
     {
-        $query = AuditLog::query()->with('user')->latest();
+        $query = AuditLog::query()
+            ->with('user')
+            ->where('action', 'not like', 'system_control_%')
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('subject_label')
+                    ->orWhere('subject_label', 'not like', '%System Control Center%');
+            })
+            ->latest();
 
         if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
             return $query->whereRaw('1 = 0');

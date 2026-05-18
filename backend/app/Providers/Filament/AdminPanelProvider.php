@@ -7,6 +7,7 @@ use App\Filament\Widgets\RecentActivityWidget;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -33,6 +34,21 @@ class AdminPanelProvider extends PanelProvider
             ->darkMode()
             ->breadcrumbs()
             ->sidebarCollapsibleOnDesktop()
+            ->navigationGroups([
+                NavigationGroup::make('Operations'),
+                NavigationGroup::make('Reports')->collapsed(),
+                NavigationGroup::make('Driver')->collapsed(),
+                NavigationGroup::make('Management')->collapsed(),
+                NavigationGroup::make('Pricing Management')->collapsed(),
+                NavigationGroup::make('Pricing')->collapsed(),
+                NavigationGroup::make('AI')->collapsed(),
+                NavigationGroup::make('Location')->collapsed(),
+                NavigationGroup::make('Master Data GeoJSON')->collapsed(),
+                NavigationGroup::make('Home CMS')->collapsed(),
+                NavigationGroup::make('Analytics')->collapsed(),
+                NavigationGroup::make('Dokumentasi')->collapsed(),
+                NavigationGroup::make('System')->collapsed(),
+            ])
             ->colors([
                 'primary' => Color::Amber,
                 'orange' => Color::Orange,

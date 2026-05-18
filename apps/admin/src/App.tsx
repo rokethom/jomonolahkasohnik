@@ -1367,7 +1367,7 @@ function AdminUpdateStatusCard({ buildInfo }: { buildInfo: BuildInfo | null }) {
         </div>
         <div className="admin-update-status-badge">
           <b>{buildInfo?.app?.toUpperCase() || 'ADMIN'}</b>
-          <span>{buildInfo?.sha || 'sync'}</span>
+          <span>{detail.sha || 'sync'}</span>
         </div>
       </button>
       {detailOpen && <AdminUpdateDetailModal buildInfo={buildInfo} onClose={() => setDetailOpen(false)} />}
@@ -1397,13 +1397,22 @@ function AdminUpdateDetailModal({ buildInfo, onClose }: { buildInfo: BuildInfo |
           </section>
           <div className="admin-update-detail-grid">
             <InfoBox label="Aplikasi" value={buildInfo?.app?.toUpperCase() || 'ADMIN'} />
-            <InfoBox label="Versi" value={buildInfo?.sha || 'Belum terbaca'} />
+            <InfoBox label="Versi" value={detail.sha || 'Belum terbaca'} />
             <InfoBox label="Waktu commit" value={detail.commitTime || 'Belum tersedia'} />
             <InfoBox label="Waktu build" value={detail.buildTime || 'Belum tersedia'} />
           </div>
           <section className="admin-update-history-section">
             <span>3 history update terakhir</span>
             <div className="admin-update-history-list">
+              {history.length === 0 && (
+                <article className="admin-update-history-item">
+                  <b>i</b>
+                  <div>
+                    <strong>Belum ada pembaruan aplikasi publik</strong>
+                    <p>Pembaruan internal khusus superadmin tidak ditampilkan di dashboard Admin/GM.</p>
+                  </div>
+                </article>
+              )}
               {history.map((item, index) => (
                 <article key={`${item.sha}-${index}`} className="admin-update-history-item">
                   <b>{index + 1}</b>
@@ -1418,7 +1427,7 @@ function AdminUpdateDetailModal({ buildInfo, onClose }: { buildInfo: BuildInfo |
           </section>
           <label>
             Hash lengkap
-            <input value={buildInfo?.full_sha || buildInfo?.sha || 'Belum tersedia'} readOnly />
+            <input value={detail.fullSha || detail.sha || 'Belum tersedia'} readOnly />
           </label>
         </div>
       </div>
@@ -3232,7 +3241,7 @@ function RequestOrdersPanel({ orders, searchQuery, permissions, onOpenDriverChat
   return (
     <section className="panel order-operations-panel request-orders-panel">
       <PanelHeader title="Request Order" action={`Driver request terbaru - ${filteredOrders.length}/${requestOrders.length}`} />
-      <div className="notice">Menu ini menampilkan order yang dibuat dari request driver. Klik baris untuk melihat format penulisan asli dan detail pesanan.</div>
+      <div className="notice">Klik baris untuk melihat format penulisan asli dan detail pesanan.</div>
       <div className="order-operations-layout">
         <div className="table-wrap order-table-wrap request-order-table-wrap">
           <table>
@@ -4775,7 +4784,7 @@ const auditSections: AuditSection[] = [
 ]
 
 function AuditLogsPanel({ initialLogs, api }: { initialLogs: AuditLog[]; api: ApiClient }) {
-  const [logs, setLogs] = useState<AuditLog[]>(initialLogs)
+  const [logs, setLogs] = useState<AuditLog[]>(initialLogs.filter((log) => !isInternalSccAuditLog(log)))
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -4787,7 +4796,7 @@ function AuditLogsPanel({ initialLogs, api }: { initialLogs: AuditLog[]; api: Ap
       const params = new URLSearchParams({ limit: '1000' })
       if (query.trim() !== '') params.set('q', query.trim())
       const response = await api<{ data: AuditLog[] }>(`/admin/audit-logs?${params.toString()}`)
-      setLogs(response.data)
+      setLogs(response.data.filter((log) => !isInternalSccAuditLog(log)))
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Audit logs belum bisa dimuat.')
     } finally {
@@ -4839,6 +4848,12 @@ function AuditLogsPanel({ initialLogs, api }: { initialLogs: AuditLog[]; api: Ap
       </div>
     </section>
   )
+}
+
+function isInternalSccAuditLog(log: AuditLog) {
+  const action = (log.action || '').toLowerCase()
+  const subject = `${log.subject_type || ''} ${log.subject_label || ''}`.toLowerCase()
+  return action.startsWith('system_control_') || subject.includes('system control center')
 }
 
 function AuditLogSection({ title, description, logs, filename }: { title: string; description: string; logs: AuditLog[]; filename: string }) {
@@ -5945,7 +5960,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
   return (
     <section className="panel live-price-review-panel">
       <PanelHeader title="Live Edit Harga Customer" action={`${rows.length} review`} />
-      <div className="notice">Khusus order dari FE customer. Operator/eksekutor koreksi harga di sini, lalu customer menerima preview harga final dan tombol konfirmasi aktif setelah delay CMS.</div>
+      <div className="notice">Koreksi Harga dari Customer oleh Operator/Eksekutor Secara Live.</div>
       <div className="manual-ai-actions">
         <button className="secondary-button compact" type="button" onClick={() => void refreshReviews(true)}>Refresh review</button>
       </div>
@@ -6619,24 +6634,29 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function buildInfoDetail(buildInfo: BuildInfo | null) {
-  const title = translateBuildMessage(buildInfo?.message)
+  const visibleItem = buildInfoHistory(buildInfo)[0]
+  const source = visibleItem ?? buildInfo
+  const title = translateBuildMessage(source?.message)
+  const explanation = buildUpdateExplanation(source?.message)
 
   return {
     title,
-    description: buildInfo?.message
-      ? `Update terakhir telah dipasang dengan ringkasan: ${title}. Detail ini membantu Admin/GM memastikan versi yang sedang aktif tanpa membuka Git atau server.`
+    description: source?.message
+      ? explanation
       : 'Informasi update belum tersedia. Jalankan proses build/deploy agar versi terbaru dapat terbaca di dashboard.',
-    version: buildInfo?.sha ? `Versi ${buildInfo.sha}` : 'Versi belum terbaca',
-    commitTime: buildInfo?.committed_at ? formatShortDateTime(buildInfo.committed_at) : '',
+    version: source?.sha ? `Versi ${source.sha}` : 'Versi belum terbaca',
+    sha: source?.sha || '',
+    fullSha: source?.full_sha || '',
+    commitTime: source?.committed_at ? formatShortDateTime(source.committed_at) : '',
     buildTime: buildInfo?.built_at ? formatShortDateTime(buildInfo.built_at) : '',
   }
 }
 
 function buildInfoHistory(buildInfo: BuildInfo | null): BuildHistoryItem[] {
-  const history = buildInfo?.history?.filter((item) => item?.sha) ?? []
+  const history = buildInfo?.history?.filter((item) => item?.sha && !isInternalSccBuildMessage(item.message)) ?? []
   if (history.length > 0) return history.slice(0, 3)
 
-  return buildInfo?.sha ? [{
+  return buildInfo?.sha && !isInternalSccBuildMessage(buildInfo.message) ? [{
     sha: buildInfo.sha,
     full_sha: buildInfo.full_sha,
     message: buildInfo.message,
@@ -6645,13 +6665,22 @@ function buildInfoHistory(buildInfo: BuildInfo | null): BuildHistoryItem[] {
 }
 
 function buildHistoryDescription(item: BuildHistoryItem) {
-  const title = translateBuildMessage(item.message)
-
-  return `Pembaruan ini berisi: ${title.toLowerCase()}.`
+  return buildUpdateExplanation(item.message)
 }
 
 function translateBuildMessage(message?: string | null) {
   const map: Record<string, string> = {
+    'Show live price cancellation reason': 'Menampilkan alasan pembatalan pada Live Edit Harga',
+    'Refine driver identity and timeout order flow': 'Merapikan identitas driver dan alur order kembali',
+    'Fix audit logs responsive table': 'Memperbaiki tampilan Audit Logs di mobile',
+    'Add Joker Mobil pricing CMS and split deposit reports': 'Menambahkan CMS tarif Joker Mobil dan split report setoran',
+    'Add live price review audit tables': 'Menambahkan tabel audit Live Edit Harga',
+    'Improve live price review layout': 'Merapikan tampilan Live Edit Harga',
+    'Add customer history operator chat action': 'Menambahkan tombol chat operator pada history order',
+    'Add AI learning queue for live price corrections': 'Menambahkan queue AI learning untuk koreksi harga',
+    'Add Horizon monitoring link': 'Menambahkan akses monitoring queue',
+    'Improve AI parser free text handling': 'Meningkatkan AI parser untuk teks order bebas',
+    'Add Joker Mobil deposit calculation': 'Menambahkan perhitungan setoran Joker Mobil',
     'Add Indonesian update detail modal': 'Menambahkan detail update berbahasa Indonesia',
     'Show latest update status on admin dashboard': 'Menambahkan status update terbaru di dashboard admin',
     'Refine driver profile finance details': 'Merapikan detail keuangan pada profil driver',
@@ -6662,6 +6691,40 @@ function translateBuildMessage(message?: string | null) {
   }
 
   return message && map[message] ? map[message] : 'Pembaruan sistem terbaru telah tersedia'
+}
+
+function buildUpdateExplanation(message?: string | null) {
+  const map: Record<string, string> = {
+    'Show live price cancellation reason': 'Jika customer membatalkan order saat proses koreksi harga, operator/eksekutor sekarang melihat alasan batal secara jelas di Live Edit Harga sehingga order tidak menggantung.',
+    'Refine driver identity and timeout order flow': 'Profil dan identitas driver dirapikan, lalu alur order kembali setelah timeout dibuat lebih jelas agar customer tidak bingung ketika driver belum ditemukan.',
+    'Fix audit logs responsive table': 'Tabel Audit Logs diperbaiki agar kolom, tombol export, dan metadata tetap terbaca saat dibuka dari HP atau layar kecil.',
+    'Add Joker Mobil pricing CMS and split deposit reports': 'Ditambahkan CMS khusus tarif Joker Mobil: rumus ring, titik hitung jasa, pickup, jasa tunggu/malam/helper, serta report setoran dipisah antara Driver Motor dan Driver Mobil.',
+    'Add live price review audit tables': 'Riwayat koreksi harga operator dan eksekutor ditampilkan dalam tabel audit yang bisa diekspor, membantu manajemen melihat performa koreksi harga.',
+    'Improve live price review layout': 'Halaman Live Edit Harga dibuat lebih ringan dan lebih ringkas: daftar live order, preview order, dan koreksi harga tampil dalam layout yang mudah dipantau.',
+    'Add customer history operator chat action': 'Customer yang ordernya belum mendapat driver dapat membuka chat operator dari detail History Order setelah melewati waktu tunggu.',
+    'Add AI learning queue for live price corrections': 'Koreksi harga live dicatat sebagai bahan learning AI melalui queue khusus, sehingga hasil koreksi bisa menjadi referensi parsing dan pricing berikutnya.',
+    'Add Horizon monitoring link': 'Monitoring queue ditambahkan agar admin dapat mengecek job realtime, AI learning, dan proses background yang berjalan.',
+    'Improve AI parser free text handling': 'AI parser diperluas agar lebih tahan membaca format order bebas, termasuk nama, nomor HP, lokasi pembelian, alamat antar, dan catatan barang.',
+    'Add Joker Mobil deposit calculation': 'Perhitungan setoran layanan Joker Mobil ditambahkan agar potongan manajemen mengikuti aturan mobil, bukan lagi disamakan dengan motor.',
+    'Add Indonesian update detail modal': 'Dashboard admin kini menampilkan detail pembaruan dalam bahasa Indonesia agar Admin/GM bisa memahami update tanpa membuka Git.',
+    'Show latest update status on admin dashboard': 'Status versi terbaru ditampilkan di dashboard admin dengan waktu commit dan waktu build.',
+    'Refine driver profile finance details': 'Detail finance di profil driver dirapikan agar tagihan, cashback, BPJS, JHT, dan jatuh tempo lebih mudah dibaca.',
+    'Add all area driver access setting': 'Pengaturan driver lintas area ditambahkan agar akses order bisa dikontrol dari konfigurasi, bukan dari kode.',
+    'Add CMS role control for driver assignment': 'Hak assign driver per role dipindahkan ke CMS agar manajemen bisa mengatur akses tanpa deploy ulang.',
+    'Show branch performance in driver app': 'Aplikasi driver menampilkan performa cabang agar driver melihat konteks operasional cabangnya.',
+    'Render customer home CMS banners': 'Banner dari CMS home customer sudah dirender di FE customer agar konten promo bisa diatur dari backend.',
+  }
+
+  return message && map[message] ? map[message] : 'Pembaruan ini berisi perbaikan stabilitas, tampilan, dan alur operasional aplikasi. Detail teknis internal tidak ditampilkan di dashboard umum.'
+}
+
+function isInternalSccBuildMessage(message?: string | null) {
+  const text = (message || '').toLowerCase()
+  return text.includes('system control center')
+    || text.includes(' scc')
+    || text.includes('scheduled database auto backup')
+    || text.includes('auto database backup')
+    || text.includes('database auto backup')
 }
 
 const assignDriverRoleOptions: Array<{ value: Role; label: string }> = [
