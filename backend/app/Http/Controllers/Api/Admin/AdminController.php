@@ -473,7 +473,7 @@ class AdminController extends Controller
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $order->loadMissing(['user.branch', 'driver.user.branch']);
+        $order->loadMissing(['branch', 'area', 'service', 'user.branch', 'driver.user.branch']);
         $this->assertOrderAreaScope($actor, $order);
 
         $driver = Driver::query()->with(['user.branch', 'user.area'])->findOrFail($payload['driver_id']);
@@ -500,7 +500,7 @@ class AdminController extends Controller
             'assigned_at' => now()->toIso8601String(),
         ];
         $assigned->update(['pricing_breakdown' => $breakdown]);
-        $assigned = $assigned->fresh(['user.branch', 'driver.user.branch']);
+        $assigned = $assigned->fresh(['branch', 'area', 'service', 'user.branch', 'driver.user.branch', 'driver.user.area']);
 
         $notifications->sendToUser(
             $driver->user,
@@ -516,8 +516,35 @@ class AdminController extends Controller
         );
 
         $this->recordAudit($actor, 'assigned_driver_to_order', $assigned, [
+            'order_id' => $assigned->id,
+            'order_code' => $assigned->order_code,
+            'order_status' => $assigned->status?->value,
+            'service_type' => $assigned->service_type,
+            'service_name' => $assigned->service?->name,
+            'branch_id' => $assigned->branch_id,
+            'branch_name' => $assigned->branch?->name,
+            'area_id' => $assigned->area_id,
+            'area_name' => $assigned->area?->name,
+            'customer_id' => $assigned->user_id,
+            'customer_name' => $assigned->customer_name ?? $assigned->user?->name,
+            'customer_phone' => $assigned->customer_phone ?? $assigned->user?->phone,
+            'assigned_by_id' => $actor->id,
+            'assigned_by_name' => $actor->name,
+            'assigned_by_username' => $actor->username,
+            'assigned_by_role' => $actor->role instanceof UserRole ? $actor->role->value : (string) $actor->role,
             'driver_id' => $driver->id,
-            'reason' => $payload['reason'] ?? null,
+            'assigned_driver_id' => $driver->id,
+            'assigned_driver_user_id' => $driver->user?->id,
+            'assigned_driver_name' => $driver->user?->name,
+            'assigned_driver_username' => $driver->user?->username,
+            'assigned_driver_phone' => $driver->user?->phone,
+            'assigned_driver_branch_id' => $driver->user?->branch_id,
+            'assigned_driver_branch_name' => $driver->user?->branch?->name,
+            'assigned_driver_area_id' => $driver->user?->area_id,
+            'assigned_driver_area_name' => $driver->user?->area?->name,
+            'reason' => $assignReason,
+            'source' => 'manual_dispatch_assign',
+            'assigned_at' => now()->toDateTimeString(),
         ]);
 
         return response()->json([
@@ -553,7 +580,33 @@ class AdminController extends Controller
         }
 
         $this->recordAudit($actor, 'broadcast_pending_order_to_drivers', $order, [
+            'order_id' => $order->id,
+            'order_code' => $order->order_code,
+            'order_status' => $order->status?->value,
+            'service_type' => $order->service_type,
+            'branch_id' => $order->branch_id,
+            'branch_name' => $order->branch?->name,
+            'area_id' => $order->area_id,
+            'area_name' => $order->area?->name,
+            'broadcast_by_id' => $actor->id,
+            'broadcast_by_name' => $actor->name,
+            'broadcast_by_username' => $actor->username,
+            'broadcast_by_role' => $actor->role instanceof UserRole ? $actor->role->value : (string) $actor->role,
             'driver_count' => $drivers->count(),
+            'driver_targets' => $drivers
+                ->map(fn (Driver $driver): array => [
+                    'driver_id' => $driver->id,
+                    'user_id' => $driver->user?->id,
+                    'name' => $driver->user?->name,
+                    'username' => $driver->user?->username,
+                    'phone' => $driver->user?->phone,
+                    'branch_id' => $driver->user?->branch_id,
+                    'area_id' => $driver->user?->area_id,
+                ])
+                ->values()
+                ->all(),
+            'source' => 'manual_dispatch_broadcast',
+            'broadcast_at' => now()->toDateTimeString(),
         ]);
 
         return response()->json([

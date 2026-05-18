@@ -501,6 +501,14 @@ function extractUserIndexTotal(payload: UserIndexResponse | { data?: User[]; tot
   return undefined
 }
 
+function visibleUserRoleOptions(role: Role, permissions: Permissions): Role[] {
+  if (role === 'admin' || role === 'gm') return knownRoles
+
+  const visible = cleanRoleOptions(permissions.assignable_roles)
+
+  return visible.length > 0 ? visible : knownRoles.filter((item) => !['admin', 'gm', 'customer'].includes(item))
+}
+
 type AdminHomeBanner = {
   id: number
   title: string
@@ -1003,6 +1011,15 @@ function App() {
       setQuery('')
     }
   }, [query, safeView])
+
+  useEffect(() => {
+    if (!data || safeView !== 'users' || roleFilter === 'all') return
+
+    const allowedRoles = visibleUserRoleOptions(data.me.role, data.permissions)
+    if (!allowedRoles.includes(roleFilter)) {
+      setRoleFilter('all')
+    }
+  }, [data, roleFilter, safeView])
 
   if (!token) {
     return (
@@ -2054,6 +2071,7 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const detailRef = useRef<HTMLElement | null>(null)
+  const roleOptions = useMemo(() => visibleUserRoleOptions(me.role, permissions), [me.role, permissions])
   const canEditUser = (user: User) => permissions.can_manage_users && user.id !== me.id && (['admin', 'gm'].includes(me.role) || !['admin', 'gm'].includes(user.role))
   const canAdministerUser = (user: User) => canEditUser(user) && (['admin', 'gm'].includes(me.role) || permissions.names.includes('create_user'))
   const selectedUser = useMemo(() => users.find((user) => user.id === selectedUserId) ?? users[0] ?? null, [selectedUserId, users])
@@ -2086,8 +2104,8 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
     <section className="panel user-management-panel">
       <PanelHeader title="User management" action={isLoading ? 'Mencari...' : `${users.length}${totalUsers !== null && totalUsers !== users.length ? ` dari ${totalUsers}` : ''} records`} />
       <div className="table-toolbar user-toolbar">
-        <select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">All visible roles</option>{Object.entries(roleLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
-        <span className="toolbar-hint">Klik baris user untuk melihat detail dan aksi. Admin/GM only can edit Admin & GM accounts.</span>
+        <select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value as Role | 'all')}><option value="all">Semua role yang bisa dilihat</option>{roleOptions.map((role) => <option value={role} key={role}>{roleLabels[role]}</option>)}</select>
+        <span className="toolbar-hint">Klik baris user untuk melihat detail dan aksi. Filter role otomatis mengikuti akses akun aktif.</span>
       </div>
       <div className="user-management-layout">
         <div className="table-wrap user-table-wrap">
@@ -4935,7 +4953,7 @@ function AuditLogSection({ title, description, logs, filename }: { title: string
                 <th className="audit-col-action">Action</th>
                 <th className="audit-col-subject">Subject</th>
                 <th className="audit-col-label">Label</th>
-                <th className="audit-col-meta">Metadata</th>
+                <th className="audit-col-meta">Ringkasan</th>
               </tr>
             </thead>
             <tbody>
@@ -4947,7 +4965,7 @@ function AuditLogSection({ title, description, logs, filename }: { title: string
                   <td><span className="status info">{log.action}</span></td>
                   <td>{log.subject_type}{log.subject_id ? ` #${log.subject_id}` : ''}</td>
                   <td>{log.subject_label ?? '-'}</td>
-                  <td>{compactMetadata(log.metadata)}</td>
+                  <td>{auditLogSummary(log)}</td>
                 </tr>
               ))}
             </tbody>
@@ -4958,13 +4976,50 @@ function AuditLogSection({ title, description, logs, filename }: { title: string
   )
 }
 
+function auditLogSummary(log: AuditLog) {
+  const metadata = log.metadata ?? {}
+  const value = (key: string) => {
+    const raw = metadata[key]
+    return typeof raw === 'string' || typeof raw === 'number' ? String(raw) : ''
+  }
+
+  if (log.action === 'assigned_driver_to_order') {
+    const actor = value('assigned_by_name') || log.user
+    const driver = value('assigned_driver_name') || value('assigned_driver_username') || value('driver_id') || 'driver'
+    const username = value('assigned_driver_username')
+    const order = value('order_code') || log.subject_label || (log.subject_id ? `#${log.subject_id}` : 'order')
+    const area = value('area_name') || value('branch_name')
+    const reason = value('reason')
+    return `${actor} menugaskan ${driver}${username ? ` (@${username})` : ''} ke ${order}${area ? ` - ${area}` : ''}${reason ? `. Alasan: ${reason}` : ''}`
+  }
+
+  if (log.action === 'broadcast_pending_order_to_drivers') {
+    const actor = value('broadcast_by_name') || log.user
+    const order = value('order_code') || log.subject_label || (log.subject_id ? `#${log.subject_id}` : 'order')
+    const count = value('driver_count') || '0'
+    const targets = Array.isArray(metadata.driver_targets)
+      ? metadata.driver_targets
+        .map((target) => {
+          if (!target || typeof target !== 'object') return ''
+          const row = target as Record<string, unknown>
+          return String(row.name ?? row.username ?? row.driver_id ?? '').trim()
+        })
+        .filter(Boolean)
+        .slice(0, 5)
+      : []
+    return `${actor} broadcast ${order} ke ${count} driver${targets.length ? `: ${targets.join(', ')}${Number(count) > targets.length ? ', ...' : ''}` : ''}`
+  }
+
+  return compactMetadata(metadata)
+}
+
 function compactMetadata(metadata?: Record<string, unknown> | null) {
   const text = JSON.stringify(metadata ?? {}, null, 0)
   return text.length > 160 ? `${text.slice(0, 160)}...` : text
 }
 
 function downloadAuditLogsXls(logs: AuditLog[], prefix: string) {
-  const headers = ['Waktu', 'Actor', 'Role', 'Action', 'Subject', 'Subject ID', 'Label', 'Metadata']
+  const headers = ['Waktu', 'Actor', 'Role', 'Action', 'Subject', 'Subject ID', 'Label', 'Ringkasan', 'Metadata']
   const data = logs.map((log) => [
     formatShortDateTime(log.created_at),
     log.user,
@@ -4973,6 +5028,7 @@ function downloadAuditLogsXls(logs: AuditLog[], prefix: string) {
     log.subject_type,
     log.subject_id ?? '',
     log.subject_label ?? '',
+    auditLogSummary(log),
     JSON.stringify(log.metadata ?? {}),
   ])
   const html = `<table border="1"><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${data.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join('')}</tr>`).join('')}</tbody></table>`
