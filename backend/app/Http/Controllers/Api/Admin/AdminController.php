@@ -114,12 +114,12 @@ class AdminController extends Controller
             'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],
             'ring_pricing_rules' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)) : [],
             'ring_pricing_suggestions' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)) : [],
-            'live_price_reviews' => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)) : [],
+            'live_price_reviews' => $this->safeAdminPayload('live_price_reviews', fn () => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)) : []),
             'zone_pricing_rules' => $wants(['zone-pricing', 'zone-pricing-tester']) ? $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)) : [],
             'geofences' => $wants(['geofence', 'zone-pricing', 'zone-pricing-tester']) ? GeofenceArea::query()->with('branch')->latest()->get() : [],
             'location_logs' => $wants(['locations', 'reports']) ? $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)) : [],
             'chats' => $wants(['dashboard', 'chats']) ? $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)) : [],
-            'audit_logs' => $wants(['orders', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : [],
+            'audit_logs' => $this->safeAdminPayload('audit_logs', fn () => $wants(['orders', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : []),
         ]);
     }
 
@@ -1284,12 +1284,24 @@ class AdminController extends Controller
             });
         }
 
-        return response()->json([
-            'data' => $query
-                ->limit((int) ($payload['limit'] ?? 500))
-                ->get()
-                ->map(fn (AuditLog $log): array => $this->auditLogPayload($log)),
-        ]);
+        try {
+            return response()->json([
+                'data' => $query
+                    ->limit((int) ($payload['limit'] ?? 500))
+                    ->get()
+                    ->map(fn (AuditLog $log): array => $this->auditLogPayload($log)),
+            ]);
+        } catch (\Throwable $exception) {
+            Log::error('admin.audit_logs_failed', [
+                'user_id' => $request->user()?->id,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'data' => [],
+                'message' => 'Audit logs belum bisa dimuat. Cek migrasi database audit_logs.',
+            ]);
+        }
     }
 
     public function approveLivePriceReview(LivePriceReview $review, Request $request, LivePriceReviewService $liveReviews): JsonResponse
@@ -4365,6 +4377,20 @@ class AdminController extends Controller
             'metadata' => $log->metadata ?? [],
             'created_at' => $log->created_at?->toDateTimeString(),
         ];
+    }
+
+    private function safeAdminPayload(string $section, callable $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (\Throwable $exception) {
+            Log::warning('admin.payload_section_failed', [
+                'section' => $section,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     private function chatPayload(ChatConversation $chat): array
