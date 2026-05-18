@@ -484,6 +484,23 @@ type UserIndexResponse = {
     total?: number
   }
 }
+
+function extractUserIndexRows(payload: UserIndexResponse | { data?: User[] } | User[]) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload.data)) return payload.data
+  if (Array.isArray(payload.data?.data)) return payload.data.data
+
+  return []
+}
+
+function extractUserIndexTotal(payload: UserIndexResponse | { data?: User[]; total?: number } | User[]) {
+  if (Array.isArray(payload)) return payload.length
+  if ('total' in payload && typeof payload.total === 'number') return payload.total
+  if (!Array.isArray(payload.data) && typeof payload.data?.total === 'number') return payload.data.total
+
+  return undefined
+}
+
 type AdminHomeBanner = {
   id: number
   title: string
@@ -962,8 +979,9 @@ function App() {
       void api<UserIndexResponse>(`/admin/users?${params.toString()}`)
         .then((payload) => {
           if (cancelled) return
-          setServerUsers(payload.data.data)
-          setServerUsersTotal(payload.data.total ?? payload.data.data.length)
+          const rows = extractUserIndexRows(payload)
+          setServerUsers(rows)
+          setServerUsersTotal(extractUserIndexTotal(payload) ?? rows.length)
         })
         .catch((error) => {
           if (cancelled || isAuthError(error)) return
@@ -1014,7 +1032,7 @@ function App() {
     .map((group) => ({ ...group, items: group.items.filter((item) => allowedViews.includes(item.id)) }))
     .filter((group) => group.items.length > 0)
   const userRows = serverUsers ?? data.users
-  const filteredUsers = userRows.filter((user) => {
+  const filteredUsers = serverUsers !== null ? userRows : userRows.filter((user) => {
     const text = `${user.username} ${user.name} ${user.email} ${user.phone ?? ''} ${user.address ?? ''} ${user.branch ?? ''} ${user.branch_code ?? ''} ${user.branch_area ?? ''} ${user.branch_display_name ?? ''}`.toLowerCase()
     return text.includes(query.toLowerCase()) && (roleFilter === 'all' || user.role === roleFilter)
   })
