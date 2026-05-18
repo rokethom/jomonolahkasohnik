@@ -26,6 +26,7 @@ class Kernel extends ConsoleKernel
         $schedule->job(new EnforceDriverSuspensionsJob())->dailyAt('00:10')->withoutOverlapping();
         $schedule->job(new PruneExpiredHomeItemsJob())->dailyAt('00:20')->withoutOverlapping();
         $schedule->job(new PruneLocationLogsJob())->dailyAt('02:30')->withoutOverlapping();
+        $schedule->command('system:auto-database-backup')->everyFiveMinutes()->withoutOverlapping();
     }
 
     /**
