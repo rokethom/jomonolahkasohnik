@@ -1151,10 +1151,10 @@ function App() {
       const updatedOrder = response.data
       setOrders(mergeOrderList(useCustomerStore.getState().orders, updatedOrder))
       setActiveOrder((current) => current?.id === updatedOrder.id ? { ...current, ...updatedOrder } : current)
-      showToast('success', response.message ?? 'Waktu tunggu driver ditambah 10 menit.')
+      showToast('success', response.message ?? 'Order kembali dibuka untuk mencari driver.')
       pushMessage({
         from: 'bot',
-        text: `Baik, JOJOBOT akan mencari driver 10 menit lagi untuk order ${updatedOrder.order_code ?? updatedOrder.code ?? `#${updatedOrder.id}`}.`,
+        text: `Baik, order ${updatedOrder.order_code ?? updatedOrder.code ?? `#${updatedOrder.id}`} dibuka kembali untuk mencari driver.`,
         order: updatedOrder,
       })
     } catch (error) {
@@ -2717,7 +2717,7 @@ function MessageBubble({
   const side = message.from === 'user' ? 'out' : 'in'
   const total = message.preview?.quote?.total_price ?? message.preview?.quote?.final_price
   const replyText = message.text || (message.imageUrl ? 'Foto' : 'Pesan')
-  const canExtendWait = message.order ? isDriverTimeoutCancelledOrder(message.order) : false
+  const canExtendWait = message.order ? canReopenDriverTimeoutOrder(message.order) : false
 
   return (
     <article className={`message-bubble ${side}`}>
@@ -3703,7 +3703,7 @@ function OrderDetailModal({
           <p><span>Total</span><strong>{formatRupiah(order.total_price ?? order.total)}</strong></p>
         </div>
         <OrderReasonNote order={order} />
-        {isDriverTimeoutCancelledOrder(order) && (
+        {canReopenDriverTimeoutOrder(order) && (
           <TimeoutChoiceActions
             order={order}
             onExtendWait={onExtendWait}
@@ -3743,7 +3743,7 @@ function TimeoutChoiceActions({
   return (
     <div className={block ? 'timeout-choice-actions block' : 'timeout-choice-actions'}>
       <button type="button" className="wait" onClick={() => onExtendWait?.(order)}>
-        Menunggu 10 menit lagi
+        Order kembali
       </button>
       <button type="button" className="cancel" onClick={() => onKeepCancelled?.(order)}>
         Cancel
@@ -3901,7 +3901,7 @@ function HistoryScreen({
                   onSuccess={(message) => store.showToast('success', message)}
                 />
               )}
-              {isDriverTimeoutCancelledOrder(order) && (
+              {canReopenDriverTimeoutOrder(order) && (
                 <TimeoutChoiceActions
                   order={order}
                   onExtendWait={onExtendWait}
@@ -4546,6 +4546,12 @@ function isDriverTimeoutCancelledOrder(order: Order) {
 
   return /driver timeout|batas waktu mencari driver|batas waktu cari driver/i.test(notes)
     || /driver timeout|batas waktu mencari driver|batas waktu cari driver/i.test(reason)
+}
+
+function canReopenDriverTimeoutOrder(order: Order) {
+  if (!isDriverTimeoutCancelledOrder(order)) return false
+
+  return Number(order.pricing_breakdown?.wait_extension?.count ?? 0) < 3
 }
 
 function cancelFeedbackMessage(order: Order) {

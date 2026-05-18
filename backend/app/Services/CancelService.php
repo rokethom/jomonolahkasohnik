@@ -15,6 +15,7 @@ class CancelService
     public function __construct(
         private readonly ChatService $chatService,
         private readonly MessageService $messageService,
+        private readonly NotificationService $notifications,
     ) {
     }
 
@@ -55,7 +56,7 @@ class CancelService
             $this->messageService->send($cancelRequest->conversation, $operator, [
                 'sender_type' => 'bot',
                 'message' => sprintf(
-                    "Permintaan batal order %s diterima.\nAlasan: %s\nCustomer akan diarahkan kembali ke halaman order.",
+                    "Permintaan batal order %s diterima.\nAlasan: %s\nCustomer akan diarahkan kembali ke History Order.",
                     $order->order_code ?? '#'.$order->id,
                     $cancelRequest->reason,
                 ),
@@ -71,6 +72,18 @@ class CancelService
         ])->save();
         $order->driver?->update(['is_available' => true]);
         $this->chatService->closeForOrder($order);
+
+        $this->notifications->sendToUser(
+            $order->user,
+            'Order dibatalkan',
+            sprintf('Permintaan batal order %s diterima. Alasan: %s', $order->order_code ?? '#'.$order->id, $cancelRequest->reason),
+            [
+                'type' => 'order_cancelled',
+                'order_id' => $order->id,
+                'order_code' => $order->order_code,
+                'url' => '/?open=history&order_id='.$order->id.'&notification_type=order_cancelled',
+            ],
+        );
 
         try {
             OrderStatusUpdated::dispatch($order->fresh() ?? $order, $oldStatus, OrderStatus::Cancelled);

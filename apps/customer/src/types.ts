@@ -80,6 +80,11 @@ export type PriceQuote = {
     helper_fee?: number
   }
   stops?: number
+  wait_extension?: {
+    count?: number
+    minutes?: number
+    last_extended_at?: string | null
+  }
 }
 
 export type Order = {

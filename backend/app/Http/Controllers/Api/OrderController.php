@@ -219,7 +219,12 @@ class OrderController extends Controller
 
                 $oldStatus = $lockedOrder->status;
                 $breakdown = $lockedOrder->pricing_breakdown ?? [];
-                $extensions = (int) data_get($breakdown, 'wait_extension.count', 0) + 1;
+                $currentExtensions = (int) data_get($breakdown, 'wait_extension.count', 0);
+                if ($currentExtensions >= 3) {
+                    throw new RuntimeException('Order ini sudah 3x dicari ulang dan tetap belum mendapat driver. Silakan hubungi Operator.');
+                }
+
+                $extensions = $currentExtensions + 1;
                 data_set($breakdown, 'wait_extension.count', $extensions);
                 data_set($breakdown, 'wait_extension.last_extended_at', now()->toIso8601String());
                 data_set($breakdown, 'wait_extension.minutes', 10);
@@ -229,7 +234,7 @@ class OrderController extends Controller
                     'cancelled_at' => null,
                     'expired_at' => now()->addMinutes(10),
                     'pricing_breakdown' => $breakdown,
-                    'notes' => trim(((string) $lockedOrder->notes)."\nCustomer memilih menunggu 10 menit lagi."),
+                    'notes' => trim(((string) $lockedOrder->notes)."\nCustomer memilih order kembali #{$extensions}."),
                 ]);
 
                 $freshOrder = $lockedOrder->fresh(['user', 'driver.user', 'items', 'payments', 'rating', 'adjustments.driver.user', 'crews.driver.user']);
@@ -252,7 +257,7 @@ class OrderController extends Controller
         }
 
         return response()->json([
-            'message' => 'Waktu tunggu driver ditambah 10 menit.',
+            'message' => 'Order kembali dibuka untuk mencari driver.',
             'data' => $order,
         ]);
     }

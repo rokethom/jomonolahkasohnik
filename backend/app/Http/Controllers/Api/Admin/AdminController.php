@@ -296,7 +296,7 @@ class AdminController extends Controller
         }
 
         $isExistingDriver = ($user->role instanceof UserRole ? $user->role : UserRole::tryFrom((string) $user->role)) === UserRole::Driver;
-        if ($isExistingDriver) {
+        if ($isExistingDriver && ! $this->canEditDriverIdentity($actor)) {
             unset($payload['username'], $payload['name'], $payload['password']);
         }
 
@@ -370,6 +370,19 @@ class AdminController extends Controller
             'message' => 'User updated',
             'data' => $this->userPayload($user->fresh('branch', 'area', 'branchScopes', 'driver')),
         ]);
+    }
+
+    private function canEditDriverIdentity(User $actor): bool
+    {
+        $role = $actor->role instanceof UserRole ? $actor->role : UserRole::tryFrom((string) $actor->role);
+
+        return in_array($role, [
+            UserRole::Admin,
+            UserRole::GM,
+            UserRole::Manager,
+            UserRole::HRD,
+            UserRole::SPV,
+        ], true);
     }
 
     public function destroyUser(Request $request, User $user): JsonResponse
@@ -605,7 +618,7 @@ class AdminController extends Controller
                     'last_reposted_at' => now(),
                     'last_reposted_by' => $actor->id,
                     'pricing_breakdown' => $breakdown,
-                    'notes' => trim(((string) $locked->notes)."\nRepost dispatch #{$nextCount} oleh {$actor->name} ({$actorRole}) - menunggu driver 10 menit lagi."),
+                    'notes' => trim(((string) $locked->notes)."\nRepost dispatch #{$nextCount} oleh {$actor->name} ({$actorRole}) - order kembali dibuka."),
                 ])->save();
 
                 $fresh = $locked->fresh(['branch', 'user.branch', 'driver.user.branch', 'operHandleRequests.driver.user', 'crews.driver.user']);
@@ -665,7 +678,7 @@ class AdminController extends Controller
         ]);
 
         return response()->json([
-            'message' => "Order berhasil direpost #{$reposted->dispatch_repost_count}. Timeout baru 10 menit.",
+            'message' => "Order berhasil direpost #{$reposted->dispatch_repost_count}. Order kembali dibuka.",
             'data' => $this->orderPayload($reposted, $actor),
             'notified_driver_count' => $notifiedDriverCount,
         ]);
