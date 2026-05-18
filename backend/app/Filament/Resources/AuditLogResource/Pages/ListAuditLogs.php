@@ -28,7 +28,7 @@ class ListAuditLogs extends ListRecords
 
         return response()->streamDownload(function (): void {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['Waktu', 'Actor', 'Role', 'Action', 'Subject', 'Subject ID', 'Label', 'Metadata'], "\t");
+            fputcsv($handle, ['Waktu', 'Actor', 'Role', 'Action', 'Subject', 'Subject ID', 'Label', 'Ringkasan', 'Metadata'], "\t");
 
             AuditLogResource::scopedQuery()
                 ->limit(5000)
@@ -42,7 +42,8 @@ class ListAuditLogs extends ListRecords
                         class_basename($log->subject_type),
                         $log->subject_id,
                         $log->subject_label,
-                        json_encode($log->metadata ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        AuditLogResource::metadataSummary($log),
+                        AuditLogResource::metadataJson($log),
                     ], "\t");
                 });
 

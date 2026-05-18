@@ -112,11 +112,11 @@ class AuditLogResource extends Resource
                     ->label('Label')
                     ->searchable()
                     ->wrap(),
-                Tables\Columns\TextColumn::make('metadata')
-                    ->label('Metadata')
-                    ->formatStateUsing(fn ($state): string => json_encode($state ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}')
+                Tables\Columns\TextColumn::make('metadata_summary')
+                    ->label('Ringkasan')
+                    ->state(fn (AuditLog $record): string => static::metadataSummary($record))
                     ->limit(90)
-                    ->tooltip(fn (AuditLog $record): string => json_encode($record->metadata ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}')
+                    ->tooltip(fn (AuditLog $record): string => static::metadataJson($record))
                     ->toggleable(),
             ])
             ->filters([
@@ -138,6 +138,42 @@ class AuditLogResource extends Resource
                         ->visible(fn (): bool => static::canDeleteAny()),
                 ]),
             ]);
+    }
+
+    public static function metadataSummary(AuditLog $record): string
+    {
+        $metadata = $record->metadata ?? [];
+
+        if ($record->action === 'assigned_driver_to_order') {
+            $actor = (string) ($metadata['assigned_by_name'] ?? $record->user?->name ?? 'System');
+            $driver = (string) ($metadata['assigned_driver_name'] ?? $metadata['assigned_driver_username'] ?? $metadata['driver_id'] ?? 'driver');
+            $username = (string) ($metadata['assigned_driver_username'] ?? '');
+            $order = (string) ($metadata['order_code'] ?? $record->subject_label ?? ('#'.$record->subject_id));
+            $area = (string) ($metadata['area_name'] ?? $metadata['branch_name'] ?? '');
+            $reason = (string) ($metadata['reason'] ?? '');
+
+            return trim($actor.' menugaskan '.$driver.($username !== '' ? ' (@'.$username.')' : '').' ke '.$order.($area !== '' ? ' - '.$area : '').($reason !== '' ? '. Alasan: '.$reason : ''));
+        }
+
+        if ($record->action === 'broadcast_pending_order_to_drivers') {
+            $actor = (string) ($metadata['broadcast_by_name'] ?? $record->user?->name ?? 'System');
+            $order = (string) ($metadata['order_code'] ?? $record->subject_label ?? ('#'.$record->subject_id));
+            $count = (int) ($metadata['driver_count'] ?? 0);
+            $targets = collect($metadata['driver_targets'] ?? [])
+                ->map(fn ($target): string => is_array($target) ? (string) ($target['name'] ?? $target['username'] ?? $target['driver_id'] ?? '') : '')
+                ->filter()
+                ->take(5)
+                ->implode(', ');
+
+            return trim($actor.' broadcast '.$order.' ke '.$count.' driver'.($targets !== '' ? ': '.$targets.($count > 5 ? ', ...' : '') : ''));
+        }
+
+        return static::metadataJson($record);
+    }
+
+    public static function metadataJson(AuditLog $record): string
+    {
+        return json_encode($record->metadata ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
     }
 
     public static function getPages(): array
