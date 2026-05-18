@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\OrderStatus;
+use App\Models\AiLog;
 use App\Models\AuditLog;
 use App\Models\Driver;
 use App\Models\Order;
@@ -184,15 +185,47 @@ class AiMonitoringService
 
     private function aiLogEvents(): array
     {
+        $databaseEvents = $this->databaseAiLogEvents();
         $path = storage_path('logs/ai.log');
         if (! File::exists($path)) {
-            return [];
+            return $databaseEvents;
         }
 
-        return collect(array_reverse(array_slice(file($path, FILE_IGNORE_NEW_LINES) ?: [], -200)))
+        $fileEvents = collect(array_reverse(array_slice(file($path, FILE_IGNORE_NEW_LINES) ?: [], -200)))
             ->map(fn (string $line): ?array => $this->parseAiLogLine($line))
             ->filter()
             ->values()
+            ->all();
+
+        return collect([...$databaseEvents, ...$fileEvents])
+            ->sortByDesc(fn (array $event): string => (string) ($event['time'] ?? ''))
+            ->values()
+            ->take(250)
+            ->all();
+    }
+
+    private function databaseAiLogEvents(): array
+    {
+        if (! Schema::hasTable('ai_logs')) {
+            return [];
+        }
+
+        return AiLog::query()
+            ->latest()
+            ->limit(200)
+            ->get()
+            ->map(fn (AiLog $log): array => [
+                'time' => $log->created_at?->toDateTimeString(),
+                'level' => $log->status === AiLog::STATUS_FAILED ? 'error' : 'info',
+                'event' => $log->event,
+                'model' => $log->model,
+                'provider' => $log->provider,
+                'source' => $log->source,
+                'status' => $log->status,
+                'response_time_seconds' => $log->duration_ms !== null ? round($log->duration_ms / 1000, 3) : 0,
+                'fallback_count' => 0,
+                'error' => $log->error_message,
+            ])
             ->all();
     }
 

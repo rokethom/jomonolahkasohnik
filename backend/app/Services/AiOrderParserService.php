@@ -38,33 +38,89 @@ class AiOrderParserService
         private readonly SettingService $settings,
         private readonly AiParserRuleService $rules,
         private readonly OrderTextNormalizer $normalizer,
+        private readonly AiLogService $logs,
     )
     {
     }
 
     public function parse(User $user, string $text): ?array
     {
+        $branch = $this->branch($user);
+        $log = $this->logs->start([
+            'source' => 'ai_order_parser',
+            'event' => 'parse_order_text',
+            'queue' => config('queue.default', 'sync'),
+            'user_id' => $user->id,
+            'branch_id' => $branch?->id,
+            'provider' => $this->provider(),
+            'model' => $this->model(),
+            'input_payload' => [
+                'text' => str($text)->limit(1000)->toString(),
+                'normalized_text' => $this->normalizer->normalize($text),
+                'ai_ready' => $this->isReady(),
+            ],
+        ]);
+
         $learned = $this->parseFromLearnedRule($user, $text);
         if ($learned !== null) {
+            $this->logs->success($log, [
+                'parser_mode' => 'ai_parser_db',
+                'parsed' => true,
+                'service_type' => $learned['service_type'] ?? null,
+                'ai_parser_rule_id' => $learned['ai_parser_rule_id'] ?? null,
+            ], 'Order dibaca dari AI Parser CMS/cache.');
+
             return $learned;
         }
 
         if (! $this->isReady()) {
+            $this->logs->success($log, [
+                'parser_mode' => 'not_ready',
+                'parsed' => false,
+                'reason' => 'AI assistant/provider/API key belum aktif. Sistem lanjut ke parser lokal.',
+            ], 'AI parser eksternal belum aktif, fallback lokal dipakai.');
+
             return null;
         }
 
         try {
             $data = $this->request($user, $text);
             if (! is_array($data)) {
+                $this->logs->success($log, [
+                    'parser_mode' => 'provider_empty',
+                    'parsed' => false,
+                    'provider' => $this->provider(),
+                    'model' => $this->model(),
+                ], 'Provider AI tidak mengembalikan data order valid.');
+
                 return null;
             }
 
             $parsed = $this->toParsedOrder($user, $text, $data, 'ai_parser');
             if ($parsed !== null) {
                 $this->rules->remember($text, $data, $this->provider(), (string) ($data['_model_used'] ?? $this->model()));
+                $this->logs->success($log, [
+                    'parser_mode' => 'ai_provider',
+                    'parsed' => true,
+                    'provider' => $this->provider(),
+                    'model' => (string) ($data['_model_used'] ?? $this->model()),
+                    'service_type' => $parsed['service_type'] ?? null,
+                    'remembered_to_parser_cms' => true,
+                ], 'Order berhasil dibaca AI provider dan disimpan ke AI Parser CMS.');
+
+                return $parsed;
             }
 
-            return $parsed;
+            $this->logs->success($log, [
+                'parser_mode' => 'ai_provider_invalid_schema',
+                'parsed' => false,
+                'provider' => $this->provider(),
+                'model' => (string) ($data['_model_used'] ?? $this->model()),
+                'service_type' => $data['service_type'] ?? null,
+                'missing_fields' => $data['missing_fields'] ?? [],
+            ], 'AI provider menjawab, tetapi schema order belum cukup.');
+
+            return null;
         } catch (Throwable $exception) {
             Log::warning('ai_order_parser.failed', [
                 'provider' => $this->provider(),
@@ -73,6 +129,10 @@ class AiOrderParserService
             Log::channel('ai')->warning('ai_order_parser.failed', [
                 'provider' => $this->provider(),
                 'message' => $exception->getMessage(),
+            ]);
+            $this->logs->failed($log, $exception, [
+                'provider' => $this->provider(),
+                'model' => $this->model(),
             ]);
 
             return null;
