@@ -18,6 +18,8 @@ class LivePriceReview extends Model
 
     public const STATUS_CONSUMED = 'consumed';
 
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $fillable = [
         'token',
         'user_id',

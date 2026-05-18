@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import {
   API_BASE,
+  cancelLivePriceReview,
   createOrder,
   fetchBranches,
   fetchHome,
@@ -1090,6 +1091,12 @@ function App() {
             setPendingOrder(null)
             pushMessage({ from: 'bot', text: review.correction_reason || 'Order perlu dicek ulang. Silakan kirim ulang alamat pickup dan tujuan.' })
           }
+
+          if (review.status === 'cancelled') {
+            setActiveLivePriceReviewToken(null)
+            setPendingOrder(null)
+            setOrderSubmitBlocked(false)
+          }
         })
         .catch(() => undefined)
     }, 2500)
@@ -1138,10 +1145,21 @@ function App() {
     pushMessage({ from: 'bot', text: 'Silakan isi ulang detail order dari form layanan.' })
   }
 
-  const cancelPendingOrder = () => {
+  const cancelPendingOrder = async () => {
+    const token = activeLivePriceReviewToken
     setPendingOrder(null)
     setOrderSubmitBlocked(false)
+    setActiveLivePriceReviewToken(null)
     closeManualForms()
+
+    if (token) {
+      try {
+        await cancelLivePriceReview(token)
+      } catch (error) {
+        console.warn('live price review cancel failed', error)
+      }
+    }
+
     pushMessage({ from: 'bot', text: 'Order belum dikirim dan sudah dibatalkan. Ketik menu untuk memilih layanan lagi.' })
   }
 
@@ -1857,7 +1875,7 @@ function ChatOrderScreen({
   submitBlocked: boolean
   submitting: boolean
   onEdit: () => void
-  onCancel: () => void
+  onCancel: () => void | Promise<void>
   onExtendWait: (order: Order) => void
   onKeepCancelled: (order: Order) => void
 }) {
@@ -2419,7 +2437,7 @@ function ChatOrderActions({
   submitBlocked: boolean
   submitting: boolean
   onEdit: () => void
-  onCancel: () => void
+  onCancel: () => void | Promise<void>
 }) {
   const [points, setPoints] = useState<string[]>([])
   const [showSummary, setShowSummary] = useState(preview?.intent === 'order_preview')
@@ -2688,7 +2706,7 @@ function ChatOrderActions({
           <div>
             <button type="button" disabled={submitting || submitBlocked || (isOjekOrder && passengerCount > 2) || (isOjekOrder && passengerCount === 2 && !doubleOrderConfirmed)} onClick={onConfirm}>{submitting ? 'MENGIRIM...' : 'YA KIRIM'}</button>
             <button type="button" onClick={onEdit}>EDIT</button>
-            <button type="button" className="cancel-order-preview" onClick={onCancel}>BATAL</button>
+            <button type="button" className="cancel-order-preview" onClick={() => { void onCancel() }}>BATAL</button>
           </div>
           {qrisPreviewOpen && qrisImageUrl && <ImagePreviewModal imageUrl={qrisImageUrl} onClose={() => setQrisPreviewOpen(false)} downloadLabel="Download QRIS" />}
         </div>

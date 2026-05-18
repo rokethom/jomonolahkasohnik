@@ -161,6 +161,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/pricing/calculate', [PricingController::class, 'calculate'])->middleware('profile.complete');
     Route::post('/jojobot/preview', [JojoBotController::class, 'preview'])->middleware('profile.complete');
     Route::get('/jojobot/live-price-reviews/{token}', [JojoBotController::class, 'livePriceReviewStatus'])->middleware('profile.complete');
+    Route::post('/jojobot/live-price-reviews/{token}/cancel', [JojoBotController::class, 'cancelLivePriceReview'])->middleware('profile.complete');
 
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders/quote', [OrderController::class, 'quote'])->middleware('profile.complete');

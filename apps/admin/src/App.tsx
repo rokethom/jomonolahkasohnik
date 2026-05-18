@@ -272,7 +272,7 @@ type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pi
 type LivePriceReview = {
   id: number
   token: string
-  status: 'pending' | 'approved' | 'rejected' | 'consumed' | string
+  status: 'pending' | 'approved' | 'rejected' | 'consumed' | 'cancelled' | string
   service_type?: string | null
   customer?: string | null
   branch?: string | null
@@ -298,6 +298,9 @@ type LivePriceReview = {
   created_at?: string | null
   updated_at?: string | null
 }
+
+const visibleLivePriceReviewStatuses = new Set(['pending', 'cancelled'])
+const editableLivePriceReviewStatuses = new Set(['pending'])
 type Geofence = { id: number; name: string; branch?: Branch | null; center_latitude: string; center_longitude: string; radius_meters: number; shape_type?: 'circle' | 'polygon' | string; polygon_coordinates?: Array<{ lat: number; lng: number }> | null; is_active: boolean }
 type ZonePricingRule = {
   id: number
@@ -1611,7 +1614,7 @@ function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; 
 }
 
 function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void>; onNavigate: () => void }) {
-  const initialRows = reviews.filter((review) => review.status === 'pending')
+  const initialRows = reviews.filter((review) => visibleLivePriceReviewStatuses.has(review.status))
   const [rows, setRows] = useState<LivePriceReview[]>(initialRows)
   const [selectedId, setSelectedId] = useState<number | null>(initialRows[0]?.id ?? null)
   const [savingId, setSavingId] = useState<number | null>(null)
@@ -1619,7 +1622,7 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
   const syncingRef = useRef(false)
 
   useEffect(() => {
-    const activeRows = reviews.filter((review) => review.status === 'pending')
+    const activeRows = reviews.filter((review) => visibleLivePriceReviewStatuses.has(review.status))
     setRows(activeRows)
     setSelectedId((current) => (current && activeRows.some((review) => review.id === current)) ? current : (activeRows[0]?.id ?? null))
   }, [reviews])
@@ -1629,7 +1632,7 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
     syncingRef.current = true
     try {
       const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-reviews')
-      const activeRows = response.data.filter((review) => review.status === 'pending')
+      const activeRows = response.data.filter((review) => visibleLivePriceReviewStatuses.has(review.status))
       const currentIds = rows.map((review) => `${review.id}:${review.status}`).join('|')
       const nextIds = activeRows.map((review) => `${review.id}:${review.status}`).join('|')
       setRows(activeRows)
@@ -1705,7 +1708,7 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
               <button className={selected?.id === review.id ? 'live-price-queue-item active' : 'live-price-queue-item'} type="button" key={review.id} onClick={() => setSelectedId(review.id)}>
                 <strong>{review.customer ?? 'Customer'}</strong>
                 <span>{serviceDisplayName(review.service_type ?? review.order_payload?.service_type ?? 'Order')} - {review.branch ?? 'Cabang belum terbaca'}</span>
-                <small>Rp {Number(review.system_total_price ?? 0).toLocaleString('id-ID')} - {formatShortDateTime(review.created_at ?? null)}</small>
+                <small>{review.status === 'cancelled' ? (review.correction_reason ?? 'Customer membatalkan order.') : `Rp ${Number(review.system_total_price ?? 0).toLocaleString('id-ID')}`} - {formatShortDateTime(review.created_at ?? null)}</small>
               </button>
             ))}
           </div>
@@ -1717,6 +1720,7 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
           {selected && (
             <div className="live-price-dashboard-preview">
               <strong>{serviceDisplayName(selected.service_type ?? payload?.service_type ?? 'Order')}</strong>
+              {selected.status === 'cancelled' && <div className="notice danger compact">{selected.correction_reason ?? `${selected.customer ?? 'Customer'} telah membatalkan order.`}</div>}
               <p className="preserve-lines">{selected.raw_text || '-'}</p>
               <div className="manual-preview-detail">
                 <div><span>Pickup</span><b>{payload?.pickup_address ?? String(selected.parsed?.pickup_address ?? '-')}</b></div>
@@ -1734,13 +1738,14 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
           {!selected && <EmptyPanel title="Belum ada koreksi" copy="Kolom edit aktif setelah ada order customer masuk." />}
           {selected && (
             <div className="live-price-dashboard-editor">
+              {selected.status === 'cancelled' && <div className="notice danger compact">Order dibatalkan customer. Tidak perlu koreksi harga.</div>}
               <label>Tarif final<input type="number" value={correctedPrice} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ corrected_price: Number(event.target.value) })} /></label>
               <label>Service fee<input type="number" value={correctedFee} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ corrected_service_fee: Number(event.target.value) })} /></label>
               <label>Tambahan/potongan<input type="number" value={correctedExtra} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ corrected_extra_charge: Number(event.target.value) })} /></label>
               <label>Catatan koreksi<textarea value={selected.correction_reason ?? ''} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateSelected({ correction_reason: event.target.value })} /></label>
               <div className="manual-preview-total"><span>Total customer</span><strong>Rp {correctedTotal.toLocaleString('id-ID')}</strong></div>
-              <button className="primary-button compact" type="button" disabled={savingId === selected.id || selected.status !== 'pending'} onClick={() => void approveSelected()}>
-                {savingId === selected.id ? 'Mengirim...' : selected.status === 'pending' ? 'Konfirmasi harga' : 'Sudah diproses'}
+              <button className="primary-button compact" type="button" disabled={savingId === selected.id || !editableLivePriceReviewStatuses.has(selected.status)} onClick={() => void approveSelected()}>
+                {savingId === selected.id ? 'Mengirim...' : selected.status === 'pending' ? 'Konfirmasi harga' : 'Sudah dibatalkan'}
               </button>
             </div>
           )}
@@ -4148,7 +4153,7 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   }, [depositFullscreen])
 
   const depositColumnDefs = useMemo<ColDef<DepositReportRow>[]>(() => [
-    { field: 'driver', headerName: 'Driver', pinned: 'left', minWidth: 180 },
+    { field: 'driver', headerName: 'Driver', pinned: 'left', minWidth: 150 },
     { field: 'area', headerName: 'Area', minWidth: 130 },
     { field: 'orders_count', headerName: 'JML Order Bulan Rekap', editable: true, type: 'numericColumn', width: 135, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
     { field: 'base_service_omset', headerName: 'Omset Jasa Dasar Bulan Rekap', editable: true, type: 'numericColumn', width: 170, valueParser: agNumberParser, valueFormatter: agNumberFormatter, cellClass: 'ag-editable-money' },
@@ -5811,7 +5816,7 @@ function ManualOrderPreviewCard({
 }
 
 function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceReview[]; api: ApiClient; onChanged: () => Promise<void> }) {
-  const initialRows = reviews.filter((review) => review.status === 'pending')
+  const initialRows = reviews.filter((review) => visibleLivePriceReviewStatuses.has(review.status))
   const [rows, setRows] = useState<LivePriceReview[]>(initialRows)
   const [selectedId, setSelectedId] = useState<number | null>(initialRows[0]?.id ?? null)
   const [auditRows, setAuditRows] = useState<LivePriceReview[]>([])
@@ -5822,7 +5827,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
   const syncingRef = useRef(false)
 
   useEffect(() => {
-    const activeRows = reviews.filter((review) => review.status === 'pending')
+    const activeRows = reviews.filter((review) => visibleLivePriceReviewStatuses.has(review.status))
     setRows(activeRows)
     setSelectedId((current) => (current && activeRows.some((review) => review.id === current)) ? current : (activeRows[0]?.id ?? null))
   }, [reviews])
@@ -5849,7 +5854,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
     syncingRef.current = true
     try {
       const response = await api<{ data: LivePriceReview[] }>('/admin/live-price-reviews')
-      const activeRows = response.data.filter((review) => review.status === 'pending')
+      const activeRows = response.data.filter((review) => visibleLivePriceReviewStatuses.has(review.status))
       const currentIds = rows.map((review) => `${review.id}:${review.status}`).join('|')
       const nextIds = activeRows.map((review) => `${review.id}:${review.status}`).join('|')
       setRows(activeRows)
@@ -5946,18 +5951,19 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
               <button className={selected?.id === review.id ? 'live-price-queue-item active' : 'live-price-queue-item'} type="button" key={review.id} onClick={() => setSelectedId(review.id)}>
                 <strong>{review.customer ?? 'Customer'}</strong>
                 <span>{serviceDisplayName(review.service_type ?? review.order_payload?.service_type ?? 'Order')} - {review.branch ?? 'Cabang belum terbaca'}</span>
-                <small>Rp {Number(review.system_total_price ?? 0).toLocaleString('id-ID')} - {formatShortDateTime(review.created_at ?? null)}</small>
+                <small>{review.status === 'cancelled' ? (review.correction_reason ?? 'Customer membatalkan order.') : `Rp ${Number(review.system_total_price ?? 0).toLocaleString('id-ID')}`} - {formatShortDateTime(review.created_at ?? null)}</small>
               </button>
             ))}
           </div>
         </div>
 
         <div className="live-price-dashboard-column preview">
-          <div className="live-price-dashboard-head"><span>Preview order</span><b>{selected ? 'pending' : '-'}</b></div>
+          <div className="live-price-dashboard-head"><span>Preview order</span><b>{selected?.status ?? '-'}</b></div>
           {!selected && <EmptyPanel title="Belum ada preview" copy="Pilih live order untuk melihat detail parsing dan harga sistem." />}
           {selected && (
             <div className="live-price-dashboard-preview">
               <strong>{serviceDisplayName(selected.service_type ?? selectedPayload?.service_type ?? 'Order')}</strong>
+              {selected.status === 'cancelled' && <div className="notice danger compact">{selected.correction_reason ?? `${selected.customer ?? 'Customer'} telah membatalkan order.`}</div>}
               <p className="preserve-lines">{selected.raw_text || '-'}</p>
               <div className="manual-preview-detail">
                 <div><span>Pickup</span><b>{selectedPayload?.pickup_address ?? String(selected.parsed?.pickup_address ?? '-')}</b></div>
@@ -5975,14 +5981,15 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
           {!selected && <EmptyPanel title="Belum ada koreksi" copy="Kolom edit aktif setelah ada order customer masuk." />}
           {selected && (
             <div className="live-price-dashboard-editor">
+              {selected.status === 'cancelled' && <div className="notice danger compact">Order dibatalkan customer. Tidak perlu koreksi harga.</div>}
               <label>Tarif final<input type="number" value={correctedPrice} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(selected.id, { corrected_price: Number(event.target.value) })} /></label>
               <label>Service fee<input type="number" value={correctedFee} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(selected.id, { corrected_service_fee: Number(event.target.value) })} /></label>
               <label>Tambahan/potongan<input type="number" value={correctedExtra} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(selected.id, { corrected_extra_charge: Number(event.target.value) })} /></label>
               <label>Alasan<textarea value={selected.correction_reason ?? ''} onFocus={() => setIsEditing(true)} onBlur={() => setIsEditing(false)} onChange={(event) => updateRow(selected.id, { correction_reason: event.target.value })} /></label>
               <div className="manual-preview-total"><span>Total customer</span><strong>Rp {correctedTotal.toLocaleString('id-ID')}</strong></div>
               <div className="manual-preview-actions">
-                <button className="primary-button compact" type="button" disabled={savingId === selected.id} onClick={() => void approve({ ...selected, corrected_price: correctedPrice, corrected_service_fee: correctedFee, corrected_extra_charge: correctedExtra, corrected_total_price: correctedTotal })}>{savingId === selected.id ? 'Menyimpan...' : 'Konfirmasi harga'}</button>
-                <button className="mini-button reject" type="button" disabled={savingId === selected.id} onClick={() => void reject(selected)}>Tolak</button>
+                <button className="primary-button compact" type="button" disabled={savingId === selected.id || !editableLivePriceReviewStatuses.has(selected.status)} onClick={() => void approve({ ...selected, corrected_price: correctedPrice, corrected_service_fee: correctedFee, corrected_extra_charge: correctedExtra, corrected_total_price: correctedTotal })}>{savingId === selected.id ? 'Menyimpan...' : selected.status === 'pending' ? 'Konfirmasi harga' : 'Sudah dibatalkan'}</button>
+                <button className="mini-button reject" type="button" disabled={savingId === selected.id || !editableLivePriceReviewStatuses.has(selected.status)} onClick={() => void reject(selected)}>Tolak</button>
               </div>
             </div>
           )}

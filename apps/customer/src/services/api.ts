@@ -327,6 +327,13 @@ export async function fetchLivePriceReview(token: string) {
   return data.data
 }
 
+export async function cancelLivePriceReview(token: string, reason?: string) {
+  const { data } = await api.post<{ data: LivePriceReview; message?: string }>(`/jojobot/live-price-reviews/${token}/cancel`, {
+    ...(reason ? { reason } : {}),
+  })
+  return data
+}
+
 export async function findDriver(orderId: number) {
   const { data } = await api.post<{ data: Order; driver?: unknown }>(`/orders/${orderId}/find-driver`)
   return data

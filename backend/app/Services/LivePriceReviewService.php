@@ -191,6 +191,32 @@ class LivePriceReviewService
         return $review->fresh(['customer.branch', 'branch', 'reviewer']);
     }
 
+    public function cancelByCustomer(LivePriceReview $review, User $customer, ?string $reason = null): LivePriceReview
+    {
+        if ((int) $review->user_id !== (int) $customer->id) {
+            abort(404);
+        }
+
+        if (! in_array($review->status, [LivePriceReview::STATUS_PENDING, LivePriceReview::STATUS_APPROVED], true)) {
+            return $review->fresh(['customer.branch', 'branch', 'reviewer']);
+        }
+
+        $customerName = trim((string) ($customer->name ?: $customer->username ?: 'Customer'));
+        $message = trim((string) $reason);
+        if ($message === '') {
+            $message = "{$customerName} telah membatalkan order.";
+        }
+
+        $review->forceFill([
+            'status' => LivePriceReview::STATUS_CANCELLED,
+            'correction_reason' => $message,
+            'reviewed_at' => now(),
+            'confirmation_available_at' => null,
+        ])->save();
+
+        return $review->fresh(['customer.branch', 'branch', 'reviewer']);
+    }
+
     public function approvedReviewForOrder(User $user, array $payload): ?LivePriceReview
     {
         if (! Schema::hasTable('live_price_reviews')) {

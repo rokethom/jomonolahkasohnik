@@ -72,4 +72,24 @@ class JojoBotController extends Controller
             'data' => $liveReviews->payload($review),
         ]);
     }
+
+    public function cancelLivePriceReview(string $token, Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        $payload = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $review = LivePriceReview::query()
+            ->with(['customer.branch', 'branch', 'reviewer'])
+            ->where('token', $token)
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
+        $review = $liveReviews->cancelByCustomer($review, $request->user(), $payload['reason'] ?? null);
+
+        return response()->json([
+            'message' => $review->correction_reason,
+            'data' => $liveReviews->payload($review),
+        ]);
+    }
 }
