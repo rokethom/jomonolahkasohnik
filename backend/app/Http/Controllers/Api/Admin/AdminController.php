@@ -114,12 +114,12 @@ class AdminController extends Controller
             'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],
             'ring_pricing_rules' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)) : [],
             'ring_pricing_suggestions' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)) : [],
-            'live_price_reviews' => $wants(['dashboard', 'live-price-reviews']) ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)) : [],
+            'live_price_reviews' => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)) : [],
             'zone_pricing_rules' => $wants(['zone-pricing', 'zone-pricing-tester']) ? $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)) : [],
             'geofences' => $wants(['geofence', 'zone-pricing', 'zone-pricing-tester']) ? GeofenceArea::query()->with('branch')->latest()->get() : [],
             'location_logs' => $wants(['locations', 'reports']) ? $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)) : [],
             'chats' => $wants(['dashboard', 'chats']) ? $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)) : [],
-            'audit_logs' => $wants(['orders', 'audit-logs']) ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : [],
+            'audit_logs' => $wants(['orders', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : [],
         ]);
     }
 
@@ -1173,6 +1173,10 @@ class AdminController extends Controller
     {
         abort_unless($this->canHandleLivePriceReview($request->user()), 403);
 
+        if (! Schema::hasTable('live_price_reviews')) {
+            return response()->json(['data' => []]);
+        }
+
         return response()->json([
             'data' => $this->livePriceReviewsQuery($request->user())
                 ->limit(100)
@@ -1185,6 +1189,10 @@ class AdminController extends Controller
     {
         abort_unless($this->canViewLivePriceReviewAudit($request->user()), 403);
 
+        if (! Schema::hasTable('live_price_reviews')) {
+            return response()->json(['data' => []]);
+        }
+
         return response()->json([
             'data' => $this->livePriceReviewAuditQuery($request->user())
                 ->limit(500)
@@ -1196,6 +1204,10 @@ class AdminController extends Controller
     public function auditLogs(Request $request): JsonResponse
     {
         abort_unless($this->canViewAuditLogs($request->user()), 403);
+
+        if (! Schema::hasTable('audit_logs')) {
+            return response()->json(['data' => []]);
+        }
 
         $payload = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
@@ -1210,7 +1222,7 @@ class AdminController extends Controller
                 $query->where('action', 'like', "%{$search}%")
                     ->orWhere('subject_type', 'like', "%{$search}%")
                     ->orWhere('subject_label', 'like', "%{$search}%")
-                    ->orWhere('metadata', 'like', "%{$search}%")
+                    ->orWhereRaw('CAST(metadata AS CHAR) like ?', ["%{$search}%"])
                     ->orWhereHas('user', function (Builder $query) use ($search): void {
                         $query->where('name', 'like', "%{$search}%")
                             ->orWhere('username', 'like', "%{$search}%")
@@ -4502,6 +4514,10 @@ class AdminController extends Controller
 
     private function recordAudit(User $actor, string $action, object $subject, array $metadata = []): void
     {
+        if (! Schema::hasTable('audit_logs')) {
+            return;
+        }
+
         AuditLog::query()->create([
             'user_id' => $actor->id,
             'action' => $action,

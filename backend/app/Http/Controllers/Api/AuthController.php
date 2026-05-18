@@ -147,12 +147,12 @@ class AuthController extends Controller
         $user->tokens()->delete();
         $token = $user->createToken($this->tokenName(request()))->plainTextToken;
 
-        return redirect()->away($frontendUrl.'/auth/callback#auth_token='.urlencode($token));
+        return redirect()->away($frontendUrl.'/#auth_token='.urlencode($token));
     }
 
     private function redirectGoogleLoginError(string $frontendUrl, string $message)
     {
-        return redirect()->away($frontendUrl.'/auth/callback#error='.urlencode($message));
+        return redirect()->away($frontendUrl.'/#error='.urlencode($message));
     }
 
     private function frontendCallbackUrl(): string

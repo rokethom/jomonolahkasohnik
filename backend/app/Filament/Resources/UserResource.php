@@ -65,13 +65,17 @@ class UserResource extends Resource
                                             ->required()
                                             ->maxLength(255)
                                             ->unique(ignoreRecord: true)
-                                            ->disabled(fn (?User $record): bool => ($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver)
-                                            ->helperText(fn (?User $record): ?string => (($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver) ? 'Username driver dikunci. Driver login memakai Google.' : null),
+                                            ->disabled(fn (?User $record): bool => self::isDriverRecord($record) && ! self::canEditDriverIdentity())
+                                            ->helperText(fn (?User $record): ?string => self::isDriverRecord($record)
+                                                ? (self::canEditDriverIdentity() ? 'Admin/GM dapat memperbaiki username driver dari backend.' : 'Username driver dikunci. Hanya Admin/GM yang bisa mengubahnya.')
+                                                : null),
                                         Forms\Components\TextInput::make('name')
                                             ->required()
                                             ->maxLength(255)
-                                            ->disabled(fn (?User $record): bool => ($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver)
-                                            ->helperText(fn (?User $record): ?string => (($record?->role instanceof UserRole ? $record->role : UserRole::tryFrom((string) $record?->role)) === UserRole::Driver) ? 'Nama driver dikunci dari form ini.' : null),
+                                            ->disabled(fn (?User $record): bool => self::isDriverRecord($record) && ! self::canEditDriverIdentity())
+                                            ->helperText(fn (?User $record): ?string => self::isDriverRecord($record)
+                                                ? (self::canEditDriverIdentity() ? 'Admin/GM dapat memperbaiki nama driver dari backend.' : 'Nama driver dikunci. Hanya Admin/GM yang bisa mengubahnya.')
+                                                : null),
                                         Forms\Components\TextInput::make('email')
                                             ->email()
                                             ->required()
@@ -391,6 +395,24 @@ class UserResource extends Resource
             'create' => Pages\CreateUser::route('/create'),
             'edit' => Pages\EditUser::route('/{record}/edit'),
         ];
+    }
+
+    private static function isDriverRecord(?User $record): bool
+    {
+        $role = $record?->role instanceof UserRole
+            ? $record->role
+            : UserRole::tryFrom((string) $record?->role);
+
+        return $role === UserRole::Driver;
+    }
+
+    private static function canEditDriverIdentity(): bool
+    {
+        $role = Auth::user()?->role instanceof UserRole
+            ? Auth::user()->role
+            : UserRole::tryFrom((string) Auth::user()?->role);
+
+        return in_array($role, [UserRole::Admin, UserRole::GM], true);
     }
 
     public static function roleOptions(): array

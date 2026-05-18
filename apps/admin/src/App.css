@@ -547,6 +547,16 @@
   color: #cbd5e1;
 }
 
+.admin-shell.dark .driver-filter-bar input {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.62);
+  color: #f8fafc;
+}
+
+.admin-shell.dark .driver-filter-bar input::placeholder {
+  color: #64748b;
+}
+
 .admin-shell.dark .driver-import-guide {
   border-color: rgba(56, 189, 248, 0.24);
   background: rgba(8, 47, 73, 0.45);
@@ -2528,7 +2538,7 @@ svg {
 
 .driver-filter-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, .7fr) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(180px, .75fr) minmax(180px, .75fr) minmax(220px, 1fr) auto;
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -2548,6 +2558,24 @@ svg {
 
 .driver-filter-bar select {
   min-height: 42px;
+}
+
+.driver-filter-bar input {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  padding: 0 13px;
+  background: #fff;
+  color: #121826;
+  font: inherit;
+  font-weight: 800;
+  outline: none;
+}
+
+.driver-filter-bar input:focus {
+  border-color: rgba(14, 165, 233, 0.55);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
 }
 
 .split-grid {

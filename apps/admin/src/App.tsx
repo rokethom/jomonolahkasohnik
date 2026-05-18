@@ -2187,6 +2187,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
   const [configDriver, setConfigDriver] = useState<DriverRow | null>(null)
   const [authDriver, setAuthDriver] = useState<DriverRow | null>(null)
   const [branchFilter, setBranchFilter] = useState('all')
+  const [driverSearch, setDriverSearch] = useState('')
   const [listMode, setListMode] = useState<DriverListMode>(initialListMode)
   const [performancePeriod, setPerformancePeriod] = useState<'today' | 'month' | 'all'>('month')
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null)
@@ -2201,12 +2202,32 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
     setListMode(initialListMode)
   }, [initialListMode])
 
-  const filteredDrivers = useMemo(() => drivers.filter((driver) => {
-    if (branchFilter !== 'all' && driverBranchKey(driver) !== branchFilter) return false
-    if (listMode === 'online') return isOnlineDriverRow(driver)
+  const filteredDrivers = useMemo(() => {
+    const search = driverSearch.trim().toLowerCase()
 
-    return true
-  }), [branchFilter, drivers, listMode])
+    return drivers.filter((driver) => {
+      if (branchFilter !== 'all' && driverBranchKey(driver) !== branchFilter) return false
+      if (listMode === 'online' && !isOnlineDriverRow(driver)) return false
+      if (!search) return true
+
+      const searchable = [
+        driver.name,
+        driver.username,
+        driver.phone,
+        driver.email,
+        driver.google_email,
+        driverBranchLabel(driver),
+        driver.driver_status,
+        driver.deposit_status,
+        driver.vehicle_type,
+        driverVehicleLabel(driver),
+        ...(driver.vehicle_types ?? []),
+        ...(driver.allowed_service_types ?? []),
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      return searchable.includes(search)
+    })
+  }, [branchFilter, driverSearch, drivers, listMode])
   const selectedDriver = useMemo(
     () => filteredDrivers.find((driver) => driver.id === selectedDriverId) ?? filteredDrivers[0] ?? null,
     [filteredDrivers, selectedDriverId],
@@ -2281,6 +2302,15 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
     <section className="panel driver-management-panel">
       <PanelHeader title="Driver Management" action={`${filteredDrivers.length}/${drivers.length} driver`} />
       <div className="driver-filter-bar">
+        <label className="driver-search-field">
+          Cari driver
+          <input
+            type="search"
+            value={driverSearch}
+            placeholder="Nama, username, HP, email, cabang, status..."
+            onChange={(event) => setDriverSearch(event.target.value)}
+          />
+        </label>
         <label>
           Status tampilan
           <select value={listMode} onChange={(event) => setListMode(event.target.value as DriverListMode)}>

@@ -11,6 +11,7 @@ use Filament\Tables;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema;
 
 class AuditLogResource extends Resource
 {
@@ -26,7 +27,8 @@ class AuditLogResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->role instanceof UserRole
+        return Schema::hasTable('audit_logs')
+            && auth()->user()?->role instanceof UserRole
             && ! in_array(auth()->user()?->role, [UserRole::WebAdmin, UserRole::CmsEditor, UserRole::Driver, UserRole::Customer], true);
     }
 

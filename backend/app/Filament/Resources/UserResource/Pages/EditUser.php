@@ -66,11 +66,15 @@ class EditUser extends EditRecord
     {
         if ($this->record->role === UserRole::Driver) {
             $this->record->driver()->firstOrCreate([], [
+                'name' => $this->record->name,
+                'email' => $this->record->email,
                 'is_available' => true,
                 'status' => 'active',
                 'bpjs_jht_enabled' => $this->driverBpjsJhtEnabled ?? true,
                 'bansos_amount' => $this->driverBansosAmount,
             ])->update([
+                'name' => $this->record->name,
+                'email' => $this->record->email,
                 'bpjs_jht_enabled' => $this->driverBpjsJhtEnabled ?? true,
                 'bansos_amount' => $this->driverBansosAmount,
             ]);
