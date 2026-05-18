@@ -51,7 +51,6 @@ class SystemSettingsPage extends Page implements HasForms
             'kimi_current' => $settings->mask($settings->get('kimi_api_key')),
             'blackbox_current' => $settings->mask($settings->get('blackbox_api_key')),
             'openrouter_current' => $settings->mask($settings->get('openrouter_api_key')),
-            'hermes_current' => $settings->mask($settings->get('hermes_api_key')),
             'google_maps_active' => $settings->raw('google_maps_api_key')?->is_active ?? false,
             'mapbox_active' => $settings->raw('mapbox_api_key')?->is_active ?? false,
             'fcm_active' => $settings->raw('fcm_server_key')?->is_active ?? false,
@@ -64,7 +63,6 @@ class SystemSettingsPage extends Page implements HasForms
             'kimi_active' => $settings->raw('kimi_api_key')?->is_active ?? false,
             'blackbox_active' => $settings->raw('blackbox_api_key')?->is_active ?? false,
             'openrouter_active' => $settings->raw('openrouter_api_key')?->is_active ?? false,
-            'hermes_active' => $settings->raw('hermes_api_key')?->is_active ?? false,
             'map_provider' => $settings->get('map_provider', 'osm'),
             'map_active' => $settings->raw('map_provider')?->is_active ?? true,
             'osrm_base_url' => $settings->get('osrm_base_url', 'https://router.project-osrm.org'),
@@ -106,11 +104,6 @@ class SystemSettingsPage extends Page implements HasForms
             'ai_location_learning_openrouter_enabled' => $settings->bool('ai_location_learning_openrouter_enabled', false),
             'ai_base_url' => $settings->get('ai_base_url'),
             'ai_max_tokens' => $settings->int('ai_max_tokens', 700),
-            'hermes_enabled' => $settings->bool('hermes_enabled', false),
-            'hermes_provider' => $settings->get('hermes_provider', 'openai_compatible'),
-            'hermes_model' => $settings->get('hermes_model', 'nousresearch/hermes-3-llama-3.1-405b'),
-            'hermes_base_url' => $settings->get('hermes_base_url'),
-            'hermes_max_tokens' => $settings->int('hermes_max_tokens', 1800),
         ]);
     }
 
@@ -258,54 +251,6 @@ class SystemSettingsPage extends Page implements HasForms
                                     ]),
                                 Forms\Components\View::make('filament.forms.components.ai-parser-flow')
                                     ->columnSpanFull(),
-                                Forms\Components\Section::make('Hermes Engineering Assistant')
-                                    ->description('Hermes adalah Internal AI Engineering Assistant untuk membaca ringkasan source code, logs, route, schema, dan metrik. Jalurnya dipisah dari AI parser order.')
-                                    ->collapsible()
-                                    ->columns(2)
-                                    ->schema([
-                                        Forms\Components\Toggle::make('hermes_enabled')
-                                            ->label('Enable Hermes')
-                                            ->helperText('Jika aktif, menu Hermes Engineering Center bisa menjalankan analisa read-only.'),
-                                        Forms\Components\Select::make('hermes_provider')
-                                            ->label('Provider Hermes')
-                                            ->options([
-                                                'openai_compatible' => 'OpenAI-compatible / self-hosted Hermes',
-                                                'openclaw' => 'OpenClaw Gateway',
-                                                'kimi' => 'Kimi / Konektika gateway',
-                                                'openrouter' => 'OpenRouter',
-                                                'openai' => 'OpenAI-compatible default OpenAI URL',
-                                            ])
-                                            ->native(false)
-                                            ->required(),
-                                        Forms\Components\TextInput::make('hermes_model')
-                                            ->label('AI assistant model ID')
-                                            ->placeholder('kimi-pro')
-                                            ->helperText('Rekomendasi saat ini: provider OpenClaw Gateway dengan model kimi-pro. Model lama Hermes otomatis diarahkan ke kimi-pro saat memakai OpenClaw.')
-                                            ->maxLength(180)
-                                            ->required(),
-                                        Forms\Components\TextInput::make('hermes_max_tokens')
-                                            ->label('Max token report')
-                                            ->numeric()
-                                            ->minValue(600)
-                                            ->maxValue(4000)
-                                            ->default(1800),
-                                        Forms\Components\TextInput::make('hermes_base_url')
-                                            ->label('AI assistant base URL')
-                                            ->placeholder('http://openclaw-gateway:port/v1')
-                                            ->helperText('Untuk OpenClaw isi base URL Gateway yang expose /v1/chat/completions. Kosongkan hanya untuk provider yang punya default URL.')
-                                            ->columnSpanFull(),
-                                        Forms\Components\Placeholder::make('hermes_current')
-                                            ->label('AI assistant key tersimpan')
-                                            ->content(fn (Forms\Get $get): string => $get('hermes_current') ?: 'Belum diisi'),
-                                        Forms\Components\Toggle::make('hermes_active')
-                                            ->label('AI assistant key aktif'),
-                                        Forms\Components\TextInput::make('hermes_api_key')
-                                            ->label('AI assistant API Key baru')
-                                            ->password()
-                                            ->helperText('Kosongkan jika tidak ingin mengganti key. Untuk OpenClaw gunakan Gateway bearer token.')
-                                            ->maxLength(1500)
-                                            ->columnSpanFull(),
-                                    ]),
                                 Forms\Components\Section::make('OpenAI')
                                     ->collapsible()
                                     ->columns(2)
@@ -751,7 +696,6 @@ class SystemSettingsPage extends Page implements HasForms
             $this->saveSecret($settings, 'kimi_api_key', $data['kimi_api_key'] ?? null, (bool) ($data['kimi_active'] ?? false));
             $this->saveSecret($settings, 'blackbox_api_key', $data['blackbox_api_key'] ?? null, (bool) ($data['blackbox_active'] ?? false));
             $this->saveSecret($settings, 'openrouter_api_key', $data['openrouter_api_key'] ?? null, (bool) ($data['openrouter_active'] ?? false));
-            $this->saveSecret($settings, 'hermes_api_key', $data['hermes_api_key'] ?? null, (bool) ($data['hermes_active'] ?? false));
 
             $settings->set('map_provider', $data['map_provider'] ?? 'osm', (bool) ($data['map_active'] ?? true));
             $settings->set('osrm_base_url', $data['osrm_base_url'] ?? 'https://router.project-osrm.org', (bool) ($data['osrm_active'] ?? true));
@@ -774,11 +718,6 @@ class SystemSettingsPage extends Page implements HasForms
             $settings->set('ai_model', $freeAuto ? 'openrouter/free' : (filled($data['ai_model_custom'] ?? null) ? $data['ai_model_custom'] : ($data['ai_model'] ?? null)));
             $settings->set('ai_base_url', $data['ai_base_url'] ?? null);
             $settings->set('ai_max_tokens', max(200, min(1500, (int) ($data['ai_max_tokens'] ?? 700))));
-            $settings->set('hermes_enabled', (bool) ($data['hermes_enabled'] ?? false));
-            $settings->set('hermes_provider', $data['hermes_provider'] ?? 'openai_compatible');
-            $settings->set('hermes_model', $data['hermes_model'] ?? 'nousresearch/hermes-3-llama-3.1-405b');
-            $settings->set('hermes_base_url', $data['hermes_base_url'] ?? null);
-            $settings->set('hermes_max_tokens', max(600, min(4000, (int) ($data['hermes_max_tokens'] ?? 1800))));
         }
         $settings->applyToConfig();
 

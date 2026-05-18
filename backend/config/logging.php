@@ -69,12 +69,6 @@ return [
             'level' => env('AI_LOG_LEVEL', 'info'),
         ],
 
-        'hermes' => [
-            'driver' => 'single',
-            'path' => storage_path('logs/hermes.log'),
-            'level' => env('HERMES_LOG_LEVEL', 'info'),
-        ],
-
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

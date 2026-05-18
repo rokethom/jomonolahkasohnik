@@ -246,10 +246,6 @@
                     <span>Membaca <code>storage/logs/ai.log</code> untuk menampilkan provider, model, success, fallback, failed request, dan model lambat.</span>
                 </div>
                 <div class="doc-step">
-                    <b>Hermes Assistant</b>
-                    <span>Asisten analisa internal untuk error, failed job, dan laporan teknis. Hermes terpisah dari JOJOBOT order parser.</span>
-                </div>
-                <div class="doc-step">
                     <b>Pricing Engine</b>
                     <span>Bukan LLM. Harga dihitung deterministic dari OSRM, Google fallback jika aktif, Master Ring, service fee, dan Pricing Keyword Rules.</span>
                 </div>

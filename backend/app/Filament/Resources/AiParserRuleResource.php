@@ -20,7 +20,7 @@ class AiParserRuleResource extends Resource
 
     protected static ?string $navigationGroup = 'AI';
 
-    protected static ?string $navigationLabel = 'AI Parser Memory';
+    protected static ?string $navigationLabel = 'AI Parser';
 
     protected static ?int $navigationSort = 4;
 
@@ -28,27 +28,44 @@ class AiParserRuleResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Readonly AI Parser Result')
-                    ->description('Data ini disimpan dari hasil AI parser yang valid. Sistem bisa memakai data ini lagi saat API key AI dimatikan untuk input yang sama.')
+                Forms\Components\Section::make('AI Parser CMS')
+                    ->description('Tambah atau koreksi parser memory JOJOBOT. Data ini dibaca sebelum/fallback AI supaya parser tidak hanya bergantung hardcode.')
                     ->columns(2)
                     ->schema([
                         Forms\Components\TextInput::make('service_type')
                             ->label('Service')
-                            ->disabled(),
+                            ->required()
+                            ->maxLength(30)
+                            ->placeholder('ojek, delivery, joker_mobil'),
                         Forms\Components\Toggle::make('is_active')
                             ->label('Active')
-                            ->disabled(),
+                            ->default(true),
                         Forms\Components\TextInput::make('provider')
-                            ->disabled(),
+                            ->default('manual_cms')
+                            ->maxLength(40),
                         Forms\Components\TextInput::make('model')
-                            ->disabled(),
-                        Forms\Components\Textarea::make('example_text')
-                            ->rows(4)
-                            ->disabled()
+                            ->default('cms')
+                            ->maxLength(120),
+                        Forms\Components\Textarea::make('normalized_text')
+                            ->label('Normalized text')
+                            ->rows(3)
+                            ->helperText('Opsional. Kosongkan agar sistem membuat normalisasi otomatis dari contoh input.')
                             ->columnSpanFull(),
-                        Forms\Components\KeyValue::make('ai_data')
-                            ->label('Parser schema')
-                            ->disabled()
+                        Forms\Components\Textarea::make('example_text')
+                            ->label('Contoh input user')
+                            ->required()
+                            ->rows(4)
+                            ->columnSpanFull(),
+                        Forms\Components\Textarea::make('ai_data')
+                            ->label('Parser result')
+                            ->required()
+                            ->rows(10)
+                            ->formatStateUsing(fn (mixed $state): string => is_array($state)
+                                ? (json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}')
+                                : (string) ($state ?: '{}'))
+                            ->dehydrateStateUsing(fn (mixed $state): array => json_decode((string) $state, true) ?: [])
+                            ->rules(['json'])
+                            ->helperText('Isi JSON parser. Contoh: {"service_type":"ojek","pickup_address":"rumah saya","destination_address":"panarukan","customer_name":"Budi","customer_phone":"08xx","notes":"..."}')
                             ->columnSpanFull(),
                     ]),
             ]);
@@ -129,6 +146,7 @@ class AiParserRuleResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->label('Detail'),
+                Tables\Actions\EditAction::make(),
                 Tables\Actions\Action::make('toggleActive')
                     ->label(fn (AiParserRule $record): string => $record->is_active ? 'Disable' : 'Enable')
                     ->icon(fn (AiParserRule $record): string => $record->is_active ? 'heroicon-o-eye-slash' : 'heroicon-o-eye')
@@ -136,24 +154,20 @@ class AiParserRuleResource extends Resource
                     ->requiresConfirmation()
                     ->action(fn (AiParserRule $record): bool => $record->update(['is_active' => ! $record->is_active])),
             ])
-            ->bulkActions([])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ])
             ->defaultSort('updated_at', 'desc');
-    }
-
-    public static function canCreate(): bool
-    {
-        return false;
-    }
-
-    public static function canEdit(mixed $record): bool
-    {
-        return false;
     }
 
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListAiParserRules::route('/'),
+            'create' => Pages\CreateAiParserRule::route('/create'),
+            'edit' => Pages\EditAiParserRule::route('/{record}/edit'),
             'view' => Pages\ViewAiParserRule::route('/{record}'),
         ];
     }

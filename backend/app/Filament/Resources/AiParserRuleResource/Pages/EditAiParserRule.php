@@ -4,17 +4,22 @@ namespace App\Filament\Resources\AiParserRuleResource\Pages;
 
 use App\Filament\Resources\AiParserRuleResource;
 use Filament\Actions;
-use Filament\Resources\Pages\ListRecords;
+use Filament\Resources\Pages\EditRecord;
 
-class ListAiParserRules extends ListRecords
+class EditAiParserRule extends EditRecord
 {
     protected static string $resource = AiParserRuleResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make()
-                ->label('Tambah AI Parser'),
+            Actions\ViewAction::make(),
+            Actions\DeleteAction::make(),
         ];
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
     }
 }

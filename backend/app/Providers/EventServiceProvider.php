@@ -5,14 +5,12 @@ namespace App\Providers;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Login;
-use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use App\Events\DriverAccepted;
 use App\Events\OrderCreated;
 use App\Events\OrderPriceUpdated;
 use App\Events\OrderStatusUpdated;
 use App\Listeners\BroadcastOrderFeedChanged;
-use App\Listeners\ReportFailedJobToHermes;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -28,9 +26,6 @@ class EventServiceProvider extends ServiceProvider
     protected $listen = [
         Registered::class => [
             SendEmailVerificationNotification::class,
-        ],
-        JobFailed::class => [
-            ReportFailedJobToHermes::class,
         ],
         OrderCreated::class => [
             BroadcastOrderFeedChanged::class,
