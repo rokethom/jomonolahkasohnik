@@ -3830,6 +3830,10 @@ class AdminController extends Controller
             return false;
         }
 
+        if ($this->dispatchRepostWindowExpired($order)) {
+            return false;
+        }
+
         $notes = strtolower((string) $order->notes);
         if (str_contains($notes, 'multi-crew timeout')) {
             return false;
@@ -3844,6 +3848,13 @@ class AdminController extends Controller
 
         return in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)
             && ($order->expired_at?->lte(now()) ?? false);
+    }
+
+    private function dispatchRepostWindowExpired(Order $order): bool
+    {
+        $from = $order->cancelled_at ?? $order->expired_at ?? $order->updated_at ?? $order->created_at;
+
+        return $from !== null && $from->lte(now()->subHours(12));
     }
 
     private function driverHasActiveOrder(Driver $driver): bool

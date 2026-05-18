@@ -30,6 +30,7 @@ type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 's
 type DriverListMode = 'all' | 'online'
 const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
 const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
+const dispatchQueueMaxWaitingSeconds = 12 * 60 * 60
 type AdminHistoryState = {
   jojoAdminView?: View
 }
@@ -820,7 +821,7 @@ function App() {
   }, [load, token, view])
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !adminAutoRefreshViews.has(view)) return
 
     const refreshBootstrap = () => {
       if (document.visibilityState === 'visible') void load(true)
@@ -833,7 +834,7 @@ function App() {
       window.removeEventListener('focus', refreshBootstrap)
       document.removeEventListener('visibilitychange', refreshBootstrap)
     }
-  }, [load, token])
+  }, [load, token, view])
 
   useEffect(() => {
     if (!token || !adminBootstrapAutoRefreshViews.has(view)) return
@@ -1479,7 +1480,7 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
           <div className="section-head compact-head">
             <div>
               <h2>Live Order Queue</h2>
-              <p>Order waiting driver, pending dispatch, dan pending order area.</p>
+              <p>Order yang masih menunggu driver, perlu dibuka ulang, atau butuh assign manual.</p>
             </div>
             <span className="status warning">{dispatchOrders.length} queue</span>
           </div>
@@ -1491,17 +1492,18 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
                 <div>
                   <strong>{order.customer || 'Customer'}</strong>
                   <span>
-                    {order.branch_area || order.branch || '-'} - {isDispatchRepostOrder(order) ? 'butuh release/repost' : statusDispatchLabel(order.status)} - waiting {formatWaitingTime(order.waiting_seconds)}
+                    {order.branch_area || order.branch || '-'} - {isDispatchRepostOrder(order) ? 'perlu dibuka ulang' : statusDispatchLabel(order.status)} - menunggu {formatWaitingTime(order.waiting_seconds)}
                     {Number(order.dispatch_repost_count ?? 0) > 0 ? ` - repost ${order.dispatch_repost_count}/4` : ''}
                   </span>
                 </div>
                 <div className="suggested-driver">
-                  <small>Suggested</small>
+                  <small>Rekomendasi driver</small>
                   <b>{order.suggested_drivers?.[0]?.name ?? 'Belum ada idle driver'}</b>
+                  <em>Driver online idle paling cocok dari area order.</em>
                 </div>
                 <div className="dispatch-row-actions">
                   {isDispatchRepostOrder(order) ? (
-                    <button className="primary-button compact" type="button" onClick={() => void repostDispatchOrder(api, order, setDispatchMessage, onChanged)}>Release/Repost</button>
+                    <button className="primary-button compact" type="button" onClick={() => void repostDispatchOrder(api, order, setDispatchMessage, onChanged)}>Buka Ulang</button>
                   ) : (
                     <>
                       <button className="secondary-button compact" type="button" onClick={() => void broadcastOrderToDrivers(api, order, setDispatchMessage)}>Broadcast</button>
@@ -1539,7 +1541,7 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
             return
           }
           void broadcastOrderToDrivers(api, first, setDispatchMessage)
-        }}><Icon name="shield" />{isDispatchRepostOrder(dispatchOrders[0]) ? 'Release' : 'Broadcast Driver'}</button>
+        }}><Icon name="shield" />{isDispatchRepostOrder(dispatchOrders[0]) ? 'Buka Ulang' : 'Broadcast Driver'}</button>
         <button type="button" onClick={() => onNavigate('chats')}><Icon name="chat" />Chat Customer</button>
       </div>
       {dispatchMessage && <div className="dispatch-toast">{dispatchMessage}</div>}
@@ -1891,6 +1893,10 @@ function isWaitingDriverStatus(status: string) {
 }
 
 function isDispatchPendingOrder(order: Order) {
+  if (Number(order.waiting_seconds ?? 0) >= dispatchQueueMaxWaitingSeconds && isDispatchRepostOrder(order)) {
+    return false
+  }
+
   return ((isWaitingDriverStatus(order.status) && !order.driver) || isDispatchRepostOrder(order))
 }
 
