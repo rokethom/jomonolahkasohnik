@@ -96,6 +96,7 @@ class SystemSettingsPage extends Page implements HasForms
             'payment_bank_accounts' => $this->transferAccounts($settings),
             'qris_image' => $this->normalizeUploadState($settings->get('payment_qris_image')),
             'complaint_whatsapp_number' => $settings->get('complaint_whatsapp_number', '6281299232918'),
+            'bot_display_name' => $settings->botDisplayName(),
             'ai_assistant_enabled' => $settings->bool('ai_assistant_enabled', false),
             'ai_provider' => $settings->get('ai_provider', 'openrouter'),
             'ai_model' => $settings->get('ai_model'),
@@ -553,6 +554,16 @@ class SystemSettingsPage extends Page implements HasForms
                         Tabs\Tab::make('Payment & Support')
                             ->icon('heroicon-o-banknotes')
                             ->schema([
+                                Forms\Components\Section::make('Branding Chat')
+                                    ->description('Nama asisten bot yang tampil di chat customer dan balasan otomatis.')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('bot_display_name')
+                                            ->label('Nama bot')
+                                            ->placeholder('Joana')
+                                            ->maxLength(50)
+                                            ->required()
+                                            ->helperText('Semua teks JOJOBOT di balasan otomatis akan ditampilkan memakai nama ini.'),
+                                    ]),
                                 Forms\Components\Section::make('Metode Pembayaran Customer')
                                     ->description('Pilihan ini dikirim ke aplikasi customer saat membuat order.')
                                     ->columns(2)
@@ -665,6 +676,7 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('payment_transfer_account', json_encode($this->normalizeTransferAccounts($data['payment_bank_accounts'] ?? [])));
         $settings->set('payment_qris_image', $this->normalizeUploadState($data['qris_image'] ?? null));
         $settings->set('complaint_whatsapp_number', $this->normalizeWhatsappNumber((string) ($data['complaint_whatsapp_number'] ?? '6281299232918')));
+        $settings->set('bot_display_name', trim((string) ($data['bot_display_name'] ?? 'Joana')) ?: 'Joana');
 
         if (auth()->user()?->role === UserRole::Admin) {
             if (filled($data['fcm_service_account_json'] ?? null) && ! $this->isValidServiceAccountJson((string) $data['fcm_service_account_json'])) {

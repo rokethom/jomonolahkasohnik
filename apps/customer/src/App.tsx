@@ -105,6 +105,7 @@ type ReplyTarget = {
 }
 
 const initialBotText = 'Silahkan kirim pesan secara manual atau gunakan layanan manual. Informasi lebih lanjut hubungi CS.'
+const DEFAULT_BOT_DISPLAY_NAME = 'Joana'
 
 function screenPath(screen: Screen) {
   return screen === 'profile-setup' ? '/profile/setup' : '/'
@@ -575,6 +576,7 @@ function App() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [homeData, setHomeData] = useState<HomeData | null>(null)
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
+  const botName = botDisplayName(publicSettings)
   const [messages, setMessages] = useState<LocalMessage[]>([
     { id: crypto.randomUUID(), from: 'bot', text: initialBotText, time: nowTime(), csLink: true },
   ])
@@ -1477,6 +1479,7 @@ function App() {
           pendingOrder={pendingOrder}
           onPendingOrderChange={setPendingOrder}
           publicSettings={publicSettings}
+          botName={botName}
           submitBlocked={orderSubmitBlocked}
           submitting={orderSubmitting}
           onEdit={editPendingOrder}
@@ -1485,8 +1488,9 @@ function App() {
           onKeepCancelled={keepTimeoutOrderCancelled}
         />
       )}
-      {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} />}
+      {screen === 'driver-chat' && <DriverChatScreen order={acceptedOrder} botName={botName} />}
       {screen === 'cs-chat' && <CsChatScreen
+        botName={botName}
         initialConversationId={csConversationFromNotification}
         initialOrderId={csInitialOrderId}
         onCancelApproved={() => window.setTimeout(() => setScreen('history'), 4000)}
@@ -1844,6 +1848,7 @@ function ChatOrderScreen({
   pendingOrder,
   onPendingOrderChange,
   publicSettings,
+  botName,
   submitBlocked,
   submitting,
   onEdit,
@@ -1872,6 +1877,7 @@ function ChatOrderScreen({
   pendingOrder: OrderPayload | null
   onPendingOrderChange: (payload: OrderPayload | null) => void
   publicSettings: PublicSettings | null
+  botName: string
   submitBlocked: boolean
   submitting: boolean
   onEdit: () => void
@@ -1897,6 +1903,7 @@ function ChatOrderScreen({
             {shouldShowChatMessage(message) && (
               <MessageBubble
                 message={message}
+                botName={botName}
                 onCs={onCs}
                 onOrderDetail={setDetailOrder}
                 onExtendWait={onExtendWait}
@@ -1908,6 +1915,7 @@ function ChatOrderScreen({
                 schema={message.preview.form_schema}
                 serviceType={message.preview.selected_service ?? message.preview.service_type ?? ''}
                 user={user}
+                botName={botName}
                 onSubmitOrder={onDynamicFormOrder}
               />
             )}
@@ -2291,11 +2299,13 @@ function DynamicFormInline({
   schema,
   serviceType,
   user,
+  botName,
   onSubmitOrder,
 }: {
   schema: DynamicFormSchema
   serviceType: string
   user: ReturnType<typeof useCustomerStore.getState>['user']
+  botName: string
   onSubmitOrder: (text: string) => Promise<JojoBotPreview | null>
 }) {
   const normalizedSchema = useMemo(() => normalizeDynamicFormSchema(schema), [schema])
@@ -2323,7 +2333,7 @@ function DynamicFormInline({
     return (
       <div className="dynamic-form-inline">
         <strong>Preview order ditampilkan</strong>
-        <p>Cek harga dari JOJOBOT, lalu konfirmasi jika pesanan sudah benar.</p>
+            <p>Cek harga dari {botName}, lalu konfirmasi jika pesanan sudah benar.</p>
       </div>
     )
   }
@@ -2717,6 +2727,7 @@ function ChatOrderActions({
 
 function MessageBubble({
   message,
+  botName = DEFAULT_BOT_DISPLAY_NAME,
   onCs,
   onOrderDetail,
   onImageClick,
@@ -2725,6 +2736,7 @@ function MessageBubble({
   onKeepCancelled,
 }: {
   message: LocalMessage
+  botName?: string
   onCs?: () => void
   onOrderDetail?: (order: Order) => void
   onImageClick?: (imageUrl: string) => void
@@ -2734,14 +2746,16 @@ function MessageBubble({
 }) {
   const side = message.from === 'user' ? 'out' : 'in'
   const total = message.preview?.quote?.total_price ?? message.preview?.quote?.final_price
-  const replyText = message.text || (message.imageUrl ? 'Foto' : 'Pesan')
+  const displayText = replaceBotBrand(message.text, botName)
+  const senderLabel = replaceBotBrand(message.senderLabel, botName)
+  const replyText = displayText || (message.imageUrl ? 'Foto' : 'Pesan')
   const canExtendWait = message.order ? canReopenDriverTimeoutOrder(message.order) : false
 
   return (
     <article className={`message-bubble ${side}`}>
-      {message.senderLabel && side === 'in' && <strong className="message-sender-label">{message.senderLabel}</strong>}
+      {senderLabel && side === 'in' && <strong className="message-sender-label">{senderLabel}</strong>}
       {message.imageUrl && <button className="chat-image-button" type="button" onClick={() => onImageClick?.(message.imageUrl!)}><img src={message.imageUrl} alt="Lampiran customer" /></button>}
-      {message.text && <p>{redactMapText(message.text)}</p>}
+      {displayText && <p>{redactMapText(displayText)}</p>}
       {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi Operator</button>}
       {message.order && <button className="bubble-link order-detail-link" onClick={() => onOrderDetail?.(message.order!)}>Detail {message.order.order_code ?? `#${message.order.id}`}</button>}
       {message.order && canExtendWait && (
@@ -3269,7 +3283,7 @@ function FallbackForm({ onSend }: { onSend: (text: string) => void }) {
   )
 }
 
-function DriverChatScreen({ order }: { order: Order | null }) {
+function DriverChatScreen({ order, botName }: { order: Order | null; botName: string }) {
   const store = useCustomerStore()
   const driverName = driverNameFromOrder(order)
   const driverPhone = driverPhoneFromOrder(order)
@@ -3349,11 +3363,12 @@ function DriverChatScreen({ order }: { order: Order | null }) {
         </button>
       )}
       <div className="message-list" ref={listRef}>
-        {!order && <MessageBubble message={{ id: 'no-order', from: 'system', text: 'Belum ada order yang diterima driver.', time: nowTime() }} />}
+        {!order && <MessageBubble botName={botName} message={{ id: 'no-order', from: 'system', text: 'Belum ada order yang diterima driver.', time: nowTime() }} />}
         {loading && <TypingIndicator />}
-        {error && <MessageBubble message={{ id: 'driver-chat-error', from: 'system', text: error, time: nowTime() }} />}
+        {error && <MessageBubble botName={botName} message={{ id: 'driver-chat-error', from: 'system', text: error, time: nowTime() }} />}
         {!loading && !error && order && messages.length === 0 && (
           <MessageBubble
+            botName={botName}
             message={{
               id: 'driver-welcome',
               from: 'driver',
@@ -3368,10 +3383,11 @@ function DriverChatScreen({ order }: { order: Order | null }) {
           return (
             <MessageBubble
               key={message.id}
+              botName={botName}
               message={{
                 id: String(message.id),
                 from,
-                senderLabel: from === 'user' ? undefined : chatParticipantLabel(message, driverName),
+                senderLabel: from === 'user' ? undefined : chatParticipantLabel(message, driverName, botName),
                 text: message.message ?? message.text,
                 imageUrl: message.image_url ? assetUrl(message.image_url) : undefined,
                 time: formatMessageTime(message.created_at),
@@ -3432,7 +3448,7 @@ function DriverNameTagModal({ name, phone, photoUrl, onClose }: { name: string; 
   )
 }
 
-function CsChatScreen({ initialConversationId, initialOrderId, onCancelApproved }: { initialConversationId?: number | null; initialOrderId?: number | null; onCancelApproved?: () => void }) {
+function CsChatScreen({ initialConversationId, initialOrderId, botName, onCancelApproved }: { initialConversationId?: number | null; initialOrderId?: number | null; botName: string; onCancelApproved?: () => void }) {
   const store = useCustomerStore()
   const [conversationId, setConversationId] = useState<number | null>(initialConversationId ?? null)
   const [conversation, setConversation] = useState<ChatConversation | null>(null)
@@ -3592,7 +3608,7 @@ function CsChatScreen({ initialConversationId, initialOrderId, onCancelApproved 
           </div>
         )}
         {loading && <TypingIndicator />}
-        {error && <MessageBubble message={{ id: 'cs-error', from: 'system', text: error, time: nowTime() }} />}
+        {error && <MessageBubble botName={botName} message={{ id: 'cs-error', from: 'system', text: error, time: nowTime() }} />}
         {!loading && !error && messages.length === 0 && (
           <div className="cs-topic-grid">
             {['Order berjalan', 'Pembayaran', 'Promo', 'Komplain driver'].map((topic) => (
@@ -3605,10 +3621,11 @@ function CsChatScreen({ initialConversationId, initialOrderId, onCancelApproved 
           return (
             <MessageBubble
               key={message.id}
+              botName={botName}
               message={{
                 id: String(message.id),
                 from,
-                senderLabel: from === 'user' ? undefined : chatParticipantLabel(message),
+                senderLabel: from === 'user' ? undefined : chatParticipantLabel(message, '', botName),
                 text: message.message ?? message.text,
                 imageUrl: message.image_url ? assetUrl(message.image_url) : undefined,
                 time: formatMessageTime(message.created_at),
@@ -4700,16 +4717,28 @@ function cmsAssetUrl(path: string) {
   return normalizeRemoteAsset(path)
 }
 
-function chatParticipantLabel(message: ChatMessage, fallbackDriverName = '') {
-  const senderName = message.sender?.name ?? message.sender_name
-  const role = String(message.sender_type ?? '').toLowerCase()
-  if (senderName) return `${senderName} (${chatRoleLabel(role)})`
-  if (role === 'driver' && fallbackDriverName && fallbackDriverName !== '-') return `${fallbackDriverName} (Driver)`
+function botDisplayName(settings?: PublicSettings | null) {
+  const configured = settings?.branding?.bot_display_name?.trim()
 
-  return chatRoleLabel(role)
+  return configured || DEFAULT_BOT_DISPLAY_NAME
 }
 
-function chatRoleLabel(role?: string | null) {
+function replaceBotBrand(value: string | undefined | null, botName = DEFAULT_BOT_DISPLAY_NAME) {
+  if (!value) return value ?? ''
+
+  return value.replace(/\bJOJOBOT\b/gi, botName)
+}
+
+function chatParticipantLabel(message: ChatMessage, fallbackDriverName = '', botName = DEFAULT_BOT_DISPLAY_NAME) {
+  const senderName = message.sender?.name ?? message.sender_name
+  const role = String(message.sender_type ?? '').toLowerCase()
+  if (senderName) return `${senderName} (${chatRoleLabel(role, botName)})`
+  if (role === 'driver' && fallbackDriverName && fallbackDriverName !== '-') return `${fallbackDriverName} (Driver)`
+
+  return chatRoleLabel(role, botName)
+}
+
+function chatRoleLabel(role?: string | null, botName = DEFAULT_BOT_DISPLAY_NAME) {
   const key = String(role ?? '').toLowerCase()
   if (key === 'driver') return 'Driver'
   if (key === 'customer') return 'Customer'
@@ -4718,7 +4747,7 @@ function chatRoleLabel(role?: string | null) {
   if (key === 'manager') return 'Manager'
   if (key === 'spv') return 'SPV'
   if (key === 'admin') return 'Admin'
-  if (key === 'bot') return 'JOJOBOT'
+  if (key === 'bot') return botName
 
   return 'JOJO'
 }

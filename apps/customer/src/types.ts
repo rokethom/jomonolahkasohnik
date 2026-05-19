@@ -276,6 +276,9 @@ export type DynamicService = {
 }
 
 export type PublicSettings = {
+  branding?: {
+    bot_display_name?: string | null
+  }
   map: {
     provider: 'google' | 'mapbox' | 'osm'
     api_key: string | null

@@ -1027,7 +1027,7 @@ class AdminController extends Controller
         return response()->json(['message' => 'Driver config updated']);
     }
 
-    public function previewManualOrder(Request $request, JojoBotService $jojoBot): JsonResponse
+    public function previewManualOrder(Request $request, JojoBotService $jojoBot, SettingService $settings): JsonResponse
     {
         abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
 
@@ -1052,17 +1052,21 @@ class AdminController extends Controller
                 'message' => $exception->getMessage(),
             ]);
 
+            $message = $settings->replaceBotName('JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.');
+
             return response()->json([
-                'message' => 'JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.',
+                'message' => $message,
                 'data' => [
                     'intent' => 'pricing_unavailable',
-                    'reply' => 'JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.',
+                    'reply' => $message,
                 ],
             ]);
         }
 
+        $preview = $settings->replaceBotName($preview);
+
         return response()->json([
-            'message' => $preview['message'] ?? $preview['reply'] ?? null,
+            'message' => $settings->replaceBotName($preview['message'] ?? $preview['reply'] ?? null),
             'data' => $preview,
         ]);
     }
@@ -2474,6 +2478,7 @@ class AdminController extends Controller
             'assign_driver_allowed_roles.*' => ['string', Rule::in(['manager', 'spv', 'operator', 'eksekutor'])],
             'edit_tarif_allowed_roles' => ['sometimes', 'array'],
             'edit_tarif_allowed_roles.*' => ['string', Rule::in(RolePermissionSettingService::CONFIGURABLE_EDIT_TARIF_ROLES)],
+            'bot_display_name' => ['sometimes', 'string', 'max:50'],
         ]);
 
         $settings->set('multi_order_enabled', $payload['multi_order_enabled']);
@@ -2509,6 +2514,9 @@ class AdminController extends Controller
                 true,
                 ['type' => 'json'],
             );
+        }
+        if (array_key_exists('bot_display_name', $payload)) {
+            $settings->set('bot_display_name', trim((string) $payload['bot_display_name']) ?: 'Joana');
         }
 
         return response()->json([
@@ -4153,6 +4161,7 @@ class AdminController extends Controller
             'zone_pricing_enabled' => $settings->bool('zone_pricing_enabled', true),
             'live_price_review_enabled' => $settings->bool('live_price_review_enabled', false),
             'live_price_review_delay_seconds' => max(5, min(10, $settings->int('live_price_review_delay_seconds', 5))),
+            'bot_display_name' => $settings->botDisplayName(),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'edit_tarif_allowed_roles' => app(RolePermissionSettingService::class)->editTarifAllowedRoles(),
         ];

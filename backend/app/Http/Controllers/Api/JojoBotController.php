@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\LivePriceReview;
 use App\Services\JojoBotService;
 use App\Services\LivePriceReviewService;
+use App\Services\SettingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class JojoBotController extends Controller
 {
-    public function preview(Request $request, JojoBotService $jojoBot, LivePriceReviewService $liveReviews): JsonResponse
+    public function preview(Request $request, JojoBotService $jojoBot, LivePriceReviewService $liveReviews, SettingService $settings): JsonResponse
     {
         $data = $request->validate([
             'raw_text' => ['required', 'string', 'max:4000'],
@@ -41,19 +42,23 @@ class JojoBotController extends Controller
                 'message' => $exception->getMessage(),
             ]);
 
+            $message = $settings->replaceBotName('JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.');
+
             return response()->json([
-                'message' => 'JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.',
+                'message' => $message,
                 'form_schema' => null,
                 'service_type' => null,
                 'data' => [
                     'intent' => 'pricing_unavailable',
-                    'reply' => 'JOJOBOT belum berhasil menghitung pesanan. Coba ulangi sebentar lagi atau cek alamat pickup dan tujuan.',
+                    'reply' => $message,
                 ],
             ]);
         }
 
+        $preview = $settings->replaceBotName($preview);
+
         return response()->json([
-            'message' => $preview['message'] ?? $preview['reply'] ?? null,
+            'message' => $settings->replaceBotName($preview['message'] ?? $preview['reply'] ?? null),
             'form_schema' => $preview['form_schema'] ?? null,
             'service_type' => $preview['service_type'] ?? $preview['selected_service'] ?? null,
             'data' => $preview,

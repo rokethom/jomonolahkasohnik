@@ -151,6 +151,9 @@ class SettingService
     public function publicSettings(): array
     {
         return [
+            'branding' => [
+                'bot_display_name' => $this->botDisplayName(),
+            ],
             'map' => $this->getMapProvider(),
             'oauth' => [
                 'google_enabled' => $this->bool('google_oauth_enabled')
@@ -174,6 +177,30 @@ class SettingService
                 'complaint_whatsapp_url' => 'https://wa.me/'.$this->normalizeWhatsappNumber((string) $this->get('complaint_whatsapp_number', '6281299232918')),
             ],
         ];
+    }
+
+    public function botDisplayName(): string
+    {
+        $name = trim((string) $this->get('bot_display_name', 'Joana'));
+
+        return $name !== '' ? $name : 'Joana';
+    }
+
+    public function replaceBotName(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            return preg_replace('/\bJOJOBOT\b/i', $this->botDisplayName(), $value) ?? $value;
+        }
+
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->replaceBotName($item);
+        }
+
+        return $value;
     }
 
     private function paymentMethods(): array

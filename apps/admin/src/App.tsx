@@ -377,6 +377,7 @@ type Stats = { total_users: number; total_drivers: number; active_orders: number
 type SystemSettings = {
   multi_order_enabled: boolean
   max_multi_order: number
+  bot_display_name?: string
   order_close_enabled?: boolean
   order_close_start?: string
   order_close_end?: string
@@ -2730,6 +2731,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
 function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settings: SystemSettings; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [multiOrderEnabled, setMultiOrderEnabled] = useState(settings.multi_order_enabled)
   const [maxMultiOrder, setMaxMultiOrder] = useState(settings.max_multi_order)
+  const [botDisplayName, setBotDisplayName] = useState(settings.bot_display_name ?? 'Joana')
   const [orderCloseEnabled, setOrderCloseEnabled] = useState(settings.order_close_enabled ?? true)
   const [orderCloseStart, setOrderCloseStart] = useState(settings.order_close_start ?? '01:00')
   const [orderCloseEnd, setOrderCloseEnd] = useState(settings.order_close_end ?? '05:00')
@@ -2757,6 +2759,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   useEffect(() => {
     setMultiOrderEnabled(settings.multi_order_enabled)
     setMaxMultiOrder(settings.max_multi_order)
+    setBotDisplayName(settings.bot_display_name ?? 'Joana')
     setOrderCloseEnabled(settings.order_close_enabled ?? true)
     setOrderCloseStart(settings.order_close_start ?? '01:00')
     setOrderCloseEnd(settings.order_close_end ?? '05:00')
@@ -2790,6 +2793,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
         body: JSON.stringify({
           multi_order_enabled: multiOrderEnabled,
           max_multi_order: maxMultiOrder,
+          bot_display_name: botDisplayName,
           order_close_enabled: orderCloseEnabled,
           order_close_start: orderCloseStart,
           order_close_end: orderCloseEnd,
@@ -2822,6 +2826,26 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
       <div className={settings.multi_order_enabled ? 'settings-status active' : 'settings-status'}>
         <strong>{settings.multi_order_enabled ? 'Aktif' : 'Nonaktif'}</strong>
         <span>Driver {settings.multi_order_enabled ? `bisa menerima hingga ${settings.max_multi_order} order searah.` : 'hanya bisa menerima satu order aktif.'}</span>
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
+            <h2>Branding Chat</h2>
+            <p>Nama asisten bot yang tampil di chat customer dan balasan otomatis.</p>
+          </div>
+          <span className="status info">{botDisplayName || 'Joana'}</span>
+        </div>
+        <label>
+          Nama bot
+          <input
+            value={botDisplayName}
+            maxLength={50}
+            disabled={!permissions.can_manage_system_settings}
+            onChange={(event) => setBotDisplayName(event.target.value)}
+            placeholder="Joana"
+          />
+        </label>
+        <div className="notice">Semua teks JOJOBOT di customer akan ditampilkan memakai nama ini.</div>
       </div>
       <div className="settings-grid">
         <label className="admin-toggle-row">
