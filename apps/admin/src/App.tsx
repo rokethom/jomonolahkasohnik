@@ -5760,8 +5760,12 @@ function EmptyPanel({ title, copy }: { title: string; copy: string }) {
 }
 
 function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches: Branch[]; api: ApiClient; onChanged: () => Promise<void> }) {
-  const canPickAnyBranch = ['admin', 'gm'].includes(me.role)
-  const branchOptions = useMemo(() => visibleBranchesForUser(branches, me, canPickAnyBranch).filter(isOperationalBranch), [branches, canPickAnyBranch, me])
+  const canPickAnyBranch = ['admin', 'gm', 'operator'].includes(me.role)
+  const branchOptions = useMemo(() => {
+    const scoped = visibleBranchesForUser(branches, me, canPickAnyBranch).filter(isOperationalBranch)
+
+    return scoped.length > 0 ? scoped : branches.filter(isOperationalBranch)
+  }, [branches, canPickAnyBranch, me])
   const ownBranch = branchOptions.find((branch) => branch.id === me.branch_id) ?? branchOptions.find((branch) => branch.parent_branch_id === me.branch_id) ?? null
   const [branchId, setBranchId] = useState(() => String(ownBranch?.id ?? branchOptions[0]?.id ?? ''))
   const [branchTouched, setBranchTouched] = useState(false)
