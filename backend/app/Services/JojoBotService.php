@@ -304,8 +304,9 @@ class JojoBotService
     {
         $rows = Service::query()
             ->where('is_active', true)
-            ->orderBy('id')
-            ->get(['id', 'code', 'name', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template']);
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'sort_order', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template']);
 
         if ($rows->isEmpty()) {
             $rows = collect([

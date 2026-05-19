@@ -38,6 +38,12 @@ class ServiceResource extends Resource
                         ->dehydrateStateUsing(fn (?string $state): ?string => $state ? strtoupper($state) : null),
                     Forms\Components\Toggle::make('is_active')
                         ->default(true),
+                    Forms\Components\TextInput::make('sort_order')
+                        ->label('Urutan tampilan')
+                        ->helperText('Bisa diatur cepat dengan drag & drop di halaman list.')
+                        ->numeric()
+                        ->default(0)
+                        ->required(),
                     Forms\Components\Textarea::make('template_text')
                         ->label('Paste Template')
                         ->placeholder("Nama:\nHP:\nAlamat:\nBelikan:")
@@ -103,7 +109,12 @@ class ServiceResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->reorderable('sort_order')
+            ->defaultSort('sort_order')
             ->columns([
+                Tables\Columns\TextColumn::make('sort_order')
+                    ->label('Urutan')
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('code')->badge()->searchable()->sortable(),
                 Tables\Columns\IconColumn::make('is_active')->boolean()->sortable(),

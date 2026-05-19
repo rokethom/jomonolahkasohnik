@@ -108,7 +108,7 @@ class AdminController extends Controller
                 ->orderBy('parent_branch_id')
                 ->orderBy('area')
                 ->get(),
-            'services' => Service::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
+            'services' => Service::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'code', 'sort_order', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
             'price_settings' => $wants(['master-pricing', 'pricing', 'price-settings']) ? PriceSetting::query()->with('branch')->latest()->get() : [],
             'keyword_parsers' => $wants(['keyword-parsers']) ? $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)) : [],
             'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],

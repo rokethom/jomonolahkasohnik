@@ -14,6 +14,7 @@ class Service extends Model
         'name',
         'code',
         'is_active',
+        'sort_order',
         'form_schema',
         'whatsapp_redirect_enabled',
         'outside_area_only',
@@ -23,6 +24,7 @@ class Service extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'sort_order' => 'integer',
         'form_schema' => 'array',
         'whatsapp_redirect_enabled' => 'boolean',
         'outside_area_only' => 'boolean',

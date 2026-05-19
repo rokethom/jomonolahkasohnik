@@ -1925,7 +1925,7 @@ function ChatOrderScreen({
             compact={hasManualFormOpen}
           />
         )}
-        {messages.at(-1)?.preview?.intent === 'fallback_form' && <FallbackForm onSend={onSend} />}
+        {messages.at(-1)?.preview?.intent === 'fallback_form' && !isPendingLivePriceReview(messages.at(-1)?.preview) && <FallbackForm onSend={onSend} />}
         {messages.at(-1)?.preview?.intent === 'order_preview' && !hasManualFormOpen && (
           <ChatOrderActions
             preview={messages.at(-1)?.preview}
@@ -4658,6 +4658,10 @@ function autoFillValue(name: string, label: string, user: ReturnType<typeof useC
   if (/\b(alamat|address|jemput|tujuan|antar|destination|pickup)\b/.test(key)) return ''
 
   return ''
+}
+
+function isPendingLivePriceReview(preview?: JojoBotPreview | null) {
+  return preview?.live_price_review?.status === 'pending'
 }
 
 function dynamicFormText(fields: DynamicFormSchema['fields'] = [], values: Record<string, string>, serviceType: string) {

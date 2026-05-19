@@ -12,8 +12,9 @@ class ServiceController extends Controller
         return response()->json([
             'data' => Service::query()
                 ->where('is_active', true)
+                ->orderBy('sort_order')
                 ->orderBy('name')
-                ->get(['id', 'name', 'code', 'form_schema', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template']),
+                ->get(['id', 'name', 'code', 'sort_order', 'form_schema', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template']),
         ]);
     }
 }
