@@ -100,7 +100,7 @@ class InternalChatController extends Controller
         $this->authorizeRoom($actor, $room);
 
         $payload = $request->validate([
-            'message' => ['nullable', 'required_without:attachment', 'string', 'max:4000'],
+            'message' => ['nullable', 'required_without_all:attachment,chat_sticker_id', 'string', 'max:4000'],
             'metadata' => ['nullable', 'array'],
             'metadata_json' => ['nullable', 'string', 'max:8000'],
             'attachment' => ['nullable', 'file', 'max:10240', 'mimes:jpg,jpeg,png,webp,pdf,doc,docx,xls,xlsx,txt'],

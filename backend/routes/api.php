@@ -151,6 +151,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/internal-notes/{internalNote}', [InternalNoteController::class, 'destroy'])->middleware('permission:internal_chat');
         Route::post('/oper-handles/{operHandle}/approve', [OperHandleApprovalController::class, 'approve']);
         Route::get('/reports', [AdminController::class, 'reports'])->middleware('permission:view_report');
+        Route::get('/reports/monthly-orders', [AdminController::class, 'monthlyOrderReport'])->middleware('permission:view_report');
+        Route::get('/reports/monthly-orders/export', [AdminController::class, 'exportMonthlyOrderReport'])->middleware('permission:export_report');
         Route::get('/reports/driver-deposits', [AdminController::class, 'driverDepositReport'])->middleware('permission:view_report');
         Route::patch('/reports/driver-deposits/{driver}', [AdminController::class, 'updateDriverDepositReportRow'])->middleware('permission:view_report');
         Route::get('/reports/driver-deposits/export', [AdminController::class, 'exportDriverDepositReport'])->middleware('permission:export_report');

@@ -4995,6 +4995,65 @@ td {
   -webkit-overflow-scrolling: touch;
 }
 
+.monthly-order-report-wrap {
+  width: 100%;
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 14px;
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-shell.dark .monthly-order-report-wrap {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.monthly-order-report-wrap .data-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+}
+
+.monthly-order-report-wrap .data-table th,
+.monthly-order-report-wrap .data-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.monthly-order-report-wrap .data-table td span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-shell.dark .monthly-order-report-wrap .data-table td span {
+  color: #9fb1c7;
+}
+
+.monthly-order-report-wrap .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.admin-shell.dark .monthly-order-report-wrap .data-table th {
+  background: #0b1221;
+  color: #cbd5e1;
+}
+
 .admin-report-fullscreen-open {
   overflow: hidden;
 }

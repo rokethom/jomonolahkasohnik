@@ -427,6 +427,22 @@ type DepositReportRow = {
   manual_override?: boolean
   next_cashback: number
 }
+type MonthlyOrderReportRow = {
+  id: number
+  code: string
+  created_at?: string | null
+  customer: string
+  driver_username: string
+  service: string
+  branch: string
+  pickup_address: string
+  destination_address: string
+  status: string
+  price: number
+  service_charge: number
+  extra_charge: number
+  total: number
+}
 type Permissions = {
   backend_access: boolean
   names: string[]
@@ -4211,9 +4227,21 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   const [year, setYear] = useState(now.getFullYear())
   const [depositVehicleType, setDepositVehicleType] = useState<'motor' | 'mobil'>('motor')
   const [depositRows, setDepositRows] = useState<DepositReportRow[]>([])
+  const [monthlyOrderRows, setMonthlyOrderRows] = useState<MonthlyOrderReportRow[]>([])
   const [loadingDeposits, setLoadingDeposits] = useState(false)
+  const [loadingMonthlyOrders, setLoadingMonthlyOrders] = useState(false)
   const [depositFullscreen, setDepositFullscreen] = useState(false)
   const completed = data.orders.filter((order) => /completed|done/i.test(order.status)).length
+
+  const loadMonthlyOrders = useCallback(async () => {
+    setLoadingMonthlyOrders(true)
+    try {
+      const payload = await api<{ data: { rows: MonthlyOrderReportRow[] } }>(`/admin/reports/monthly-orders?month=${month}&year=${year}`)
+      setMonthlyOrderRows(payload.data.rows)
+    } finally {
+      setLoadingMonthlyOrders(false)
+    }
+  }, [api, month, year])
 
   const loadDeposits = useCallback(async () => {
     setLoadingDeposits(true)
@@ -4228,6 +4256,10 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
   useEffect(() => {
     void loadDeposits()
   }, [loadDeposits])
+
+  useEffect(() => {
+    void loadMonthlyOrders()
+  }, [loadMonthlyOrders])
 
   useEffect(() => {
     if (!depositFullscreen) return
@@ -4300,11 +4332,80 @@ function ReportsPanel({ data, api, token }: { data: Bootstrap; api: ApiClient; t
     URL.revokeObjectURL(url)
   }
 
+  const exportMonthlyOrders = async () => {
+    const response = await fetch(`${API_BASE}/admin/reports/monthly-orders/export?month=${month}&year=${year}`, {
+      headers: {
+        Accept: 'application/vnd.ms-excel',
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    if (!response.ok) throw new Error('Export order masuk bulanan gagal')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `report-order-masuk-${year}-${String(month).padStart(2, '0')}.xls`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="reports-stack">
       <section className="panel reports-panel">
         <div className="section-head"><div><h2>Reports</h2><p>Ringkasan operasional berdasarkan data yang bisa diakses role kamu.</p></div></div>
         <div className="report-grid"><ReportCard title="Orders" value={String(data.orders.length)} meta={`${completed} selesai`} tone="order" /><ReportCard title="Drivers" value={String(data.stats.total_drivers)} meta="visible drivers" tone="driver" /><ReportCard title="Suspicious GPS" value={String(data.location_logs.filter((log) => log.is_suspicious).length)} meta="needs review" tone="risk" /></div>
+      </section>
+
+      <section className="panel monthly-order-report-panel">
+        <div className="section-head">
+          <div>
+            <h2>Report Order Masuk Bulanan</h2>
+            <p>Daftar order masuk pada periode {monthName(month)} {year}, mengikuti scope cabang/area role yang sedang login.</p>
+          </div>
+          <div className="deposit-report-actions">
+            <select value={month} onChange={(event) => setMonth(Number(event.target.value))}>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((item) => <option key={item} value={item}>{monthName(item)}</option>)}
+            </select>
+            <input type="number" value={year} min={2020} max={2100} onChange={(event) => setYear(Number(event.target.value))} />
+            {data.permissions.can_export_report && <button className="secondary-button compact" type="button" onClick={() => void exportMonthlyOrders()}>Export Order XLS</button>}
+          </div>
+        </div>
+        <div className="monthly-order-report-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Kode</th>
+                <th>Tanggal</th>
+                <th>Customer</th>
+                <th>Driver</th>
+                <th>Layanan</th>
+                <th>Branch/Area</th>
+                <th>Pickup</th>
+                <th>Tujuan/Pembelian</th>
+                <th>Status</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyOrderRows.map((order) => (
+                <tr key={order.id}>
+                  <td><strong>{order.code}</strong></td>
+                  <td>{formatShortDateTime(order.created_at ?? null)}</td>
+                  <td>{order.customer}</td>
+                  <td>{order.driver_username}</td>
+                  <td>{serviceDisplayName(order.service)}</td>
+                  <td>{order.branch}</td>
+                  <td>{order.pickup_address}</td>
+                  <td>{order.destination_address}</td>
+                  <td><span className="status">{order.status}</span></td>
+                  <td><strong>Rp {Number(order.total ?? 0).toLocaleString('id-ID')}</strong><span>Tarif Rp {Number(order.price ?? 0).toLocaleString('id-ID')} · Fee Rp {Number(order.service_charge ?? 0).toLocaleString('id-ID')}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {loadingMonthlyOrders && <EmptyPanel title="Memuat order bulanan" copy="Data order sedang diambil dari backend." />}
+          {!loadingMonthlyOrders && monthlyOrderRows.length === 0 && <EmptyPanel title="Belum ada order masuk" copy="Order pada bulan ini belum ditemukan untuk scope role kamu." />}
+        </div>
       </section>
 
       <section className={`panel deposit-report-panel${depositFullscreen ? ' is-fullscreen' : ''}`}>

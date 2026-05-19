@@ -2225,6 +2225,27 @@ class AdminController extends Controller
         ]);
     }
 
+    public function monthlyOrderReport(Request $request): JsonResponse
+    {
+        [$month, $year] = $this->reportPeriod($request);
+        $period = now()->setDate($year, $month, 1)->startOfMonth();
+
+        $rows = $this->monthlyOrderReportQuery($request->user(), $period)
+            ->limit(2000)
+            ->get()
+            ->map(fn (Order $order): array => $this->monthlyOrderReportRow($order))
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'month' => $month,
+                'year' => $year,
+                'total' => $rows->count(),
+                'rows' => $rows,
+            ],
+        ]);
+    }
+
     public function updateDriverDepositReportRow(Request $request, Driver $driver, DriverReportService $reports): JsonResponse
     {
         [$month, $year] = $this->reportPeriod($request);
@@ -2414,6 +2435,57 @@ class AdminController extends Controller
                 foreach ($cells as $index => $cell) {
                     $class = is_numeric($cell) ? 'right' : '';
                     $class .= in_array($index, [11, 13], true) ? ' yellow' : '';
+                    echo '<td class="'.$class.'">'.e(is_numeric($cell) ? number_format((int) $cell, 0, '.', ',') : (string) $cell).'</td>';
+                }
+                echo '</tr>';
+            }
+            echo '</tbody></table></body></html>';
+        }, $filename, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+        ]);
+    }
+
+    public function exportMonthlyOrderReport(Request $request): StreamedResponse
+    {
+        [$month, $year] = $this->reportPeriod($request);
+        $period = now()->setDate($year, $month, 1)->startOfMonth();
+        $rows = $this->monthlyOrderReportQuery($request->user(), $period)
+            ->limit(5000)
+            ->get()
+            ->map(fn (Order $order): array => $this->monthlyOrderReportRow($order));
+        $filename = 'report-order-masuk-'.$period->format('Y-m').'.xls';
+        $headers = ['Kode Order', 'Tanggal', 'Customer', 'Driver Username', 'Layanan', 'Branch/Area', 'Pickup', 'Tujuan/Pembelian', 'Status', 'Tarif', 'Service Fee', 'Tambahan', 'Total'];
+
+        return response()->streamDownload(function () use ($rows, $headers): void {
+            echo '<html><head><meta charset="UTF-8"><style>';
+            echo 'table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px}';
+            echo 'th,td{border:1px solid #000;padding:6px 8px;white-space:nowrap;vertical-align:top}';
+            echo 'th{background:#c6d9f1;font-weight:700;text-align:center}.right{text-align:right}';
+            echo '</style></head><body><table><thead><tr>';
+            foreach ($headers as $header) {
+                echo '<th>'.e($header).'</th>';
+            }
+            echo '</tr></thead><tbody>';
+            foreach ($rows as $row) {
+                $cells = [
+                    $row['code'],
+                    $row['created_at'],
+                    $row['customer'],
+                    $row['driver_username'],
+                    $row['service'],
+                    $row['branch'],
+                    $row['pickup_address'],
+                    $row['destination_address'],
+                    $row['status'],
+                    $row['price'],
+                    $row['service_charge'],
+                    $row['extra_charge'],
+                    $row['total'],
+                ];
+
+                echo '<tr>';
+                foreach ($cells as $cell) {
+                    $class = is_numeric($cell) ? 'right' : '';
                     echo '<td class="'.$class.'">'.e(is_numeric($cell) ? number_format((int) $cell, 0, '.', ',') : (string) $cell).'</td>';
                 }
                 echo '</tr>';
@@ -3067,6 +3139,40 @@ class AdminController extends Controller
         $year = max(2020, min(2100, $request->integer('year', now()->year)));
 
         return [$month, $year];
+    }
+
+    private function monthlyOrderReportQuery(User $actor, \Illuminate\Support\Carbon $period): Builder
+    {
+        return $this->ordersQuery($actor)
+            ->with(['branch', 'area', 'user', 'driver.user'])
+            ->whereBetween('created_at', [$period->copy()->startOfMonth(), $period->copy()->endOfMonth()])
+            ->oldest('created_at');
+    }
+
+    private function monthlyOrderReportRow(Order $order): array
+    {
+        $branch = $order->branch ?? $order->user?->branch ?? $order->driver?->user?->branch;
+        $destination = $order->destination_address;
+        if ($destination === null || trim((string) $destination) === '') {
+            $destination = data_get($order->pricing_breakdown, 'purchase_address') ?: data_get($order->pricing_breakdown, 'alamat_pembelian');
+        }
+
+        return [
+            'id' => $order->id,
+            'code' => $order->order_code,
+            'created_at' => $order->created_at?->format('Y-m-d H:i:s'),
+            'customer' => $order->user?->name ?? '-',
+            'driver_username' => $order->driver?->user?->username ?: ($order->driver?->user?->name ?? '-'),
+            'service' => $order->service_type,
+            'branch' => $branch?->display_name ?? '-',
+            'pickup_address' => $order->pickup_address ?: '-',
+            'destination_address' => $destination ?: '-',
+            'status' => $order->status?->value ?? (string) $order->status,
+            'price' => (int) $order->price,
+            'service_charge' => (int) $order->service_charge,
+            'extra_charge' => (int) $order->extra_charge,
+            'total' => (int) $order->total_price,
+        ];
     }
 
     private function depositVehicleType(Request $request): string
