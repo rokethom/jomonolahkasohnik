@@ -16,7 +16,7 @@ class PricingLogicReference extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-calculator';
 
-    protected static ?string $navigationGroup = 'Pricing';
+    protected static ?string $navigationGroup = 'Pricing Management';
 
     protected static ?string $navigationLabel = 'Pricing Logic Reference';
 

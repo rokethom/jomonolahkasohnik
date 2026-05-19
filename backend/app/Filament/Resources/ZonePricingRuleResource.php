@@ -24,7 +24,7 @@ class ZonePricingRuleResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-map-pin';
 
-    protected static ?string $navigationGroup = 'Pricing';
+    protected static ?string $navigationGroup = 'Pricing Management';
 
     protected static ?string $navigationLabel = 'Zone Pricing';
 

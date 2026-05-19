@@ -19,7 +19,7 @@ class PriceSettingResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
-    protected static ?string $navigationGroup = 'Pricing';
+    protected static ?string $navigationGroup = 'Pricing Management';
 
     protected static ?string $navigationLabel = 'Distance Price Settings';
 

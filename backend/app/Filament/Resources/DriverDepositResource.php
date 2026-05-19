@@ -23,7 +23,7 @@ class DriverDepositResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
-    protected static ?string $navigationGroup = 'Driver';
+    protected static ?string $navigationGroup = 'Reports';
 
     protected static ?string $navigationLabel = 'Setoran Driver';
 

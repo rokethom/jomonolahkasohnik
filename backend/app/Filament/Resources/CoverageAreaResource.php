@@ -18,7 +18,7 @@ class CoverageAreaResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-squares-2x2';
 
-    protected static ?string $navigationGroup = 'Master Data GeoJSON';
+    protected static ?string $navigationGroup = 'Location';
 
     protected static ?string $navigationLabel = 'Area Layanan';
 

@@ -13,7 +13,7 @@ class RatingResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-star';
 
-    protected static ?string $navigationGroup = 'Analytics';
+    protected static ?string $navigationGroup = 'Dokumentasi';
 
     public static function table(Table $table): Table
     {

@@ -23,7 +23,7 @@ class GeojsonRegionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-map';
 
-    protected static ?string $navigationGroup = 'Master Data GeoJSON';
+    protected static ?string $navigationGroup = 'Location';
 
     protected static ?string $navigationLabel = 'GeoJSON Regions';
 

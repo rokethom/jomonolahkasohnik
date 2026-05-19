@@ -14,7 +14,7 @@ class OperHandleRequestResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-path-rounded-square';
 
-    protected static ?string $navigationGroup = 'Driver';
+    protected static ?string $navigationGroup = 'Reports';
 
     protected static ?string $navigationLabel = 'Oper Handle';
 
