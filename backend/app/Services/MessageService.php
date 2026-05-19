@@ -31,6 +31,8 @@ class MessageService
             'file_name' => $payload['file_name'] ?? ($payload['file'] ?? null)?->getClientOriginalName(),
             'file_mime' => $payload['file_mime'] ?? ($payload['file'] ?? null)?->getClientMimeType(),
             'file_size' => $payload['file_size'] ?? ($payload['file'] ?? null)?->getSize(),
+            'chat_sticker_id' => $payload['chat_sticker_id'] ?? null,
+            'message_type' => $payload['message_type'] ?? (($payload['chat_sticker_id'] ?? null) ? 'sticker' : 'text'),
         ]);
 
         $role = $sender->role->value ?? $sender->role;
@@ -72,7 +74,7 @@ class MessageService
             );
         }
 
-        return $message->load('sender');
+        return $message->load(['sender', 'sticker']);
     }
 
     public function markRead(ChatConversation $conversation, User $reader): int

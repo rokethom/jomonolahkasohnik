@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\ChatSticker;
 use App\Models\InternalChatMessage;
 use App\Models\InternalChatRoom;
 use App\Models\User;
@@ -104,6 +105,7 @@ class InternalChatController extends Controller
             'metadata_json' => ['nullable', 'string', 'max:8000'],
             'attachment' => ['nullable', 'file', 'max:10240', 'mimes:jpg,jpeg,png,webp,pdf,doc,docx,xls,xlsx,txt'],
             'attachment_source' => ['nullable', 'string', 'in:gallery,camera,document'],
+            'chat_sticker_id' => ['nullable', 'exists:chat_stickers,id'],
         ]);
 
         $metadata = $payload['metadata'] ?? [];
@@ -127,6 +129,18 @@ class InternalChatController extends Controller
             ];
         }
 
+        $stickerId = isset($payload['chat_sticker_id']) ? (int) $payload['chat_sticker_id'] : null;
+        if ($stickerId) {
+            $sticker = ChatSticker::query()->whereKey($stickerId)->where('is_active', true)->firstOrFail();
+            $metadata['sticker'] = [
+                'id' => $sticker->id,
+                'name' => $sticker->name,
+                'category' => $sticker->category,
+                'image_url' => $sticker->image_url,
+            ];
+            $metadata['message_type'] = 'sticker';
+        }
+
         $message = DB::transaction(function () use ($room, $actor, $payload, $metadata): InternalChatMessage {
             if (! $room->participants()->whereKey($actor->id)->exists()) {
                 $room->participants()->syncWithoutDetaching([$actor->id => ['last_read_at' => now()]]);
@@ -134,7 +148,7 @@ class InternalChatController extends Controller
 
             $message = $room->messages()->create([
                 'sender_id' => $actor->id,
-                'message' => trim($payload['message'] ?? '') ?: 'Mengirim lampiran',
+                'message' => trim($payload['message'] ?? '') ?: (isset($metadata['sticker']) ? 'Mengirim sticker' : 'Mengirim lampiran'),
                 'metadata' => $metadata ?: null,
             ]);
 

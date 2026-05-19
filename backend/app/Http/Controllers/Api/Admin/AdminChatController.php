@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CancelRequest;
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
+use App\Models\ChatSticker;
 use App\Models\User;
 use App\Services\CancelService;
 use App\Services\ChatService;
@@ -40,7 +41,7 @@ class AdminChatController extends Controller
             'data' => [
                 'chat' => $this->payload($conversation->load(['customer', 'driver', 'operator', 'order', 'latestMessage']), $request->user()),
                 'messages' => $conversation->messages()
-                    ->with('sender')
+                    ->with(['sender', 'sticker'])
                     ->oldest()
                     ->get()
                     ->map(fn (ChatMessage $message): array => $this->messagePayload($message)),
@@ -76,6 +77,7 @@ class AdminChatController extends Controller
             'audio_duration' => ['nullable', 'integer', 'min:1'],
             'transcription' => ['nullable', 'string'],
             'file' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,txt'],
+            'chat_sticker_id' => ['nullable', 'exists:chat_stickers,id'],
         ]);
 
         $conversation = ChatConversation::query()->findOrFail($payload['chat_id']);
@@ -103,14 +105,20 @@ class AdminChatController extends Controller
 
         $transcription = trim((string) ($payload['transcription'] ?? ''));
         $messageText = trim((string) ($payload['message'] ?? ''));
+        $stickerId = isset($payload['chat_sticker_id']) ? (int) $payload['chat_sticker_id'] : null;
+        if ($stickerId) {
+            abort_unless(ChatSticker::query()->whereKey($stickerId)->where('is_active', true)->exists(), 422, 'Sticker tidak aktif.');
+        }
 
         $message = $messageService->send($conversation, $request->user(), [
             ...$payload,
-            'message' => trim($messageText.($transcription !== '' ? "\n\nTranskripsi: ".$transcription : '')),
+            'message' => trim($messageText.($transcription !== '' ? "\n\nTranskripsi: ".$transcription : '')) ?: ($stickerId ? 'Mengirim sticker' : ''),
             'sender_type' => $request->user()->role->value,
             'file_name' => $request->file('file')?->getClientOriginalName(),
             'file_mime' => $request->file('file')?->getClientMimeType(),
             'file_size' => $request->file('file')?->getSize(),
+            'chat_sticker_id' => $stickerId,
+            'message_type' => $stickerId ? 'sticker' : 'text',
         ]);
 
         return response()->json(['data' => $this->messagePayload($message)], 201);
@@ -248,6 +256,13 @@ class AdminChatController extends Controller
             'file_name' => $message->file_name,
             'file_mime' => $message->file_mime,
             'file_size' => $message->file_size,
+            'message_type' => $message->message_type,
+            'sticker' => $message->sticker ? [
+                'id' => $message->sticker->id,
+                'name' => $message->sticker->name,
+                'category' => $message->sticker->category,
+                'image_url' => $message->sticker->image_url,
+            ] : null,
             'is_read' => $message->is_read,
             'created_at' => $message->created_at?->toISOString(),
         ];

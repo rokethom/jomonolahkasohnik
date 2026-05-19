@@ -17,7 +17,7 @@ class MessageSent implements ShouldBroadcastNow
 
     public function __construct(public ChatMessage $message)
     {
-        $this->message->loadMissing('conversation', 'sender');
+        $this->message->loadMissing('conversation', 'sender', 'sticker');
     }
 
     public function broadcastOn(): array
@@ -60,6 +60,13 @@ class MessageSent implements ShouldBroadcastNow
                 'file_name' => $this->message->file_name,
                 'file_mime' => $this->message->file_mime,
                 'file_size' => $this->message->file_size,
+                'message_type' => $this->message->message_type,
+                'sticker' => $this->message->sticker ? [
+                    'id' => $this->message->sticker->id,
+                    'name' => $this->message->sticker->name,
+                    'category' => $this->message->sticker->category,
+                    'image_url' => $this->message->sticker->image_url,
+                ] : null,
                 'is_read' => $this->message->is_read,
                 'created_at' => $this->message->created_at?->toISOString(),
             ],

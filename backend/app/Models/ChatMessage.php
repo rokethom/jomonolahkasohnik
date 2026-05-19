@@ -22,6 +22,8 @@ class ChatMessage extends Model
         'file_name',
         'file_mime',
         'file_size',
+        'chat_sticker_id',
+        'message_type',
         'is_read',
         'read_at',
     ];
@@ -39,5 +41,10 @@ class ChatMessage extends Model
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    public function sticker(): BelongsTo
+    {
+        return $this->belongsTo(ChatSticker::class, 'chat_sticker_id');
     }
 }

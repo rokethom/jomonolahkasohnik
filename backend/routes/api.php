@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\Admin\AdminChatController;
+use App\Http\Controllers\Api\Admin\ChatStickerController;
 use App\Http\Controllers\Api\Admin\InternalChatController;
 use App\Http\Controllers\Api\Admin\InternalNoteController;
 use App\Http\Controllers\Api\Admin\OperHandleApprovalController;
@@ -131,6 +132,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/geofences', [AdminController::class, 'geofences']);
         Route::get('/location-logs', [AdminController::class, 'locationLogs'])->middleware('permission:view_report');
         Route::get('/chats', [AdminController::class, 'chats'])->middleware('permission:monitor_live_chat');
+        Route::get('/chat-stickers', [ChatStickerController::class, 'index'])->middleware('permission:internal_chat');
         Route::get('/chat/{conversation}', [AdminChatController::class, 'show'])->middleware('permission:monitor_live_chat');
         Route::post('/chat/drivers/{driverUser}', [AdminChatController::class, 'startDriver'])->middleware('permission:monitor_live_chat');
         Route::post('/send-message', [AdminChatController::class, 'sendMessage'])->middleware('permission:monitor_live_chat');

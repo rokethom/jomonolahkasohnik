@@ -338,11 +338,12 @@ type ZonePricingPoint = {
 }
 type LocationLog = { id: number; user: string | null; branch: string | null; latitude: number; longitude: number; accuracy?: number | null; provider?: string | null; is_mock_location?: boolean; is_valid: boolean; is_suspicious: boolean; reason: string | null; maps_url?: string | null; created_at: string | null }
 type Chat = { id: number; order_id?: number | null; order_code: string | null; type?: string; customer: string | null; driver: string | null; operator: string | null; branch?: string | null; status: string; sla_status?: string | null; latest_message?: string | null; last_message?: string | null; unread_count?: number; last_customer_message_at?: string | null; first_operator_response_at?: string | null; rating_requested_at?: string | null; closed_at?: string | null; updated_at: string | null }
-type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; file_url?: string | null; file_name?: string | null; file_mime?: string | null; file_size?: number | null; created_at?: string | null }
+type ChatSticker = { id: number; name: string; category: string; image_url: string }
+type AdminChatMessage = { id: number; chat_id: number; sender_id: number | null; sender_type: string; sender_name?: string | null; message: string; image_url?: string | null; audio_url?: string | null; audio_duration?: number | null; file_url?: string | null; file_name?: string | null; file_mime?: string | null; file_size?: number | null; message_type?: string | null; sticker?: ChatSticker | null; created_at?: string | null }
 type ChatDetail = { chat: Chat; messages: AdminChatMessage[]; cancel_request?: { id: number; status: string; reason: string; image_url?: string | null } | null }
 type InternalChatRoom = { id: number; name: string; type: 'global' | 'branch' | 'private' | string; branch_id?: number | null; branch?: string | null; branch_area?: string | null; participants_count?: number; participants?: Array<{ id: number; name: string; role: Role | string }>; last_message?: string | null; last_sender?: string | null; unread_count?: number; updated_at?: string | null }
 type InternalChatAttachment = { source?: string | null; name?: string | null; mime?: string | null; size?: number | null; url?: string | null; path?: string | null }
-type InternalChatMetadata = { attachment?: InternalChatAttachment | null; mentioned_user_ids?: number[]; order_ids?: number[]; order_codes?: string[] }
+type InternalChatMetadata = { attachment?: InternalChatAttachment | null; sticker?: ChatSticker | null; message_type?: string | null; mentioned_user_ids?: number[]; order_ids?: number[]; order_codes?: string[] }
 type InternalChatMessage = { id: number; room_id: number; sender_id: number | null; sender_name: string; sender_role?: Role | string | null; message: string; metadata?: InternalChatMetadata | null; created_at?: string | null }
 type InternalChatDetail = { room: InternalChatRoom; messages: InternalChatMessage[] }
 type InternalNoteStatus = 'open' | 'in_progress' | 'done' | 'archived'
@@ -4477,6 +4478,8 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
   const [chatQuery, setChatQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'waiting' | 'active' | 'closed'>('all')
   const [attachmentOpen, setAttachmentOpen] = useState(false)
+  const [stickerOpen, setStickerOpen] = useState(false)
+  const [stickers, setStickers] = useState<ChatSticker[]>([])
   const [attachmentFile, setAttachmentFile] = useState<{ file: File; source: 'gallery' | 'camera' | 'document' } | null>(null)
   const [isSending, setSending] = useState(false)
   const [chatError, setChatError] = useState('')
@@ -4497,6 +4500,17 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
     const haystack = `${chat.customer ?? ''} ${chat.driver ?? ''} ${chat.operator ?? ''} ${chat.order_code ?? ''} ${chat.last_message ?? chat.latest_message ?? ''}`.toLowerCase()
     return haystack.includes(chatQuery.toLowerCase()) && (statusFilter === 'all' || chat.status === statusFilter)
   }).sort((first, second) => chatSortScore(first, waitingQueue) - chatSortScore(second, waitingQueue))
+
+  useEffect(() => {
+    let active = true
+    api<{ data: ChatSticker[] }>('/admin/chat-stickers')
+      .then((payload) => { if (active) setStickers(payload.data) })
+      .catch(() => { if (active) setStickers([]) })
+
+    return () => {
+      active = false
+    }
+  }, [api])
 
   const loadChats = useCallback(async (notify = true) => {
     if (Date.now() < rateLimitUntilRef.current) return
@@ -4645,6 +4659,30 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
     }
   }
 
+  const sendSticker = async (sticker: ChatSticker) => {
+    if (!activeId || isSending || activeChat?.status === 'closed') return
+    setSending(true)
+    setChatError('')
+    try {
+      const payload = await api<{ data: AdminChatMessage }>('/admin/send-message', {
+        method: 'POST',
+        body: JSON.stringify({ chat_id: activeId, message: '', chat_sticker_id: sticker.id }),
+      })
+      setDetail((current) => current ? {
+        ...current,
+        chat: { ...current.chat, status: current.chat.status === 'waiting' ? 'active' : current.chat.status, operator: current.chat.operator ?? me.name, last_message: 'Mengirim sticker', updated_at: payload.data.created_at ?? current.chat.updated_at },
+        messages: current.messages.some((item) => item.id === payload.data.id) ? current.messages : [...current.messages, payload.data],
+      } : current)
+      setChats((rows) => rows.map((chat) => chat.id === activeId ? { ...chat, status: chat.status === 'waiting' ? 'active' : chat.status, operator: chat.operator ?? me.name, last_message: 'Mengirim sticker', updated_at: payload.data.created_at ?? chat.updated_at } : chat))
+      setStickerOpen(false)
+      await loadChats(false)
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : 'Sticker gagal dikirim')
+    } finally {
+      setSending(false)
+    }
+  }
+
   const closeChat = async () => {
     if (!activeId || activeChat?.status === 'closed') return
     setChatError('')
@@ -4724,7 +4762,8 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
               {detail?.messages.map((item) => (
                 <article key={item.id} className={item.sender_id === me.id ? 'admin-bubble mine' : item.sender_type === 'bot' ? 'admin-bubble bot' : 'admin-bubble'}>
                   <span>{item.sender_name ?? senderLabel(item.sender_type)} <small>{formatShortTime(item.created_at)}</small></span>
-                  {item.message && <p>{renderOrderCodeLinks(item.message, onOpenOrder)}</p>}
+                  {item.message && !(item.sticker && item.message === 'Mengirim sticker') && <p>{renderOrderCodeLinks(item.message, onOpenOrder)}</p>}
+                  {item.sticker && <StickerPreview sticker={item.sticker} />}
                   {item.image_url && <img src={assetUrl(item.image_url)} alt="Chat attachment" />}
                   {item.audio_url && <div className="admin-voice"><audio controls src={assetUrl(item.audio_url)} /><small>{item.audio_duration ?? 0}s</small></div>}
                   <AdminChatFilePreview message={item} />
@@ -4748,6 +4787,12 @@ function AdminChatPanel({ initialChats, api, me, token, permissions, notificatio
                     <button type="button" onClick={() => documentInputRef.current?.click()}>Dokumen</button>
                   </div>
                 )}
+              </div>
+              <div className="internal-attachment-wrap admin-attachment-wrap">
+                <button className="chat-clip-button" type="button" disabled={activeChat.status === 'closed'} onClick={() => setStickerOpen((open) => !open)} aria-label="Sticker">
+                  <Icon name="smile" />
+                </button>
+                {stickerOpen && <StickerPicker stickers={stickers} onPick={(sticker) => void sendSticker(sticker)} />}
               </div>
               <textarea value={message} disabled={activeChat.status === 'closed'} onChange={(event) => setMessage(event.target.value)} placeholder={activeChat.status === 'closed' ? 'Chat sudah ditutup' : attachmentFile ? 'Tambahkan keterangan lampiran...' : 'Balas sebagai operator...'} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
               <button className="primary-button" disabled={isSending || activeChat.status === 'closed' || (!message.trim() && !attachmentFile)} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
@@ -5026,6 +5071,8 @@ function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { 
   const [message, setMessage] = useState('')
   const [selectedOrderId, setSelectedOrderId] = useState('')
   const [attachmentOpen, setAttachmentOpen] = useState(false)
+  const [stickerOpen, setStickerOpen] = useState(false)
+  const [stickers, setStickers] = useState<ChatSticker[]>([])
   const [attachmentFile, setAttachmentFile] = useState<{ file: File; source: 'gallery' | 'camera' | 'document' } | null>(null)
   const [query, setQuery] = useState('')
   const [roomType, setRoomType] = useState<'branch' | 'global' | 'private'>('branch')
@@ -5055,6 +5102,17 @@ function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { 
     : visibleOrders
       .filter((order) => `${order.code} ${order.customer ?? ''} ${order.driver ?? ''}`.toLowerCase().includes(mentionNeedle.toLowerCase()))
       .slice(0, 6)
+
+  useEffect(() => {
+    let active = true
+    api<{ data: ChatSticker[] }>('/admin/chat-stickers')
+      .then((payload) => { if (active) setStickers(payload.data) })
+      .catch(() => { if (active) setStickers([]) })
+
+    return () => {
+      active = false
+    }
+  }, [api])
 
   const loadRooms = useCallback(async () => {
     try {
@@ -5150,9 +5208,29 @@ function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { 
       setSelectedOrderId('')
       setAttachmentFile(null)
       setAttachmentOpen(false)
+      setStickerOpen(false)
       setError('')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Pesan internal gagal dikirim')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const sendSticker = async (sticker: ChatSticker) => {
+    if (!activeId || isSending) return
+    setSending(true)
+    try {
+      const payload = await api<{ data: InternalChatMessage }>(`/admin/internal-chat/rooms/${activeId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ message: '', chat_sticker_id: sticker.id }),
+      })
+      setDetail((current) => current ? { ...current, messages: current.messages.some((item) => item.id === payload.data.id) ? current.messages : [...current.messages, payload.data] } : current)
+      setRooms((rows) => rows.map((room) => room.id === activeId ? { ...room, last_message: 'Mengirim sticker', last_sender: payload.data.sender_name, updated_at: payload.data.created_at } : room))
+      setStickerOpen(false)
+      setError('')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Sticker internal gagal dikirim')
     } finally {
       setSending(false)
     }
@@ -5235,6 +5313,7 @@ function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { 
                 <article key={item.id} className={item.sender_id === me.id ? 'admin-bubble mine' : 'admin-bubble'}>
                   <span>{item.sender_name} <small>{roleLabels[(item.sender_role as Role) || 'operator'] ?? item.sender_role} · {formatShortTime(item.created_at)}</small></span>
                   {visibleInternalMessageText(item).trim() && <p>{renderOrderCodeLinks(visibleInternalMessageText(item), onOpenOrder)}</p>}
+                  {item.metadata?.sticker && <StickerPreview sticker={item.metadata.sticker} />}
                   <InternalAttachmentPreview attachment={item.metadata?.attachment} />
                   {Boolean(item.metadata?.order_codes?.length) && (
                     <div className="internal-message-tags">
@@ -5259,6 +5338,12 @@ function InternalChatPanel({ api, me, branches, users, orders, onOpenOrder }: { 
                     <button type="button" onClick={() => documentInputRef.current?.click()}>Dokumen</button>
                   </div>
                 )}
+              </div>
+              <div className="internal-attachment-wrap">
+                <button className="chat-clip-button" type="button" onClick={() => setStickerOpen((open) => !open)} aria-label="Sticker">
+                  <Icon name="smile" />
+                </button>
+                {stickerOpen && <StickerPicker stickers={stickers} onPick={(sticker) => void sendSticker(sticker)} />}
               </div>
               <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Tulis pesan internal, mention order, atau koordinasi driver..." onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} />
               <button className="primary-button" disabled={isSending || (!message.trim() && !attachmentFile)} type="submit">{isSending ? 'Sending...' : 'Send'}</button>
@@ -5291,6 +5376,37 @@ function InternalAttachmentPreview({ attachment }: { attachment?: InternalChatAt
         <small>{attachmentLabel(attachment.source)}{attachment.size ? ` - ${formatFileSize(attachment.size)}` : ''}</small>
       </span>
     </a>
+  )
+}
+
+function StickerPreview({ sticker }: { sticker: ChatSticker }) {
+  return (
+    <div className="chat-sticker-preview" title={sticker.name}>
+      <img src={assetUrl(sticker.image_url)} alt={sticker.name} />
+      <small>{sticker.name}</small>
+    </div>
+  )
+}
+
+function StickerPicker({ stickers, onPick }: { stickers: ChatSticker[]; onPick: (sticker: ChatSticker) => void }) {
+  const categories = Array.from(new Set(stickers.map((sticker) => sticker.category || 'umum')))
+
+  return (
+    <div className="sticker-picker">
+      {stickers.length === 0 && <span>Belum ada sticker aktif di CMS.</span>}
+      {categories.map((category) => (
+        <section key={category}>
+          <b>{category}</b>
+          <div>
+            {stickers.filter((sticker) => (sticker.category || 'umum') === category).map((sticker) => (
+              <button key={sticker.id} type="button" onClick={() => onPick(sticker)} title={sticker.name}>
+                <img src={assetUrl(sticker.image_url)} alt={sticker.name} />
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   )
 }
 
@@ -5330,6 +5446,10 @@ function visibleInternalMessageText(message: InternalChatMessage) {
   }
 
   if (message.metadata?.attachment && text === `Lampiran ${attachmentLabel(message.metadata.attachment.source)}: ${message.metadata.attachment.name}`) {
+    return ''
+  }
+
+  if (message.metadata?.sticker && text === 'Mengirim sticker') {
     return ''
   }
 
@@ -7326,6 +7446,7 @@ function Icon({ name }: { name: string }) {
     receipt: 'M6 2h12v20l-3-2-3 2-3-2-3 2V2Zm3 5v2h6V7H9Zm0 4v2h6v-2H9Zm0 4v2h4v-2H9Z',
     note: 'M5 3h11l3 3v15H5V3Zm10 2v4h4l-4-4ZM8 10v2h8v-2H8Zm0 4v2h8v-2H8Zm0 4v2h5v-2H8Z',
     clip: 'M16.5 6.5v9a4.5 4.5 0 0 1-9 0v-10a3.5 3.5 0 0 1 7 0v9.5a2.5 2.5 0 0 1-5 0V7h2v8a.5.5 0 0 0 1 0V5.5a1.5 1.5 0 0 0-3 0v10a2.5 2.5 0 0 0 5 0v-9h2Z',
+    smile: 'M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20ZM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm8 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM7.5 13a4.9 4.9 0 0 0 9 0h-2.1a2.9 2.9 0 0 1-4.8 0H7.5Z',
     settings: 'M19.4 13.5a7.8 7.8 0 0 0 .1-1.5 7.8 7.8 0 0 0-.1-1.5l2-1.5-2-3.5-2.4 1a7.2 7.2 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A7.2 7.2 0 0 0 7 6L4.6 5 2.6 8.5l2 1.5a7.8 7.8 0 0 0-.1 1.5c0 .5 0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a7.2 7.2 0 0 0 2.6 1.5L10 22h4l.4-2.5A7.2 7.2 0 0 0 17 18l2.4 1 2-3.5-2-1.5ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z',
     eye: 'M12 5c5 0 8.5 4.2 10 7-1.5 2.8-5 7-10 7s-8.5-4.2-10-7c1.5-2.8 5-7 10-7Zm0 2c-3.6 0-6.4 2.7-7.7 5 1.3 2.3 4.1 5 7.7 5s6.4-2.7 7.7-5C18.4 9.7 15.6 7 12 7Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z',
     'eye-off': 'M4.3 3 21 19.7 19.7 21l-3-3A10 10 0 0 1 12 19c-5 0-8.5-4.2-10-7a17.6 17.6 0 0 1 4.1-4.8L3 4.3 4.3 3Zm3.2 5.6A15.6 15.6 0 0 0 4.3 12c1.3 2.3 4.1 5 7.7 5 1.1 0 2.1-.3 3-.7l-2-2a2.5 2.5 0 0 1-3.3-3.3L7.5 8.6ZM12 5c5 0 8.5 4.2 10 7a17.6 17.6 0 0 1-3.1 4.1l-1.4-1.4a15.6 15.6 0 0 0 2.2-2.7C18.4 9.7 15.6 7 12 7c-.9 0-1.7.2-2.5.5L8 6a9.7 9.7 0 0 1 4-.9Zm2.4 7.5A2.5 2.5 0 0 0 11.5 9.6L9.8 7.9A4.5 4.5 0 0 1 16.1 14l-1.7-1.6Z',
