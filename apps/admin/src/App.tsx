@@ -3270,7 +3270,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onAssignDriver, onO
       </div>
       <div className="order-detail-grid">
         <DetailItem label="Customer" value={order.customer || '-'} />
-        <DetailItem label="Driver" value={order.driver_user_id && order.driver && onOpenDriverChat ? <button className="inline-action-link detail-link" type="button" onClick={() => onOpenDriverChat(order.driver_user_id!)}>{order.driver}</button> : order.driver || 'Belum diambil'} />
+        <DetailItem label="Driver" value={order.driver_user_id && orderDriverDisplay(order) !== '-' && onOpenDriverChat ? <button className="inline-action-link detail-link" type="button" onClick={() => onOpenDriverChat(order.driver_user_id!)}>{orderDriverDisplay(order)}</button> : orderDriverDisplay(order) === '-' ? 'Belum diambil' : orderDriverDisplay(order)} />
         <DetailItem label="Layanan" value={`${order.service_code ? `${order.service_code} · ` : ''}${order.service}`} />
         <DetailItem label="Cabang / Area" value={displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} />
         <DetailItem label="Pembayaran" value={payment} />
@@ -3297,7 +3297,7 @@ function OrderDetailPanel({ order, permissions, onEditPrice, onAssignDriver, onO
             <strong>{operHandleStatusLabel(order.oper_handle)}</strong>
           </div>
           <p>{order.oper_handle.reason || 'Tidak ada alasan tertulis.'}</p>
-          <small>Driver: {order.oper_handle.driver || order.driver || '-'} · Update {formatShortDateTime(order.oper_handle.updated_at)}</small>
+          <small>Driver: {order.driver_username || order.oper_handle.driver || order.driver || '-'} · Update {formatShortDateTime(order.oper_handle.updated_at)}</small>
         </div>
       )}
       {(order.crews?.length || order.crew_status) && (
@@ -3360,7 +3360,7 @@ function RequestOrdersPanel({ orders, searchQuery, permissions, onOpenDriverChat
                   }}
                 >
                   <td><strong>{order.code}</strong><span>{order.customer || '-'}</span></td>
-                  <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{order.driver}</button> : order.driver || '-'}</td>
+                  <td>{order.driver_user_id && orderDriverDisplay(order) !== '-' ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{orderDriverDisplay(order)}</button> : orderDriverDisplay(order)}</td>
                   <td>{order.service}</td>
                   <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} - Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
                   <td><StatusBadge status={order.status} /></td>

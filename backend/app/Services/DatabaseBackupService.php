@@ -3,13 +3,26 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
 class DatabaseBackupService
 {
     public function create(string $prefix): array
     {
-        File::ensureDirectoryExists($this->directory());
+        try {
+            File::ensureDirectoryExists($this->directory(), 0775, true);
+        } catch (\Throwable $exception) {
+            Log::warning('database_backup.ensure_directory_failed', [
+                'directory' => $this->directory(),
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [
+                'ok' => false,
+                'message' => 'Folder backup tidak bisa ditulis: '.$exception->getMessage(),
+            ];
+        }
 
         $path = $this->directory().DIRECTORY_SEPARATOR.$prefix.'-'.now()->format('Ymd-His').'.sql';
         $command = [
@@ -23,15 +36,38 @@ class DatabaseBackupService
             config('database.connections.mysql.database'),
         ];
 
-        $process = new Process($command);
-        $process->setTimeout(180);
-        $process->run();
+        try {
+            $process = new Process($command);
+            $process->setTimeout(180);
+            $process->run();
+        } catch (\Throwable $exception) {
+            Log::warning('database_backup.mysqldump_failed', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [
+                'ok' => false,
+                'message' => 'mysqldump gagal dijalankan: '.$exception->getMessage(),
+            ];
+        }
 
         if (! $process->isSuccessful()) {
             return ['ok' => false, 'message' => trim($process->getErrorOutput() ?: $process->getOutput()) ?: 'mysqldump gagal.'];
         }
 
-        File::put($path, $process->getOutput());
+        try {
+            File::put($path, $process->getOutput());
+        } catch (\Throwable $exception) {
+            Log::warning('database_backup.write_failed', [
+                'path' => $path,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [
+                'ok' => false,
+                'message' => 'File backup gagal ditulis: '.$exception->getMessage(),
+            ];
+        }
 
         return [
             'ok' => true,

@@ -7,6 +7,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\Spatial\GeojsonRegionLookupService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 
@@ -302,11 +303,21 @@ class JojoBotService
 
     private function services(): Collection
     {
-        $rows = Service::query()
-            ->where('is_active', true)
-            ->orderBy('sort_order')
+        $columns = ['id', 'code', 'name'];
+        foreach (['sort_order', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template'] as $column) {
+            if (Schema::hasColumn('services', $column)) {
+                $columns[] = $column;
+            }
+        }
+
+        $query = Service::query()->where('is_active', true);
+        if (Schema::hasColumn('services', 'sort_order')) {
+            $query->orderBy('sort_order');
+        }
+
+        $rows = $query
             ->orderBy('name')
-            ->get(['id', 'code', 'name', 'sort_order', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number', 'whatsapp_message_template']);
+            ->get($columns);
 
         if ($rows->isEmpty()) {
             $rows = collect([
@@ -354,6 +365,7 @@ class JojoBotService
             'used_fallback_location' => false,
             'service_type' => null,
             'driver_preference' => 'general',
+            'passengers' => 1,
             'branch_id' => null,
         ];
         $activeMultilineField = null;
@@ -411,6 +423,8 @@ class JojoBotService
                 $fields['route'] = $value;
             } elseif (preg_match('/seat|kursi|baris|tempat\s+duduk/u', $key)) {
                 $fields['vehicle_seat_rows'] = str_contains($value, '3') ? 3 : 2;
+            } elseif (preg_match('/penumpang|passenger|orang/u', $key)) {
+                $fields['passengers'] = max(1, (int) preg_replace('/\D+/', '', $value));
             } elseif (preg_match('/preferensi\s+driver|pilihan\s+driver|driver/u', $key)) {
                 $fields['driver_preference'] = str_contains(mb_strtolower($value), 'ladies') ? 'ladies' : 'general';
             } elseif (preg_match('/catatan|notes|barang|pesanan/u', $key)) {
@@ -542,6 +556,7 @@ class JojoBotService
             'service_payload' => [
                 'source' => 'jojobot_form_parser',
                 'driver_preference' => $serviceType === 'ojek' ? ($parsed['driver_preference'] ?? 'general') : 'general',
+                'passengers' => max(1, (int) ($parsed['passengers'] ?? 1)),
                 'store_location' => $parsed['store_location'] ?? null,
                 'location_flow_note' => $this->isPurchaseService($serviceType)
                     ? 'Alamat pembelian dipakai sebagai titik ambil barang; alamat antar wajib mengikuti input customer. Alamat profile hanya untuk validasi pendaftaran.'
@@ -554,7 +569,7 @@ class JojoBotService
         }
 
         if ($serviceType === 'joker_mobil') {
-            $vehicleSeatRows = ((int) ($parsed['vehicle_seat_rows'] ?? 2)) === 3 ? 3 : 2;
+            $vehicleSeatRows = $this->jokerMobilSeatRows((int) ($parsed['passengers'] ?? 1), isset($parsed['vehicle_seat_rows']) ? (int) $parsed['vehicle_seat_rows'] : null);
             $payload['preferred_vehicle_type'] = 'mobil';
             $payload['vehicle_seat_rows'] = $vehicleSeatRows;
             $payload['service_payload']['preferred_vehicle_type'] = 'mobil';
@@ -571,6 +586,19 @@ class JojoBotService
         }
 
         return $this->hydratePayloadCoordinates($payload, $branch, $user);
+    }
+
+    private function jokerMobilSeatRows(int $passengers, ?int $requestedRows = null): int
+    {
+        if ($passengers >= 5) {
+            return 3;
+        }
+
+        if ($passengers >= 1 && $passengers <= 4) {
+            return 2;
+        }
+
+        return $requestedRows === 3 ? 3 : 2;
     }
 
     private function normalizeProfileAddressReference(string $value, User $user): string

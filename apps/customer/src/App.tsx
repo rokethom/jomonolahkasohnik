@@ -255,6 +255,10 @@ function passengerCountFromPayload(payload?: OrderPayload | null) {
   return Number.isFinite(value) && value > 0 ? value : 1
 }
 
+function jokerMobilSeatRowsFromPassengers(passengers: number): 2 | 3 {
+  return passengers >= 5 ? 3 : 2
+}
+
 function containsTartKeyword(payload?: OrderPayload | null) {
   const source = [
     payload?.notes,
@@ -643,9 +647,11 @@ function App() {
     validateOrderPayload(payload)
     const sendVehiclePreference = shouldSendVehiclePreference(payload.service_type)
     const preferredVehicle = sendVehiclePreference ? (payload.preferred_vehicle_type ?? defaultVehicleForService(payload.service_type)) : undefined
-    const vehicleSeatRows = preferredVehicle === 'mobil' ? (payload.vehicle_seat_rows === 3 ? 3 : 2) : undefined
-    const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const passengers = passengerCountFromPayload(payload)
+    const vehicleSeatRows = preferredVehicle === 'mobil'
+      ? (isJokerMobilService(payload.service_type) ? jokerMobilSeatRowsFromPassengers(passengers) : (payload.vehicle_seat_rows === 3 ? 3 : 2))
+      : undefined
+    const driverPreference = isOjekService(payload.service_type) ? (payload.driver_preference ?? 'general') : 'general'
     const ojekDoubleOrderCount = isOjekService(payload.service_type) && passengers === 2 && payload.service_payload?.confirm_double_order === true ? 2 : 1
     const orderCount = ojekDoubleOrderCount
     const createdOrders: Order[] = []
@@ -2115,12 +2121,13 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
   const [destination, setDestination] = useState('')
   const [passengers, setPassengers] = useState('1')
   const [notes, setNotes] = useState('')
-  const [seatRows, setSeatRows] = useState<2 | 3>(2)
   const [driverPreference, setDriverPreference] = useState<'general' | 'ladies'>('general')
   const [points, setPoints] = useState<string[]>([])
   const serviceType = service?.service_type ?? (service?.code?.toUpperCase() === 'JM' ? 'joker_mobil' : 'ojek')
   const serviceLabel = serviceDisplayLabel(serviceType)
   const jokerMobil = isJokerMobilService(serviceType)
+  const passengerCount = Number(String(passengers || '1').replace(/\D+/g, '')) || 1
+  const autoSeatRows = jokerMobil ? jokerMobilSeatRowsFromPassengers(passengerCount) : 2
   const pointText = points
     .map((point, index) => ({ label: `Titik ${index + 1}`, address: point.trim() }))
     .filter((point) => point.address)
@@ -2136,7 +2143,7 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
     '',
     `Alamat Antar: ${destination}`,
     `Jumlah penumpang: ${passengers}`,
-    jokerMobil ? `Seat / baris mobil: ${seatRows} baris` : `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
+    jokerMobil ? `Seat / baris mobil: ${autoSeatRows} baris` : `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
     '',
     `Catatan: ${notes}`,
     pointText,
@@ -2171,13 +2178,9 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
           <div className="vehicle-seat-choice">
             <span>Tempat duduk Joker Mobil</span>
             <div>
-              <button type="button" className={seatRows === 2 ? 'active' : ''} onClick={() => setSeatRows(2)}>
-                <b>2 baris</b>
-                <small>Citycar / umum</small>
-              </button>
-              <button type="button" className={seatRows === 3 ? 'active' : ''} onClick={() => setSeatRows(3)}>
-                <b>3 baris</b>
-                <small>MPV / keluarga</small>
+              <button type="button" className="active" disabled>
+                <b>{autoSeatRows} baris</b>
+                <small>{passengerCount >= 5 ? '5-6 penumpang otomatis 3 baris' : '1-4 penumpang otomatis 2 baris'}</small>
               </button>
             </div>
           </div>
@@ -2462,12 +2465,12 @@ function ChatOrderActions({
   const selectedPayment = pendingOrder?.payment_method ?? paymentMethods[0]?.key ?? 'cash'
   const defaultVehicle = defaultVehicleForService(pendingOrder?.service_type)
   const selectedVehicle = pendingOrder?.preferred_vehicle_type ?? defaultVehicle
-  const selectedSeatRows = pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2
   const isOjekOrder = isOjekService(pendingOrder?.service_type)
   const isJokerMobilOrder = isJokerMobilService(pendingOrder?.service_type)
   const showVehicleChoice = !isJokerMobilOrder && !isOjekOrder && !hidesVehicleChoiceForService(pendingOrder?.service_type)
   const showVehicleSummary = isJokerMobilOrder || isOjekOrder || showVehicleChoice
   const passengerCount = passengerCountFromPayload(pendingOrder)
+  const selectedSeatRows = isJokerMobilOrder ? jokerMobilSeatRowsFromPassengers(passengerCount) : (pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2)
   const doubleOrderConfirmed = pendingOrder?.service_payload?.confirm_double_order === true
   const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
   const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
@@ -2569,13 +2572,9 @@ function ChatOrderActions({
             <div className="vehicle-seat-choice">
               <span>Tempat duduk Joker Mobil</span>
               <div>
-                <button type="button" className={selectedSeatRows === 2 ? 'active' : ''} onClick={() => updateSeatRows(2)}>
-                  <b>2 baris</b>
-                  <small>Citycar / umum</small>
-                </button>
-                <button type="button" className={selectedSeatRows === 3 ? 'active' : ''} onClick={() => updateSeatRows(3)}>
-                  <b>3 baris</b>
-                  <small>MPV / keluarga</small>
+                <button type="button" className="active" disabled>
+                  <b>{selectedSeatRows} baris</b>
+                  <small>{passengerCount >= 5 ? '5-6 penumpang otomatis 3 baris' : '1-4 penumpang otomatis 2 baris'}</small>
                 </button>
               </div>
             </div>

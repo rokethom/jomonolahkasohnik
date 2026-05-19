@@ -221,9 +221,12 @@ class OrderParserService
         );
         $destinationAddress = $this->field($text, 'alamat\s+antar') ?: $looseDestination;
         $passengers = $this->field($text, 'jumlah\s+penumpang') ?: $this->passengers($text) ?: '1';
-        $seatRows = $this->vehicleSeatRows($text);
-        $notes = $this->field($text, 'catatan');
+        $passengerCount = max(1, (int) preg_replace('/\D/u', '', $passengers));
         $serviceType = $this->detectService($text) === 'joker_mobil' ? 'joker_mobil' : 'ojek';
+        $seatRows = $serviceType === 'joker_mobil'
+            ? ($passengerCount >= 5 ? 3 : 2)
+            : $this->vehicleSeatRows($text);
+        $notes = $this->field($text, 'catatan');
 
         if (! $destinationAddress) {
             return null;
@@ -247,7 +250,7 @@ class OrderParserService
                 $rawText ?: $text,
             ]))),
             'service_payload' => [
-                'passengers' => max(1, (int) preg_replace('/\D/u', '', $passengers)),
+                'passengers' => $passengerCount,
                 'source' => 'smart_parser',
                 'normalized_text' => $text,
             ],
@@ -271,7 +274,7 @@ class OrderParserService
             'items' => [],
             'store_location' => null,
             'destination' => $destinationAddress,
-            'passengers' => max(1, (int) preg_replace('/\D/u', '', $passengers)),
+            'passengers' => $passengerCount,
             'stops' => [],
             'branch' => $branch,
             'payload' => $payload,

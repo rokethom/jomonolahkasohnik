@@ -15,6 +15,7 @@ class KeywordParser extends Model
         'KR' => 'Kurir',
         'OJ' => 'Ojek',
         'BL' => 'Belanja',
+        'GO' => 'Gift Order',
         'TV' => 'Travel',
         'JM' => 'Joker Mobil',
     ];

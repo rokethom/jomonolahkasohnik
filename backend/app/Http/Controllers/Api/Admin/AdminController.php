@@ -108,7 +108,7 @@ class AdminController extends Controller
                 ->orderBy('parent_branch_id')
                 ->orderBy('area')
                 ->get(),
-            'services' => Service::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'code', 'sort_order', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number']),
+            'services' => $this->servicesPayload(),
             'price_settings' => $wants(['master-pricing', 'pricing', 'price-settings']) ? PriceSetting::query()->with('branch')->latest()->get() : [],
             'keyword_parsers' => $wants(['keyword-parsers']) ? $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)) : [],
             'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],
@@ -3023,6 +3023,23 @@ class AdminController extends Controller
         }
 
         return KeywordParser::query()->orderByDesc('priority')->latest();
+    }
+
+    private function servicesPayload()
+    {
+        $columns = ['id', 'name', 'code'];
+        foreach (['sort_order', 'whatsapp_redirect_enabled', 'outside_area_only', 'whatsapp_number'] as $column) {
+            if (Schema::hasColumn('services', $column)) {
+                $columns[] = $column;
+            }
+        }
+
+        $query = Service::query()->where('is_active', true);
+        if (Schema::hasColumn('services', 'sort_order')) {
+            $query->orderBy('sort_order');
+        }
+
+        return $query->orderBy('name')->get($columns);
     }
 
     private function pricingKeywordRulesQuery(): Builder

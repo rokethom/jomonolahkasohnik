@@ -440,6 +440,13 @@ class AiOrderParserService
             'store_location' => $storeLocation,
             'passengers' => $passengers,
         ];
+        $preferredVehicle = $serviceType === 'joker_mobil' ? 'mobil' : null;
+        $vehicleSeatRows = $serviceType === 'joker_mobil' ? ($passengers >= 5 ? 3 : 2) : null;
+
+        if ($preferredVehicle !== null) {
+            $servicePayload['preferred_vehicle_type'] = $preferredVehicle;
+            $servicePayload['vehicle_seat_rows'] = $vehicleSeatRows;
+        }
 
         return [
             'service_type' => $serviceType,
@@ -476,6 +483,8 @@ class AiOrderParserService
                     $passengers > 1 ? 'Jumlah penumpang: '.$passengers : null,
                 ]))),
                 'service_payload' => $servicePayload,
+                'preferred_vehicle_type' => $preferredVehicle,
+                'vehicle_seat_rows' => $vehicleSeatRows,
                 'items' => $items,
                 'points' => [],
             ],

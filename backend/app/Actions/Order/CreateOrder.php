@@ -236,15 +236,47 @@ class CreateOrder
     private function preferredVehicleType(array $payload): ?string
     {
         $vehicle = strtolower((string) ($payload['preferred_vehicle_type'] ?? data_get($payload, 'service_payload.preferred_vehicle_type', '')));
+        $serviceType = strtolower((string) ($payload['service_type'] ?? ''));
+
+        if (in_array($serviceType, ['joker_mobil', 'joker mobil', 'jm'], true)) {
+            return 'mobil';
+        }
 
         return in_array($vehicle, ['motor', 'mobil'], true) ? $vehicle : null;
     }
 
     private function vehicleSeatRows(array $payload): int
     {
+        $passengers = $this->passengerCount($payload);
+        if ($passengers >= 5) {
+            return 3;
+        }
+
+        if ($passengers > 0 && $passengers <= 4) {
+            return 2;
+        }
+
         $rows = (int) ($payload['vehicle_seat_rows'] ?? data_get($payload, 'service_payload.vehicle_seat_rows', 2));
 
         return in_array($rows, [2, 3], true) ? $rows : 2;
+    }
+
+    private function passengerCount(array $payload): int
+    {
+        $raw = $payload['passengers']
+            ?? $payload['jumlah_penumpang']
+            ?? data_get($payload, 'service_payload.passengers')
+            ?? data_get($payload, 'service_payload.jumlah_penumpang')
+            ?? data_get($payload, 'service_payload.passenger_count')
+            ?? null;
+
+        if ($raw === null || $raw === '') {
+            return 0;
+        }
+
+        $count = (int) preg_replace('/\D+/', '', (string) $raw);
+
+        return $count > 0 ? $count : 0;
     }
 
     private function driverPreference(array $payload): string
