@@ -141,6 +141,7 @@ type Order = {
   customer: string | null
   driver_user_id?: number | null
   driver: string | null
+  driver_username?: string | null
   service: string
   service_code?: string | null
   source?: string | null
@@ -1485,31 +1486,9 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
   const dispatchOrders = data.orders.filter(isDispatchPendingOrder)
   const criticalOrders = dispatchOrders.filter((order) => order.sla_status === 'critical' || Number(order.waiting_seconds ?? 0) >= 600)
   const firstAssignableOrder = dispatchOrders.find((order) => !isDispatchRepostOrder(order))
-  const idleDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active' && !data.orders.some((order) => order.driver === driver.name && isActiveOrderStatus(order)))
-  const acceptedDrivers = data.orders.filter((order) => order.driver && isActiveOrderStatus(order)).length
 
   return (
     <div className="eksekutor-dashboard">
-      {criticalOrders.length > 0 && <div className="critical-dispatch-alert" role="alert">Critical pending: {criticalOrders.length} order menunggu terlalu lama.</div>}
-      <section className="dispatch-hero">
-        <div>
-          <span className="eyebrow">Tactical Dispatch Center</span>
-          <h2>{data.me.branch_area || data.me.branch || 'Area Eksekutor'}</h2>
-          <p>Realtime queue, idle driver recommendation, dan manual assign untuk area sendiri.</p>
-        </div>
-        <div className="dispatch-clock">
-          <strong>{formatShortTime(new Date().toISOString())}</strong>
-          <span>Realtime dispatch</span>
-        </div>
-      </section>
-
-      <StatsRow stats={[
-        { label: 'Pending Dispatch', value: dispatchOrders.filter((order) => order.status === 'CREATED').length, icon: 'receipt', tone: criticalOrders.length ? 'red' : 'amber', action: 'Assign now' },
-        { label: 'Driver Idle', value: idleDrivers.length, icon: 'truck', tone: 'green', action: 'Area sendiri', onClick: () => onNavigate('drivers') },
-        { label: 'Driver Accepted', value: acceptedDrivers, icon: 'bag', tone: 'violet', action: 'Live route', onClick: () => onNavigate('orders') },
-        { label: 'Pending Order', value: dispatchOrders.length, icon: 'chat', tone: 'red', action: 'Queue' },
-      ]} />
-
       <section className="dispatch-layout">
         <section className="panel live-dispatch-panel">
           <div className="section-head compact-head">
@@ -1519,6 +1498,11 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
             </div>
             <span className="status warning">{dispatchOrders.length} queue</span>
           </div>
+          {criticalOrders.length > 0 && (
+            <div className="critical-dispatch-alert compact" role="alert">
+              Critical pending: {criticalOrders.length} order menunggu terlalu lama.
+            </div>
+          )}
           <div className="dispatch-queue">
             {dispatchOrders.length === 0 && <EmptyPanel title="Queue kosong" copy="Order pending area akan muncul realtime di sini." />}
             {dispatchOrders.map((order) => (
@@ -3124,7 +3108,7 @@ function OrdersTable({ orders, operHandles, auditLogs, searchQuery, permissions,
                 >
                   <td><strong>{order.code}</strong><span>{formatShortDateTime(order.created_at)}</span></td>
                   <td>{order.customer || '-'}</td>
-                  <td>{order.driver_user_id && order.driver ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{order.driver}</button> : order.driver || '-'}</td>
+                  <td>{order.driver_user_id && orderDriverDisplay(order) ? <button className="inline-action-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenDriverChat(order.driver_user_id!) }}>{orderDriverDisplay(order)}</button> : orderDriverDisplay(order)}</td>
                   <td>{order.service}</td>
                   <td>{displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)}</td>
                   <td><strong>Rp {order.total.toLocaleString('id-ID')}</strong><span>Tarif Rp {order.price.toLocaleString('id-ID')} · Fee Rp {order.service_charge.toLocaleString('id-ID')}</span></td>
@@ -6980,9 +6964,13 @@ function sortOrdersNewest(orders: Order[]) {
 }
 
 function orderMatchesSearch(order: Order, searchQuery: string) {
-  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.service} ${displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''} ${order.oper_handle?.status ?? ''} ${order.oper_handle?.reason ?? ''}`
+  return `${order.code} ${order.customer ?? ''} ${order.driver ?? ''} ${order.driver_username ?? ''} ${order.service} ${displayBranchValue(order.branch_display_name ?? order.branch, order.branch_area)} ${order.status} ${order.source ?? ''} ${order.cancel_reason ?? ''} ${order.oper_handle?.status ?? ''} ${order.oper_handle?.reason ?? ''}`
     .toLowerCase()
     .includes(searchQuery.toLowerCase())
+}
+
+function orderDriverDisplay(order: Pick<Order, 'driver' | 'driver_username'>) {
+  return order.driver_username || order.driver || '-'
 }
 
 function orderContentText(order: Order) {
