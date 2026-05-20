@@ -12,6 +12,7 @@ class DatabaseBackupService
     {
         try {
             File::ensureDirectoryExists($this->directory(), 0775, true);
+            @chmod($this->directory(), 0775);
         } catch (\Throwable $exception) {
             Log::warning('database_backup.ensure_directory_failed', [
                 'directory' => $this->directory(),
@@ -37,26 +38,63 @@ class DatabaseBackupService
         ];
 
         try {
+            $handle = fopen($path, 'wb');
+            if ($handle === false) {
+                return [
+                    'ok' => false,
+                    'message' => 'File backup tidak bisa dibuat. Cek permission folder: '.$this->directory(),
+                ];
+            }
+
             $process = new Process($command);
-            $process->setTimeout(180);
-            $process->run();
+            $process->setTimeout(300);
+            $process->run(function (string $type, string $buffer) use ($handle): void {
+                if ($type === Process::OUT) {
+                    fwrite($handle, $buffer);
+                }
+            });
+
+            fclose($handle);
         } catch (\Throwable $exception) {
-            Log::warning('database_backup.mysqldump_failed', [
+            if (isset($handle) && is_resource($handle)) {
+                fclose($handle);
+            }
+
+            if (File::exists($path) && File::size($path) === 0) {
+                File::delete($path);
+            }
+
+            Log::warning('database_backup.create_failed', [
+                'path' => $path,
                 'message' => $exception->getMessage(),
             ]);
 
             return [
                 'ok' => false,
-                'message' => 'mysqldump gagal dijalankan: '.$exception->getMessage(),
+                'message' => 'Backup gagal dibuat: '.$exception->getMessage(),
             ];
         }
 
         if (! $process->isSuccessful()) {
+            if (File::exists($path) && File::size($path) === 0) {
+                File::delete($path);
+            }
+
+            Log::warning('database_backup.mysqldump_failed', [
+                'path' => $path,
+                'error' => $process->getErrorOutput(),
+            ]);
+
             return ['ok' => false, 'message' => trim($process->getErrorOutput() ?: $process->getOutput()) ?: 'mysqldump gagal.'];
         }
 
         try {
-            File::put($path, $process->getOutput());
+            if (! File::exists($path) || File::size($path) <= 0) {
+                return [
+                    'ok' => false,
+                    'message' => 'Backup gagal: file SQL kosong.',
+                ];
+            }
         } catch (\Throwable $exception) {
             Log::warning('database_backup.write_failed', [
                 'path' => $path,

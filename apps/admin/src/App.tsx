@@ -206,7 +206,7 @@ type OperHandle = {
   created_at?: string | null
   updated_at?: string | null
 }
-type DriverCandidate = { id: number; name: string; phone?: string | null; vehicle_type?: string | null; vehicle_types?: string[]; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
+type DriverCandidate = { id: number; name: string; username?: string | null; phone?: string | null; vehicle_type?: string | null; vehicle_types?: string[]; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
 type CustomerPreference = { favorite_driver?: { id: number; name: string } | null; blocked_drivers?: string[]; notes?: string | null }
 type ManualOrderPayload = {
   service_type: string
@@ -1535,7 +1535,7 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
                 </div>
                 <div className="suggested-driver">
                   <small>Rekomendasi driver</small>
-                  <b>{order.suggested_drivers?.[0]?.name ?? 'Belum ada idle driver'}</b>
+                  <b>{driverDisplayUsername(order.suggested_drivers?.[0])}</b>
                   <em>Driver online idle paling cocok dari area order.</em>
                 </div>
                 <div className="dispatch-row-actions">
@@ -1647,7 +1647,7 @@ function AssignDriverModal({ order, api, onClose, onAssigned }: { order: Order; 
           <label>Driver area online & idle
             <select value={driverId} onChange={(event) => setDriverId(event.target.value)} required>
               <option value="">Pilih driver</option>
-              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? 'Favorit - ' : ''}{driver.name} - {driverVehicleLabel(driver)}{driver.is_ladies_driver ? ' - Ladies' : ''} - rating {driver.rating_average ?? 0}</option>)}
+              {candidates.map((driver) => <option key={driver.id} value={driver.id}>{driver.is_favorite ? 'Favorit - ' : ''}{driverDisplayUsername(driver)} - {driverVehicleLabel(driver)}{driver.is_ladies_driver ? ' - Ladies' : ''} - rating {driver.rating_average ?? 0}</option>)}
             </select>
           </label>
           <label>Alasan assign<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
@@ -7417,6 +7417,10 @@ function normalizedDriverVehicleTypes(driver: Pick<DriverRow, 'vehicle_type' | '
   const normalized = Array.from(new Set(types.filter((type): type is string => type === 'motor' || type === 'mobil')))
 
   return normalized.length > 0 ? normalized : ['motor']
+}
+
+function driverDisplayUsername(driver?: Pick<DriverCandidate, 'name' | 'username'> | null) {
+  return driver?.username?.trim() || driver?.name?.trim() || 'Belum ada idle driver'
 }
 
 function driverVehicleLabel(driver: Pick<DriverRow, 'vehicle_type' | 'vehicle_types' | 'vehicle_seat_rows'>) {

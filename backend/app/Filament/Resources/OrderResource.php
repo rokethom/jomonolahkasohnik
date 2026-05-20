@@ -74,7 +74,7 @@ class OrderResource extends Resource
                                 ->with('user')
                                 ->get()
                                 ->mapWithKeys(fn (Driver $driver): array => [
-                                    $driver->id => $driver->user?->name ?? 'Driver #'.$driver->id,
+                                    $driver->id => $driver->user?->username ?: ($driver->user?->name ?? 'Driver #'.$driver->id),
                                 ])
                                 ->all())
                             ->searchable(),
@@ -146,7 +146,7 @@ class OrderResource extends Resource
                     ->label('Customer')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('driver.user.name')
+                Tables\Columns\TextColumn::make('driver.user.username')
                     ->label('Driver')
                     ->placeholder('-')
                     ->searchable(),

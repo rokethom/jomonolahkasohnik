@@ -3897,6 +3897,7 @@ class AdminController extends Controller
             ->map(fn (Driver $driver): array => [
                 'id' => $driver->id,
                 'name' => $driver->user?->name ?? 'Driver #'.$driver->id,
+                'username' => $driver->user?->username,
                 'phone' => $driver->user?->phone,
                 'vehicle_type' => $driver->vehicle_type ?? 'motor',
                 'vehicle_types' => $driver->vehicleTypes(),
