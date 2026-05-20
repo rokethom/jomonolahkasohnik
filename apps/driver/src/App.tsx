@@ -73,6 +73,7 @@ type Order = {
   customer: string
   customerPhone: string | null
   driver?: string | null
+  driverUsername?: string | null
   source?: string | null
   service: string
   distanceKm: number
@@ -101,6 +102,7 @@ type Order = {
   assignedAt?: string | null
   operHandleStatus?: string | null
   operHandleDriver?: string | null
+  operHandleDriverUsername?: string | null
   operHandleReason?: string | null
   operHandleUpdatedAt?: string | null
   adjustments?: OrderAdjustment[]
@@ -116,7 +118,7 @@ type Order = {
     helper_fee?: number
     rule_name?: string
   } | null
-  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; service_charge?: number; accepted_at?: string | null }>
+  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; driverUsername?: string | null; service_charge?: number; accepted_at?: string | null }>
 }
 
 type OrderAdjustment = {
@@ -255,6 +257,7 @@ type BranchDriverPerformance = {
   driver_id: number
   user_id: number
   name: string
+  username?: string | null
   branch?: string | null
   branch_area?: string | null
   status: string
@@ -272,6 +275,8 @@ type BranchDriverPerformance = {
 type BranchSuspendHistory = {
   id: number
   driver?: string | null
+  driver_username?: string | null
+  driverUsername?: string | null
   type?: string | null
   reason: string
   status: string
@@ -288,6 +293,7 @@ type ApiOrder = {
   customer: string
   customer_phone: string | null
   driver?: string | null
+  driver_username?: string | null
   source?: string | null
   service: string
   distance_km: number
@@ -318,6 +324,7 @@ type ApiOrder = {
   assigned_at?: string | null
   oper_handle_status?: string | null
   oper_handle_driver?: string | null
+  oper_handle_driver_username?: string | null
   oper_handle_reason?: string | null
   oper_handle_updated_at?: string | null
   adjustments?: OrderAdjustment[]
@@ -332,7 +339,7 @@ type ApiOrder = {
     helper_label?: string
     rule_name?: string
   } | null
-  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; service_charge?: number; accepted_at?: string | null }>
+  crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; driver_username?: string | null; service_charge?: number; accepted_at?: string | null }>
 }
 
 type ChatConversation = {
@@ -437,7 +444,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
     branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
     branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
     branchOperHandleOrders: (payload.branch_oper_handle_orders ?? []).map(mapOrder),
-    branchSuspendHistory: payload.branch_suspend_history ?? [],
+    branchSuspendHistory: (payload.branch_suspend_history ?? []).map(mapBranchSuspendHistory),
     multiOrderEnabled: payload.settings.multi_order_enabled,
     maxMultiOrder: payload.settings.max_multi_order,
     finance: payload.finance ?? null,
@@ -478,7 +485,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
       branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
       branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
       branchOperHandleOrders: (payload.branch_oper_handle_orders ?? []).map(mapOrder),
-      branchSuspendHistory: payload.branch_suspend_history ?? [],
+      branchSuspendHistory: (payload.branch_suspend_history ?? []).map(mapBranchSuspendHistory),
       ...(incomingDriver && !keepLocalOnline ? { isOnline: Boolean(incomingDriver.is_available) } : {}),
     }
   }),
@@ -1001,7 +1008,7 @@ function BranchAcceptedFeed({
   suspendHistory: BranchSuspendHistory[]
 }) {
   const [openPanel, setOpenPanel] = useState<'accepted' | 'request' | 'oper' | 'suspend' | null>(null)
-  const visible = orders.filter((order) => order.driver && order.source !== 'driver_request')
+  const visible = orders.filter((order) => orderDriverDisplay(order) && order.source !== 'driver_request')
   const requestVisible = requestOrders
   const operVisible = operHandleOrders.filter((order) => order.operHandleStatus)
   const suspendVisible = suspendHistory.slice(0, 6)
@@ -1046,11 +1053,11 @@ function BranchAcceptedFeed({
           {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
           {visible.map((order) => (
             <article className="branch-accepted-card" key={order.id}>
-              <div className="branch-accepted-icon">{driverInitial(order.driver)}</div>
+              <div className="branch-accepted-icon">{driverInitial(orderDriverDisplay(order))}</div>
               <div className="branch-accepted-main">
                 <strong>{order.code}</strong>
                 <span>
-                  {order.driver} menerima order {order.service} untuk {order.customer}
+                  {orderDriverDisplay(order)} menerima order {order.service} untuk {order.customer}
                   {order.driverPreference === 'ladies' && <em className="ladies-chip">Ladies</em>}
                 </span>
                 <small>{statusLabel(order.status)} - Rp {formatMoney(order.total)} - {shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
@@ -1066,10 +1073,10 @@ function BranchAcceptedFeed({
           {requestVisible.length === 0 && <p className="note">Belum ada request order driver di cabang kamu.</p>}
           {requestVisible.map((order) => (
             <article className="branch-accepted-card request-order-card" key={`request-${order.id}`}>
-              <div className="branch-accepted-icon request">{driverInitial(order.driver ?? order.customer)}</div>
+              <div className="branch-accepted-icon request">{driverInitial(orderDriverDisplay(order) ?? order.customer)}</div>
               <div className="branch-accepted-main">
                 <strong>{order.code}</strong>
-                <span>{order.driver || order.customer || 'Driver'} request order {order.service}</span>
+                <span>{orderDriverDisplay(order) || order.customer || 'Driver'} request order {order.service}</span>
                 <small>Rp {formatMoney(order.total)} - {shortAddress(order.pickup)} menuju {shortAddress(order.destination)}</small>
               </div>
               <time>{formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</time>
@@ -1083,7 +1090,7 @@ function BranchAcceptedFeed({
           {operVisible.length === 0 && <p className="note">Belum ada oper handle area.</p>}
           {operVisible.map((order) => (
             <article className={`branch-accepted-card oper-handle ${order.operHandleStatus === 'approved' ? 'approved' : ''}`} key={`oper-${order.id}-${order.operHandleStatus}`}>
-              <div className="branch-accepted-icon oper">{driverInitial(order.operHandleDriver ?? order.driver)}</div>
+              <div className="branch-accepted-icon oper">{driverInitial(order.operHandleDriverUsername ?? order.operHandleDriver ?? orderDriverDisplay(order))}</div>
               <div className="branch-accepted-main">
                 <strong>{order.code}</strong>
                 <span>
@@ -1105,7 +1112,7 @@ function BranchAcceptedFeed({
             <article className="branch-accepted-card suspend-history-card" key={`suspend-${item.id}`}>
               <div className="branch-accepted-icon suspend">{driverInitial(item.type ?? 'S')}</div>
               <div className="branch-accepted-main">
-                <strong>{item.driver ?? 'Driver'} - {item.type ?? 'Suspend'}</strong>
+                <strong>{item.driverUsername ?? item.driver ?? 'Driver'} - {item.type ?? 'Suspend'}</strong>
                 <span>{item.reason || 'Tidak ada alasan suspend.'}</span>
                 <small>Status: {item.status}</small>
               </div>
@@ -1330,7 +1337,7 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
             {(order.crews ?? []).map((crew) => (
               <div className="crew-row" key={`${crew.role}-${crew.id}`}>
                 <span>{crew.label || crew.role}</span>
-                <strong>{crew.driver || (crew.status === 'pending' ? 'Menunggu driver' : '-')}</strong>
+                <strong>{crew.driverUsername || crew.driver || (crew.status === 'pending' ? 'Menunggu driver' : '-')}</strong>
                 <small>{crewStatusLabel(crew.status)}{crew.service_charge ? ` - Rp ${formatMoney(crew.service_charge)}` : ''}</small>
               </div>
             ))}
@@ -2001,10 +2008,10 @@ function RequestOrder({ onCreated }: { onCreated: () => Promise<void> }) {
   const canCreateRequest = Boolean(isOnline && driver?.is_available && driver?.status === 'active')
   const parsedPrices = parseRequestPrices(request)
   const ownRequestOrders = branchRequestOrders
-    .filter((order) => order.driver === driver?.name || order.customer === driver?.name)
+    .filter((order) => isCurrentDriverOrder(order, driver))
     .slice(0, 8)
   const areaRequestOrders = branchRequestOrders
-    .filter((order) => order.driver !== driver?.name && order.customer !== driver?.name)
+    .filter((order) => !isCurrentDriverOrder(order, driver))
     .slice(0, 12)
   const submit = async () => {
     if (!canCreateRequest) {
@@ -2068,7 +2075,7 @@ function History({ orders, loading }: { orders: Order[]; loading: boolean }) {
     .filter((order) => order.status === 'done')
     .reduce((sum, order) => sum + Math.max(order.total ?? 0, 0), 0)
   const visibleRequestOrders = branchRequestOrders.filter((order) => monthKey(order.updatedAt ?? order.acceptedAt) === selectedMonth)
-  const ownRequestOrders = visibleRequestOrders.filter((order) => order.driver === driver?.name || order.customer === driver?.name)
+  const ownRequestOrders = visibleRequestOrders.filter((order) => isCurrentDriverOrder(order, driver))
 
   return (
     <section className="page history-page">
@@ -2131,7 +2138,7 @@ function RequestHistoryRow({ order }: { order: Order }) {
   return (
     <div className="branch-feed-row">
       <strong>{order.code}</strong>
-      <span>{order.driver || order.customer || 'Driver'} · {statusLabel(order.status)}</span>
+      <span>{orderDriverDisplay(order) || order.customer || 'Driver'} - {statusLabel(order.status)}</span>
       <small>Rp {formatMoney(order.total)} · {formatHistoryTime(order.updatedAt ?? order.acceptedAt)}</small>
     </div>
   )
@@ -2187,7 +2194,7 @@ function BranchPerformanceRow({ row, rank, current }: { row: BranchDriverPerform
     <article className={`branch-performance-row ${current ? 'current' : ''}`}>
       <b>{rank}</b>
       <div className="branch-performance-main">
-        <strong>{row.name}{current ? ' (kamu)' : ''}</strong>
+        <strong>{row.username || row.name}{current ? ' (kamu)' : ''}</strong>
         <span>{row.is_available ? 'Online' : 'Offline'} - {row.status}</span>
         <small>{row.completed_orders_count} selesai - {row.cancelled_orders_count} cancel - rating {Number(row.rating ?? 0).toFixed(1)} ({row.ratings_count})</small>
       </div>
@@ -2427,6 +2434,7 @@ function mapOrder(order: ApiOrder): Order {
     customer: order.customer,
     customerPhone: order.customer_phone,
     driver: order.driver ?? null,
+    driverUsername: order.driver_username ?? null,
     source: order.source ?? null,
     service: order.service,
     distanceKm: order.distance_km,
@@ -2455,6 +2463,7 @@ function mapOrder(order: ApiOrder): Order {
     assignedAt: order.assigned_at ?? null,
     operHandleStatus: order.oper_handle_status ?? null,
     operHandleDriver: order.oper_handle_driver ?? null,
+    operHandleDriverUsername: order.oper_handle_driver_username ?? null,
     operHandleReason: order.oper_handle_reason ?? null,
     operHandleUpdatedAt: order.oper_handle_updated_at ?? null,
     adjustments: order.adjustments ?? [],
@@ -2464,7 +2473,7 @@ function mapOrder(order: ApiOrder): Order {
     crewRole: order.crew_role ?? null,
     crewStatus: order.crew_status ?? null,
     crewDecision: order.crew_decision ?? null,
-    crews: order.crews ?? [],
+    crews: mapOrderCrews(order.crews),
   }
 }
 
@@ -2478,6 +2487,7 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.extra_charge !== undefined ? { extraCharge: order.extra_charge } : {}),
     ...(order.total !== undefined || order.total_price !== undefined ? { total: order.total ?? order.total_price ?? 0 } : {}),
     ...(order.driver !== undefined ? { driver: order.driver } : {}),
+    ...(order.driver_username !== undefined ? { driverUsername: order.driver_username } : {}),
     ...(order.source !== undefined ? { source: order.source } : {}),
     ...(order.preferred_vehicle_type !== undefined ? { preferredVehicleType: order.preferred_vehicle_type } : {}),
     ...(order.required_vehicle_seat_rows !== undefined ? { requiredVehicleSeatRows: order.required_vehicle_seat_rows } : {}),
@@ -2488,13 +2498,34 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.assigned_at !== undefined ? { assignedAt: order.assigned_at } : {}),
     ...(order.oper_handle_status !== undefined ? { operHandleStatus: order.oper_handle_status } : {}),
     ...(order.oper_handle_driver !== undefined ? { operHandleDriver: order.oper_handle_driver } : {}),
+    ...(order.oper_handle_driver_username !== undefined ? { operHandleDriverUsername: order.oper_handle_driver_username } : {}),
     ...(order.oper_handle_reason !== undefined ? { operHandleReason: order.oper_handle_reason } : {}),
     ...(order.oper_handle_updated_at !== undefined ? { operHandleUpdatedAt: order.oper_handle_updated_at } : {}),
     ...(order.adjustments !== undefined ? { adjustments: order.adjustments } : {}),
     ...(order.crew_role !== undefined ? { crewRole: order.crew_role } : {}),
     ...(order.crew_status !== undefined ? { crewStatus: order.crew_status } : {}),
     ...(order.crew_decision !== undefined ? { crewDecision: order.crew_decision } : {}),
-    ...(order.crews !== undefined ? { crews: order.crews } : {}),
+    ...(order.crews !== undefined ? { crews: mapOrderCrews(order.crews) } : {}),
+  }
+}
+
+function mapOrderCrews(crews: ApiOrder['crews'] = []): NonNullable<Order['crews']> {
+  return (crews ?? []).map((crew) => ({
+    id: crew.id,
+    role: crew.role,
+    label: crew.label,
+    status: crew.status,
+    driver: crew.driver ?? null,
+    driverUsername: crew.driver_username ?? null,
+    service_charge: crew.service_charge,
+    accepted_at: crew.accepted_at ?? null,
+  }))
+}
+
+function mapBranchSuspendHistory(item: BranchSuspendHistory & { driver_username?: string | null }): BranchSuspendHistory {
+  return {
+    ...item,
+    driverUsername: item.driverUsername ?? item.driver_username ?? null,
   }
 }
 
@@ -2631,6 +2662,13 @@ function parseRequestPrices(text: string) {
     depositBase: prices.length > 0 ? prices[prices.length - 1] : null,
   }
 }
+function orderDriverDisplay(order?: Pick<Order, 'driver' | 'driverUsername'> | null) {
+  return order?.driverUsername || order?.driver || null
+}
+function isCurrentDriverOrder(order: Pick<Order, 'customer' | 'driver' | 'driverUsername'>, driver?: Driver | null) {
+  if (!driver) return false
+  return order.driverUsername === driver.username || order.driver === driver.name || order.customer === driver.name || order.customer === driver.username
+}
 function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
 function pendingCrew(order: Order) {
@@ -2672,7 +2710,7 @@ function operHandleStatusLabel(status?: string | null) {
   return key || 'Oper handle'
 }
 function operHandleStatusText(order: Order) {
-  const driver = order.operHandleDriver ?? order.driver ?? 'Driver'
+  const driver = order.operHandleDriverUsername ?? order.operHandleDriver ?? orderDriverDisplay(order) ?? 'Driver'
   if (order.operHandleStatus === 'approved') return `${driver} oper handle, order dibuka lagi`
   if (order.operHandleStatus === 'rejected') return `${driver} oper handle ditolak`
   return `${driver} mengajukan oper handle`
