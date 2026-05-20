@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\AiLocationSuggestion;
+use App\Models\LivePriceReview;
 use App\Models\LocationPoi;
+use App\Models\Order;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Arr;
 use Throwable;
 
 class AiLocationLearningService
@@ -60,6 +63,90 @@ class AiLocationLearningService
         Cache::flush();
 
         return compact('created', 'updated', 'suggestions');
+    }
+
+    public function syncFromManualOrdersAndLivePriceReviews(int $limit = 500): array
+    {
+        if (! Schema::hasTable('ai_location_suggestions')) {
+            return ['created' => 0, 'updated' => 0, 'processed' => 0, 'suggestions' => []];
+        }
+
+        $created = 0;
+        $updated = 0;
+        $processed = 0;
+        $suggestions = [];
+        $limit = max(50, min(2000, $limit));
+
+        if (Schema::hasTable('orders')) {
+            Order::query()
+                ->select([
+                    'id',
+                    'branch_id',
+                    'area_id',
+                    'service_type',
+                    'pickup_address',
+                    'destination_address',
+                    'raw_text',
+                    'pricing_breakdown',
+                    'created_at',
+                ])
+                ->where(function ($query): void {
+                    $query->whereNotNull('raw_text')
+                        ->orWhereNotNull('pickup_address')
+                        ->orWhereNotNull('destination_address');
+                })
+                ->latest('id')
+                ->limit($limit)
+                ->get()
+                ->each(function (Order $order) use (&$created, &$updated, &$processed, &$suggestions): void {
+                    $result = $this->learnFromWhatsappText(
+                        $this->orderLearningText($order),
+                        $order->branch_id ? (int) $order->branch_id : null,
+                        $order->area_id ? (int) $order->area_id : null,
+                    );
+
+                    $created += (int) $result['created'];
+                    $updated += (int) $result['updated'];
+                    $processed++;
+                    $suggestions = [...$suggestions, ...($result['suggestions'] ?? [])];
+                });
+        }
+
+        if (Schema::hasTable('live_price_reviews')) {
+            LivePriceReview::query()
+                ->select([
+                    'id',
+                    'branch_id',
+                    'service_type',
+                    'raw_text',
+                    'parsed',
+                    'order_payload',
+                    'quote',
+                    'created_at',
+                ])
+                ->where(function ($query): void {
+                    $query->whereNotNull('raw_text')
+                        ->orWhereNotNull('parsed')
+                        ->orWhereNotNull('order_payload');
+                })
+                ->latest('id')
+                ->limit($limit)
+                ->get()
+                ->each(function (LivePriceReview $review) use (&$created, &$updated, &$processed, &$suggestions): void {
+                    $result = $this->learnFromWhatsappText(
+                        $this->livePriceReviewLearningText($review),
+                        $review->branch_id ? (int) $review->branch_id : null,
+                        null,
+                    );
+
+                    $created += (int) $result['created'];
+                    $updated += (int) $result['updated'];
+                    $processed++;
+                    $suggestions = [...$suggestions, ...($result['suggestions'] ?? [])];
+                });
+        }
+
+        return compact('created', 'updated', 'processed', 'suggestions');
     }
 
     public function approve(AiLocationSuggestion $suggestion, array $overrides = []): LocationPoi
@@ -225,6 +312,110 @@ class AiLocationLearningService
     private function cleanLocation(string $value): string
     {
         return trim(preg_replace('/\s+/u', ' ', preg_replace('/^(alamat|lokasi)\s+/iu', '', $value) ?? '') ?? $value);
+    }
+
+    private function orderLearningText(Order $order): string
+    {
+        return $this->learningText([
+            'raw' => $order->raw_text,
+            'service' => $order->service_type,
+            'pickup' => $order->pickup_address,
+            'destination' => $order->destination_address,
+            'structured' => $order->pricing_breakdown,
+        ]);
+    }
+
+    private function livePriceReviewLearningText(LivePriceReview $review): string
+    {
+        return $this->learningText([
+            'raw' => $review->raw_text,
+            'service' => $review->service_type,
+            'structured' => [
+                'parsed' => $review->parsed,
+                'order_payload' => $review->order_payload,
+                'quote' => $review->quote,
+            ],
+        ]);
+    }
+
+    private function learningText(array $payload): string
+    {
+        $lines = [];
+
+        if (filled($payload['raw'] ?? null)) {
+            $lines[] = (string) $payload['raw'];
+        }
+
+        if (filled($payload['pickup'] ?? null)) {
+            $lines[] = 'Alamat jemput: '.$payload['pickup'];
+        }
+
+        if (filled($payload['destination'] ?? null)) {
+            $lines[] = 'Alamat tujuan: '.$payload['destination'];
+        }
+
+        foreach ($this->structuredLocationRows($payload['structured'] ?? []) as $row) {
+            $label = match ($row['role']) {
+                'pickup' => 'Alamat jemput',
+                'store' => 'Alamat pembelian',
+                default => 'Alamat tujuan',
+            };
+
+            $lines[] = $label.': '.$row['text'];
+        }
+
+        if (filled($payload['service'] ?? null)) {
+            $lines[] = 'Layanan: '.$payload['service'];
+        }
+
+        return collect($lines)
+            ->map(fn (mixed $line): string => trim((string) $line))
+            ->filter()
+            ->unique()
+            ->implode("\n");
+    }
+
+    /**
+     * @return array<int, array{text: string, role: string}>
+     */
+    private function structuredLocationRows(mixed $payload): array
+    {
+        if (! is_array($payload)) {
+            return [];
+        }
+
+        $rows = [];
+        $flat = Arr::dot($payload);
+
+        foreach ($flat as $key => $value) {
+            if (! is_scalar($value) || blank($value)) {
+                continue;
+            }
+
+            $key = mb_strtolower((string) $key);
+            $text = trim((string) $value);
+
+            if (preg_match('/(pickup|jemput|alamat_jemput|alamat\.jemput)/u', $key) === 1) {
+                $rows[] = ['text' => $text, 'role' => 'pickup'];
+                continue;
+            }
+
+            if (preg_match('/(purchase|pembelian|store|toko|warung|merchant)/u', $key) === 1) {
+                $rows[] = ['text' => $text, 'role' => 'store'];
+                continue;
+            }
+
+            if (preg_match('/(destination|tujuan|antar|alamat_tujuan|alamat\.tujuan)/u', $key) === 1) {
+                $rows[] = ['text' => $text, 'role' => 'destination'];
+            }
+        }
+
+        return collect($rows)
+            ->map(fn (array $row): array => ['text' => $this->cleanLocation($row['text']), 'role' => $row['role']])
+            ->filter(fn (array $row): bool => mb_strlen($this->pois->normalize($row['text'])) >= 3)
+            ->unique(fn (array $row): string => $row['role'].'|'.$this->pois->normalize($row['text']))
+            ->values()
+            ->all();
     }
 
     private function detectServiceType(string $rawText): ?string

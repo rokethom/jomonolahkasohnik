@@ -107,12 +107,12 @@ class AiAliasMapResource extends Resource
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['branch', 'area', 'geojsonRegion'])->latest('updated_at'))
             ->headerActions([
                 Tables\Actions\Action::make('generate_aliases')
-                    ->label('Generate Alias')
+                    ->label('Auto Sync Generate')
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
                     ->requiresConfirmation()
                     ->modalHeading('Generate AI Alias Map?')
-                    ->modalDescription('Sistem akan membuat alias awal dari GeoJSON Regions dan histori order. Alias manual tidak akan dihapus.')
+                    ->modalDescription('Sistem akan membuat alias awal dari GeoJSON Regions, lalu menambah alias dari manual order dan live edit harga yang cocok ke target GeoJSON. Alias manual tidak akan dihapus.')
                     ->action(function (): void {
                         $result = app(AiAliasMapService::class)->generateFromGeojsonAndOrders();
 

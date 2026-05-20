@@ -57,6 +57,31 @@ class AiLocationSuggestionResource extends Resource
         return $table
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['branch', 'area', 'locationPoi'])->latest('updated_at'))
             ->headerActions([
+                Tables\Actions\Action::make('auto_sync_generate')
+                    ->label('Auto Sync Generate')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Auto sync dari Manual Order dan Live Edit Harga?')
+                    ->modalDescription('Sistem akan membaca data order manual, order tersimpan, dan live edit harga untuk membuat AI Location Suggestions. Data lama tidak dihapus.')
+                    ->form([
+                        Forms\Components\TextInput::make('limit')
+                            ->label('Batas data per sumber')
+                            ->numeric()
+                            ->minValue(50)
+                            ->maxValue(2000)
+                            ->default(500)
+                            ->required(),
+                    ])
+                    ->action(function (array $data): void {
+                        $result = app(AiLocationLearningService::class)->syncFromManualOrdersAndLivePriceReviews((int) ($data['limit'] ?? 500));
+
+                        Notification::make()
+                            ->title('Auto sync location learning selesai')
+                            ->body("Processed: {$result['processed']}, created: {$result['created']}, updated: {$result['updated']}.")
+                            ->success()
+                            ->send();
+                    }),
                 Tables\Actions\Action::make('paste_whatsapp')
                     ->label('Paste WhatsApp Orders')
                     ->icon('heroicon-o-document-text')

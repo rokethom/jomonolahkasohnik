@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AiAliasMap;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
+use App\Models\LivePriceReview;
 use App\Models\Order;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -237,29 +238,102 @@ class AiAliasMapService
         }
 
         Order::query()
-            ->select(['pickup_address', 'destination_address', 'branch_id'])
+            ->select(['pickup_address', 'destination_address', 'raw_text', 'branch_id'])
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->latest()
             ->limit(500)
             ->get()
             ->each(function (Order $order): void {
-                foreach ([$order->pickup_address, $order->destination_address] as $address) {
-                    $normalizedAddress = $this->normalize((string) $address);
-                    if (mb_strlen($normalizedAddress) < 4) {
-                        continue;
-                    }
-
-                    $map = $this->resolve($normalizedAddress, $order->branch_id);
-                    if (! $map instanceof AiAliasMap) {
-                        continue;
-                    }
-
-                    $map->forceFill([
-                        'aliases' => $this->mergeAliases($map->aliases ?? [], [(string) $address]),
-                        'source' => $map->source === 'manual' ? 'manual' : 'history',
-                    ])->save();
+                foreach ($this->historyAliasCandidates($order->pickup_address, $order->destination_address, $order->raw_text) as $address) {
+                    $this->appendHistoryAlias((string) $address, $order->branch_id ? (int) $order->branch_id : null);
                 }
             });
+
+        if (! Schema::hasTable('live_price_reviews')) {
+            return;
+        }
+
+        LivePriceReview::query()
+            ->select(['branch_id', 'raw_text', 'parsed', 'order_payload', 'quote'])
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->latest()
+            ->limit(500)
+            ->get()
+            ->each(function (LivePriceReview $review): void {
+                foreach ($this->historyAliasCandidates(
+                    data_get($review->order_payload, 'pickup_address') ?? data_get($review->parsed, 'pickup_address'),
+                    data_get($review->order_payload, 'destination_address') ?? data_get($review->parsed, 'destination_address'),
+                    $review->raw_text,
+                    data_get($review->order_payload, 'purchase_address') ?? data_get($review->parsed, 'purchase_address') ?? data_get($review->quote, 'purchase_address'),
+                ) as $address) {
+                    $this->appendHistoryAlias((string) $address, $review->branch_id ? (int) $review->branch_id : null);
+                }
+            });
+    }
+
+    private function appendHistoryAlias(string $address, ?int $branchId): void
+    {
+        $normalizedAddress = $this->normalize($address);
+        if (mb_strlen($normalizedAddress) < 4) {
+            return;
+        }
+
+        $map = $this->resolve($normalizedAddress, $branchId);
+        if (! $map instanceof AiAliasMap) {
+            return;
+        }
+
+        $map->forceFill([
+            'aliases' => $this->mergeAliases($map->aliases ?? [], [$address]),
+            'source' => $map->source === 'manual' ? 'manual' : 'history',
+        ])->save();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function historyAliasCandidates(mixed ...$values): array
+    {
+        return collect($values)
+            ->filter(fn (mixed $value): bool => is_scalar($value) && filled($value))
+            ->flatMap(fn (mixed $value): array => $this->extractAliasCandidates((string) $value))
+            ->map(fn (string $value): string => trim($value))
+            ->filter(fn (string $value): bool => mb_strlen($this->normalize($value)) >= 4)
+            ->unique(fn (string $value): string => $this->normalize($value))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractAliasCandidates(string $text): array
+    {
+        $rows = [$text];
+
+        foreach (preg_split('/\R/u', $text) ?: [] as $line) {
+            if (! str_contains($line, ':')) {
+                continue;
+            }
+
+            [$label, $value] = array_map('trim', explode(':', $line, 2));
+            if ($value === '') {
+                continue;
+            }
+
+            if (preg_match('/jemput|pickup|tujuan|antar|destination|pembelian|toko|warung|store/u', mb_strtolower($label)) === 1) {
+                $rows[] = $value;
+            }
+        }
+
+        if (preg_match_all('/(?:dari|jemput)\s+(.+?)\s+(?:ke|tujuan|antar(?:kan)?\s+ke)\s+(.+?)(?:[.,\n]|$)/iu', $text, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $rows[] = trim($match[1]);
+                $rows[] = trim($match[2]);
+            }
+        }
+
+        return $rows;
     }
 
     private function withoutAdministrativeWords(string $value): string
