@@ -457,10 +457,23 @@ const useDriverStore = create<DriverStore>((set, get) => ({
       && incomingDriver.is_available === false,
     )
 
+    const normalizedDriver = incomingDriver
+      ? {
+          ...incomingDriver,
+          ...(keepLocalOnline
+            ? {
+                is_available: true,
+                can_receive_orders: incomingDriver.status === 'active' ? true : incomingDriver.can_receive_orders,
+                availability_block_reason: isOfflineBlockReason(incomingDriver.availability_block_reason)
+                  ? null
+                  : incomingDriver.availability_block_reason,
+              }
+            : {}),
+        }
+      : state.driver
+
     return {
-      driver: incomingDriver
-        ? { ...incomingDriver, ...(keepLocalOnline ? { is_available: true } : {}) }
-        : state.driver,
+      driver: normalizedDriver,
       orders: payload.orders.map(mapOrder),
       branchAcceptedOrders: (payload.branch_accepted_orders ?? []).map(mapOrder),
       branchRequestOrders: (payload.branch_request_orders ?? []).map(mapOrder),
@@ -902,8 +915,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
     ? orders.filter((order) => (order.status === 'pending' && order.eligibility?.can_accept !== false) || isCrewOpportunity(order))
     : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
-  const availabilityCopy = driver.availability_block_reason
-    ?? (canReceiveOrders ? 'Order baru dan request order aktif saat tersedia.' : 'OFF: order baru dan request order nonaktif.')
+  const availabilityCopy = driverAvailabilityCopy(driver, finance, isOnline, canReceiveOrders)
 
   const updateAvailability = async (online: boolean) => {
     if (availabilitySaving) return
@@ -2668,6 +2680,33 @@ function operHandleStatusText(order: Order) {
 function canReceiveRealtimeOrder(driver: Driver | null, finance: DriverFinance | null, isOnline: boolean) {
   if (!isOnline || !driver?.is_available) return false
   return Boolean(driver?.can_receive_orders ?? (driver?.status === 'active' && (driver?.deposit_status ?? finance?.status ?? 'paid') === 'paid'))
+}
+function isOfflineBlockReason(reason?: string | null) {
+  return String(reason ?? '').toLowerCase().includes('driver sedang off')
+}
+function driverAvailabilityCopy(driver: Driver, finance: DriverFinance | null, isOnline: boolean, canReceiveOrders: boolean) {
+  if (!isOnline || !driver.is_available) {
+    return 'Driver sedang OFF.'
+  }
+
+  if (driver.status !== 'active') {
+    return driver.availability_block_reason || suspendReasonText(driver)
+  }
+
+  if (canReceiveOrders) {
+    return 'Driver sedang ON. Order baru dan request order aktif saat tersedia.'
+  }
+
+  if (driver.availability_block_reason && !isOfflineBlockReason(driver.availability_block_reason)) {
+    return `Driver ON, tetapi belum bisa menerima order: ${driver.availability_block_reason}`
+  }
+
+  const depositStatus = driver.deposit_status ?? finance?.status
+  if (depositStatus && depositStatus !== 'paid') {
+    return `Driver ON, tetapi status setoran ${depositStatus}. Hubungi manajemen jika order belum tampil.`
+  }
+
+  return 'Driver ON, tetapi belum memenuhi syarat menerima order.'
 }
 function sortNewestOrderFirst(a: Order, b: Order) {
   const timeA = new Date(a.updatedAt ?? a.acceptedAt ?? 0).getTime()
