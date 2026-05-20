@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AiLocationSuggestionResource\Pages;
+use App\Jobs\SyncAiLocationSuggestionsJob;
 use App\Models\AiLocationSuggestion;
 use App\Models\Area;
 use App\Models\Branch;
@@ -69,16 +70,16 @@ class AiLocationSuggestionResource extends Resource
                             ->label('Batas data per sumber')
                             ->numeric()
                             ->minValue(50)
-                            ->maxValue(2000)
-                            ->default(500)
+                            ->maxValue(1000)
+                            ->default(300)
                             ->required(),
                     ])
                     ->action(function (array $data): void {
-                        $result = app(AiLocationLearningService::class)->syncFromManualOrdersAndLivePriceReviews((int) ($data['limit'] ?? 500));
+                        SyncAiLocationSuggestionsJob::dispatch((int) ($data['limit'] ?? 300));
 
                         Notification::make()
-                            ->title('Auto sync location learning selesai')
-                            ->body("Processed: {$result['processed']}, created: {$result['created']}, updated: {$result['updated']}.")
+                            ->title('Auto sync location learning diproses')
+                            ->body('Sync berjalan di queue AI agar halaman tidak timeout. Cek AI Logs/Horizon untuk status.')
                             ->success()
                             ->send();
                     }),
@@ -145,6 +146,8 @@ class AiLocationSuggestionResource extends Resource
                 Tables\Filters\SelectFilter::make('status')->options(['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected']),
                 Tables\Filters\SelectFilter::make('branch_id')->label('Cabang')->options(fn (): array => self::branchOptions()),
             ])
+            ->defaultPaginationPageOption(10)
+            ->paginated([10, 25, 50])
             ->actions([
                 Tables\Actions\Action::make('approve_to_poi')
                     ->label('Approve POI')

@@ -3,11 +3,11 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AiAliasMapResource\Pages;
+use App\Jobs\GenerateAiAliasMapsJob;
 use App\Models\AiAliasMap;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
-use App\Services\AiAliasMapService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -114,11 +114,11 @@ class AiAliasMapResource extends Resource
                     ->modalHeading('Generate AI Alias Map?')
                     ->modalDescription('Sistem akan membuat alias awal dari GeoJSON Regions, lalu menambah alias dari manual order dan live edit harga yang cocok ke target GeoJSON. Alias manual tidak akan dihapus.')
                     ->action(function (): void {
-                        $result = app(AiAliasMapService::class)->generateFromGeojsonAndOrders();
+                        GenerateAiAliasMapsJob::dispatch();
 
                         Notification::make()
-                            ->title('AI Alias Map selesai digenerate')
-                            ->body("Created: {$result['created']}, updated: {$result['updated']}.")
+                            ->title('AI Alias Map sedang diproses')
+                            ->body('Generate berjalan di queue AI agar halaman tidak timeout. Cek AI Logs/Horizon untuk status.')
                             ->success()
                             ->send();
                     }),
@@ -132,7 +132,7 @@ class AiAliasMapResource extends Resource
                     ->label('Alias')
                     ->formatStateUsing(fn (mixed $state): string => collect($state ?? [])->take(4)->implode(', '))
                     ->wrap()
-                    ->searchable(),
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('branch_id')
                     ->label('Cabang')
                     ->formatStateUsing(fn (AiAliasMap $record): string => $record->branch?->display_name ?? $record->geojsonRegion?->branch?->display_name ?? '-')
@@ -175,6 +175,8 @@ class AiAliasMapResource extends Resource
                         'history' => 'History',
                     ]),
             ])
+            ->defaultPaginationPageOption(10)
+            ->paginated([10, 25, 50])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
