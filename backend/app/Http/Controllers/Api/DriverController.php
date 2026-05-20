@@ -26,6 +26,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
@@ -629,12 +630,13 @@ class DriverController extends Controller
         $today = now();
         $monthStart = $today->copy()->startOfMonth();
         $monthEnd = $today->copy()->endOfMonth();
+        $completedAtColumn = Schema::hasColumn('orders', 'completed_at') ? 'completed_at' : 'updated_at';
         $completedThisMonth = $driver->orders()
             ->where('status', OrderStatus::Completed->value)
-            ->whereBetween('created_at', [$monthStart, $monthEnd]);
+            ->whereBetween($completedAtColumn, [$monthStart, $monthEnd]);
         $completedToday = $driver->orders()
             ->where('status', OrderStatus::Completed->value)
-            ->whereDate('created_at', $today->toDateString());
+            ->whereDate($completedAtColumn, $today->toDateString());
         $cancelledThisMonth = $driver->orders()
             ->where('status', OrderStatus::Cancelled->value)
             ->whereBetween('created_at', [$monthStart, $monthEnd]);

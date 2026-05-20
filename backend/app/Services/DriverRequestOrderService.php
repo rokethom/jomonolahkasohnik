@@ -68,6 +68,7 @@ class DriverRequestOrderService
             'raw_text' => $rawText,
             'notes' => $parsed['notes'],
             'status' => OrderStatus::Completed,
+            'completed_at' => now(),
         ]))->fresh(['service', 'driver.user']);
 
         $this->ringPricing->recordDriverRequestOrder($order, $driver->user);

@@ -9,6 +9,7 @@ use App\Enums\OrderStatus;
 use App\Services\Pricing\JokerPricing;
 use App\Services\Pricing\ServiceFeeCalculator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class DriverFinanceService
 {
@@ -159,15 +160,16 @@ class DriverFinanceService
         $today = now();
         $monthStart = $today->copy()->startOfMonth();
         $monthEnd = $today->copy()->endOfMonth();
+        $completedAtColumn = Schema::hasColumn('orders', 'completed_at') ? 'completed_at' : 'updated_at';
         $completedThisMonth = $driver->orders()
             ->where('status', OrderStatus::Completed->value)
-            ->whereBetween('created_at', [$monthStart, $monthEnd]);
+            ->whereBetween($completedAtColumn, [$monthStart, $monthEnd]);
         $cancelledThisMonth = $driver->orders()
             ->where('status', OrderStatus::Cancelled->value)
             ->whereBetween('created_at', [$monthStart, $monthEnd]);
         $completedToday = $driver->orders()
             ->where('status', OrderStatus::Completed->value)
-            ->whereDate('created_at', $today->toDateString());
+            ->whereDate($completedAtColumn, $today->toDateString());
 
         return [
             'rating' => round((float) $rating, 2),
@@ -288,10 +290,12 @@ class DriverFinanceService
 
     private function handleTotal(Driver $driver, Carbon $start, Carbon $end): int
     {
+        $completedAtColumn = Schema::hasColumn('orders', 'completed_at') ? 'completed_at' : 'updated_at';
+
         return (int) Order::query()
             ->where('driver_id', $driver->id)
             ->where('status', 'COMPLETED')
-            ->whereBetween('created_at', [$start, $end])
+            ->whereBetween($completedAtColumn, [$start, $end])
             ->get(['source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown'])
             ->sum(fn (Order $order): int => $this->depositAmount($order));
     }

@@ -50,7 +50,10 @@ class CompleteOrder
             }
 
             $oldStatus = $order->status;
-            $order->update(['status' => OrderStatus::Completed]);
+            $order->update([
+                'status' => OrderStatus::Completed,
+                'completed_at' => now(),
+            ]);
             $order->driver?->update(['is_available' => true]);
             $order->crews()
                 ->whereNotNull('driver_id')

@@ -13,6 +13,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class DriverReportService
 {
@@ -72,6 +73,7 @@ class DriverReportService
         $start = $earningPeriod->copy()->startOfMonth();
         $end = $earningPeriod->copy()->endOfMonth();
         $vehicleType = $this->normalizeVehicleType($vehicleType);
+        $completedAtColumn = Schema::hasColumn('orders', 'completed_at') ? 'completed_at' : 'updated_at';
 
         return Driver::query()
             ->with(['user.branch'])
@@ -81,11 +83,11 @@ class DriverReportService
                 return $query->whereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $this->scopedBranchIds($actor) ?? []));
             })
             ->get()
-            ->map(function (Driver $driver) use ($reportPeriod, $earningPeriod, $previous, $start, $end, $vehicleType): array {
+            ->map(function (Driver $driver) use ($reportPeriod, $earningPeriod, $previous, $start, $end, $vehicleType, $completedAtColumn): array {
                 $orders = Order::query()
                     ->where('driver_id', $driver->id)
                     ->where('status', OrderStatus::Completed->value)
-                    ->whereBetween('created_at', [$start, $end])
+                    ->whereBetween($completedAtColumn, [$start, $end])
                     ->when($vehicleType !== null, fn (Builder $query): Builder => $this->scopeOrderVehicleType($query, $vehicleType))
                     ->get(['id', 'source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown']);
 

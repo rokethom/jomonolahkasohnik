@@ -264,6 +264,7 @@ class OrderService
 
                 $lockedOrder->update([
                     'status' => OrderStatus::Completed,
+                    'completed_at' => now(),
                     'notes' => trim(((string) $lockedOrder->notes)."\nAuto-complete: driver lupa klik selesai setelah 30 menit."),
                 ]);
                 $lockedOrder->driver?->update(['is_available' => true]);
