@@ -12,6 +12,7 @@ use App\Exceptions\OrderLimitExceededException;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Branch;
+use App\Models\CancelRequest;
 use App\Models\ChatConversation;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
@@ -95,6 +96,7 @@ class AdminController extends Controller
             'drivers' => $wants(['dashboard', 'drivers', 'reports']) ? $this->driverRows($user) : [],
             'operator_performance' => $wants(['dashboard']) ? $this->operatorPerformanceRows($user) : [],
             'orders' => $wants(['dashboard', 'orders', 'request-orders', 'internal-chat', 'reports']) ? $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)) : [],
+            'cancel_requests' => $wants(['dashboard', 'chats']) ? $this->cancelRequestsQuery($user)->latest()->limit(20)->get()->map(fn (CancelRequest $cancelRequest) => $this->cancelRequestPayload($cancelRequest)) : [],
             'oper_handles' => $wants(['dashboard', 'orders', 'request-orders']) ? $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)) : [],
             'branches' => Branch::query()
                 ->with([
@@ -3234,6 +3236,28 @@ class AdminController extends Controller
         return $query;
     }
 
+    private function cancelRequestsQuery(User $actor): Builder
+    {
+        $query = CancelRequest::query()
+            ->with(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'requester', 'conversation'])
+            ->where('status', 'pending');
+
+        if (in_array($actor->role, [UserRole::WebAdmin, UserRole::CmsEditor], true)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $branchIds = $this->operationalBranchScopeIds($actor);
+        if ($branchIds !== null) {
+            $query->whereHas('order', function (Builder $query) use ($branchIds): void {
+                $query->whereIn('branch_id', $branchIds)
+                    ->orWhereHas('user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds))
+                    ->orWhereHas('driver.user', fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
+            });
+        }
+
+        return $query;
+    }
+
     private function operHandlesQuery(User $actor): Builder
     {
         $query = OperHandleRequest::query()
@@ -3788,6 +3812,35 @@ class AdminController extends Controller
             'spv_approved_at' => $operHandle->spv_approved_at?->toDateTimeString(),
             'created_at' => $operHandle->created_at?->toDateTimeString(),
             'updated_at' => $operHandle->updated_at?->toDateTimeString(),
+        ];
+    }
+
+    private function cancelRequestPayload(CancelRequest $cancelRequest): array
+    {
+        $cancelRequest->loadMissing(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'requester', 'conversation']);
+        $order = $cancelRequest->order;
+        $branch = $order?->branch ?? $order?->user?->branch ?? $order?->driver?->user?->branch;
+
+        return [
+            'id' => $cancelRequest->id,
+            'order_id' => $cancelRequest->order_id,
+            'order_code' => $order?->order_code,
+            'order_status' => $order?->status?->value,
+            'chat_id' => $cancelRequest->chat_conversation_id,
+            'customer' => $order?->customer_name ?? $order?->user?->name ?? $cancelRequest->requester?->name,
+            'driver' => $order?->driver?->user?->username ?: $order?->driver?->user?->name,
+            'branch' => $branch?->name,
+            'branch_code' => $branch?->branch_code,
+            'branch_area' => $branch?->area,
+            'branch_display_name' => $branch?->display_name,
+            'service' => $order?->service_type,
+            'total' => $order?->total_price,
+            'reason' => $cancelRequest->reason,
+            'image_url' => $cancelRequest->image_url,
+            'status' => $cancelRequest->status,
+            'requested_by' => $cancelRequest->requester?->name,
+            'created_at' => $cancelRequest->created_at?->toDateTimeString(),
+            'updated_at' => $cancelRequest->updated_at?->toDateTimeString(),
         ];
     }
 

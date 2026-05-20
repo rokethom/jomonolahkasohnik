@@ -206,6 +206,27 @@ type OperHandle = {
   created_at?: string | null
   updated_at?: string | null
 }
+type CancelRequestRow = {
+  id: number
+  order_id?: number | null
+  order_code?: string | null
+  order_status?: string | null
+  chat_id?: number | null
+  customer?: string | null
+  driver?: string | null
+  branch?: string | null
+  branch_code?: string | null
+  branch_area?: string | null
+  branch_display_name?: string | null
+  service?: string | null
+  total?: number | null
+  reason?: string | null
+  image_url?: string | null
+  status: string
+  requested_by?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
 type DriverCandidate = { id: number; name: string; username?: string | null; phone?: string | null; vehicle_type?: string | null; vehicle_types?: string[]; vehicle_seat_rows?: number | null; is_ladies_driver?: boolean; branch?: string | null; branch_area?: string | null; rating_average?: number; is_favorite?: boolean }
 type CustomerPreference = { favorite_driver?: { id: number; name: string } | null; blocked_drivers?: string[]; notes?: string | null }
 type ManualOrderPayload = {
@@ -482,6 +503,7 @@ type Bootstrap = {
   drivers: DriverRow[]
   operator_performance?: OperatorPerformance[]
   orders: Order[]
+  cancel_requests?: CancelRequestRow[]
   oper_handles?: OperHandle[]
   branches: Branch[]
   services: ServiceRow[]
@@ -1376,6 +1398,16 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
           ? { label: 'Oper Handle Pending', value: pendingOperHandles, icon: 'shield', tone: 'red', action: 'Approval', onClick: () => onNavigate('orders') }
           : { label: 'Chat Belum Dibalas', value: unansweredChats, icon: 'chat', tone: 'red', action: 'Buka chat', onClick: () => onNavigate('chats') },
       ]} />
+      {data.me.role === 'spv' && (
+        <DashboardCancelRequests
+          requests={data.cancel_requests ?? []}
+          permissions={data.permissions}
+          api={api}
+          onChanged={onChanged}
+          onOpenOrder={onOpenOrder}
+          onOpenChats={() => onNavigate('chats')}
+        />
+      )}
       <section className="insight-grid">
         <button className={nightTariffActive ? 'insight-card active' : 'insight-card'} type="button" onClick={() => onNavigate('settings')}>
           <span>Tarif Malam</span>
@@ -1496,6 +1528,60 @@ function InfoBox({ label, value }: { label: string; value: string }) {
 
 function StatsRow({ stats }: { stats: { label: string; value: number; icon: string; tone: string; action?: string; onClick?: () => void }[] }) {
   return <section className="stats-row">{stats.map((stat) => <article className={`stat-card ${stat.tone}`} key={stat.label} role={stat.onClick ? 'button' : undefined} tabIndex={stat.onClick ? 0 : undefined} onClick={stat.onClick} onKeyDown={(event) => { if (stat.onClick && (event.key === 'Enter' || event.key === ' ')) stat.onClick() }}><div className="stat-icon"><Icon name={stat.icon} /></div><span>{stat.label}</span><strong>{stat.value}</strong>{stat.action && <small className="stat-action">{stat.action}</small>}<div className="sparkline"><i></i><i></i><i></i><i></i><i></i></div></article>)}</section>
+}
+
+function DashboardCancelRequests({ requests, permissions, api, onChanged, onOpenOrder, onOpenChats }: { requests: CancelRequestRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void>; onOpenOrder: (code: string) => void; onOpenChats: () => void }) {
+  const [processingId, setProcessingId] = useState<number | null>(null)
+  const [message, setMessage] = useState('')
+
+  const decide = async (request: CancelRequestRow, action: 'approve' | 'reject') => {
+    setProcessingId(request.id)
+    setMessage('')
+    try {
+      await api(`/admin/chat/cancel-requests/${request.id}/${action}`, { method: 'POST' })
+      setMessage(action === 'approve' ? 'Cancel order disetujui.' : 'Cancel order ditolak.')
+      await onChanged()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Gagal memproses cancel request.')
+    } finally {
+      setProcessingId(null)
+      window.setTimeout(() => setMessage(''), 3200)
+    }
+  }
+
+  return (
+    <section className="panel dashboard-cancel-requests">
+      <div className="section-head compact-head">
+        <div>
+          <h2>Permintaan Cancel Order</h2>
+          <p>Request batal order pending yang perlu diputuskan SPV.</p>
+        </div>
+        <span className={requests.length > 0 ? 'status warning' : 'status success'}>{requests.length} pending</span>
+      </div>
+      {message && <div className={message.includes('Gagal') ? 'error-text' : 'success-text'}>{message}</div>}
+      {requests.length === 0 ? (
+        <EmptyPanel title="Tidak ada request cancel" copy="Permintaan cancel customer akan tampil di sini." />
+      ) : (
+        <div className="dispatch-queue compact-cancel-list">
+          {requests.map((request) => (
+            <article className="dispatch-order-row cancel-request-row" key={request.id}>
+              <button className="order-code-link inline" type="button" onClick={() => request.order_code && onOpenOrder(request.order_code)}>{request.order_code ?? `Cancel #${request.id}`}</button>
+              <div>
+                <strong>{request.customer || 'Customer'}</strong>
+                <span>{request.branch_area || request.branch || '-'} - {request.service || 'order'} - {formatShortDateTime(request.created_at)}</span>
+                <p>{request.reason || 'Tanpa alasan tertulis.'}</p>
+              </div>
+              <div className="dispatch-row-actions">
+                <button className="secondary-button compact" type="button" onClick={onOpenChats}>Buka Chat</button>
+                {permissions.can_reject_cancel_order && <button className="secondary-button compact reject" disabled={processingId === request.id} type="button" onClick={() => void decide(request, 'reject')}>Reject</button>}
+                {permissions.can_approve_cancel_order && <button className="primary-button compact" disabled={processingId === request.id} type="button" onClick={() => void decide(request, 'approve')}>{processingId === request.id ? 'Proses...' : 'Approve'}</button>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
 }
 
 function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
