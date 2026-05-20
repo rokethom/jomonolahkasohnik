@@ -1,7 +1,7 @@
 {
   "name": "JOJO si Aplikasi Joker",
-  "short_name": "JOJO",
-  "description": "Jojo si Aplikasi Joker.",
+  "short_name": "Joker",
+  "description": "Aplikasi Joker.",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",
