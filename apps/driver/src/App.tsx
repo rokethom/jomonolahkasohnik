@@ -37,6 +37,8 @@ type OrderStatus = 'pending' | 'accepted' | 'on_delivery' | 'pending_cancel' | '
 
 type Driver = {
   id: number
+  driverId?: number | null
+  driver_id?: number | null
   name: string
   username: string
   phone: string | null
@@ -69,6 +71,7 @@ type Eligibility = {
 type Order = {
   id: number
   code: string
+  driverId?: number | null
   status: OrderStatus
   customer: string
   customerPhone: string | null
@@ -289,6 +292,7 @@ type ApiOrder = {
   id: number
   code: string
   order_code?: string
+  driver_id?: number | null
   status: string
   customer: string
   customer_phone: string | null
@@ -489,9 +493,7 @@ const useDriverStore = create<DriverStore>((set, get) => ({
       ...(incomingDriver && !keepLocalOnline ? { isOnline: Boolean(incomingDriver.is_available) } : {}),
     }
   }),
-  updateOrder: (order) => set((state) => ({
-    orders: state.orders.map((item) => item.id === order.id ? { ...item, ...mapOrderPatch(order) } : item),
-  })),
+  updateOrder: (order) => set((state) => reconcileRealtimeOrder(state, order)),
   setDriverState: (driver, finance) => set({
     driver,
     ...(finance !== undefined ? { finance } : {}),
@@ -882,6 +884,7 @@ function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedRe
 
     const refresh = async () => {
       if (busy) return
+      if (document.visibilityState === 'hidden') return
       busy = true
       if (alive) setSyncing(true)
       try {
@@ -892,7 +895,7 @@ function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedRe
       }
     }
 
-    const interval = window.setInterval(() => void refresh(), 10000)
+    const interval = window.setInterval(() => void refresh(), 20000)
     const onVisible = () => {
       if (document.visibilityState === 'visible') void refresh()
     }
@@ -2430,6 +2433,7 @@ function mapOrder(order: ApiOrder): Order {
   return {
     id: order.id,
     code: order.code,
+    driverId: order.driver_id ?? null,
     status: normalizeStatus(order.status),
     customer: order.customer,
     customerPhone: order.customer_phone,
@@ -2482,6 +2486,7 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     id: order.id,
     ...(order.code || order.order_code ? { code: order.code ?? order.order_code } : {}),
     ...(order.status ? { status: normalizeStatus(order.status) } : {}),
+    ...(order.driver_id !== undefined ? { driverId: order.driver_id } : {}),
     ...(order.price !== undefined ? { price: order.price } : {}),
     ...(order.service_fee !== undefined || order.service_charge !== undefined ? { serviceFee: order.service_fee ?? order.service_charge ?? 0 } : {}),
     ...(order.extra_charge !== undefined ? { extraCharge: order.extra_charge } : {}),
@@ -2650,6 +2655,30 @@ function normalizeStatus(status: string): OrderStatus {
   return 'pending'
 }
 
+function reconcileRealtimeOrder(state: DriverStore, incoming: Partial<ApiOrder> & { id: number }): Partial<DriverStore> {
+  const existing = state.orders.find((item) => item.id === incoming.id)
+  if (!existing) return {}
+
+  const nextOrder = { ...existing, ...mapOrderPatch(incoming) }
+  const assignedToCurrentDriver = isCurrentDriverOrder(nextOrder, state.driver)
+  const assignedToAnotherDriver = Boolean(nextOrder.driverId || nextOrder.driverUsername || nextOrder.driver) && !assignedToCurrentDriver
+  const shouldRemove = nextOrder.status === 'cancelled' || (nextOrder.status !== 'pending' && assignedToAnotherDriver)
+
+  if (shouldRemove) {
+    const nextSelectedOrderId = state.selectedOrderId === incoming.id ? null : state.selectedOrderId
+
+    return {
+      orders: state.orders.filter((item) => item.id !== incoming.id),
+      selectedOrderId: nextSelectedOrderId,
+      ...(nextSelectedOrderId === null && state.view === 'order-detail' ? { view: 'orders' as const } : {}),
+    }
+  }
+
+  return {
+    orders: state.orders.map((item) => item.id === incoming.id ? nextOrder : item),
+  }
+}
+
 function isDoneStatus(status?: string) {
   return normalizeStatus(String(status ?? '')) === 'done'
 }
@@ -2665,9 +2694,13 @@ function parseRequestPrices(text: string) {
 function orderDriverDisplay(order?: Pick<Order, 'driver' | 'driverUsername'> | null) {
   return order?.driverUsername || order?.driver || null
 }
-function isCurrentDriverOrder(order: Pick<Order, 'customer' | 'driver' | 'driverUsername'>, driver?: Driver | null) {
+function isCurrentDriverOrder(order: Pick<Order, 'customer' | 'driver' | 'driverUsername' | 'driverId'>, driver?: Driver | null) {
   if (!driver) return false
-  return order.driverUsername === driver.username || order.driver === driver.name || order.customer === driver.name || order.customer === driver.username
+  return order.driverId === (driver.driverId ?? driver.driver_id)
+    || order.driverUsername === driver.username
+    || order.driver === driver.name
+    || order.customer === driver.name
+    || order.customer === driver.username
 }
 function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }

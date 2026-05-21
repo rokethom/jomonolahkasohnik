@@ -91,7 +91,15 @@ class DriverController extends Controller
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->whereNotNull('driver_id')
+                ->whereIn('status', [
+                    OrderStatus::DriverAccepted->value,
+                    OrderStatus::DriverOnTheWay->value,
+                    OrderStatus::ArrivedPickup->value,
+                    OrderStatus::OnGoing->value,
+                    OrderStatus::PendingCancel->value,
+                ])
                 ->latest('updated_at')
+                ->limit(30)
                 ->get()
             : collect();
         $branchRequestOrders = $branchId
@@ -100,6 +108,7 @@ class DriverController extends Controller
                 ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
+                ->limit(20)
                 ->get()
             : collect();
         $branchOperHandleOrders = $branchId
@@ -107,6 +116,7 @@ class DriverController extends Controller
                 ->with(['order.user', 'order.driver.user', 'driver.user'])
                 ->whereHas('order', fn ($query) => $this->applyOperationalOrderScope($query, $driver))
                 ->latest('updated_at')
+                ->limit(20)
                 ->get()
             : collect();
         $branchSuspendHistory = $branchId
@@ -233,7 +243,15 @@ class DriverController extends Controller
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->whereNotNull('driver_id')
+                ->whereIn('status', [
+                    OrderStatus::DriverAccepted->value,
+                    OrderStatus::DriverOnTheWay->value,
+                    OrderStatus::ArrivedPickup->value,
+                    OrderStatus::OnGoing->value,
+                    OrderStatus::PendingCancel->value,
+                ])
                 ->latest('updated_at')
+                ->limit(30)
                 ->get()
             : collect();
         $branchRequestOrders = $branchId
@@ -242,6 +260,7 @@ class DriverController extends Controller
                 ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->where('source', 'driver_request')
                 ->latest('updated_at')
+                ->limit(20)
                 ->get()
             : collect();
         $branchOperHandleOrders = $branchId
@@ -249,6 +268,7 @@ class DriverController extends Controller
                 ->with(['order.user', 'order.driver.user', 'driver.user'])
                 ->whereHas('order', fn ($query) => $this->applyOperationalOrderScope($query, $driver))
                 ->latest('updated_at')
+                ->limit(20)
                 ->get()
             : collect();
         $branchSuspendHistory = $branchId
@@ -602,6 +622,8 @@ class DriverController extends Controller
 
         return [
             'id' => $user->id,
+            'driver_id' => $driver?->id,
+            'driverId' => $driver?->id,
             'name' => $user->name,
             'username' => $user->username,
             'phone' => $user->phone,
@@ -910,6 +932,7 @@ class DriverController extends Controller
         return [
             'id' => $order->id,
             'code' => $order->order_code,
+            'driver_id' => $order->driver_id,
             'status' => $order->status->value,
             'customer' => $order->user?->name ?? 'Customer',
             'customer_phone' => $order->user?->phone,

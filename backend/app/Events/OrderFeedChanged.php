@@ -44,6 +44,7 @@ class OrderFeedChanged implements ShouldBroadcastNow
                 'area_id' => $order->area_id,
                 'driver_id' => $order->driver_id,
                 'driver' => $order->driver?->user?->name,
+                'driver_username' => $order->driver?->user?->username,
                 'service_type' => $order->service_type,
                 'service' => $order->service_type,
                 'status' => is_object($status) && method_exists($status, '__toString')
