@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\AuditLog;
 use App\Models\Branch;
 use App\Models\User;
+use App\Services\DatabaseBackupService;
 use App\Services\SettingService;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -39,6 +41,10 @@ class SystemControlCenterPage extends Page
 
     public string $whitelistIps = '';
 
+    public string $securitySearch = '';
+
+    public string $auditSearch = '';
+
     /** @var array<string, mixed> */
     public array $health = [];
 
@@ -54,17 +60,41 @@ class SystemControlCenterPage extends Page
     /** @var array<int, array<string, mixed>> */
     public array $backups = [];
 
+    public bool $autoBackupEnabled = false;
+
+    public string $autoBackupTime = '02:00';
+
+    public int $autoBackupRetentionDays = 14;
+
+    /** @var array<string, mixed>|null */
+    public ?array $latestAutoBackup = null;
+
     /** @var array<string, mixed> */
     public array $summary = [];
+
+    /** @var array<int, array<string, mixed>> */
+    public array $roleDocumentation = [];
+
+    /** @var array<int, array<string, string>> */
+    public array $systemDocumentation = [];
+
+    /** @var array<string, string> */
+    public array $apiDocumentationNote = [];
 
     public static function canAccess(): bool
     {
         return auth()->user()?->role === UserRole::Admin;
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return static::canAccess();
+    }
+
     public function mount(SettingService $settings): void
     {
         $this->whitelistIps = implode("\n", $this->loadWhitelistIps($settings));
+        $this->loadAutoBackupSettings($settings);
         $this->refreshDashboard();
     }
 
@@ -72,25 +102,58 @@ class SystemControlCenterPage extends Page
     {
         $this->summary = $this->summaryData();
         $this->health = $this->healthData();
+        $this->roleDocumentation = $this->roleDocumentationRows();
+        $this->systemDocumentation = $this->systemDocumentationRows();
+        $this->apiDocumentationNote = $this->apiDocumentationNote();
+        $this->refreshSecurityRows();
+        $this->refreshAuditRows();
+        $this->backups = $this->backupRows();
+        $this->latestAutoBackup = app(DatabaseBackupService::class)->latestAutoBackup();
+    }
+
+    public function updatedSecuritySearch(): void
+    {
+        $this->refreshSecurityRows();
+    }
+
+    public function updatedAuditSearch(): void
+    {
+        $this->refreshAuditRows();
+    }
+
+    private function refreshSecurityRows(): void
+    {
         $this->staffUsers = $this->staffUserRows();
-        $this->failedLogins = $this->auditRows(['failed_admin_login'], 10);
+    }
+
+    private function refreshAuditRows(): void
+    {
+        $this->failedLogins = $this->auditRows(['failed_admin_login'], 25);
         $this->forensicLogs = $this->auditRows([
             'updated_order_price',
+            'approved_live_price_review',
+            'rejected_live_price_review',
             'driver_suspended',
             'filament_suspended_driver_google_auth',
             'suspended_driver_google_auth',
             'deleted_order',
             'filament_deleted_order',
             'updated_driver_deposit_report',
+            'edited_driver_deposit_report_row',
             'marked_driver_deposit_paid',
             'marked_driver_deposit_unpaid',
             'reset_user_token',
+            'system_control_locked_user',
+            'system_control_unlocked_user',
+            'system_control_reset_user_tokens',
             'system_control_backup_database',
+            'system_control_auto_backup_database',
+            'system_control_auto_backup_database_test',
+            'system_control_saved_auto_backup_settings',
             'system_control_restore_database',
             'system_control_cleanup_logs',
             'system_control_merge_duplicates',
-        ], 18);
-        $this->backups = $this->backupRows();
+        ], 50);
     }
 
     public function saveWhitelistIps(SettingService $settings): void
@@ -155,6 +218,28 @@ class SystemControlCenterPage extends Page
         $this->refreshDashboard();
     }
 
+    public function backupAndDownloadDatabase(): ?BinaryFileResponse
+    {
+        $backup = $this->createDatabaseBackup('manual-download');
+        $this->recordAudit('system_control_backup_download_database', null, $backup);
+
+        if (! ($backup['ok'] ?? false) || empty($backup['file'])) {
+            Notification::make()
+                ->title('Backup database gagal')
+                ->body($backup['message'] ?? 'File backup tidak berhasil dibuat.')
+                ->danger()
+                ->send();
+
+            $this->refreshDashboard();
+
+            return null;
+        }
+
+        $this->refreshDashboard();
+
+        return $this->downloadDatabaseBackup((string) $backup['file']);
+    }
+
     public function exportFullData(): void
     {
         $backup = $this->createDatabaseBackup('full-export');
@@ -162,6 +247,48 @@ class SystemControlCenterPage extends Page
 
         Notification::make()
             ->title($backup['ok'] ? 'Export full data selesai' : 'Export full data gagal')
+            ->body($backup['message'])
+            ->{$backup['ok'] ? 'success' : 'danger'}()
+            ->send();
+
+        $this->refreshDashboard();
+    }
+
+    public function saveAutoBackupSettings(SettingService $settings): void
+    {
+        $this->autoBackupTime = $this->normalizeBackupTime($this->autoBackupTime);
+        $this->autoBackupRetentionDays = max(1, min(180, (int) $this->autoBackupRetentionDays));
+
+        $settings->set('scc_auto_database_backup_enabled', $this->autoBackupEnabled ? 'true' : 'false', true);
+        $settings->set('scc_auto_database_backup_time', $this->autoBackupTime, true);
+        $settings->set('scc_auto_database_backup_retention_days', (string) $this->autoBackupRetentionDays, true);
+
+        $this->recordAudit('system_control_saved_auto_backup_settings', null, [
+            'enabled' => $this->autoBackupEnabled,
+            'time' => $this->autoBackupTime,
+            'retention_days' => $this->autoBackupRetentionDays,
+        ]);
+
+        Notification::make()
+            ->title('Auto backup database tersimpan')
+            ->body($this->autoBackupEnabled ? 'Scheduler akan membuat backup sesuai jam yang dipilih.' : 'Auto backup database dinonaktifkan.')
+            ->success()
+            ->send();
+
+        $this->refreshDashboard();
+    }
+
+    public function runAutoBackupNow(): void
+    {
+        $backup = $this->createDatabaseBackup('auto-backup');
+        $deleted = app(DatabaseBackupService::class)->cleanupAutoBackupsOlderThan($this->autoBackupRetentionDays);
+        $this->recordAudit('system_control_auto_backup_database_test', null, [
+            'result' => $backup,
+            'deleted_old_auto_backups' => $deleted,
+        ]);
+
+        Notification::make()
+            ->title($backup['ok'] ? 'Test auto backup selesai' : 'Test auto backup gagal')
             ->body($backup['message'])
             ->{$backup['ok'] ? 'success' : 'danger'}()
             ->send();
@@ -187,6 +314,20 @@ class SystemControlCenterPage extends Page
             ->send();
 
         $this->refreshDashboard();
+    }
+
+    public function downloadDatabaseBackup(string $file): BinaryFileResponse
+    {
+        $filename = basename($file);
+        $path = $this->backupDirectory().DIRECTORY_SEPARATOR.$filename;
+
+        abort_unless(File::exists($path) && str_ends_with($filename, '.sql'), 404);
+
+        $this->recordAudit('system_control_download_database_backup', null, ['file' => $filename]);
+
+        return response()->download($path, $filename, [
+            'Content-Type' => 'application/sql',
+        ]);
     }
 
     public function cleanupOldLogs(): void
@@ -271,8 +412,8 @@ class SystemControlCenterPage extends Page
         $user->tokens()->delete();
         $user->deviceTokens()->update(['is_active' => false]);
 
-        $this->recordAudit('system_control_locked_staff', $user);
-        Notification::make()->title('Akun staff dikunci')->body($user->name)->success()->send();
+        $this->recordAudit('system_control_locked_user', $user);
+        Notification::make()->title('Akun dikunci')->body($user->name)->success()->send();
         $this->refreshDashboard();
     }
 
@@ -290,8 +431,8 @@ class SystemControlCenterPage extends Page
             'suspended_until' => null,
         ])->save();
 
-        $this->recordAudit('system_control_unlocked_staff', $user);
-        Notification::make()->title('Akun staff dibuka')->body($user->name)->success()->send();
+        $this->recordAudit('system_control_unlocked_user', $user);
+        Notification::make()->title('Akun dibuka')->body($user->name)->success()->send();
         $this->refreshDashboard();
     }
 
@@ -359,10 +500,199 @@ class SystemControlCenterPage extends Page
     {
         return [
             'failed_login_today' => AuditLog::query()->where('action', 'failed_admin_login')->whereDate('created_at', today())->count(),
-            'suspended_staff' => User::query()->where('is_staff', true)->where('is_suspended', true)->count(),
+            'suspended_staff' => User::query()
+                ->where('role', '!=', UserRole::Admin->value)
+                ->where('is_suspended', true)
+                ->count(),
             'active_tokens' => Schema::hasTable('personal_access_tokens') ? DB::table('personal_access_tokens')->count() : 0,
             'failed_jobs' => Schema::hasTable('failed_jobs') ? DB::table('failed_jobs')->count() : 0,
             'audit_logs' => AuditLog::query()->count(),
+        ];
+    }
+
+    private function roleDocumentationRows(): array
+    {
+        return [
+            [
+                'role' => 'Admin',
+                'level' => 'Superadmin aplikasi',
+                'scope' => 'Global semua cabang, semua area, semua modul.',
+                'can' => [
+                    'Akses System Control Center, security, deployment, database tools, dan audit forensic.',
+                    'Kelola user semua role, driver, customer, order, pricing, CMS, branch, area, report, dan sistem.',
+                    'Melakukan aksi berisiko tinggi: backup/restore database, revoke token massal, clear cache, restart worker.',
+                ],
+                'cannot' => [
+                    'Tidak ada batasan operasional normal. Aksi destructive tetap harus lewat konfirmasi.',
+                ],
+            ],
+            [
+                'role' => 'GM',
+                'level' => 'Global operasional',
+                'scope' => 'Global semua cabang dan area operasional, tanpa menu khusus superadmin.',
+                'can' => [
+                    'Melihat dan mengelola order, driver, user operasional, report, pricing, manual order, dan CMS operasional.',
+                    'Membuat/mengubah role operasional sesuai assignable role.',
+                    'Monitoring lintas cabang untuk keputusan operasional.',
+                ],
+                'cannot' => [
+                    'Tidak boleh masuk System Control Center superadmin.',
+                    'Tidak boleh menjalankan maintenance server/database dari Filament.',
+                ],
+            ],
+            [
+                'role' => 'HRD',
+                'level' => 'Branch kota/kab',
+                'scope' => 'Area di bawah branch yang diberikan, misalnya seluruh area di STB.',
+                'can' => [
+                    'Create, edit, dan melihat data user/driver dalam scope branch.',
+                    'Melihat report sesuai izin.',
+                    'Mengelola data driver operasional seperti status, setoran, dan konfigurasi yang diizinkan.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengakses branch lain kecuali diberi global/cross branch access dari CMS.',
+                    'Tidak bisa System Control Center.',
+                ],
+            ],
+            [
+                'role' => 'Manager',
+                'level' => 'Branch kota/kab',
+                'scope' => 'Area di bawah branch yang diberikan, misalnya STBKT, STBASB, STBBSK di bawah STB.',
+                'can' => [
+                    'Monitoring order, driver, revenue/report, area, dan operasional branch.',
+                    'Create/edit user operasional dan driver dalam scope branch.',
+                    'Melihat report dan export jika permission aktif.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengakses branch lain kecuali dibuka lewat CMS lintas cabang.',
+                    'Tidak bisa System Control Center.',
+                ],
+            ],
+            [
+                'role' => 'SPV',
+                'level' => 'Area operasional',
+                'scope' => 'Area yang diberikan, atau beberapa area jika branch scope diisi.',
+                'can' => [
+                    'Monitoring order area, approve/reject cancel, live chat/internal chat sesuai permission.',
+                    'Klik Bayar/Lunas setoran driver dan save konfigurasi driver sesuai scope.',
+                    'Suspend/unsuspend driver jika permission suspend aktif.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengelola role di atasnya.',
+                    'Tidak bisa System Control Center.',
+                    'Tidak bisa akses area lain tanpa branch scope.',
+                ],
+            ],
+            [
+                'role' => 'Operator',
+                'level' => 'Operasional shift',
+                'scope' => 'Lintas area layanan sesuai kebutuhan piket.',
+                'can' => [
+                    'Manual order, monitor live order, assign/oper handle driver jika permission aktif.',
+                    'Menangani chat customer dan internal chat.',
+                    'Membantu order lintas area saat shift.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengubah pricing, report finance, atau konfigurasi sistem.',
+                    'Tidak bisa System Control Center.',
+                ],
+            ],
+            [
+                'role' => 'Eksekutor',
+                'level' => 'Pelaksana lapangan',
+                'scope' => 'Area yang diberikan.',
+                'can' => [
+                    'Monitor order dan menjalankan tugas eksekusi sesuai permission.',
+                    'Manual order/assign driver jika permission aktif.',
+                    'Internal chat dan komunikasi operasional.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengelola role besar, pricing, report global, atau sistem.',
+                ],
+            ],
+            [
+                'role' => 'Web Admin',
+                'level' => 'CMS konten',
+                'scope' => 'Konten frontend/customer dan CMS tampilan.',
+                'can' => [
+                    'Kelola banner, home section, home item, announcement, dan konten publik.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengelola order, driver, finance, pricing, atau System Control Center.',
+                ],
+            ],
+            [
+                'role' => 'CMS Editor',
+                'level' => 'Editor konten',
+                'scope' => 'Konten CMS yang diberikan.',
+                'can' => [
+                    'Edit konten CMS sesuai menu yang aktif.',
+                ],
+                'cannot' => [
+                    'Tidak bisa mengakses operasi order, driver, pricing sensitif, finance, atau System Control Center.',
+                ],
+            ],
+            [
+                'role' => 'Driver',
+                'level' => 'Aplikasi driver',
+                'scope' => 'Area/cabang driver, atau all area jika diaktifkan pada konfigurasi driver.',
+                'can' => [
+                    'ON/OFF, menerima order yang valid, menjalankan order, chat customer/operator, melihat setoran.',
+                    'Request order manual driver jika fitur aktif.',
+                ],
+                'cannot' => [
+                    'Tidak bisa masuk backend/admin.',
+                    'Tidak bisa mengambil order yang sudah accepted driver lain.',
+                ],
+            ],
+            [
+                'role' => 'Customer',
+                'level' => 'Aplikasi customer',
+                'scope' => 'Akun customer sendiri.',
+                'can' => [
+                    'Login Google, membuat order, chat JOJOBOT/CS/driver, melihat riwayat, rating, dan upload gambar.',
+                ],
+                'cannot' => [
+                    'Tidak bisa masuk backend/admin.',
+                    'Dapat dikunci dari Security Center jika terindikasi fake order.',
+                ],
+            ],
+        ];
+    }
+
+    private function systemDocumentationRows(): array
+    {
+        return [
+            [
+                'title' => 'Dokumentasi Flow Sistem JOJO',
+                'path' => 'backend/docs/dokumentasi-flow-sistem-jojo.md',
+                'summary' => 'Ringkasan alur Customer FE, Driver FE, Admin FE, Laravel API, OSRM, AI parser, pricing, branch, area, dan report.',
+            ],
+            [
+                'title' => 'Jojobot AI Pricing Flow',
+                'path' => 'backend/docs/jojobot-ai-orchestra-spatial-pricing-engine.md',
+                'summary' => 'Menjelaskan bahwa pricing dihitung deterministic dari OSRM, Master Ring, keyword rules, service fee, dan konfigurasi CMS; AI parser hanya membaca teks order.',
+            ],
+            [
+                'title' => 'System Control Center Activation Flow',
+                'path' => 'backend/docs/system-control-center-activation-flow.md',
+                'summary' => 'Konsep aktivasi aplikasi model SaaS/license key, validasi server, grace period, dan fail-safe mode.',
+            ],
+            [
+                'title' => 'Role Capability Matrix',
+                'path' => 'backend/docs/system-control-center-role-capability-matrix.md',
+                'summary' => 'Dokumentasi lokal role dan batasan akses yang juga diringkas di panel ini.',
+            ],
+        ];
+    }
+
+    private function apiDocumentationNote(): array
+    {
+        return [
+            'status' => 'Belum dipasang di production',
+            'recommendation' => 'Scramble/dedoc aman dipakai untuk Laravel 10+ sebagai generator OpenAPI, tetapi sebaiknya dipasang bertahap di staging/local dulu karena menambah package dan route dokumentasi baru.',
+            'safe_flow' => 'Pasang package, batasi route docs dengan middleware admin, filter hanya API yang ingin dibuka, lalu baru expose ke System Control Center.',
+            'routes' => '/docs/api dan /docs/api.json jika Scramble diaktifkan.',
         ];
     }
 
@@ -381,18 +711,43 @@ class SystemControlCenterPage extends Page
 
     private function staffUserRows(): array
     {
+        $search = trim($this->securitySearch);
+
         return User::query()
-            ->where('is_staff', true)
             ->where('role', '!=', UserRole::Admin->value)
+            ->where(function ($query): void {
+                $query
+                    ->where('is_staff', true)
+                    ->orWhere('role', UserRole::Customer->value);
+            })
+            ->when($search !== '', function ($query) use ($search): void {
+                $like = '%'.$search.'%';
+                $query->where(function ($query) use ($like): void {
+                    $query
+                        ->where('name', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        ->orWhere('phone', 'like', $like)
+                        ->orWhere('username', 'like', $like)
+                        ->orWhere('role', 'like', $like)
+                        ->orWhereHas('branch', function ($query) use ($like): void {
+                            $query
+                                ->where('branch_code', 'like', $like)
+                                ->orWhere('name', 'like', $like)
+                                ->orWhere('area', 'like', $like);
+                        });
+                });
+            })
             ->with('branch:id,branch_code,name,area')
             ->latest('updated_at')
-            ->limit(24)
+            ->limit(50)
             ->get()
             ->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'role' => $user->role->label(),
+                'phone' => $user->phone,
+                'username' => $user->username,
+                'role' => $user->role?->label() ?? (string) $user->role,
                 'branch' => $user->branch?->display_name ?? '-',
                 'is_suspended' => (bool) $user->is_suspended,
                 'tokens' => $user->tokens()->count(),
@@ -403,9 +758,27 @@ class SystemControlCenterPage extends Page
 
     private function auditRows(array $actions, int $limit): array
     {
+        $search = trim($this->auditSearch);
+
         return AuditLog::query()
             ->with('user:id,name,email,role')
             ->whereIn('action', $actions)
+            ->when($search !== '', function ($query) use ($search): void {
+                $like = '%'.$search.'%';
+                $query->where(function ($query) use ($like): void {
+                    $query
+                        ->where('action', 'like', $like)
+                        ->orWhere('subject_label', 'like', $like)
+                        ->orWhere('subject_type', 'like', $like)
+                        ->orWhere('metadata', 'like', $like)
+                        ->orWhereHas('user', function ($query) use ($like): void {
+                            $query
+                                ->where('name', 'like', $like)
+                                ->orWhere('email', 'like', $like)
+                                ->orWhere('role', 'like', $like);
+                        });
+                });
+            })
             ->latest()
             ->limit($limit)
             ->get()
@@ -511,63 +884,17 @@ class SystemControlCenterPage extends Page
 
     private function backupRows(): array
     {
-        File::ensureDirectoryExists($this->backupDirectory());
-
-        return collect(File::files($this->backupDirectory()))
-            ->filter(fn ($file): bool => str_ends_with($file->getFilename(), '.sql'))
-            ->sortByDesc(fn ($file): int => $file->getMTime())
-            ->take(10)
-            ->map(fn ($file): array => [
-                'name' => $file->getFilename(),
-                'size' => $this->humanFileSize($file->getSize()),
-                'updated_at' => date('Y-m-d H:i:s', $file->getMTime()),
-            ])
-            ->values()
-            ->all();
+        return app(DatabaseBackupService::class)->rows(10);
     }
 
     private function createDatabaseBackup(string $prefix): array
     {
-        File::ensureDirectoryExists($this->backupDirectory());
-
-        $path = $this->backupDirectory().DIRECTORY_SEPARATOR.$prefix.'-'.now()->format('Ymd-His').'.sql';
-        $command = [
-            'mysqldump',
-            '--single-transaction',
-            '--quick',
-            '--host='.config('database.connections.mysql.host'),
-            '--port='.config('database.connections.mysql.port'),
-            '--user='.config('database.connections.mysql.username'),
-            '--password='.config('database.connections.mysql.password'),
-            config('database.connections.mysql.database'),
-        ];
-
-        $process = new Process($command);
-        $process->setTimeout(180);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            return ['ok' => false, 'message' => trim($process->getErrorOutput() ?: $process->getOutput()) ?: 'mysqldump gagal.'];
-        }
-
-        File::put($path, $process->getOutput());
-
-        return ['ok' => true, 'message' => basename($path).' dibuat.', 'file' => basename($path), 'size' => $this->humanFileSize(File::size($path))];
+        return app(DatabaseBackupService::class)->create($prefix);
     }
 
     private function restoreDatabaseBackup(string $path): array
     {
-        $command = sprintf(
-            'mysql --host=%s --port=%s --user=%s --password=%s %s < %s',
-            escapeshellarg((string) config('database.connections.mysql.host')),
-            escapeshellarg((string) config('database.connections.mysql.port')),
-            escapeshellarg((string) config('database.connections.mysql.username')),
-            escapeshellarg((string) config('database.connections.mysql.password')),
-            escapeshellarg((string) config('database.connections.mysql.database')),
-            escapeshellarg($path),
-        );
-
-        return $this->runProcess(['/bin/bash', '-lc', $command], 240);
+        return app(DatabaseBackupService::class)->restore($path);
     }
 
     private function runProcess(array $command, int $timeout): array
@@ -594,22 +921,26 @@ class SystemControlCenterPage extends Page
         return is_array($decoded) ? array_values(array_filter(array_map('strval', $decoded))) : [];
     }
 
+    private function loadAutoBackupSettings(SettingService $settings): void
+    {
+        $this->autoBackupEnabled = $settings->bool('scc_auto_database_backup_enabled', false);
+        $this->autoBackupTime = $this->normalizeBackupTime((string) $settings->get('scc_auto_database_backup_time', '02:00'));
+        $this->autoBackupRetentionDays = max(1, min(180, $settings->int('scc_auto_database_backup_retention_days', 14)));
+    }
+
+    private function normalizeBackupTime(string $time): string
+    {
+        return preg_match('/^\d{2}:\d{2}$/', $time) === 1 ? $time : '02:00';
+    }
+
     private function backupDirectory(): string
     {
-        return storage_path('app/backups/system-control');
+        return app(DatabaseBackupService::class)->directory();
     }
 
     private function humanFileSize(int $bytes): string
     {
-        if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 2).' MB';
-        }
-
-        if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 2).' KB';
-        }
-
-        return $bytes.' B';
+        return app(DatabaseBackupService::class)->humanFileSize($bytes);
     }
 
     private function recordAudit(string $action, ?User $subject = null, array $metadata = []): void

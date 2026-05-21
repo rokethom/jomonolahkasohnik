@@ -1326,6 +1326,18 @@ svg {
   gap: 18px;
 }
 
+.dashboard-deferred-panel {
+  min-height: 86px;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  font-weight: 900;
+}
+
+.admin-shell.dark .dashboard-deferred-panel {
+  color: #93a8bd;
+}
+
 .admin-update-status-card {
   min-width: 0;
   width: 100%;
@@ -1643,6 +1655,53 @@ svg {
 .dispatch-queue::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgba(14, 165, 233, .42);
+}
+
+.manager-release-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.manager-release-list {
+  display: grid;
+  gap: 10px;
+  max-height: 290px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.manager-release-row {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.admin-shell.dark .manager-release-row {
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.manager-release-row div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.manager-release-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-shell.dark .manager-release-row span {
+  color: #9fb1ca;
 }
 
 .dispatch-order-row {

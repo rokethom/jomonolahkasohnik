@@ -93,7 +93,7 @@ class AdminController extends Controller
             'system_settings' => $this->systemSettingsPayload($settings),
             'stats' => $this->stats($user),
             'users' => $wants(['users', 'internal-chat', 'sticky-notes', 'reports']) ? $this->usersQuery($user)->limit(100)->get()->map(fn (User $item) => $this->userPayload($item)) : [],
-            'drivers' => $wants(['dashboard', 'drivers', 'reports']) ? $this->driverRows($user) : [],
+            'drivers' => ($wants(['drivers', 'reports']) || ($wants(['dashboard']) && $user->role !== UserRole::Eksekutor)) ? $this->driverRows($user) : [],
             'operator_performance' => $wants(['dashboard']) ? $this->operatorPerformanceRows($user) : [],
             'orders' => $wants(['dashboard', 'orders', 'request-orders', 'internal-chat', 'reports']) ? $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)) : [],
             'cancel_requests' => $wants(['dashboard', 'chats']) ? $this->cancelRequestsQuery($user)->latest()->limit(20)->get()->map(fn (CancelRequest $cancelRequest) => $this->cancelRequestPayload($cancelRequest)) : [],
@@ -121,7 +121,7 @@ class AdminController extends Controller
             'geofences' => $wants(['geofence', 'zone-pricing', 'zone-pricing-tester']) ? GeofenceArea::query()->with('branch')->latest()->get() : [],
             'location_logs' => $wants(['locations', 'reports']) ? $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)) : [],
             'chats' => $wants(['dashboard', 'chats']) ? $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)) : [],
-            'audit_logs' => $this->safeAdminPayload('audit_logs', fn () => $wants(['orders', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : []),
+            'audit_logs' => $this->safeAdminPayload('audit_logs', fn () => $wants(['dashboard', 'orders', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : []),
         ]);
     }
 
@@ -3554,6 +3554,10 @@ class AdminController extends Controller
         }
 
         if (in_array($user->role, [UserRole::Admin, UserRole::GM], true)) {
+            return true;
+        }
+
+        if ($user->role === UserRole::Manager) {
             return true;
         }
 

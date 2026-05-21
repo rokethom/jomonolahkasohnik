@@ -1379,6 +1379,16 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
     return <EksekutorDashboard data={data} api={api} onChanged={onChanged} onNavigate={onNavigate} onOpenOrder={onOpenOrder} />
   }
 
+  const [showDeferredDashboard, setShowDeferredDashboard] = useState(false)
+  useEffect(() => {
+    setShowDeferredDashboard(false)
+    const scheduleIdle = window.requestIdleCallback ?? ((callback: IdleRequestCallback) => window.setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 }), 120))
+    const cancelIdle = window.cancelIdleCallback ?? window.clearTimeout
+    const handle = scheduleIdle(() => setShowDeferredDashboard(true), { timeout: 900 })
+
+    return () => cancelIdle(handle)
+  }, [data.me.role])
+
   const activeOrders = data.orders.filter(isActiveOrderStatus).length || data.stats.active_orders
   const onlineDrivers = data.drivers.filter((driver) => driver.driver_state === 'online' && driver.driver_status === 'active' && driver.is_active && !driver.is_suspended).length
   const unassignedOrders = data.orders.filter((order) => isWaitingDriverStatus(order.status) && !order.driver).length
@@ -1408,6 +1418,9 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
           onOpenChats={() => onNavigate('chats')}
         />
       )}
+      {data.me.role === 'manager' && data.permissions.can_assign_driver && (
+        <ManagerReleaseQueue orders={data.orders} api={api} onChanged={onChanged} onOpenOrder={onOpenOrder} />
+      )}
       <section className="insight-grid">
         <button className={nightTariffActive ? 'insight-card active' : 'insight-card'} type="button" onClick={() => onNavigate('settings')}>
           <span>Tarif Malam</span>
@@ -1427,11 +1440,19 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
         </article>
       </section>
       <DashboardLivePriceReview reviews={data.live_price_reviews ?? []} api={api} onChanged={onChanged} onNavigate={() => onNavigate('live-price-reviews')} />
-      <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />
-      <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
-      <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
-      <PriceEditActivity auditLogs={data.audit_logs} />
-      {data.permissions.can_view_dispatch_repost_audit && <DispatchRepostActivity auditLogs={data.audit_logs} />}
+      {showDeferredDashboard ? (
+        <>
+          <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />
+          <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
+          <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
+          <PriceEditActivity auditLogs={data.audit_logs} />
+          {data.permissions.can_view_dispatch_repost_audit && <DispatchRepostActivity auditLogs={data.audit_logs} />}
+        </>
+      ) : (
+        <section className="panel dashboard-deferred-panel">
+          <span>Memuat insight lanjutan di background...</span>
+        </section>
+      )}
     </div>
   )
 }
@@ -1584,6 +1605,42 @@ function DashboardCancelRequests({ requests, permissions, api, onChanged, onOpen
   )
 }
 
+function ManagerReleaseQueue({ orders, api, onChanged, onOpenOrder }: { orders: Order[]; api: ApiClient; onChanged: () => Promise<void>; onOpenOrder: (code: string) => void }) {
+  const [message, setMessage] = useState('')
+  const rows = orders
+    .filter((order) => isDispatchRepostOrder(order) || Number(order.waiting_seconds ?? 0) >= 600)
+    .slice(0, 8)
+
+  return (
+    <section className="panel manager-release-panel">
+      <div className="section-head compact-head">
+        <div>
+          <h2>Release Order Timeout</h2>
+          <p>Order yang lewat 10 menit bisa dibuka ulang oleh Manager agar masuk lagi ke dispatch.</p>
+        </div>
+        <span className="status warning">{rows.length} order</span>
+      </div>
+      {message && <div className="notice compact">{message}</div>}
+      {rows.length === 0 && <EmptyPanel title="Tidak ada order timeout" copy="Order yang perlu release akan tampil di sini." />}
+      {rows.length > 0 && (
+        <div className="manager-release-list">
+          {rows.map((order) => (
+            <article className="manager-release-row" key={order.id}>
+              <div>
+                <button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button>
+                <span>{order.customer || 'Customer'} - {order.branch_area || order.branch || '-'} - {formatWaitingTime(order.waiting_seconds)}</span>
+              </div>
+              <button className="primary-button compact" type="button" disabled={!isDispatchRepostOrder(order)} onClick={() => void repostDispatchOrder(api, order, setMessage, onChanged)}>
+                {isDispatchRepostOrder(order) ? 'Buka Ulang' : 'Tunggu 10 menit'}
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: { data: Bootstrap; api: ApiClient; onChanged: () => Promise<void>; onNavigate: (view: View) => void; onOpenOrder: (code: string) => void }) {
   const [assignOrder, setAssignOrder] = useState<Order | null>(null)
   const [dispatchMessage, setDispatchMessage] = useState('')
@@ -1670,6 +1727,8 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
       {dispatchMessage && <div className="dispatch-toast">{dispatchMessage}</div>}
 
       {assignOrder && <AssignDriverModal order={assignOrder} api={api} onClose={() => setAssignOrder(null)} onAssigned={async () => { await onChanged(); setAssignOrder(null) }} />}
+      <PriceEditActivity auditLogs={data.audit_logs} />
+      {data.permissions.can_view_dispatch_repost_audit && <DispatchRepostActivity auditLogs={data.audit_logs} />}
     </div>
   )
 }
