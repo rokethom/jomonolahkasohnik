@@ -305,6 +305,21 @@ jobs:
             --exclude='error_log' \
             apps/driver/dist/ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${DRIVER_PUBLIC_PATH}/"
 
+      - name: Finalize frontend ownership
+        if: steps.scope.outputs.frontend == 'true'
+        shell: bash
+        run: |
+          ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
+            DEPLOY_USER='${{ secrets.VPS_USER }}'; \
+            DEPLOY_GROUP=\$(id -gn \"\$DEPLOY_USER\"); \
+            for path in '${ADMIN_PUBLIC_PATH}' '${CUSTOMER_PUBLIC_PATH}' '${DRIVER_PUBLIC_PATH}'; do \
+              if [ -d \"\$path\" ]; then \
+                sudo chown -R \"\$DEPLOY_USER:\$DEPLOY_GROUP\" \"\$path\"; \
+                sudo find \"\$path\" -type d -exec chmod 755 {} \; ; \
+                sudo find \"\$path\" -type f -exec chmod 644 {} \; ; \
+              fi; \
+            done"
+
       - name: Finalize Laravel deployment
         if: steps.scope.outputs.backend == 'true'
         shell: bash
