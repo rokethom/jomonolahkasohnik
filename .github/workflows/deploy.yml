@@ -237,7 +237,7 @@ jobs:
         shell: bash
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "mkdir -p '${BACKEND_PATH}' '${BACKEND_PUBLIC_PATH}' '${ADMIN_PUBLIC_PATH}' '${CUSTOMER_PUBLIC_PATH}' '${DRIVER_PUBLIC_PATH}'"
+            "sudo mkdir -p '${BACKEND_PATH}' '${BACKEND_PUBLIC_PATH}' '${ADMIN_PUBLIC_PATH}' '${CUSTOMER_PUBLIC_PATH}' '${DRIVER_PUBLIC_PATH}'"
 
       - name: Upload backend source
         if: steps.scope.outputs.backend == 'true'
@@ -245,6 +245,7 @@ jobs:
         run: |
           rsync -az --delete \
             -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --rsync-path="sudo rsync" \
             --exclude='.env' \
             --exclude='vendor/' \
             --exclude='node_modules/' \
@@ -262,6 +263,7 @@ jobs:
         run: |
           rsync -az \
             -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --rsync-path="sudo rsync" \
             --exclude='index.php' \
             --exclude='.htaccess' \
             --exclude='storage/' \
@@ -273,6 +275,7 @@ jobs:
         run: |
           rsync -az --delete \
             -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --rsync-path="sudo rsync" \
             --exclude='.htaccess' \
             --exclude='.well-known/' \
             --exclude='error_log' \
@@ -284,6 +287,7 @@ jobs:
         run: |
           rsync -az --delete \
             -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --rsync-path="sudo rsync" \
             --exclude='.htaccess' \
             --exclude='.well-known/' \
             --exclude='error_log' \
@@ -295,6 +299,7 @@ jobs:
         run: |
           rsync -az --delete \
             -e "ssh -p ${{ secrets.VPS_PORT || 22 }}" \
+            --rsync-path="sudo rsync" \
             --exclude='.htaccess' \
             --exclude='.well-known/' \
             --exclude='error_log' \
@@ -306,25 +311,29 @@ jobs:
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
             cd '${BACKEND_PATH}'; \
-            mkdir -p bootstrap/cache storage/app/livewire-tmp storage/app/public/settings/payment storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs; \
-            rm -f bootstrap/cache/*.php; \
-            composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
-            php artisan package:discover --ansi; \
-            php artisan optimize:clear; \
-            php artisan storage:link || true; \
-            php artisan migrate --force; \
-            php artisan db:seed --class=RolePermissionSeeder --force; \
-            WEBUSER=\$(ps -eo user:30,comm,args | awk '/lsphp/ && !/awk/ {print \$1; exit}'); \
+            WEBUSER=\$(ps -eo user:30,comm,args | awk '/php-fpm|lsphp/ && !/awk/ {print \$1; exit}'); \
+            if [ -z \"\$WEBUSER\" ] && id www-data >/dev/null 2>&1; then WEBUSER=www-data; fi; \
             if [ -z \"\$WEBUSER\" ] && id aplik7393 >/dev/null 2>&1; then WEBUSER=aplik7393; fi; \
-            if [ -n \"\$WEBUSER\" ]; then WEBGROUP=\$(id -gn \"\$WEBUSER\"); chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; fi; \
-            find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
-            find storage bootstrap/cache -type f -exec chmod 664 {} \; ; \
-            php artisan config:cache; \
-            php artisan route:cache; \
-            php artisan view:cache; \
-            if [ -n \"\$WEBUSER\" ]; then WEBGROUP=\$(id -gn \"\$WEBUSER\"); chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; fi; \
-            find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
-            find storage bootstrap/cache -type f -exec chmod 664 {} \; "
+            if [ -z \"\$WEBUSER\" ]; then echo 'Unable to detect web user' >&2; exit 1; fi; \
+            WEBGROUP=\$(id -gn \"\$WEBUSER\"); \
+            sudo mkdir -p bootstrap/cache storage/app/livewire-tmp storage/app/public/settings/payment storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views storage/logs /tmp/composer-cache; \
+            sudo chown -R \"\$WEBUSER:\$WEBGROUP\" . /tmp/composer-cache; \
+            sudo rm -f bootstrap/cache/*.php; \
+            sudo -u \"\$WEBUSER\" env COMPOSER_HOME=/tmp/composer-cache composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
+            sudo -u \"\$WEBUSER\" php artisan package:discover --ansi; \
+            sudo -u \"\$WEBUSER\" php artisan optimize:clear; \
+            sudo -u \"\$WEBUSER\" php artisan storage:link || true; \
+            sudo -u \"\$WEBUSER\" php artisan migrate --force; \
+            sudo -u \"\$WEBUSER\" php artisan db:seed --class=RolePermissionSeeder --force; \
+            sudo chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; \
+            sudo find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
+            sudo find storage bootstrap/cache -type f -exec chmod 664 {} \; ; \
+            sudo -u \"\$WEBUSER\" php artisan config:cache; \
+            sudo -u \"\$WEBUSER\" php artisan route:cache; \
+            sudo -u \"\$WEBUSER\" php artisan view:cache; \
+            sudo chown -R \"\$WEBUSER:\$WEBGROUP\" storage bootstrap/cache; \
+            sudo find storage bootstrap/cache -type d -exec chmod 775 {} \; ; \
+            sudo find storage bootstrap/cache -type f -exec chmod 664 {} \; "
 
       - name: Nothing to deploy
         if: steps.scope.outputs.any != 'true'
