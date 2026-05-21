@@ -326,8 +326,9 @@ jobs:
         run: |
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "set -e; \
             cd '${BACKEND_PATH}'; \
-            WEBUSER=\$(ps -eo user:30,comm,args | awk '/php-fpm|lsphp/ && !/awk/ {print \$1; exit}'); \
-            if [ -z \"\$WEBUSER\" ] && id www-data >/dev/null 2>&1; then WEBUSER=www-data; fi; \
+            WEBUSER=''; \
+            if id www-data >/dev/null 2>&1; then WEBUSER=www-data; fi; \
+            if [ -z \"\$WEBUSER\" ]; then WEBUSER=\$(ps -eo user:30,comm,args | awk '/php-fpm|lsphp/ && !/awk/ && \$1 != \"root\" {print \$1; exit}'); fi; \
             if [ -z \"\$WEBUSER\" ] && id aplik7393 >/dev/null 2>&1; then WEBUSER=aplik7393; fi; \
             if [ -z \"\$WEBUSER\" ]; then echo 'Unable to detect web user' >&2; exit 1; fi; \
             WEBGROUP=\$(id -gn \"\$WEBUSER\"); \
