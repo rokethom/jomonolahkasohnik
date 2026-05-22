@@ -6892,11 +6892,15 @@ function UserEditModal({ me, user, branches, permissions, api, onClose, onSaved 
   const canPickAnyBranch = permissions.can_manage_all_branches === true
   const visibleBranches = useMemo(() => visibleBranchesForUser(branches, me, canPickAnyBranch), [branches, canPickAnyBranch, me])
   const branchOptions = useMemo(() => branchOptionsForRole(visibleBranches, role), [visibleBranches, role])
-  const defaultBranchId = useMemo(() => {
+  const resolvedBranchId = useMemo(() => {
     const current = user.branch_id ? String(user.branch_id) : ''
     return branchOptions.some((branch) => String(branch.id) === current) ? current : firstBranchId(branchOptions)
   }, [branchOptions, user.branch_id])
-  const scopeOptions = useMemo(() => operationalScopeOptions(visibleBranches, defaultBranchId), [defaultBranchId, visibleBranches])
+  const [branchId, setBranchId] = useState(resolvedBranchId)
+  useEffect(() => {
+    setBranchId((current) => branchOptions.some((branch) => String(branch.id) === current) ? current : resolvedBranchId)
+  }, [branchOptions, resolvedBranchId])
+  const scopeOptions = useMemo(() => operationalScopeOptions(visibleBranches, branchId), [branchId, visibleBranches])
   const defaultScopeIds = branchScopeRoles.has(user.role) && (user.branch_scope_ids?.length ?? 0) > 0
     ? (user.branch_scope_ids ?? []).map(String)
     : scopeOptions.map((branch) => String(branch.id))
@@ -6918,7 +6922,7 @@ function UserEditModal({ me, user, branches, permissions, api, onClose, onSaved 
           email: form.get('email'),
           phone: form.get('phone'),
           role,
-          branch_id: Number(form.get('branch_id')) || null,
+          branch_id: Number(branchId) || null,
           branch_scope_ids: formBranchScopeIds(form, role),
           is_active: form.get('is_active') === 'on',
           is_suspended: form.get('is_suspended') === 'on',
@@ -6942,7 +6946,7 @@ function UserEditModal({ me, user, branches, permissions, api, onClose, onSaved 
         <div className="modal-header"><div><h2>Edit user</h2><p>{user.email}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div>
         <form className="user-form" onSubmit={submit}>
           <fieldset><legend>Account</legend><div className="form-grid"><label>Username<input name="username" required readOnly={isDriverIdentityLocked} defaultValue={user.username} /></label><label>Name<input name="name" required readOnly={isDriverIdentityLocked} defaultValue={user.name} /></label><label>Email<input name="email" type="email" required defaultValue={user.email} /></label><label>Phone<input name="phone" defaultValue={user.phone ?? ''} /></label>{isDriverIdentityLocked && <small className="field-hint span-2">Nama dan username driver hanya bisa diubah oleh Admin/GM/Manager/HRD/SPV. Driver tetap read-only dari aplikasi driver.</small>}</div></fieldset>
-          <fieldset><legend>Access</legend><div className="form-grid"><label>{['hrd', 'manager'].includes(role) ? 'Branch kota/kab' : 'Area operasional'}<select name="branch_id" defaultValue={defaultBranchId} disabled={!canChooseBranch}><option value="">No branch</option>{branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select>{!canChooseBranch && <input type="hidden" name="branch_id" value={defaultBranchId} />}</label><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{roleOptions.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label>{branchScopeRoles.has(role) && <label className="span-2">Area akses<select name="branch_scope_ids" multiple defaultValue={defaultScopeIds} size={Math.min(Math.max(scopeOptions.length, 3), 8)}>{scopeOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select><small className="field-hint">Manager dan HRD level kota/kab dapat melihat semua area di bawah branch-nya.</small></label>}{!isDriverIdentityLocked && passwordEditableRoles.has(role) && <PasswordInput label="Password baru" placeholder="Kosongkan jika tidak diganti" helper="Minimal 8 karakter. User memakai password ini saat login berikutnya." />}<label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked={user.is_active} />Active</label><label className="toggle-row"><input name="is_suspended" type="checkbox" defaultChecked={user.is_suspended} />Suspended</label>{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" defaultValue={user.driver_bansos_amount ?? ''} /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked={user.driver_bpjs_jht_enabled ?? true} />JHT BPJS</label>}<label className="span-2">Suspension reason<textarea name="suspension_reason" defaultValue="" placeholder="Optional reason" /></label></div></fieldset>
+          <fieldset><legend>Access</legend><div className="form-grid"><label>{['hrd', 'manager'].includes(role) ? 'Branch kota/kab' : 'Area operasional'}<select name="branch_id" value={branchId} disabled={!canChooseBranch} onChange={(event) => setBranchId(event.target.value)}><option value="">No branch</option>{branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select>{!canChooseBranch && <input type="hidden" name="branch_id" value={branchId} />}</label><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{roleOptions.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label>{branchScopeRoles.has(role) && <label className="span-2">Area akses<select name="branch_scope_ids" multiple defaultValue={defaultScopeIds} size={Math.min(Math.max(scopeOptions.length, 3), 8)}>{scopeOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select><small className="field-hint">Manager dan HRD level kota/kab dapat melihat semua area di bawah branch-nya.</small></label>}{!isDriverIdentityLocked && passwordEditableRoles.has(role) && <PasswordInput label="Password baru" placeholder="Kosongkan jika tidak diganti" helper="Minimal 8 karakter. User memakai password ini saat login berikutnya." />}<label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked={user.is_active} />Active</label><label className="toggle-row"><input name="is_suspended" type="checkbox" defaultChecked={user.is_suspended} />Suspended</label>{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" defaultValue={user.driver_bansos_amount ?? ''} /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked={user.driver_bpjs_jht_enabled ?? true} />JHT BPJS</label>}<label className="span-2">Suspension reason<textarea name="suspension_reason" defaultValue="" placeholder="Optional reason" /></label></div></fieldset>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save user'}</button></div>
         </form>
       </div>
@@ -6955,11 +6959,16 @@ function UserFormModal({ me, permissions, branches, services, api, onClose, onCr
   const [role, setRole] = useState<Role>(roleOptions[0] ?? 'operator')
   const [vehicleType, setVehicleType] = useState<'motor' | 'mobil'>('motor')
   const [allowedServices, setAllowedServices] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
   const canPickAnyBranch = permissions.can_manage_all_branches === true
   const visibleBranches = useMemo(() => visibleBranchesForUser(branches, me, canPickAnyBranch), [branches, canPickAnyBranch, me])
   const branchOptions = useMemo(() => branchOptionsForRole(visibleBranches, role), [visibleBranches, role])
-  const defaultBranchId = canPickAnyBranch ? '' : firstBranchId(branchOptions)
-  const scopeOptions = useMemo(() => operationalScopeOptions(visibleBranches, defaultBranchId), [defaultBranchId, visibleBranches])
+  const resolvedBranchId = useMemo(() => firstBranchId(branchOptions), [branchOptions])
+  const [branchId, setBranchId] = useState(resolvedBranchId)
+  useEffect(() => {
+    setBranchId((current) => branchOptions.some((branch) => String(branch.id) === current) ? current : resolvedBranchId)
+  }, [branchOptions, resolvedBranchId])
+  const scopeOptions = useMemo(() => operationalScopeOptions(visibleBranches, branchId), [branchId, visibleBranches])
   const defaultScopeIds = !canPickAnyBranch ? scopeOptions.map((branch) => String(branch.id)) : []
   const canChooseBranch = canPickAnyBranch || branchOptions.length > 1
   const roleSummary = roleOptions.map((item) => roleLabels[item]).join(', ')
@@ -6967,30 +6976,37 @@ function UserFormModal({ me, permissions, branches, services, api, onClose, onCr
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const payload = await api<{ temporary_password: string }>('/admin/users', {
-      method: 'POST',
-      body: JSON.stringify({
-        username: form.get('username'),
-        name: form.get('name'),
-        email: form.get('email'),
-        phone: form.get('phone'),
-        role,
-        branch_id: Number(form.get('branch_id')) || null,
-        branch_scope_ids: formBranchScopeIds(form, role),
-        is_active: form.get('is_active') === 'on',
-        is_suspended: false,
-        ...(passwordEditableRoles.has(role) && form.get('password') ? { password: form.get('password') } : {}),
-        ...(role === 'driver' ? {
-          driver_bansos_amount: form.get('driver_bansos_amount') === '' ? null : Number(form.get('driver_bansos_amount')),
-          driver_bpjs_jht_enabled: form.get('driver_bpjs_jht_enabled') === 'on',
-          vehicle_type: vehicleType,
-          vehicle_seat_rows: vehicleType === 'mobil' ? Number(form.get('vehicle_seat_rows') || 2) : null,
-          is_ladies_driver: form.get('is_ladies_driver') === 'on',
-          allowed_service_types: allowedServices,
-        } : {}),
-      }),
-    })
-    await onCreated(payload.temporary_password)
+    setSaving(true)
+    try {
+      const payload = await api<{ temporary_password: string }>('/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: form.get('username'),
+          name: form.get('name'),
+          email: form.get('email'),
+          phone: form.get('phone'),
+          role,
+          branch_id: Number(branchId) || null,
+          branch_scope_ids: formBranchScopeIds(form, role),
+          is_active: form.get('is_active') === 'on',
+          is_suspended: false,
+          ...(passwordEditableRoles.has(role) && form.get('password') ? { password: form.get('password') } : {}),
+          ...(role === 'driver' ? {
+            driver_bansos_amount: form.get('driver_bansos_amount') === '' ? null : Number(form.get('driver_bansos_amount')),
+            driver_bpjs_jht_enabled: form.get('driver_bpjs_jht_enabled') === 'on',
+            vehicle_type: vehicleType,
+            vehicle_seat_rows: vehicleType === 'mobil' ? Number(form.get('vehicle_seat_rows') || 2) : null,
+            is_ladies_driver: form.get('is_ladies_driver') === 'on',
+            allowed_service_types: allowedServices,
+          } : {}),
+        }),
+      })
+      await onCreated(payload.temporary_password)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Gagal membuat user.')
+    } finally {
+      setSaving(false)
+    }
   }
   return (
     <div className="modal-backdrop" role="presentation">
@@ -6998,8 +7014,8 @@ function UserFormModal({ me, permissions, branches, services, api, onClose, onCr
         <div className="modal-header"><div><h2>Create user</h2><p>Assignable roles: {roleSummary || 'Tidak ada role tersedia'}</p></div><button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button></div>
         <form className="user-form" onSubmit={submit}>
           <fieldset><legend>Info User</legend><div className="form-grid"><label>Username<input name="username" required /></label><label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><label>Phone<input name="phone" /></label>{passwordEditableRoles.has(role) && <PasswordInput label="Password login" placeholder="Isi jika ingin password manual" helper="Jika dikosongkan, sistem tetap membuat password sementara otomatis." />}</div></fieldset>
-          <fieldset><legend>Role & Branch</legend><div className="form-grid"><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{roleOptions.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label><label>{['hrd', 'manager'].includes(role) ? 'Branch kota/kab' : 'Area operasional'}<select name="branch_id" defaultValue={defaultBranchId} disabled={!canChooseBranch}><option value="">No branch</option>{branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select>{!canChooseBranch && <input type="hidden" name="branch_id" value={defaultBranchId} />}</label>{branchScopeRoles.has(role) && <label className="span-2">Area akses<select name="branch_scope_ids" multiple defaultValue={defaultScopeIds} size={Math.min(Math.max(scopeOptions.length, 3), 8)}>{scopeOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select><small className="field-hint">Manager dan HRD level kota/kab dapat melihat semua area di bawah branch-nya.</small></label>}<label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked />Active</label>{role === 'driver' && <label>Tipe kendaraan<select name="vehicle_type" value={vehicleType} onChange={(event) => setVehicleType(event.target.value as 'motor' | 'mobil')}><option value="motor">Motor</option><option value="mobil">Mobil</option></select></label>}{role === 'driver' && vehicleType === 'mobil' && <label>Kapasitas mobil<select name="vehicle_seat_rows" defaultValue="2"><option value="2">2 baris - citycar/default</option><option value="3">3 baris - MPV/keluarga</option></select></label>}{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked />JHT BPJS</label>}{role === 'driver' && <label className="toggle-row driver-ladies-toggle"><input name="is_ladies_driver" type="checkbox" />Driver Ladies</label>}</div>{role === 'driver' && <div className="service-config-pills"><strong>Config layanan driver</strong><span>Kosongkan jika driver boleh menerima semua layanan.</span>{services.map((service) => <label key={service.id} className="toggle-row service-pill"><input type="checkbox" checked={allowedServices.includes(service.code)} onChange={() => toggleService(service.code)} />{service.name}</label>)}</div>}</fieldset>
-          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={roleOptions.length === 0}>Create real user</button></div>
+          <fieldset><legend>Role & Branch</legend><div className="form-grid"><label>Role<select value={role} onChange={(event) => setRole(event.target.value as Role)}>{roleOptions.map((item) => <option key={item} value={item}>{roleLabels[item]}</option>)}</select></label><label>{['hrd', 'manager'].includes(role) ? 'Branch kota/kab' : 'Area operasional'}<select name="branch_id" value={branchId} disabled={!canChooseBranch} onChange={(event) => setBranchId(event.target.value)}><option value="">No branch</option>{branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select>{!canChooseBranch && <input type="hidden" name="branch_id" value={branchId} />}</label>{branchScopeRoles.has(role) && <label className="span-2">Area akses<select name="branch_scope_ids" multiple defaultValue={defaultScopeIds} size={Math.min(Math.max(scopeOptions.length, 3), 8)}>{scopeOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}</select><small className="field-hint">Manager dan HRD level kota/kab dapat melihat semua area di bawah branch-nya.</small></label>}<label className="toggle-row"><input name="is_active" type="checkbox" defaultChecked />Active</label>{role === 'driver' && <label>Tipe kendaraan<select name="vehicle_type" value={vehicleType} onChange={(event) => setVehicleType(event.target.value as 'motor' | 'mobil')}><option value="motor">Motor</option><option value="mobil">Mobil</option></select></label>}{role === 'driver' && vehicleType === 'mobil' && <label>Kapasitas mobil<select name="vehicle_seat_rows" defaultValue="2"><option value="2">2 baris - citycar/default</option><option value="3">3 baris - MPV/keluarga</option></select></label>}{role === 'driver' && <label>Bansos Driver<input name="driver_bansos_amount" type="number" min="0" placeholder="Kosong = otomatis area" /></label>}{role === 'driver' && <label className="toggle-row"><input name="driver_bpjs_jht_enabled" type="checkbox" defaultChecked />JHT BPJS</label>}{role === 'driver' && <label className="toggle-row driver-ladies-toggle"><input name="is_ladies_driver" type="checkbox" />Driver Ladies</label>}</div>{role === 'driver' && <div className="service-config-pills"><strong>Config layanan driver</strong><span>Kosongkan jika driver boleh menerima semua layanan.</span>{services.map((service) => <label key={service.id} className="toggle-row service-pill"><input type="checkbox" checked={allowedServices.includes(service.code)} onChange={() => toggleService(service.code)} />{service.name}</label>)}</div>}</fieldset>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={saving || roleOptions.length === 0}>{saving ? 'Creating...' : 'Create real user'}</button></div>
         </form>
       </div>
     </div>

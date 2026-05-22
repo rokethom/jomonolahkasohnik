@@ -212,6 +212,9 @@ class AdminController extends Controller
         $role = UserRole::from($payload['role']);
         abort_unless($this->canAssignRole($actor, $role), 403);
         $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, $role);
+        if ($role === UserRole::Driver) {
+            abort_unless($payload['branch_id'] !== null, 422, 'Driver wajib dipasang ke area operasional.');
+        }
         $payload['area_id'] = app(OperationalAreaService::class)->resolveAreaId(null, $payload['branch_id'] ?? null);
         $branchScopeIds = $this->branchScopeIdsForUserWrite($actor, $role, $payload['branch_scope_ids'] ?? [], $payload['branch_id'] ?? null);
         if ($role === UserRole::Driver) {
@@ -298,6 +301,10 @@ class AdminController extends Controller
 
         if (array_key_exists('branch_id', $payload)) {
             $payload['branch_id'] = $this->branchIdForUserWrite($actor, $payload['branch_id'] ?? null, isset($payload['role']) ? UserRole::from($payload['role']) : $user->role);
+            $nextBranchRole = isset($payload['role']) ? UserRole::from($payload['role']) : $user->role;
+            if ($nextBranchRole === UserRole::Driver) {
+                abort_unless($payload['branch_id'] !== null, 422, 'Driver wajib dipasang ke area operasional.');
+            }
             $payload['area_id'] = app(OperationalAreaService::class)->resolveAreaId(null, $payload['branch_id'] ?? null);
         }
 
