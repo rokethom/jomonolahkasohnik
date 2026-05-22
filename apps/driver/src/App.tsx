@@ -110,6 +110,7 @@ type Order = {
   operHandleUpdatedAt?: string | null
   adjustments?: OrderAdjustment[]
   acceptedAt?: string | null
+  expiredAt?: string | null
   updatedAt?: string | null
   eligibility?: Eligibility
   crewRole?: string | null
@@ -334,6 +335,7 @@ type ApiOrder = {
   adjustments?: OrderAdjustment[]
   payment_meta?: Record<string, unknown> | null
   accepted_at?: string | null
+  expired_at?: string | null
   updated_at?: string | null
   eligibility?: Eligibility
   crew_role?: string | null
@@ -922,7 +924,7 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const canCreateRequestOrder = isOnline && driver.status === 'active' && activeOrders.length < maxMultiOrder
   const pendingOrders = canReceiveOrders
-    ? orders.filter((order) => (order.status === 'pending' && order.eligibility?.can_accept !== false) || isCrewOpportunity(order))
+    ? orders.filter((order) => ((isOpenPendingOrder(order) && order.eligibility?.can_accept !== false) || isCrewOpportunity(order)))
     : []
   const acceptedTotal = orders.filter((order) => order.status !== 'pending').length
   const availabilityCopy = driverAvailabilityCopy(driver, finance, isOnline, canReceiveOrders)
@@ -1187,7 +1189,7 @@ function OrderList({ orders, loading, api, onAction }: { orders: Order[]; loadin
   const { driver, finance, isOnline } = useDriverStore()
   const canReceiveOrders = canReceiveRealtimeOrder(driver, finance, isOnline)
   const visibleOrders = useMemo(
-    () => orders.filter((order) => (isActiveOrder(order) && !isCrewOpportunity(order)) || (canReceiveOrders && ((order.status === 'pending' && order.eligibility?.can_accept !== false) || isCrewOpportunity(order)))).sort(sortNewestOrderFirst),
+    () => orders.filter((order) => (isActiveOrder(order) && !isCrewOpportunity(order)) || (canReceiveOrders && ((isOpenPendingOrder(order) && order.eligibility?.can_accept !== false) || isCrewOpportunity(order)))).sort(sortNewestOrderFirst),
     [canReceiveOrders, orders],
   )
 
@@ -2472,6 +2474,7 @@ function mapOrder(order: ApiOrder): Order {
     operHandleUpdatedAt: order.oper_handle_updated_at ?? null,
     adjustments: order.adjustments ?? [],
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
+    expiredAt: order.expired_at ?? null,
     updatedAt: order.updated_at ?? null,
     eligibility: order.eligibility,
     crewRole: order.crew_role ?? null,
@@ -2507,6 +2510,7 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.oper_handle_reason !== undefined ? { operHandleReason: order.oper_handle_reason } : {}),
     ...(order.oper_handle_updated_at !== undefined ? { operHandleUpdatedAt: order.oper_handle_updated_at } : {}),
     ...(order.adjustments !== undefined ? { adjustments: order.adjustments } : {}),
+    ...(order.expired_at !== undefined ? { expiredAt: order.expired_at } : {}),
     ...(order.crew_role !== undefined ? { crewRole: order.crew_role } : {}),
     ...(order.crew_status !== undefined ? { crewStatus: order.crew_status } : {}),
     ...(order.crew_decision !== undefined ? { crewDecision: order.crew_decision } : {}),
@@ -2704,6 +2708,18 @@ function isCurrentDriverOrder(order: Pick<Order, 'customer' | 'driver' | 'driver
 }
 function driverInitial(name?: string | null) { return (name || 'D').trim().slice(0, 1).toUpperCase() || 'D' }
 function isActiveOrder(order: Order) { return order.status === 'accepted' || order.status === 'on_delivery' || order.status === 'pending_cancel' }
+function isOpenPendingOrder(order: Order) {
+  if (order.status !== 'pending') return false
+
+  if (order.expiredAt) {
+    return new Date(order.expiredAt).getTime() > Date.now()
+  }
+
+  const lastTouched = new Date(order.updatedAt ?? order.acceptedAt ?? 0).getTime()
+  if (!Number.isFinite(lastTouched) || lastTouched <= 0) return true
+
+  return Date.now() - lastTouched <= 12 * 60_000
+}
 function pendingCrew(order: Order) {
   return order.crews?.find((crew) => crew.status === 'pending' && crew.role !== 'rider') ?? null
 }

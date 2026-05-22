@@ -52,6 +52,7 @@ class DriverController extends Controller
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
                             ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
+                            ->where(fn (Builder $query) => $this->applyFreshPendingOrderScope($query))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -204,6 +205,7 @@ class DriverController extends Controller
                     $query->orWhere(function ($query) use ($driver): void {
                         $query->whereIn('status', [OrderStatus::Created->value, OrderStatus::SearchingDriver->value])
                             ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
+                            ->where(fn (Builder $query) => $this->applyFreshPendingOrderScope($query))
                             ->where(function ($query) use ($driver): void {
                                 $query->where('pricing_breakdown->driver_preference', '!=', 'ladies')
                                     ->orWhereNull('pricing_breakdown->driver_preference')
@@ -1008,5 +1010,18 @@ class DriverController extends Controller
         }
 
         return $order->crews->first(fn (OrderCrew $crew): bool => $crew->driver_id === null && $crew->status === 'pending' && $crew->role !== 'rider')?->role;
+    }
+
+    private function applyFreshPendingOrderScope(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query
+                ->where('expired_at', '>', now())
+                ->orWhere(function (Builder $query): void {
+                    $query
+                        ->whereNull('expired_at')
+                        ->where('updated_at', '>=', now()->subMinutes(12));
+                });
+        });
     }
 }
