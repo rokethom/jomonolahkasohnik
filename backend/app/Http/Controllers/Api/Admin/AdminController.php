@@ -57,6 +57,7 @@ use App\Services\RolePermissionSettingService;
 use App\Services\SettingService;
 use App\Services\SLAService;
 use App\Services\ZonePricingService;
+use App\Support\ServiceTypeNormalizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -229,7 +230,7 @@ class AdminController extends Controller
             'can_accept_all_areas' => $payload['can_accept_all_areas'] ?? false,
         ];
         if (array_key_exists('allowed_service_types', $payload)) {
-            $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
+            $driverPayload['allowed_service_types'] = ServiceTypeNormalizer::codes($payload['allowed_service_types'] ?? []);
         }
         if (array_key_exists('driver_bansos_amount', $payload)) {
             $driverPayload['bansos_amount'] = $payload['driver_bansos_amount'];
@@ -339,7 +340,7 @@ class AdminController extends Controller
             $driverPayload['can_accept_all_areas'] = $payload['can_accept_all_areas'];
         }
         if (array_key_exists('allowed_service_types', $payload)) {
-            $driverPayload['allowed_service_types'] = array_values(array_unique(array_filter(array_map('strval', $payload['allowed_service_types'] ?? []))));
+            $driverPayload['allowed_service_types'] = ServiceTypeNormalizer::codes($payload['allowed_service_types'] ?? []);
         }
         unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
@@ -1013,10 +1014,7 @@ class AdminController extends Controller
             'vehicle_seat_rows' => in_array('mobil', $vehicleTypes, true) ? ($payload['vehicle_seat_rows'] ?? 2) : null,
             'is_ladies_driver' => $payload['is_ladies_driver'] ?? false,
             'can_accept_all_areas' => $payload['can_accept_all_areas'] ?? false,
-            'allowed_service_types' => array_values(array_unique(array_map(
-                fn ($service): string => $this->normalizeServiceType((string) $service),
-                $payload['allowed_service_types'] ?? [],
-            ))),
+            'allowed_service_types' => ServiceTypeNormalizer::codes($payload['allowed_service_types'] ?? []),
         ]);
 
         $this->recordAudit($request->user(), 'updated_driver_config', $driver->user, [
@@ -1026,7 +1024,7 @@ class AdminController extends Controller
             'vehicle_seat_rows' => $driver->vehicle_seat_rows,
             'is_ladies_driver' => $driver->is_ladies_driver,
             'can_accept_all_areas' => $driver->can_accept_all_areas,
-            'allowed_service_types' => $driver->allowed_service_types,
+            'allowed_service_types' => ServiceTypeNormalizer::codes($driver->allowed_service_types ?? []),
         ]);
 
         return response()->json(['message' => 'Driver config updated']);
@@ -4241,7 +4239,7 @@ class AdminController extends Controller
                 'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
                 'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
                 'can_accept_all_areas' => (bool) ($user->driver?->can_accept_all_areas ?? false),
-                'allowed_service_types' => $user->driver?->allowed_service_types ?? [],
+                'allowed_service_types' => ServiceTypeNormalizer::codes($user->driver?->allowed_service_types ?? []),
                 'performance' => [
                     'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),
                     'ratings_count' => (int) ($user->driver?->ratings_count ?? 0),
@@ -4308,12 +4306,7 @@ class AdminController extends Controller
 
     private function normalizeServiceType(string $service): string
     {
-        return match (strtolower(trim($service))) {
-            'do' => 'delivery',
-            'gift', 'gift order' => 'gift_order',
-            'joker mobil', 'joker-mobile', 'joker' => 'joker_mobil',
-            default => strtolower(trim($service)),
-        };
+        return ServiceTypeNormalizer::type($service);
     }
 
     private function normalizeVehicleTypes(array $types): array

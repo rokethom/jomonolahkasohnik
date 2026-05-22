@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\OrderStatus;
 use App\Models\Driver;
 use App\Models\Order;
+use App\Support\ServiceTypeNormalizer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Carbon;
 
@@ -269,9 +270,9 @@ class MultiOrderService
             return true;
         }
 
-        $service = $this->normalizeService((string) $order->service_type);
+        $service = ServiceTypeNormalizer::type((string) ($order->service_code ?: $order->service_type));
 
-        return in_array($service, array_map(fn ($item): string => $this->normalizeService((string) $item), $allowed), true);
+        return in_array($service, array_map(fn ($item): string => ServiceTypeNormalizer::type((string) $item), $allowed), true);
     }
 
     private function canServeLadiesOrder(Driver $driver, Order $order): bool
@@ -301,13 +302,4 @@ class MultiOrderService
         return $driverRows >= max(2, min(3, $requiredRows));
     }
 
-    private function normalizeService(string $service): string
-    {
-        return match (strtolower(trim($service))) {
-            'do' => 'delivery',
-            'gift', 'gift order' => 'gift_order',
-            'joker mobil', 'joker-mobile', 'joker' => 'joker_mobil',
-            default => strtolower(trim($service)),
-        };
-    }
 }

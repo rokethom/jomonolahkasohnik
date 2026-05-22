@@ -2547,7 +2547,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
                   <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driverDisplayUsername(driver)}</strong><span>{driver.google_email ?? driver.email}</span></div></div></td>
                   <td><span className="driver-phone">{driver.phone || '-'}</span></td>
                   <td><span className="status info">{driverVehicleLabel(driver)}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
-                  <td><span className="driver-service-list">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
+                  <td><span className="driver-service-list">{formatDriverServices(driver.allowed_service_types, services)}</span></td>
                   <td><span className={driver.driver_status === 'active' ? 'status success' : driver.driver_status === 'suspended_unpaid' ? 'status warning' : 'status danger'}>{driver.driver_status.replace('_', ' ')}</span></td>
                   <td>
                     <span className={driver.deposit_status === 'paid' ? 'status success' : 'status warning'}>{driver.deposit_status === 'paid' && Number(driver.deposit_remaining ?? 0) > 0 ? 'paid parsial' : driver.deposit_status ?? 'sync'}</span>
@@ -2590,7 +2590,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
                 <div><span>Setoran</span><strong>Rp {Number(selectedDriver.deposit_remaining ?? 0).toLocaleString('id-ID')}</strong></div>
                 <div><span>Oper handle</span><strong>{selectedDriver.oper_handle_count}</strong></div>
                 <div><span>Suspend until</span><strong>{selectedDriver.suspended_until || '-'}</strong></div>
-                <div><span>Layanan</span><strong>{selectedDriver.allowed_service_types?.length ? selectedDriver.allowed_service_types.join(', ') : 'Semua layanan'}</strong></div>
+                <div><span>Layanan</span><strong>{formatDriverServices(selectedDriver.allowed_service_types, services)}</strong></div>
               </div>
               <div className="driver-detail-history">
                 <div className="section-title"><h2>History suspend</h2><span>{selectedDriver.suspensions.length}</span></div>
@@ -2802,12 +2802,12 @@ function StatusInfo({ label, value, tone }: { label: string; value: string; tone
 }
 
 function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver: DriverRow; services: ServiceRow[]; api: ApiClient; onClose: () => void; onSaved: () => Promise<void> }) {
-  const serviceOptions = services.map((service) => ({ label: service.name, value: serviceTypeFromService(service) }))
+  const serviceOptions = services.map((service) => ({ label: `${service.name} (${service.code.toUpperCase()})`, value: serviceCodeFromService(service) }))
   const [vehicleTypes, setVehicleTypes] = useState<string[]>(normalizedDriverVehicleTypes(driver))
   const [vehicleSeatRows, setVehicleSeatRows] = useState<2 | 3>((driver.vehicle_seat_rows === 3 ? 3 : 2))
   const [isLadiesDriver, setIsLadiesDriver] = useState(Boolean(driver.is_ladies_driver))
   const [canAcceptAllAreas, setCanAcceptAllAreas] = useState(Boolean(driver.can_accept_all_areas))
-  const [allowed, setAllowed] = useState<string[]>(driver.allowed_service_types ?? [])
+  const [allowed, setAllowed] = useState<string[]>(normalizeDriverServiceCodes(driver.allowed_service_types))
   const [saving, setSaving] = useState(false)
 
   const toggleVehicleType = (type: 'motor' | 'mobil') => {
@@ -2834,7 +2834,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
           vehicle_seat_rows: vehicleTypes.includes('mobil') ? vehicleSeatRows : null,
           is_ladies_driver: isLadiesDriver,
           can_accept_all_areas: canAcceptAllAreas,
-          allowed_service_types: allowed,
+          allowed_service_types: normalizeDriverServiceCodes(allowed),
         }),
       })
       await onSaved()
@@ -7270,6 +7270,57 @@ function serviceTypeFromService(service: ServiceRow) {
     JM: 'joker_mobil',
     TV: 'travel',
   }[service.code.toUpperCase()] ?? service.code.toLowerCase()
+}
+
+function serviceCodeFromService(service: ServiceRow) {
+  return service.code.toUpperCase()
+}
+
+function serviceCodeFromValue(value: string) {
+  const normalized = value.trim().toLowerCase()
+  const alias: Record<string, string> = {
+    oj: 'OJ',
+    ojek: 'OJ',
+    kr: 'KR',
+    kurir: 'KR',
+    do: 'DO',
+    delivery: 'DO',
+    bl: 'BL',
+    belanja: 'BL',
+    go: 'GO',
+    gift: 'GO',
+    gift_order: 'GO',
+    'gift order': 'GO',
+    jm: 'JM',
+    joker: 'JM',
+    joker_mobil: 'JM',
+    'joker mobil': 'JM',
+    tv: 'TV',
+    tr: 'TR',
+    travel: 'TR',
+    pj: 'PJ',
+    pajak_tahunan_kendaraan: 'PJ',
+    'pajak tahunan kendaraan': 'PJ',
+    pg: 'PG',
+    layanan_pengaduan: 'PG',
+    'layanan pengaduan': 'PG',
+    pengaduan: 'PG',
+  }
+
+  return alias[normalized] ?? normalized.toUpperCase().replace(/[\s-]+/g, '_')
+}
+
+function normalizeDriverServiceCodes(values?: string[] | null) {
+  return [...new Set((values ?? []).map(serviceCodeFromValue).filter(Boolean))]
+}
+
+function formatDriverServices(values: string[] | undefined | null, services: ServiceRow[]) {
+  const codes = normalizeDriverServiceCodes(values)
+  if (!codes.length) return 'Semua layanan'
+
+  const serviceNameByCode = new Map(services.map((service) => [service.code.toUpperCase(), service.name]))
+
+  return codes.map((code) => serviceNameByCode.has(code) ? `${code} - ${serviceNameByCode.get(code)}` : code).join(', ')
 }
 
 function zoneServiceOptions(services: ServiceRow[]) {
