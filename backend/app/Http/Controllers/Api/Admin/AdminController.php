@@ -76,7 +76,7 @@ class AdminController extends Controller
 {
     private const DEFAULT_ASSIGN_DRIVER_ROLES = ['operator', 'eksekutor'];
 
-    public function bootstrap(Request $request, SettingService $settings, OrderService $orders, SLAService $slaService, DriverSuspendService $driverSuspensions): JsonResponse
+    public function bootstrap(Request $request, SettingService $settings, OrderService $orders, SLAService $slaService, DriverSuspendService $driverSuspensions, LivePriceReviewService $liveReviews): JsonResponse
     {
         $orders->cancelExpiredCreatedOrders();
         $driverSuspensions->releaseExpiredSuspensions();
@@ -86,6 +86,9 @@ class AdminController extends Controller
         $wants = static fn (array $views): bool => $view === null || in_array((string) $view, $views, true);
 
         $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($user)));
+        if ($wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews')) {
+            $liveReviews->rejectTrivialPendingReviews();
+        }
 
         return response()->json([
             'me' => $this->userPayload($user),
@@ -116,7 +119,7 @@ class AdminController extends Controller
             'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],
             'ring_pricing_rules' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)) : [],
             'ring_pricing_suggestions' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)) : [],
-            'live_price_reviews' => $this->safeAdminPayload('live_price_reviews', fn () => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => app(LivePriceReviewService::class)->payload($review)) : []),
+            'live_price_reviews' => $this->safeAdminPayload('live_price_reviews', fn () => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => $liveReviews->payload($review)) : []),
             'zone_pricing_rules' => $wants(['zone-pricing', 'zone-pricing-tester']) ? $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)) : [],
             'geofences' => $wants(['geofence', 'zone-pricing', 'zone-pricing-tester']) ? GeofenceArea::query()->with('branch')->latest()->get() : [],
             'location_logs' => $wants(['locations', 'reports']) ? $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)) : [],
@@ -1235,6 +1238,8 @@ class AdminController extends Controller
         if (! Schema::hasTable('live_price_reviews')) {
             return response()->json(['data' => []]);
         }
+
+        $liveReviews->rejectTrivialPendingReviews();
 
         return response()->json([
             'data' => $this->livePriceReviewsQuery($request->user())

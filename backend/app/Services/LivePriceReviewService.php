@@ -34,6 +34,10 @@ class LivePriceReviewService
             return null;
         }
 
+        if ($this->shouldRejectRawText($rawText)) {
+            return null;
+        }
+
         $payload = $preview['order_payload'] ?? null;
         $quote = $preview['quote'] ?? null;
         if (! is_array($payload) || ! is_array($quote)) {
@@ -55,6 +59,78 @@ class LivePriceReviewService
             'system_total_price' => (int) ($quote['total_price'] ?? $quote['final_price'] ?? 0),
             'expires_at' => now()->addMinutes(15),
         ])->load(['customer.branch', 'branch', 'reviewer']);
+    }
+
+    public function rejectTrivialPendingReviews(): int
+    {
+        if (! Schema::hasTable('live_price_reviews')) {
+            return 0;
+        }
+
+        $rejected = 0;
+
+        LivePriceReview::query()
+            ->where('status', LivePriceReview::STATUS_PENDING)
+            ->latest()
+            ->limit(200)
+            ->get(['id', 'raw_text', 'status'])
+            ->each(function (LivePriceReview $review) use (&$rejected): void {
+                if (! $this->shouldRejectRawText((string) $review->raw_text)) {
+                    return;
+                }
+
+                $review->forceFill([
+                    'status' => LivePriceReview::STATUS_REJECTED,
+                    'correction_reason' => 'Ditolak otomatis: teks chat belum berisi format/order yang cukup.',
+                    'reviewed_at' => now(),
+                ])->save();
+
+                $rejected++;
+            });
+
+        return $rejected;
+    }
+
+    public function shouldRejectRawText(string $rawText): bool
+    {
+        $text = trim(strip_tags($rawText));
+        if ($text === '') {
+            return true;
+        }
+
+        $normalized = Str::of($text)
+            ->lower()
+            ->replaceMatches('/[^\pL\pN\s]+/u', ' ')
+            ->squish()
+            ->toString();
+
+        if ($normalized === '' || mb_strlen($normalized) < 12) {
+            return true;
+        }
+
+        $words = preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if (count($words) < 3) {
+            return true;
+        }
+
+        if (preg_match('/^([a-z])\1{3,}$/u', $normalized) === 1) {
+            return true;
+        }
+
+        $trivial = [
+            'cek', 'test', 'tes', 'min', 'admin', 'halo', 'hallo', 'hai', 'hello',
+            'p', 'ping', 'ok', 'oke', 'iya', 'ya', 'siap', 'coba', 'coba cek',
+            'cek min', 'tes min', 'test min', 'aaaa', 'aaaaa',
+        ];
+
+        if (in_array($normalized, $trivial, true)) {
+            return true;
+        }
+
+        $hasOrderSignal = preg_match('/\b(?:nama|no\s*hp|hp|whatsapp|wa|alamat|jemput|antar|tujuan|beli|pesan|order|ojek|delivery|kurir|mobil|pembelian|penumpang|bayar|cash|transfer|qris)\b/u', $normalized) === 1;
+        $hasAddressLikeSignal = preg_match('/\b(?:jl|jalan|perum|desa|dusun|kec|kab|rt|rw|blok|no|smp|sma|sd|pasar|terminal|alun|rumah|depan|sebelah|dekat)\b/u', $normalized) === 1;
+
+        return ! $hasOrderSignal && ! $hasAddressLikeSignal;
     }
 
     private function createFallbackReview(User $user, string $rawText, array $preview): LivePriceReview

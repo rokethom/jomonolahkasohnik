@@ -775,13 +775,13 @@ function App() {
   return (
     <Shell>
       <ToastStack toasts={toasts} />
-      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} branchAcceptedOrders={branchAcceptedOrders} branchRequestOrders={branchRequestOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
+      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
       {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} mode={chatTarget} />}
       {view === 'history' && <History orders={orders} loading={apiState.loading} />}
       {view === 'request' && <RequestOrder onCreated={async () => { await load() }} />}
-      {view === 'profile' && <Profile driver={driver} api={api} onSaved={async () => { await load() }} />}
+      {view === 'profile' && <Profile driver={driver} branchAcceptedOrders={branchAcceptedOrders} branchRequestOrders={branchRequestOrders} branchOperHandleOrders={branchOperHandleOrders} branchSuspendHistory={branchSuspendHistory} api={api} onSaved={async () => { await load() }} />}
       {view === 'performance' && <PerformancePage />}
       <BottomNav active={view} onNavigate={setView} />
       <AppUpdateNotice update={updateInfo} />
@@ -916,7 +916,7 @@ function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedRe
   return syncing
 }
 
-function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, loading, api, onAction, onRefreshOrders }: { driver: Driver; orders: Order[]; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
+function Dashboard({ driver, orders, loading, api, onAction, onRefreshOrders }: { driver: Driver; orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
   const { isOnline, setOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
@@ -996,7 +996,6 @@ function Dashboard({ driver, orders, branchAcceptedOrders, branchRequestOrders, 
         {!loading && pendingOrders.length === 0 && <EmptyState title="Belum ada order" copy="Order baru akan tampil di sini." />}
         {pendingOrders.slice(0, 3).map((order) => <OrderCard key={order.id} order={order} api={api} onAction={onAction} />)}
       </section>
-      <BranchAcceptedFeed orders={branchAcceptedOrders} requestOrders={branchRequestOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={branchSuspendHistory} />
     </section>
   )
 }
@@ -1013,12 +1012,18 @@ function BranchAcceptedFeed({
   suspendHistory: BranchSuspendHistory[]
 }) {
   const [openPanel, setOpenPanel] = useState<'accepted' | 'request' | 'oper' | 'suspend' | null>(null)
-  const visible = orders.filter((order) => orderDriverDisplay(order) && order.source !== 'driver_request')
-  const requestVisible = requestOrders
-  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus)
-  const suspendVisible = suspendHistory.slice(0, 6)
+  const acceptedTotal = orders.filter((order) => orderDriverDisplay(order) && order.source !== 'driver_request').length
+  const requestTotal = requestOrders.length
+  const operTotal = operHandleOrders.filter((order) => order.operHandleStatus).length
+  const suspendTotal = suspendHistory.length
+  const visible = orders.filter((order) => orderDriverDisplay(order) && order.source !== 'driver_request').slice(0, 10)
+  const requestVisible = requestOrders.slice(0, 10)
+  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 10)
+  const suspendVisible = suspendHistory.slice(0, 10)
   const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
   const togglePanel = (panel: 'accepted' | 'request' | 'oper' | 'suspend') => setOpenPanel((current) => current === panel ? null : panel)
+  const totalVisible = visible.length + requestVisible.length + operVisible.length + suspendVisible.length
+  const totalRows = acceptedTotal + requestTotal + operTotal + suspendTotal
 
   return (
     <section className="branch-feed panel">
@@ -1027,28 +1032,28 @@ function BranchAcceptedFeed({
           <span>Monitor area</span>
           <h2>Order diterima area</h2>
         </div>
-        <strong>{visible.length + requestVisible.length + operVisible.length + suspendVisible.length} data</strong>
+        <strong>{totalVisible}/{totalRows} data</strong>
       </div>
 
       <div className="branch-monitor-grid">
         <button className={`branch-monitor-card ${openPanel === 'accepted' ? 'active' : ''}`} type="button" onClick={() => togglePanel('accepted')}>
           <span>Order diterima</span>
-          <strong>{visible.length}</strong>
+          <strong>{Math.min(acceptedTotal, 10)}/{acceptedTotal}</strong>
           <small>{ladiesCount > 0 ? `${ladiesCount} Ladies` : 'Area cabang'}</small>
         </button>
         <button className={`branch-monitor-card request ${openPanel === 'request' ? 'active' : ''}`} type="button" onClick={() => togglePanel('request')}>
           <span>Request order</span>
-          <strong>{requestVisible.length}</strong>
+          <strong>{Math.min(requestTotal, 10)}/{requestTotal}</strong>
           <small>Driver cabang</small>
         </button>
         <button className={`branch-monitor-card oper ${openPanel === 'oper' ? 'active' : ''}`} type="button" onClick={() => togglePanel('oper')}>
           <span>Oper handle</span>
-          <strong>{operVisible.length}</strong>
+          <strong>{Math.min(operTotal, 10)}/{operTotal}</strong>
           <small>Area cabang</small>
         </button>
         <button className={`branch-monitor-card suspend ${openPanel === 'suspend' ? 'active' : ''}`} type="button" onClick={() => togglePanel('suspend')}>
           <span>History suspend</span>
-          <strong>{suspendVisible.length}</strong>
+          <strong>{Math.min(suspendTotal, 10)}/{suspendTotal}</strong>
           <small>Driver cabang</small>
         </button>
       </div>
@@ -1813,7 +1818,7 @@ function ImagePreviewModal({ imageUrl, onClose }: { imageUrl: string; onClose: (
   )
 }
 
-function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onSaved: () => Promise<void> }) {
+function Profile({ driver, branchAcceptedOrders, branchRequestOrders, branchOperHandleOrders, branchSuspendHistory, api, onSaved }: { driver: Driver; branchAcceptedOrders: Order[]; branchRequestOrders: Order[]; branchOperHandleOrders: Order[]; branchSuspendHistory: BranchSuspendHistory[]; api: ApiClient; onSaved: () => Promise<void> }) {
   const toast = useDriverStore((state) => state.toast)
   const openOperatorChat = useDriverStore((state) => state.openOperatorChat)
   const logout = useDriverStore((state) => state.logout)
@@ -1865,6 +1870,7 @@ function Profile({ driver, api, onSaved }: { driver: Driver; api: ApiClient; onS
     <section className="page">
       <PageTitle title="Profile" subtitle="Kelola data akun driver." />
       <DriverFinanceSection />
+      <BranchAcceptedFeed orders={branchAcceptedOrders} requestOrders={branchRequestOrders} operHandleOrders={branchOperHandleOrders} suspendHistory={branchSuspendHistory} />
       <button className="panel profile-menu-button operator-chat-button" type="button" onClick={openOperatorChat}>
         <MessageCircleMore size={20} />
         <div><strong>Chat CS / Operator</strong><span>Hubungi operator untuk bantuan akun, suspend, atau order.</span></div>

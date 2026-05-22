@@ -2028,7 +2028,7 @@ function DriverPerformanceSnapshot({ drivers, onOpenDrivers }: { drivers: Driver
 }
 
 function PerformanceMiniCard({ label, driver, value }: { label: string; driver?: DriverPerformanceRow; value: string }) {
-  return <article className="performance-mini-card"><span>{label}</span><strong>{value}</strong><small>{driver?.name ?? 'Belum ada data'}</small></article>
+  return <article className="performance-mini-card"><span>{label}</span><strong>{value}</strong><small>{driverDisplayUsername(driver, 'Belum ada data')}</small></article>
 }
 
 function OperatorPerformanceSnapshot({ operators, onOpenChats }: { operators: OperatorPerformance[]; onOpenChats: () => void }) {
@@ -2173,7 +2173,7 @@ function topDriverToday(drivers: DriverRow[], orders: Order[]) {
   const bestByPerformance = bestDriverFor(driverPerformanceRows(drivers), 'today_completed_orders_count', 'desc')
   if (bestByPerformance && Number(bestByPerformance.performance.today_completed_orders_count ?? 0) > 0) {
     return {
-      name: bestByPerformance.name,
+      name: driverDisplayUsername(bestByPerformance),
       orders: Number(bestByPerformance.performance.today_completed_orders_count ?? 0),
       rating: bestByPerformance.performance.rating_average > 0 ? bestByPerformance.performance.rating_average.toFixed(1) : '-',
       cancel: Number(bestByPerformance.performance.today_cancelled_orders_count ?? 0),
@@ -2181,10 +2181,10 @@ function topDriverToday(drivers: DriverRow[], orders: Order[]) {
   }
 
   const today = new Date().toDateString()
-  const driverOrders = orders.filter((order) => order.driver && order.created_at && new Date(order.created_at).toDateString() === today)
+  const driverOrders = orders.filter((order) => orderDriverDisplay(order) !== '-' && order.created_at && new Date(order.created_at).toDateString() === today)
   const counts = new Map<string, { name: string; orders: number; cancel: number }>()
   driverOrders.forEach((order) => {
-    const name = order.driver || '-'
+    const name = orderDriverDisplay(order)
     const row = counts.get(name) ?? { name, orders: 0, cancel: 0 }
     row.orders += 1
     if (String(order.status).toUpperCase() === 'CANCELLED') row.cancel += 1
@@ -2446,38 +2446,39 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
   }
 
   const release = async (driver: DriverRow) => {
-    if (!driver.driver_id || !confirm(`Release suspend ${driver.name}?`)) return
+    if (!driver.driver_id || !confirm(`Release suspend ${driverDisplayUsername(driver)}?`)) return
     await api(`/admin/drivers/${driver.driver_id}/release-suspend`, { method: 'POST' })
     await onChanged()
   }
 
   const resetToken = async (driver: DriverRow) => {
-    if (!driver.driver_id || !confirm(`Reset token login ${driver.name}? Driver harus login ulang setelah ini.`)) return
+    if (!driver.driver_id || !confirm(`Reset token login ${driverDisplayUsername(driver)}? Driver harus login ulang setelah ini.`)) return
     await api(`/admin/drivers/${driver.driver_id}/reset-token`, { method: 'POST' })
     await onChanged()
   }
 
   const markDeposit = async (driver: DriverRow, status: 'paid' | 'unpaid', full = false) => {
     if (!driver.driver_id) return
+    const driverLabel = driverDisplayUsername(driver)
     const label = status === 'paid' ? (full ? 'LUNAS' : 'BAYAR SETORAN') : 'UNPAID'
-    const reason = status === 'unpaid' ? prompt(`Alasan setoran ${driver.name} dibuat unpaid`, 'Belum bayar setoran') : null
+    const reason = status === 'unpaid' ? prompt(`Alasan setoran ${driverLabel} dibuat unpaid`, 'Belum bayar setoran') : null
     if (status === 'unpaid' && !reason) return
     const amount = status === 'paid' && !full
-      ? Number(prompt(`Nominal dibayar ${driver.name}\nSisa tagihan: Rp ${Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}`, String(driver.deposit_remaining ?? 0)) ?? 0)
+      ? Number(prompt(`Nominal dibayar ${driverLabel}\nSisa tagihan: Rp ${Number(driver.deposit_remaining ?? 0).toLocaleString('id-ID')}`, String(driver.deposit_remaining ?? 0)) ?? 0)
       : null
     const paymentAmount = amount ?? 0
     if (status === 'paid' && !full && (!Number.isFinite(paymentAmount) || paymentAmount <= 0)) return
-    if (!confirm(`Tandai setoran ${driver.name} sebagai ${label}?`)) return
+    if (!confirm(`Tandai setoran ${driverLabel} sebagai ${label}?`)) return
 
     try {
       const response = await api<{ message?: string }>(`/admin/drivers/${driver.driver_id}/deposit/${status}`, {
         method: 'POST',
         body: JSON.stringify(status === 'unpaid' ? { reason } : full ? { full: true } : { full: false, amount: paymentAmount }),
       })
-      alert(response.message ?? `Setoran ${driver.name} berhasil diperbarui.`)
+      alert(response.message ?? `Setoran ${driverLabel} berhasil diperbarui.`)
       await onChanged()
     } catch (error) {
-      alert(error instanceof Error ? error.message : `Setoran ${driver.name} gagal diperbarui.`)
+      alert(error instanceof Error ? error.message : `Setoran ${driverLabel} gagal diperbarui.`)
     }
   }
 
@@ -2543,7 +2544,7 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
                   }}
                   tabIndex={0}
                 >
-                  <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driver.name}</strong><span>{driver.username}</span><span>{driver.google_email ?? driver.email}</span></div></div></td>
+                  <td><div className="user-identity-cell driver-identity-cell"><UserAvatar user={driver} /><div><strong>{driverDisplayUsername(driver)}</strong><span>{driver.google_email ?? driver.email}</span></div></div></td>
                   <td><span className="driver-phone">{driver.phone || '-'}</span></td>
                   <td><span className="status info">{driverVehicleLabel(driver)}</span>{driver.is_ladies_driver && <span className="status ladies-status">Ladies</span>}</td>
                   <td><span className="driver-service-list">{driver.allowed_service_types?.length ? driver.allowed_service_types.join(', ') : 'Semua layanan'}</span></td>
@@ -2573,8 +2574,8 @@ function DriverManagementPanel({ drivers, services, permissions, api, onChanged,
                 <UserAvatar user={selectedDriver} />
                 <div>
                   <span>Driver terpilih</span>
-                  <strong>{selectedDriver.name}</strong>
-                  <small>{selectedDriver.username} - {driverBranchLabel(selectedDriver)}</small>
+                  <strong>{driverDisplayUsername(selectedDriver)}</strong>
+                  <small>{driverBranchLabel(selectedDriver)}</small>
                 </div>
               </div>
               <div className="driver-detail-statuses">
@@ -2763,7 +2764,7 @@ function DriverGoogleAuthModal({ driver, api, onClose, onSaved }: { driver: Driv
     <div className="modal-backdrop" role="presentation">
       <div className="modal driver-auth-modal" role="dialog" aria-modal="true">
         <div className="modal-header">
-          <div><h2>Google Login Driver</h2><p>{driver.name} - {driver.username}</p></div>
+          <div><h2>Google Login Driver</h2><p>{driverDisplayUsername(driver)}</p></div>
           <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
         </div>
         <div className="driver-auth-grid">
@@ -2786,10 +2787,10 @@ function DriverGoogleAuthModal({ driver, api, onClose, onSaved }: { driver: Driv
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving} type="submit">{saving ? 'Saving...' : 'Save Email'}</button></div>
         </form>
         <div className="row-actions driver-auth-actions">
-          <button className="mini-button" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Reset Google bind ${driver.name}? Driver dapat login ulang dengan akun Google baru.`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/reset-bind`, { method: 'POST' }))}>Reset Bind</button>
-          <button className="mini-button" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Revoke semua token aktif ${driver.name}?`, () => api(`/admin/drivers/${driver.driver_id}/reset-token`, { method: 'POST' }))}>Revoke Token</button>
-          <button className="mini-button reject" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Suspend auth Google ${driver.name}?`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/suspend`, { method: 'POST' }))}>Suspend Auth</button>
-          <button className="mini-button approve" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Unlock auth Google ${driver.name}?`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/unlock`, { method: 'POST' }))}>Unlock Auth</button>
+          <button className="mini-button" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Reset Google bind ${driverDisplayUsername(driver)}? Driver dapat login ulang dengan akun Google baru.`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/reset-bind`, { method: 'POST' }))}>Reset Bind</button>
+          <button className="mini-button" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Revoke semua token aktif ${driverDisplayUsername(driver)}?`, () => api(`/admin/drivers/${driver.driver_id}/reset-token`, { method: 'POST' }))}>Revoke Token</button>
+          <button className="mini-button reject" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Suspend auth Google ${driverDisplayUsername(driver)}?`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/suspend`, { method: 'POST' }))}>Suspend Auth</button>
+          <button className="mini-button approve" disabled={saving || !driver.driver_id} type="button" onClick={() => void action(`Unlock auth Google ${driverDisplayUsername(driver)}?`, () => api(`/admin/drivers/${driver.driver_id}/google-auth/unlock`, { method: 'POST' }))}>Unlock Auth</button>
         </div>
       </div>
     </div>
@@ -2846,7 +2847,7 @@ function DriverConfigModal({ driver, services, api, onClose, onSaved }: { driver
     <div className="modal-backdrop" role="presentation">
       <div className="modal" role="dialog" aria-modal="true">
         <div className="modal-header">
-          <div><h2>Driver Config</h2><p>{driver.name} - layanan yang boleh diterima</p></div>
+          <div><h2>Driver Config</h2><p>{driverDisplayUsername(driver)} - layanan yang boleh diterima</p></div>
           <button type="button" className="icon-button" onClick={onClose}><Icon name="close" /></button>
         </div>
         <div className="user-form">
@@ -6212,7 +6213,7 @@ function DriverPerformanceBoard({ drivers, period }: { drivers: DriverRow[]; per
         <article className={`driver-performance-card ${card.tone}`} key={card.label}>
           <span>{card.label}</span>
           <strong>{card.value(card.driver)}</strong>
-          <small>{card.driver?.name ?? 'Belum ada data'}</small>
+          <small>{driverDisplayUsername(card.driver, 'Belum ada data')}</small>
           <em>{card.driver ? driverBranchLabel(card.driver) : card.meta}</em>
         </article>
       ))}
@@ -7564,8 +7565,8 @@ function normalizedDriverVehicleTypes(driver: Pick<DriverRow, 'vehicle_type' | '
   return normalized.length > 0 ? normalized : ['motor']
 }
 
-function driverDisplayUsername(driver?: Pick<DriverCandidate, 'name' | 'username'> | null) {
-  return driver?.username?.trim() || driver?.name?.trim() || 'Belum ada idle driver'
+function driverDisplayUsername(driver?: Pick<DriverCandidate, 'name' | 'username'> | null, fallback = 'Belum ada idle driver') {
+  return driver?.username?.trim() || driver?.name?.trim() || fallback
 }
 
 function driverVehicleLabel(driver: Pick<DriverRow, 'vehicle_type' | 'vehicle_types' | 'vehicle_seat_rows'>) {
