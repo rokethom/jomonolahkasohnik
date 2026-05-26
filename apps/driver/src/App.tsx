@@ -154,6 +154,9 @@ type ReplyTarget = {
   text: string
 }
 type PublicSettings = {
+  branding?: {
+    driver?: BrandingAssets
+  }
   oauth?: {
     google_enabled: boolean
     google_client_id?: string | null
@@ -710,6 +713,8 @@ function App() {
       .catch(() => undefined)
   }, [])
 
+  useBrandingDocument(publicSettings, 'driver')
+
   useEffect(() => {
     if (!token || !publicSettings) return
 
@@ -851,7 +856,7 @@ function App() {
   return (
     <Shell>
       <ToastStack toasts={toasts} />
-      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} loading={apiState.loading} api={api} onAction={action} onRefreshOrders={loadOrderFeeds} />}
+      {view === 'dashboard' && <Dashboard driver={driver} orders={orders} loading={apiState.loading} api={api} publicSettings={publicSettings} onAction={action} onRefreshOrders={loadOrderFeeds} />}
       {view === 'orders' && <OrderList orders={orders} loading={apiState.loading} api={api} onAction={action} />}
       {view === 'order-detail' && selectedOrder && <OrderDetail order={selectedOrder} api={api} onAction={action} />}
       {view === 'chat' && <ChatScreen order={chatOrder} api={api} mode={chatTarget} />}
@@ -934,10 +939,10 @@ function LoginScreen({ publicSettings, onLoggedIn }: { publicSettings: PublicSet
   return (
     <main className="login-screen">
       <section className="login-hero">
-        <div className="brand-mark">JO</div>
-        <h1>Jojo Driver</h1>
+        <div className="brand-mark">{publicSettings?.branding?.driver?.logo_url ? <img src={brandingAsset(publicSettings, 'logo_url', '/logo.png')} alt="" /> : 'JO'}</div>
+        <h1>{brandingAppName(publicSettings, 'Driver Joker')}</h1>
         <p>Kelola order aktif, chat, dan perjalanan dari satu dashboard.</p>
-        <PwaInstallButton />
+        <PwaInstallButton publicSettings={publicSettings} />
       </section>
       <section className="panel login-card">
         {googleClientId ? (
@@ -992,7 +997,7 @@ function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedRe
   return syncing
 }
 
-function Dashboard({ driver, orders, loading, api, onAction, onRefreshOrders }: { driver: Driver; orders: Order[]; loading: boolean; api: ApiClient; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
+function Dashboard({ driver, orders, loading, api, publicSettings, onAction, onRefreshOrders }: { driver: Driver; orders: Order[]; loading: boolean; api: ApiClient; publicSettings: PublicSettings | null; onAction: (work: () => Promise<unknown>, success: string) => Promise<void>; onRefreshOrders: () => Promise<DriverOrdersFeedResponse | null> }) {
   const { isOnline, setOnline, setDriverState, setView, maxMultiOrder, finance, toast } = useDriverStore()
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
   const orderSyncing = useOrderFeedAutoRefresh(onRefreshOrders)
@@ -1035,10 +1040,10 @@ function Dashboard({ driver, orders, loading, api, onAction, onRefreshOrders }: 
           <span className="eyebrow">Driver Dashboard</span>
           <h1>Halo, {driver.name}</h1>
           <p>{driver.status === 'active' ? 'Siap ambil order hari ini' : suspendReasonText(driver)}</p>
-          <PwaInstallButton />
+          <PwaInstallButton publicSettings={publicSettings} />
         </div>
         <div className="top-card-brand">
-          <img src="/logo.png" alt="Jojo Driver" />
+          <img src={brandingAsset(publicSettings, 'logo_url', '/logo.png')} alt="Driver Joker" />
           <StatusPill driver={driver} />
         </div>
       </header>
@@ -1251,6 +1256,14 @@ function billingDepositFor(finance: DriverFinance): DriverFinance {
     current_period_deposit: finance.previous_deposit.current_period_deposit,
     breakdown: finance.previous_deposit.breakdown,
   }
+}
+type BrandingAssets = {
+  app_name?: string | null
+  logo_url?: string | null
+  favicon_url?: string | null
+  apple_touch_icon_url?: string | null
+  pwa_icon_192_url?: string | null
+  pwa_icon_512_url?: string | null
 }
 
 function PaidAmountRow({ value, paidAt }: { value: number; paidAt?: string | null }) {
@@ -2388,7 +2401,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return <div className="modal-backdrop" onClick={onClose}><section className="modal-card" onClick={(event) => event.stopPropagation()}><header><h2>{title}</h2><button aria-label="Tutup popup" onClick={onClose}>×</button></header>{children}</section></div>
 }
 
-function PwaInstallButton() {
+function PwaInstallButton({ publicSettings }: { publicSettings: PublicSettings | null }) {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches)
 
@@ -2424,7 +2437,7 @@ function PwaInstallButton() {
         setInstallEvent(null)
       }}
     >
-      <img src="/logo.png" alt="" />
+      <img src={brandingAsset(publicSettings, 'logo_url', '/logo.png')} alt="" />
       <span>Install Aplikasi</span>
     </button>
   )
@@ -3134,6 +3147,28 @@ function assetUrl(path: string) {
 
   const cleanPath = path.startsWith('/') ? path : `/${path}`
   return `${APP_BASE}${cleanPath}`
+}
+function brandingAsset(settings: PublicSettings | null | undefined, key: keyof BrandingAssets, fallback: string) {
+  const configured = settings?.branding?.driver?.[key]
+
+  return configured ? cmsAssetUrl(configured) : fallback
+}
+function brandingAppName(settings: PublicSettings | null | undefined, fallback: string) {
+  return settings?.branding?.driver?.app_name?.trim() || fallback
+}
+function useBrandingDocument(settings: PublicSettings | null, surface: 'driver') {
+  useEffect(() => {
+    if (!settings) return
+
+    document.title = brandingAppName(settings, 'Driver Joker')
+    setDocumentAsset('link[rel="icon"]', brandingAsset(settings, 'favicon_url', '/favicon.ico'))
+    setDocumentAsset('link[rel="apple-touch-icon"]', brandingAsset(settings, 'apple_touch_icon_url', '/apple-touch-icon.png'))
+    setDocumentAsset('link[rel="manifest"]', `${API_BASE}/settings/manifest/${surface}?origin=${encodeURIComponent(window.location.origin)}`)
+  }, [settings, surface])
+}
+function setDocumentAsset(selector: string, href: string) {
+  const element = document.querySelector<HTMLLinkElement>(selector)
+  if (element) element.href = href
 }
 function formatChatTime(value?: string) { return value ? new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '' }
 function whatsappUrl(phone: string) {

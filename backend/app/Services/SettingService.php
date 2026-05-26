@@ -38,19 +38,19 @@ class SettingService
         'osrm_base_url' => 'OSRM_BASE_URL',
         'osrm_active' => 'OSRM_ACTIVE',
         'google_oauth_enabled' => 'GOOGLE_OAUTH_ENABLED',
-            'google_oauth_client_id' => 'GOOGLE_OAUTH_CLIENT_ID',
-            'google_oauth_secret' => 'GOOGLE_OAUTH_SECRET',
-            'multi_order_enabled' => 'MULTI_ORDER_ENABLED',
-            'max_multi_order' => 'MAX_MULTI_ORDER',
-            'ai_assistant_enabled' => 'AI_ASSISTANT_ENABLED',
-            'ai_provider' => 'AI_PROVIDER',
-            'ai_model' => 'AI_MODEL',
-            'ai_base_url' => 'AI_BASE_URL',
-            'ai_max_tokens' => 'AI_MAX_TOKENS',
-            'openai_api_key' => 'OPENAI_API_KEY',
-            'kimi_api_key' => 'KIMI_API_KEY',
-            'blackbox_api_key' => 'BLACKBOX_API_KEY',
-            'openrouter_api_key' => 'OPENROUTER_API_KEY',
+        'google_oauth_client_id' => 'GOOGLE_OAUTH_CLIENT_ID',
+        'google_oauth_secret' => 'GOOGLE_OAUTH_SECRET',
+        'multi_order_enabled' => 'MULTI_ORDER_ENABLED',
+        'max_multi_order' => 'MAX_MULTI_ORDER',
+        'ai_assistant_enabled' => 'AI_ASSISTANT_ENABLED',
+        'ai_provider' => 'AI_PROVIDER',
+        'ai_model' => 'AI_MODEL',
+        'ai_base_url' => 'AI_BASE_URL',
+        'ai_max_tokens' => 'AI_MAX_TOKENS',
+        'openai_api_key' => 'OPENAI_API_KEY',
+        'kimi_api_key' => 'KIMI_API_KEY',
+        'blackbox_api_key' => 'BLACKBOX_API_KEY',
+        'openrouter_api_key' => 'OPENROUTER_API_KEY',
     ];
 
     public function all(): Collection
@@ -153,6 +153,9 @@ class SettingService
         return [
             'branding' => [
                 'bot_display_name' => $this->botDisplayName(),
+                'customer' => $this->brandingAssets('customer'),
+                'driver' => $this->brandingAssets('driver'),
+                'admin' => $this->brandingAssets('admin'),
             ],
             'map' => $this->getMapProvider(),
             'oauth' => [
@@ -175,6 +178,108 @@ class SettingService
             'support' => [
                 'complaint_whatsapp_number' => $this->get('complaint_whatsapp_number', '6281299232918'),
                 'complaint_whatsapp_url' => 'https://wa.me/'.$this->normalizeWhatsappNumber((string) $this->get('complaint_whatsapp_number', '6281299232918')),
+            ],
+        ];
+    }
+
+    public function brandingAssets(string $surface): array
+    {
+        $keys = match ($surface) {
+            'customer' => ['logo', 'hero_image', 'favicon', 'apple_touch_icon', 'pwa_icon_192', 'pwa_icon_512'],
+            'driver' => ['logo', 'favicon', 'apple_touch_icon', 'pwa_icon_192', 'pwa_icon_512'],
+            'admin' => ['logo', 'favicon', 'pwa_icon_192', 'pwa_icon_512'],
+            default => [],
+        };
+
+        $assets = ['app_name' => $this->brandingAppName($surface)];
+        foreach ($keys as $key) {
+            $assets[$key.'_url'] = $this->publicStorageUrl($this->get("branding_{$surface}_{$key}"));
+        }
+
+        return $assets;
+    }
+
+    public function brandingAppName(string $surface): string
+    {
+        $default = match ($surface) {
+            'driver' => 'Driver Joker',
+            'admin' => 'Admin Joker',
+            default => 'Joker',
+        };
+        $name = trim((string) $this->get("branding_{$surface}_app_name", $default));
+
+        return $name !== '' ? $name : $default;
+    }
+
+    public function brandingBackendName(): string
+    {
+        try {
+            $name = trim((string) $this->get('branding_backend_app_name', 'Jojoapp'));
+        } catch (Throwable) {
+            return 'Jojoapp';
+        }
+
+        return $name !== '' ? $name : 'Jojoapp';
+    }
+
+    public function pwaManifest(string $surface, string $origin): array
+    {
+        $assets = $this->brandingAssets($surface);
+        $appName = $this->brandingAppName($surface);
+        $defaults = match ($surface) {
+            'driver' => [
+                'name' => 'Driver Joker',
+                'short_name' => 'Driver Joker',
+                'description' => 'Driver Jojo si Aplikasi Joker',
+                'background_color' => '#07182f',
+                'theme_color' => '#07182f',
+                'categories' => ['business', 'productivity', 'navigation'],
+                'icon_192' => '/jojo_driver_192.png',
+                'icon_512' => '/jojo_driver_512.png',
+            ],
+            'admin' => [
+                'name' => 'Admin Joker',
+                'short_name' => 'Admin Joker',
+                'description' => 'Admin dashboard Jojo si Aplikasi Joker',
+                'background_color' => '#111827',
+                'theme_color' => '#111827',
+                'categories' => ['business', 'productivity'],
+                'icon_192' => '/jojo_admin_192.png',
+                'icon_512' => '/logo.png',
+            ],
+            default => [
+                'name' => 'JOJO si Aplikasi Joker',
+                'short_name' => 'Joker',
+                'description' => 'Aplikasi Joker.',
+                'background_color' => '#ffffff',
+                'theme_color' => '#00b7ff',
+                'categories' => ['lifestyle', 'shopping', 'utilities'],
+                'icon_192' => '/jojo192.png',
+                'icon_512' => '/jojo512.png',
+            ],
+        };
+
+        $icon192 = $assets['pwa_icon_192_url'] ?: $origin.$defaults['icon_192'];
+        $icon512 = $assets['pwa_icon_512_url'] ?: $origin.$defaults['icon_512'];
+
+        return [
+            'name' => $appName,
+            'short_name' => $appName,
+            'description' => $defaults['description'],
+            'id' => '/',
+            'start_url' => $origin.'/?source=pwa',
+            'scope' => $origin.'/',
+            'display' => 'standalone',
+            'display_override' => ['standalone', 'minimal-ui'],
+            'orientation' => 'portrait',
+            'background_color' => $defaults['background_color'],
+            'theme_color' => $defaults['theme_color'],
+            'categories' => $defaults['categories'],
+            'icons' => [
+                ['src' => $icon192, 'sizes' => '192x192', 'type' => $this->imageMimeType($icon192), 'purpose' => 'any'],
+                ['src' => $icon512, 'sizes' => '512x512', 'type' => $this->imageMimeType($icon512), 'purpose' => 'any'],
+                ['src' => $icon192, 'sizes' => '192x192', 'type' => $this->imageMimeType($icon192), 'purpose' => 'maskable'],
+                ['src' => $icon512, 'sizes' => '512x512', 'type' => $this->imageMimeType($icon512), 'purpose' => 'maskable'],
             ],
         ];
     }
@@ -349,6 +454,18 @@ class SettingService
         $path = ltrim($path, '/');
 
         return str_starts_with($path, 'http') ? $path : url('/api/media/'.$path);
+    }
+
+    private function imageMimeType(string $path): string
+    {
+        $extension = strtolower((string) pathinfo((string) parse_url($path, PHP_URL_PATH), PATHINFO_EXTENSION));
+
+        return match ($extension) {
+            'svg' => 'image/svg+xml',
+            'webp' => 'image/webp',
+            'jpg', 'jpeg' => 'image/jpeg',
+            default => 'image/png',
+        };
     }
 
     private function normalizeWhatsappNumber(string $number): string

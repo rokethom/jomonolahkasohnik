@@ -58,6 +58,7 @@ Route::get('/home', HomeController::class);
 Route::get('/map/provider', MapProviderController::class);
 Route::get('/settings/public', [SettingsController::class, 'publicSettings']);
 Route::get('/settings', [SettingsController::class, 'publicSettings']);
+Route::get('/settings/manifest/{surface}', [SettingsController::class, 'manifest']);
 Route::get('/media/{path}', PublicMediaController::class)->where('path', '.*');
 Route::get('/services', [ServiceController::class, 'index']);
 Route::get('/keyword-parsers', [KeywordParserController::class, 'index']);

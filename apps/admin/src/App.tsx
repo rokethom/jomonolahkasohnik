@@ -507,6 +507,18 @@ type Bootstrap = {
   chats: Chat[]
   audit_logs: AuditLog[]
 }
+type BrandingAssets = {
+  app_name?: string | null
+  logo_url?: string | null
+  favicon_url?: string | null
+  pwa_icon_192_url?: string | null
+  pwa_icon_512_url?: string | null
+}
+type PublicSettings = {
+  branding?: {
+    admin?: BrandingAssets
+  }
+}
 type UserIndexResponse = {
   data: {
     data: User[]
@@ -833,6 +845,7 @@ function App() {
   })
   const [adminNotice, setAdminNotice] = useState('')
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null)
+  const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isRefreshingRef = useRef(false)
   const isBrowserBackRef = useRef(false)
   const lastOperHandlePendingRef = useRef<number | null>(null)
@@ -849,6 +862,15 @@ function App() {
   }, [])
 
   const api = useMemo(() => makeApi(token, clearAuthSession), [clearAuthSession, token])
+
+  useEffect(() => {
+    void fetch(`${API_BASE}/settings/public`, { headers: { Accept: 'application/json' } })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => setPublicSettings(payload?.data ?? null))
+      .catch(() => undefined)
+  }, [])
+
+  useBrandingDocument(publicSettings, 'admin')
 
   const load = useCallback(async (silent = false) => {
     if (!token) return
@@ -1084,7 +1106,7 @@ function App() {
   if (!token) {
     return (
       <>
-        <LoginScreen onLogin={(nextToken) => {
+        <LoginScreen publicSettings={publicSettings} onLogin={(nextToken) => {
           localStorage.setItem('admin_token', nextToken)
           localStorage.removeItem('token')
           setError('')
@@ -1141,7 +1163,7 @@ function App() {
     <div className={darkMode ? 'admin-shell dark' : 'admin-shell'}>
       <button className={isMobileNavOpen ? 'mobile-scrim open' : 'mobile-scrim'} type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
       <aside className={isMobileNavOpen ? 'sidebar open' : 'sidebar'}>
-        <div className="brand"><div className="brand-mark">J</div><div><strong>Jojo Admin</strong><span>Operations Dashboard</span></div></div>
+        <div className="brand"><div className="brand-mark">{publicSettings?.branding?.admin?.logo_url ? <img src={brandingAsset(publicSettings, 'logo_url', '/logo.png')} alt="" /> : 'J'}</div><div><strong>{brandingAppName(publicSettings, 'Admin Joker')}</strong><span>Operations Dashboard</span></div></div>
         <nav className="nav-list" aria-label="Admin navigation">
           {visibleMenuGroups.map((group) => {
             const hasActiveItem = group.items.some((item) => item.id === safeView)
@@ -1185,7 +1207,7 @@ function App() {
           <div className="sidebar-actions">
             <button className="sidebar-action-button" type="button" onClick={() => { setProfileOpen(true); setMobileNavOpen(false) }}><Icon name="settings" />Profile & Setting</button>
             {data.permissions.can_manage_users && <button className="sidebar-action-button" type="button" onClick={() => { setUserFormOpen(true); setMobileNavOpen(false) }}><Icon name="plus" />New User</button>}
-            <PwaInstallButton />
+            <PwaInstallButton publicSettings={publicSettings} />
             <button className="sidebar-action-button danger" type="button" onClick={logout}><Icon name="logout" />Logout</button>
           </div>
         </div>
@@ -1320,7 +1342,7 @@ function AppUpdateNotice({ update }: { update: BuildInfo | null }) {
   )
 }
 
-function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
+function LoginScreen({ publicSettings, onLogin }: { publicSettings: PublicSettings | null; onLogin: (token: string) => void }) {
   const [error, setError] = useState('')
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1344,18 +1366,18 @@ function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
   return (
     <main className="login-screen">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand"><div className="brand-mark">J</div><div><strong>Jojo Admin</strong><span>Secure Login</span></div></div>
+        <div className="brand"><div className="brand-mark">{publicSettings?.branding?.admin?.logo_url ? <img src={brandingAsset(publicSettings, 'logo_url', '/logo.png')} alt="" /> : 'J'}</div><div><strong>{brandingAppName(publicSettings, 'Admin Joker')}</strong><span>Secure Login</span></div></div>
         <label>Email<input name="email" type="email" required placeholder="admin@jojo.test" /></label>
         <PasswordInput label="Password" required autoComplete="current-password" minLength={1} />
         {error && <div className="error-text">{error}</div>}
         <button className="primary-button" type="submit">Login</button>
-        <PwaInstallButton />
+        <PwaInstallButton publicSettings={publicSettings} />
       </form>
     </main>
   )
 }
 
-function PwaInstallButton() {
+function PwaInstallButton({ publicSettings }: { publicSettings: PublicSettings | null }) {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches)
 
@@ -1391,7 +1413,7 @@ function PwaInstallButton() {
         setInstallEvent(null)
       }}
     >
-      <img src="/logo.png" alt="" />
+      <img src={brandingAsset(publicSettings, 'logo_url', '/logo.png')} alt="" />
       <span>Install Aplikasi</span>
     </button>
   )
@@ -8013,6 +8035,28 @@ function assetUrl(path: string) {
 
   const cleanPath = path.startsWith('/') ? path : `/${path}`
   return `${APP_BASE}${cleanPath}`
+}
+
+function brandingAsset(settings: PublicSettings | null | undefined, key: keyof BrandingAssets, fallback: string) {
+  const configured = settings?.branding?.admin?.[key]
+
+  return configured ? assetUrl(configured) : fallback
+}
+
+function brandingAppName(settings: PublicSettings | null | undefined, fallback: string) {
+  return settings?.branding?.admin?.app_name?.trim() || fallback
+}
+
+function useBrandingDocument(settings: PublicSettings | null, surface: 'admin') {
+  useEffect(() => {
+    if (!settings) return
+
+    document.title = brandingAppName(settings, 'Admin Joker')
+    const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
+    if (icon) icon.href = brandingAsset(settings, 'favicon_url', '/favicon.svg')
+    if (manifest) manifest.href = `${API_BASE}/settings/manifest/${surface}?origin=${encodeURIComponent(window.location.origin)}`
+  }, [settings, surface])
 }
 
 function normalizeRemoteAsset(path: string) {

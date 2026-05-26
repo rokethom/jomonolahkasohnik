@@ -285,6 +285,9 @@ export type DynamicService = {
 export type PublicSettings = {
   branding?: {
     bot_display_name?: string | null
+    customer?: BrandingAssets
+    driver?: BrandingAssets
+    admin?: BrandingAssets
   }
   map: {
     provider: 'google' | 'mapbox' | 'osm'
@@ -308,4 +311,14 @@ export type PublicSettings = {
     complaint_whatsapp_number?: string | null
     complaint_whatsapp_url?: string | null
   }
+}
+
+export type BrandingAssets = {
+  app_name?: string | null
+  logo_url?: string | null
+  hero_image_url?: string | null
+  favicon_url?: string | null
+  apple_touch_icon_url?: string | null
+  pwa_icon_192_url?: string | null
+  pwa_icon_512_url?: string | null
 }

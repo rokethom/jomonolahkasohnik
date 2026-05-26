@@ -606,6 +606,7 @@ function App() {
   const [homeData, setHomeData] = useState<HomeData | null>(null)
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const botName = botDisplayName(publicSettings)
+  const appName = brandingAppName(publicSettings, 'customer', 'Joker')
   const [messages, setMessages] = useState<LocalMessage[]>([
     { id: crypto.randomUUID(), from: 'bot', text: initialBotText, time: nowTime(), csLink: true },
   ])
@@ -836,6 +837,8 @@ function App() {
       .then(setPublicSettings)
       .catch(() => undefined)
   }, [])
+
+  useBrandingDocument(publicSettings, 'customer')
 
   useEffect(() => {
     if (!token || !publicSettings) return
@@ -1528,7 +1531,7 @@ function App() {
   return (
     <ChatLayout
       screen={screen}
-      title="JOJO"
+      title={appName}
       subtitle={screen === 'driver-chat' ? `Chat dengan ${driverNameFromOrder(acceptedOrder) !== '-' ? driverNameFromOrder(acceptedOrder) : 'driver'}` : screen === 'cs-chat' ? 'Hubungi Operator' : screen === 'profile-setup' ? 'Lengkapi profile' : 'SI APLIKASI JOKER'}
       showCall={screen === 'driver-chat'}
       showBack={Boolean(token) && screen !== 'home'}
@@ -1537,6 +1540,7 @@ function App() {
       onMenu={menuAction}
       showDriverChat={Boolean(acceptedOrder)}
       authenticated={Boolean(token)}
+      publicSettings={publicSettings}
     >
       {screen === 'home' && <HomeScreen homeData={homeData} publicSettings={publicSettings} onOrder={openOrder} onOpen={(target) => setScreen(target)} />}
       {orderClosedMessage && <OrderClosedModal message={orderClosedMessage} onClose={() => setOrderClosedMessage('')} />}
@@ -1611,7 +1615,7 @@ function App() {
       )}
       {screen === 'profile' && <ProfileScreen />}
       {screen === 'profile-setup' && <ProfileScreen setupMode onDone={() => setScreen('home')} />}
-      {screen === 'login' && <CustomerLoginScreen onDone={() => setScreen(isProfileComplete(useCustomerStore.getState().user) ? 'home' : 'profile-setup')} />}
+      {screen === 'login' && <CustomerLoginScreen publicSettings={publicSettings} onDone={() => setScreen(isProfileComplete(useCustomerStore.getState().user) ? 'home' : 'profile-setup')} />}
       <AppUpdateNotice update={updateInfo} />
     </ChatLayout>
   )
@@ -1692,6 +1696,7 @@ function ChatLayout({
   onMenu,
   showDriverChat,
   authenticated,
+  publicSettings,
 }: {
   children: React.ReactNode
   screen: Screen
@@ -1704,6 +1709,7 @@ function ChatLayout({
   onMenu: (target: Screen | 'logout') => void
   showDriverChat: boolean
   authenticated: boolean
+  publicSettings: PublicSettings | null
 }) {
   const [open, setOpen] = useState(false)
 
@@ -1714,7 +1720,7 @@ function ChatLayout({
           {showBack && <ChevronLeft size={30} />}
         </button>
         <div className="jojo-logo">
-          <img src="/logo.png" alt="JojoApp" />
+          <img src={brandingAsset(publicSettings, 'customer', 'logo_url', '/logo.png')} alt="JojoApp" />
         </div>
         <button className="app-title" onClick={onHome} type="button">
           <strong>{title}</strong>
@@ -1775,16 +1781,16 @@ function HomeScreen({
         <CustomerHomeAvatar name={customerName} photoUrl={customer?.profile_photo_url} />
         <div className="hero-copy">
           <h1>Hai {customerName},<br />Selamat {greeting}</h1>
-          <p>Pesan berbagai layanan cepat, aman dan terpercaya lewat <strong>JOJO si Aplikasi Joker</strong>.</p>
+          <p>Pesan berbagai layanan cepat, aman dan terpercaya lewat <strong>{brandingAppName(publicSettings, 'customer', 'Joker')} si Aplikasi Joker</strong>.</p>
           <button className="order-cta" onClick={onOrder}>
             <MessageCircle size={19} />
             Order Sekarang
             <ChevronRight size={22} />
           </button>
-          <PwaInstallButton />
+          <PwaInstallButton publicSettings={publicSettings} />
         </div>
         <div className="rider-visual" aria-hidden="true">
-          <img src="/jojohome.webp" alt="" loading="eager" decoding="async" />
+          <img src={brandingAsset(publicSettings, 'customer', 'hero_image_url', '/jojohome.webp')} alt="" loading="eager" decoding="async" />
         </div>
       </section>
       {banners.length > 0 && (
@@ -4368,7 +4374,7 @@ function ProfileField({ icon, label, hint, children }: { icon: ReactNode; label:
   )
 }
 
-function CustomerLoginScreen(_props: { onDone: () => void }) {
+function CustomerLoginScreen({ publicSettings }: { publicSettings: PublicSettings | null; onDone: () => void }) {
   const googleHref = googleLoginUrl()
 
   return (
@@ -4377,7 +4383,7 @@ function CustomerLoginScreen(_props: { onDone: () => void }) {
         <h1>Login Customer</h1>
         <p>Masuk atau daftar customer cukup menggunakan akun Google.</p>
       </div>
-      <PwaInstallButton />
+      <PwaInstallButton publicSettings={publicSettings} />
       <div className="profile-edit-form">
         <a className="google-login-button" href={googleHref}>
           Login / Register by Google
@@ -4388,7 +4394,7 @@ function CustomerLoginScreen(_props: { onDone: () => void }) {
   )
 }
 
-function PwaInstallButton() {
+function PwaInstallButton({ publicSettings }: { publicSettings: PublicSettings | null }) {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches)
 
@@ -4424,7 +4430,7 @@ function PwaInstallButton() {
         setInstallEvent(null)
       }}
     >
-      <img src="/logo.png" alt="" />
+      <img src={brandingAsset(publicSettings, 'customer', 'logo_url', '/logo.png')} alt="" />
       <span>Install Aplikasi</span>
     </button>
   )
@@ -4858,6 +4864,33 @@ function botDisplayName(settings?: PublicSettings | null) {
   const configured = settings?.branding?.bot_display_name?.trim()
 
   return configured || DEFAULT_BOT_DISPLAY_NAME
+}
+
+function brandingAsset(settings: PublicSettings | null | undefined, surface: 'customer' | 'driver' | 'admin', key: 'logo_url' | 'hero_image_url' | 'favicon_url' | 'apple_touch_icon_url' | 'pwa_icon_192_url' | 'pwa_icon_512_url', fallback: string) {
+  const configured = settings?.branding?.[surface]?.[key]
+
+  return configured ? cmsAssetUrl(configured) : fallback
+}
+
+function brandingAppName(settings: PublicSettings | null | undefined, surface: 'customer' | 'driver' | 'admin', fallback: string) {
+  return settings?.branding?.[surface]?.app_name?.trim() || fallback
+}
+
+function useBrandingDocument(settings: PublicSettings | null, surface: 'customer' | 'driver' | 'admin') {
+  useEffect(() => {
+    if (!settings) return
+
+    const appName = brandingAppName(settings, surface, 'Joker')
+    document.title = appName
+    setDocumentAsset('link[rel="icon"]', brandingAsset(settings, surface, 'favicon_url', '/favicon.ico'))
+    setDocumentAsset('link[rel="apple-touch-icon"]', brandingAsset(settings, surface, 'apple_touch_icon_url', '/apple-touch-icon.png'))
+    setDocumentAsset('link[rel="manifest"]', `${API_BASE}/settings/manifest/${surface}?origin=${encodeURIComponent(window.location.origin)}`)
+  }, [settings, surface])
+}
+
+function setDocumentAsset(selector: string, href: string) {
+  const element = document.querySelector<HTMLLinkElement>(selector)
+  if (element) element.href = href
 }
 
 function replaceBotBrand(value: string | undefined | null, botName = DEFAULT_BOT_DISPLAY_NAME) {

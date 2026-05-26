@@ -8,6 +8,10 @@ use App\Models\Branch;
 use App\Models\User;
 use App\Services\DatabaseBackupService;
 use App\Services\SettingService;
+use Filament\Forms;
+use Filament\Forms\Concerns\InteractsWithForms;
+use Filament\Forms\Contracts\HasForms;
+use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Artisan;
@@ -23,8 +27,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Process\Process;
 use Throwable;
 
-class SystemControlCenterPage extends Page
+class SystemControlCenterPage extends Page implements HasForms
 {
+    use InteractsWithForms;
+
     protected static ?string $navigationIcon = 'heroicon-o-command-line';
 
     protected static ?string $navigationGroup = 'System';
@@ -40,6 +46,8 @@ class SystemControlCenterPage extends Page
     protected static string $view = 'filament.pages.system-control-center-page';
 
     public string $whitelistIps = '';
+
+    public ?array $brandingData = [];
 
     public string $securitySearch = '';
 
@@ -94,8 +102,102 @@ class SystemControlCenterPage extends Page
     public function mount(SettingService $settings): void
     {
         $this->whitelistIps = implode("\n", $this->loadWhitelistIps($settings));
+        $this->brandingForm->fill($this->brandingState($settings));
         $this->loadAutoBackupSettings($settings);
         $this->refreshDashboard();
+    }
+
+    protected function getForms(): array
+    {
+        return ['brandingForm'];
+    }
+
+    public function brandingForm(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Section::make('Customer App')
+                    ->description('Nama, logo, dan icon aplikasi customer. Nilai kosong kembali memakai default Joker.')
+                    ->columns(3)
+                    ->schema([
+                        $this->brandingNameInput('branding_customer_app_name', 'Nama aplikasi customer', 'Joker'),
+                        $this->brandingImageUpload('branding_customer_logo', 'Logo header / install', 'customer', 'Logo yang tampil pada header chat dan tombol install.'),
+                        $this->brandingImageUpload('branding_customer_hero_image', 'Gambar home', 'customer', 'Gambar brand pada tampilan utama customer.'),
+                        $this->brandingImageUpload('branding_customer_favicon', 'Icon browser', 'customer', 'Icon tab browser, disarankan PNG persegi.'),
+                        $this->brandingImageUpload('branding_customer_apple_touch_icon', 'Apple touch icon', 'customer', 'Icon shortcut iPhone/iPad, disarankan PNG 180x180.'),
+                        $this->brandingPwaUpload('branding_customer_pwa_icon_192', 'PWA icon 192x192', 'customer'),
+                        $this->brandingPwaUpload('branding_customer_pwa_icon_512', 'PWA icon 512x512', 'customer'),
+                    ]),
+                Forms\Components\Section::make('Driver App')
+                    ->description('Nama, logo, dan icon aplikasi driver. Default nama tetap Driver Joker.')
+                    ->columns(3)
+                    ->schema([
+                        $this->brandingNameInput('branding_driver_app_name', 'Nama aplikasi driver', 'Driver Joker'),
+                        $this->brandingImageUpload('branding_driver_logo', 'Logo dashboard / install', 'driver', 'Logo yang tampil pada dashboard driver dan tombol install.'),
+                        $this->brandingImageUpload('branding_driver_favicon', 'Icon browser', 'driver', 'Icon tab browser, disarankan PNG persegi.'),
+                        $this->brandingImageUpload('branding_driver_apple_touch_icon', 'Apple touch icon', 'driver', 'Icon shortcut iPhone/iPad, disarankan PNG 180x180.'),
+                        $this->brandingPwaUpload('branding_driver_pwa_icon_192', 'PWA icon 192x192', 'driver'),
+                        $this->brandingPwaUpload('branding_driver_pwa_icon_512', 'PWA icon 512x512', 'driver'),
+                    ]),
+                Forms\Components\Section::make('Admin App')
+                    ->description('Nama, logo, dan icon frontend admin. Default nama tetap Admin Joker.')
+                    ->columns(3)
+                    ->schema([
+                        $this->brandingNameInput('branding_admin_app_name', 'Nama frontend admin', 'Admin Joker'),
+                        $this->brandingImageUpload('branding_admin_logo', 'Logo frontend admin', 'admin', 'Logo sidebar, halaman login, dan tombol install FE Admin.'),
+                        $this->brandingImageUpload('branding_admin_favicon', 'Icon browser', 'admin', 'Icon tab browser FE Admin.'),
+                        $this->brandingPwaUpload('branding_admin_pwa_icon_192', 'PWA icon 192x192', 'admin'),
+                        $this->brandingPwaUpload('branding_admin_pwa_icon_512', 'PWA icon 512x512', 'admin'),
+                    ]),
+                Forms\Components\Section::make('Filament Backend')
+                    ->description('Nama brand panel CMS backend. Default tetap Jojoapp.')
+                    ->schema([
+                        $this->brandingNameInput('branding_backend_app_name', 'Nama backend Filament', 'Jojoapp'),
+                    ]),
+            ])
+            ->statePath('brandingData');
+    }
+
+    public function saveBranding(SettingService $settings): void
+    {
+        abort_unless(auth()->user()?->role === UserRole::Admin, 403);
+
+        $data = $this->brandingForm->getState();
+
+        $settings->set('branding_customer_app_name', trim((string) ($data['branding_customer_app_name'] ?? 'Joker')) ?: 'Joker');
+        $settings->set('branding_driver_app_name', trim((string) ($data['branding_driver_app_name'] ?? 'Driver Joker')) ?: 'Driver Joker');
+        $settings->set('branding_admin_app_name', trim((string) ($data['branding_admin_app_name'] ?? 'Admin Joker')) ?: 'Admin Joker');
+        $settings->set('branding_backend_app_name', trim((string) ($data['branding_backend_app_name'] ?? 'Jojoapp')) ?: 'Jojoapp');
+
+        foreach ([
+            'branding_customer_logo',
+            'branding_customer_hero_image',
+            'branding_customer_favicon',
+            'branding_customer_apple_touch_icon',
+            'branding_customer_pwa_icon_192',
+            'branding_customer_pwa_icon_512',
+            'branding_driver_logo',
+            'branding_driver_favicon',
+            'branding_driver_apple_touch_icon',
+            'branding_driver_pwa_icon_192',
+            'branding_driver_pwa_icon_512',
+            'branding_admin_logo',
+            'branding_admin_favicon',
+            'branding_admin_pwa_icon_192',
+            'branding_admin_pwa_icon_512',
+        ] as $key) {
+            $settings->set($key, $this->normalizeUploadState($data[$key] ?? null));
+        }
+
+        $this->recordAudit('system_control_saved_branding', null, [
+            'customer_name' => $settings->brandingAppName('customer'),
+            'driver_name' => $settings->brandingAppName('driver'),
+            'admin_name' => $settings->brandingAppName('admin'),
+            'backend_name' => $settings->brandingBackendName(),
+        ]);
+
+        Notification::make()->title('Branding aplikasi tersimpan')->body('Nama dan asset frontend/PWA sudah diperbarui.')->success()->send();
+        $this->brandingForm->fill($this->brandingState($settings));
     }
 
     public function refreshDashboard(): void
@@ -150,6 +252,7 @@ class SystemControlCenterPage extends Page
             'system_control_auto_backup_database',
             'system_control_auto_backup_database_test',
             'system_control_saved_auto_backup_settings',
+            'system_control_saved_branding',
             'system_control_restore_database',
             'system_control_cleanup_logs',
             'system_control_merge_duplicates',
@@ -301,6 +404,7 @@ class SystemControlCenterPage extends Page
         $path = $this->backupDirectory().DIRECTORY_SEPARATOR.basename($file);
         if (! File::exists($path)) {
             Notification::make()->title('File backup tidak ditemukan')->danger()->send();
+
             return;
         }
 
@@ -401,6 +505,7 @@ class SystemControlCenterPage extends Page
         $user = User::query()->find($userId);
         if (! $user || auth()->id() === $user->id || $user->role === UserRole::Admin) {
             Notification::make()->title('Akun ini tidak boleh dikunci dari sini')->danger()->send();
+
             return;
         }
 
@@ -422,6 +527,7 @@ class SystemControlCenterPage extends Page
         $user = User::query()->find($userId);
         if (! $user || $user->role === UserRole::Admin) {
             Notification::make()->title('Akun tidak ditemukan')->danger()->send();
+
             return;
         }
 
@@ -441,6 +547,7 @@ class SystemControlCenterPage extends Page
         $user = User::query()->find($userId);
         if (! $user || auth()->id() === $user->id) {
             Notification::make()->title('Token akun ini tidak bisa direset dari sini')->danger()->send();
+
             return;
         }
 
@@ -798,6 +905,7 @@ class SystemControlCenterPage extends Page
     {
         try {
             DB::select('select 1');
+
             return ['ok' => true, 'label' => 'Database OK', 'detail' => config('database.default').' / '.config('database.connections.mysql.database')];
         } catch (Throwable $exception) {
             return ['ok' => false, 'label' => 'Database error', 'detail' => $exception->getMessage()];
@@ -809,6 +917,7 @@ class SystemControlCenterPage extends Page
         try {
             $pong = Redis::connection()->ping();
             Cache::put('system_control_center:redis_check', now()->toDateTimeString(), 60);
+
             return ['ok' => true, 'label' => 'Redis OK', 'detail' => is_string($pong) ? $pong : 'PING OK'];
         } catch (Throwable $exception) {
             return ['ok' => false, 'label' => 'Redis error', 'detail' => $exception->getMessage()];
@@ -818,6 +927,7 @@ class SystemControlCenterPage extends Page
     private function checkQueue(): array
     {
         $failed = Schema::hasTable('failed_jobs') ? DB::table('failed_jobs')->count() : 0;
+
         return [
             'ok' => $failed === 0,
             'label' => $failed === 0 ? 'Queue OK' : 'Queue perlu dicek',
@@ -828,6 +938,7 @@ class SystemControlCenterPage extends Page
     private function checkStorageLink(): array
     {
         $link = public_path('storage');
+
         return [
             'ok' => is_link($link) || File::exists($link),
             'label' => (is_link($link) || File::exists($link)) ? 'Storage link OK' : 'Storage link belum ada',
@@ -919,6 +1030,94 @@ class SystemControlCenterPage extends Page
         $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
 
         return is_array($decoded) ? array_values(array_filter(array_map('strval', $decoded))) : [];
+    }
+
+    private function brandingState(SettingService $settings): array
+    {
+        return [
+            'branding_customer_app_name' => $settings->brandingAppName('customer'),
+            'branding_customer_logo' => $this->normalizeUploadState($settings->get('branding_customer_logo')),
+            'branding_customer_hero_image' => $this->normalizeUploadState($settings->get('branding_customer_hero_image')),
+            'branding_customer_favicon' => $this->normalizeUploadState($settings->get('branding_customer_favicon')),
+            'branding_customer_apple_touch_icon' => $this->normalizeUploadState($settings->get('branding_customer_apple_touch_icon')),
+            'branding_customer_pwa_icon_192' => $this->normalizeUploadState($settings->get('branding_customer_pwa_icon_192')),
+            'branding_customer_pwa_icon_512' => $this->normalizeUploadState($settings->get('branding_customer_pwa_icon_512')),
+            'branding_driver_app_name' => $settings->brandingAppName('driver'),
+            'branding_driver_logo' => $this->normalizeUploadState($settings->get('branding_driver_logo')),
+            'branding_driver_favicon' => $this->normalizeUploadState($settings->get('branding_driver_favicon')),
+            'branding_driver_apple_touch_icon' => $this->normalizeUploadState($settings->get('branding_driver_apple_touch_icon')),
+            'branding_driver_pwa_icon_192' => $this->normalizeUploadState($settings->get('branding_driver_pwa_icon_192')),
+            'branding_driver_pwa_icon_512' => $this->normalizeUploadState($settings->get('branding_driver_pwa_icon_512')),
+            'branding_admin_app_name' => $settings->brandingAppName('admin'),
+            'branding_admin_logo' => $this->normalizeUploadState($settings->get('branding_admin_logo')),
+            'branding_admin_favicon' => $this->normalizeUploadState($settings->get('branding_admin_favicon')),
+            'branding_admin_pwa_icon_192' => $this->normalizeUploadState($settings->get('branding_admin_pwa_icon_192')),
+            'branding_admin_pwa_icon_512' => $this->normalizeUploadState($settings->get('branding_admin_pwa_icon_512')),
+            'branding_backend_app_name' => $settings->brandingBackendName(),
+        ];
+    }
+
+    private function brandingImageUpload(string $name, string $label, string $directory, string $helperText): Forms\Components\FileUpload
+    {
+        return Forms\Components\FileUpload::make($name)
+            ->label($label)
+            ->disk('public')
+            ->directory('settings/branding/'.$directory)
+            ->visibility('public')
+            ->image()
+            ->imagePreviewHeight('120')
+            ->maxSize(2048)
+            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->downloadable()
+            ->openable()
+            ->helperText($helperText);
+    }
+
+    private function brandingNameInput(string $name, string $label, string $default): Forms\Components\TextInput
+    {
+        return Forms\Components\TextInput::make($name)
+            ->label($label)
+            ->default($default)
+            ->required()
+            ->maxLength(40)
+            ->helperText('Nama ini tampil pada frontend dan nama install PWA.')
+            ->columnSpanFull();
+    }
+
+    private function brandingPwaUpload(string $name, string $label, string $directory): Forms\Components\FileUpload
+    {
+        return Forms\Components\FileUpload::make($name)
+            ->label($label)
+            ->disk('public')
+            ->directory('settings/branding/'.$directory)
+            ->visibility('public')
+            ->image()
+            ->imagePreviewHeight('120')
+            ->maxSize(2048)
+            ->acceptedFileTypes(['image/png'])
+            ->downloadable()
+            ->openable()
+            ->helperText('Gunakan PNG persegi sesuai ukuran agar icon install tetap tajam.');
+    }
+
+    private function normalizeUploadState(mixed $value): ?string
+    {
+        if (is_array($value)) {
+            $value = collect($value)
+                ->flatten()
+                ->filter(fn (mixed $item): bool => filled($item))
+                ->first();
+        }
+
+        if (! filled($value)) {
+            return null;
+        }
+
+        $path = (string) $value;
+        $path = preg_replace('#^https?://[^/]+/storage/#i', '', $path) ?? $path;
+        $path = preg_replace('#^/?storage/#i', '', $path) ?? $path;
+
+        return ltrim($path, '/');
     }
 
     private function loadAutoBackupSettings(SettingService $settings): void

@@ -1,10 +1,11 @@
 <!doctype html>
+@php($backendBrandName = app(\App\Services\SettingService::class)->brandingBackendName())
 <html lang="id">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Login - Jojoapp</title>
+    <title>Login - {{ $backendBrandName }}</title>
     <style>
         :root {
             color-scheme: dark;
@@ -114,7 +115,7 @@
 </head>
 <body>
     <main>
-        <h1>Jojoapp Backend</h1>
+        <h1>{{ $backendBrandName }} Backend</h1>
         <p>Masuk ke panel CMS dan operasional.</p>
 
         @if ($errors->any())

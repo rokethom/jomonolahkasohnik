@@ -139,6 +139,19 @@
         <section class="scc-panel">
             <div class="scc-section-title">
                 <div>
+                    <h2>Branding Aplikasi</h2>
+                    <p class="scc-muted">Khusus admin: ubah nama, logo, icon browser, dan icon PWA untuk customer, driver, admin frontend, serta nama backend Filament.</p>
+                </div>
+            </div>
+
+            {{ $this->brandingForm }}
+
+            <button class="scc-button primary" style="margin-top:1rem" wire:click="saveBranding" type="button">Simpan Branding</button>
+        </section>
+
+        <section class="scc-panel">
+            <div class="scc-section-title">
+                <div>
                     <h2>Security Center</h2>
                     <p class="scc-muted">Lock/unlock staff dan customer, reset token, revoke session device, audit IP/device login, dan whitelist IP backend.</p>
                 </div>
