@@ -59,9 +59,10 @@ class ChatController extends Controller
 
         return response()->json([
             'data' => $conversation->messages()
-                ->with('sender')
+                ->with(['sender', 'sticker'])
                 ->oldest()
-                ->get(),
+                ->get()
+                ->map(fn ($message): array => $this->messagePayload($message)),
             'conversation' => $conversation,
         ]);
     }
@@ -73,9 +74,10 @@ class ChatController extends Controller
 
         return response()->json([
             'data' => $conversation->messages()
-                ->with('sender')
+                ->with(['sender', 'sticker'])
                 ->latest()
-                ->paginate($request->integer('per_page', 30)),
+                ->paginate($request->integer('per_page', 30))
+                ->through(fn ($message): array => $this->messagePayload($message)),
             'conversation' => $this->conversationPayload($conversation),
         ]);
     }
@@ -112,7 +114,7 @@ class ChatController extends Controller
             $conversation->forceFill(['status' => 'waiting'])->save();
         }
 
-        return response()->json(['data' => $message], 201);
+        return response()->json(['data' => $this->messagePayload($message->loadMissing(['sender', 'sticker']))], 201);
     }
 
     public function sendOrderMessage(Request $request, ChatService $chatService, MessageService $messageService): JsonResponse
@@ -136,7 +138,7 @@ class ChatController extends Controller
         }
 
         return response()->json([
-            'data' => $messageService->send($conversation, $request->user(), $payload),
+            'data' => $this->messagePayload($messageService->send($conversation, $request->user(), $payload)->loadMissing(['sender', 'sticker'])),
             'conversation' => $conversation,
         ], 201);
     }
@@ -293,6 +295,29 @@ class ChatController extends Controller
             'rating_requested_at' => $conversation->rating_requested_at?->toIso8601String(),
             'closed_at' => $conversation->closed_at?->toIso8601String(),
             'sla_status' => $conversation->sla_status,
+        ];
+    }
+
+    private function messagePayload(\App\Models\ChatMessage $message): array
+    {
+        return [
+            'id' => $message->id,
+            'sender_id' => $message->sender_id,
+            'sender_type' => $message->sender_type,
+            'sender_name' => $message->sender?->name,
+            'message' => $message->message,
+            'image_url' => $message->image_url,
+            'audio_url' => $message->audio_url,
+            'audio_duration' => $message->audio_duration,
+            'message_type' => $message->message_type,
+            'sticker' => $message->sticker ? [
+                'id' => $message->sticker->id,
+                'name' => $message->sticker->name,
+                'category' => $message->sticker->category,
+                'image_url' => $message->sticker->image_url,
+            ] : null,
+            'is_read' => $message->is_read,
+            'created_at' => $message->created_at?->toIso8601String(),
         ];
     }
 }

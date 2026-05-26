@@ -45,7 +45,7 @@ class DriverDepositResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('driver.user.name')->label('Driver')->searchable(),
+                Tables\Columns\TextColumn::make('driver.user.username')->label('Driver')->searchable(),
                 Tables\Columns\TextColumn::make('month')->label('Bulan'),
                 Tables\Columns\TextColumn::make('year')->label('Tahun'),
                 Tables\Columns\TextColumn::make('total')->money('IDR')->sortable(),
@@ -208,9 +208,9 @@ class DriverDepositResource extends Resource
             ->where('role', UserRole::Driver->value)
             ->whereHas('driver')
             ->with('driver')
-            ->orderBy('name')
+            ->orderBy('username')
             ->get()
-            ->mapWithKeys(fn (User $user): array => [$user->driver->id => $user->name])
+            ->mapWithKeys(fn (User $user): array => [$user->driver->id => $user->username ?: $user->name])
             ->all();
     }
 

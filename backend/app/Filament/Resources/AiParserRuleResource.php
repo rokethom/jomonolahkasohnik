@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AiParserRuleResource\Pages;
+use App\Filament\Support\RequiresAiDataAccess;
 use App\Models\AiParserRule;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class AiParserRuleResource extends Resource
 {
+    use RequiresAiDataAccess;
+
     protected static ?string $model = AiParserRule::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cpu-chip';

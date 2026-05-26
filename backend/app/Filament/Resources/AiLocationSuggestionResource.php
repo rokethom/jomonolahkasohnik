@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AiLocationSuggestionResource\Pages;
+use App\Filament\Support\RequiresAiDataAccess;
 use App\Jobs\SyncAiLocationSuggestionsJob;
 use App\Models\AiLocationSuggestion;
 use App\Models\Area;
@@ -18,6 +19,8 @@ use Illuminate\Database\Eloquent\Collection;
 
 class AiLocationSuggestionResource extends Resource
 {
+    use RequiresAiDataAccess;
+
     protected static ?string $model = AiLocationSuggestion::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-sparkles';
@@ -27,11 +30,6 @@ class AiLocationSuggestionResource extends Resource
     protected static ?string $navigationLabel = 'AI Location Learning';
 
     protected static ?int $navigationSort = 4;
-
-    public static function shouldRegisterNavigation(): bool
-    {
-        return auth()->user()?->hasPermission('edit_tarif') === true || auth()->user()?->hasPermission('manage_cms') === true;
-    }
 
     public static function form(Forms\Form $form): Forms\Form
     {

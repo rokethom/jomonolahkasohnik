@@ -78,6 +78,15 @@ class JojoBotController extends Controller
         ]);
     }
 
+    public function activeLivePriceReview(Request $request, LivePriceReviewService $liveReviews): JsonResponse
+    {
+        $review = $liveReviews->activeReviewFor($request->user());
+
+        return response()->json([
+            'data' => $review ? $liveReviews->payload($review) : null,
+        ]);
+    }
+
     public function cancelLivePriceReview(string $token, Request $request, LivePriceReviewService $liveReviews): JsonResponse
     {
         $payload = $request->validate([

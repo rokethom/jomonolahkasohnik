@@ -37,9 +37,14 @@ class RolePermissionCatalog
                 'manual_order' => 'Create manual order',
                 'approve_cancel_order' => 'Approve cancel request',
                 'reject_cancel_order' => 'Reject cancel request',
+                'approve_oper_handle' => 'Approve oper handle driver',
+                'reject_oper_handle' => 'Reject oper handle driver',
             ],
             'Pricing CMS' => [
                 'edit_tarif' => 'Edit tarif, pricing, master ring, zone pricing',
+            ],
+            'AI CMS' => [
+                'manage_ai_data' => 'Isi dan koreksi data AI parser, alias, POI, dan learning',
             ],
             'Report' => [
                 'view_report' => 'View report',

@@ -7,13 +7,18 @@ use App\Events\OrderStatusUpdated;
 use App\Models\OperHandleRequest;
 use App\Models\Order;
 use App\Services\ChatService;
+use App\Services\SettingService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class CompleteOrder
 {
-    public function __construct(private readonly ChatService $chatService)
+    public function __construct(
+        private readonly ChatService $chatService,
+        private readonly SettingService $settings,
+    )
     {
     }
 
@@ -44,9 +49,14 @@ class CompleteOrder
                 throw new RuntimeException('Order masih menunggu helper menerima slot crew.');
             }
 
-            if (in_array($order->status, [OrderStatus::DriverAccepted, OrderStatus::DriverOnTheWay, OrderStatus::ArrivedPickup, OrderStatus::OnGoing], true)
-                && $order->updated_at?->greaterThan(now()->subMinutes(5))) {
-                throw new RuntimeException('Order baru bisa diselesaikan 5 menit setelah diterima driver.');
+            $waitMinutes = max(0, min(180, $this->settings->int('driver_complete_wait_minutes', 5)));
+            $acceptedAtValue = data_get($order->pricing_breakdown, 'accepted_at');
+            $acceptedAt = filled($acceptedAtValue) ? Carbon::parse($acceptedAtValue) : $order->updated_at;
+
+            if ($waitMinutes > 0
+                && in_array($order->status, [OrderStatus::DriverAccepted, OrderStatus::DriverOnTheWay, OrderStatus::ArrivedPickup, OrderStatus::OnGoing], true)
+                && $acceptedAt?->greaterThan(now()->subMinutes($waitMinutes))) {
+                throw new RuntimeException("Order baru bisa diselesaikan {$waitMinutes} menit setelah diterima driver.");
             }
 
             $oldStatus = $order->status;

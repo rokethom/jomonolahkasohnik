@@ -6,7 +6,9 @@
         $cards = $data['cards'];
         $permissions = $data['permissions'];
         $visibleViews = $data['visible_views'];
+        $canManageAiData = $data['can_manage_ai_data'];
         $menuGroups = $data['menu_groups'];
+        $lockedViews = ['dashboard', 'ai-nlp-settings'];
         $allMenus = collect($menuGroups)->flatMap(fn (array $group) => $group);
         $hiddenMenus = $allMenus->reject(fn (string $label, string $view): bool => in_array($view, $visibleViews, true));
     @endphp
@@ -266,6 +268,20 @@
                     Klik status on/off pada menu untuk mengatur tampilan FE Admin role tersebut. Dashboard dikunci sebagai landing page, menu lain akan langsung dibaca API bootstrap FE Admin.
                 </div>
             </div>
+            <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-200/50 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-400/20 dark:bg-amber-950/35 dark:text-amber-100">
+                <div>
+                    <div class="font-bold">Hak input data AI: {{ $canManageAiData ? 'Aktif' : 'Nonaktif' }}</div>
+                    <div class="mt-1 opacity-80">Mengatur pengisian AI Parser, Alias Map, Location Learning, Master POI, dan Keyword Builder untuk role {{ $data['label'] }}.</div>
+                </div>
+                <x-filament::button
+                    type="button"
+                    wire:click="toggleAiDataAccess"
+                    :color="$canManageAiData ? 'danger' : 'success'"
+                    icon="{{ $canManageAiData ? 'heroicon-o-lock-closed' : 'heroicon-o-lock-open' }}"
+                >
+                    {{ $canManageAiData ? 'Nonaktifkan input AI' : 'Izinkan input AI' }}
+                </x-filament::button>
+            </div>
         </x-filament::section>
 
         <div class="role-preview-shell">
@@ -288,11 +304,11 @@
                                     type="button"
                                     class="role-preview-menu {{ $isVisible ? '' : 'is-muted' }}"
                                     wire:click="toggleMenu('{{ $view }}')"
-                                    @disabled($view === 'dashboard')
+                                    @disabled(in_array($view, $lockedViews, true))
                                 >
                                     <span>{{ $menu }}</span>
-                                    <span class="role-preview-switch {{ $view === 'dashboard' ? 'is-locked' : '' }}">
-                                        {{ $view === 'dashboard' ? 'lock' : ($isVisible ? 'on' : 'off') }}
+                                    <span class="role-preview-switch {{ in_array($view, $lockedViews, true) ? 'is-locked' : '' }}">
+                                        {{ in_array($view, $lockedViews, true) ? 'lock' : ($isVisible ? 'on' : 'off') }}
                                     </span>
                                 </button>
                             @endforeach

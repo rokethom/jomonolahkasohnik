@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import axios from 'axios'
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
-import { BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
+import { BriefcaseBusiness, Camera, ChevronLeft, Home, Image as ImageIcon, LogOut, MapPin, MessageCircle, MessageCircleMore, PackageCheck, Paperclip, SendHorizontal, UserRound } from 'lucide-react'
 import { setupDriverPush } from './push'
 
 declare global {
@@ -112,6 +112,7 @@ type Order = {
   acceptedAt?: string | null
   expiredAt?: string | null
   updatedAt?: string | null
+  driverActionSettings?: DriverActionSettings
   eligibility?: Eligibility
   crewRole?: string | null
   crewStatus?: string | null
@@ -123,6 +124,16 @@ type Order = {
     rule_name?: string
   } | null
   crews?: Array<{ id: number; role: string; label: string; status: string; driver?: string | null; driverUsername?: string | null; service_charge?: number; accepted_at?: string | null }>
+}
+
+type DriverActionSettings = {
+  complete_wait_minutes: number
+  adjustment_wait_minutes: number
+  adjustment_enabled: boolean
+  adjustment_min_amount: number
+  adjustment_max_amount: number
+  adjustment_step_amount: number
+  adjustment_default_amount: number
 }
 
 type OrderAdjustment = {
@@ -337,6 +348,7 @@ type ApiOrder = {
   accepted_at?: string | null
   expired_at?: string | null
   updated_at?: string | null
+  driver_action_settings?: DriverActionSettings
   eligibility?: Eligibility
   crew_role?: string | null
   crew_status?: string | null
@@ -522,6 +534,7 @@ function App() {
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null)
   const isBrowserBackRef = useRef(false)
   const notificationTargetRef = useRef<DriverNotificationTarget | null>(readDriverNotificationTarget())
+  const profileMonitorBusyRef = useRef(false)
   const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null
   const chatOrder = chatTarget === 'operator' ? null : selectedOrder ?? orders.find((order) => order.status === 'accepted' || order.status === 'on_delivery') ?? null
   const updateInfo = useBuildUpdate('driver')
@@ -627,10 +640,53 @@ function App() {
     }
   }, [api, logout, setOrderFeeds, toast, token])
 
+  const refreshProfileMonitor = useCallback(async () => {
+    if (!token || profileMonitorBusyRef.current) return
+    profileMonitorBusyRef.current = true
+
+    try {
+      const [, financePayload, performancePayload] = await Promise.all([
+        loadOrderFeeds(),
+        api<{ data: DriverFinance }>('/driver/finance'),
+        api<{ data: DriverPerformance }>('/driver/performance'),
+      ])
+
+      useDriverStore.setState({
+        finance: financePayload.data,
+        performance: performancePayload.data,
+      })
+    } finally {
+      profileMonitorBusyRef.current = false
+    }
+  }, [api, loadOrderFeeds, token])
+
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
     return () => window.clearTimeout(timer)
   }, [load])
+
+  useEffect(() => {
+    if (!token || view !== 'profile') return
+
+    const refreshFullWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshProfileMonitor().catch(() => undefined)
+    }
+
+    refreshFullWhenVisible()
+    const feedInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadOrderFeeds()
+    }, 10000)
+    const financeInterval = window.setInterval(refreshFullWhenVisible, 30000)
+    window.addEventListener('focus', refreshFullWhenVisible)
+    document.addEventListener('visibilitychange', refreshFullWhenVisible)
+
+    return () => {
+      window.clearInterval(feedInterval)
+      window.clearInterval(financeInterval)
+      window.removeEventListener('focus', refreshFullWhenVisible)
+      document.removeEventListener('visibilitychange', refreshFullWhenVisible)
+    }
+  }, [loadOrderFeeds, refreshProfileMonitor, token, view])
 
   useEffect(() => {
     const target = notificationTargetRef.current
@@ -734,12 +790,32 @@ function App() {
     channel.listen('.driver.accepted', () => {
       void loadOrderFeeds()
     })
+    channel.listen('.oper-handle.updated', (event: { oper_handle?: { order_id?: number; status?: string } }) => {
+      const decision = event.oper_handle
+      if (!decision || !['approved', 'rejected'].includes(String(decision.status))) return
+      const state = useDriverStore.getState()
+      const ownOrder = state.orders.some((order) => order.id === decision.order_id && isCurrentDriverOrder(order, state.driver))
+      void loadOrderFeeds()
+      if (!ownOrder) return
+      void playDriverNotificationSound()
+      toast(
+        decision.status === 'approved' ? 'Oper handle disetujui. Order telah dialihkan.' : 'Oper handle ditolak. Lanjutkan order kamu.',
+        decision.status === 'approved' ? 'warning' : 'success',
+      )
+    })
     channel.listen('.order.status.updated', (event: { order?: Partial<ApiOrder> & { id: number; code?: string }; new_status?: string }) => {
       if (!event.order?.id) return
       const currentState = useDriverStore.getState()
       const knownOrder = currentState.orders.some((order) => order.id === event.order?.id)
       const newStatus = normalizeStatus(event.new_status ?? event.order.status ?? '')
       updateOrder(event.order)
+      if (useDriverStore.getState().view === 'profile') {
+        void loadOrderFeeds()
+        const currentOrder = currentState.orders.find((order) => order.id === event.order?.id)
+        if (currentOrder && isCurrentDriverOrder(currentOrder, currentState.driver) && newStatus === 'done') {
+          void refreshProfileMonitor().catch(() => undefined)
+        }
+      }
       if (!knownOrder && newStatus === 'pending' && canReceiveRealtimeOrder(currentState.driver, currentState.finance, currentState.isOnline)) {
         void loadOrderFeeds().then((payload) => {
           const visibleOrder = payload?.orders.some((order) => order.id === event.order?.id)
@@ -755,7 +831,7 @@ function App() {
     return () => {
       makeEcho(token).leave('orders')
     }
-  }, [loadOrderFeeds, toast, token, updateOrder])
+  }, [loadOrderFeeds, refreshProfileMonitor, toast, token, updateOrder])
 
   const action = async (work: () => Promise<unknown>, success: string) => {
     try {
@@ -897,7 +973,7 @@ function useOrderFeedAutoRefresh(refreshOrders: () => Promise<DriverOrdersFeedRe
       }
     }
 
-    const interval = window.setInterval(() => void refresh(), 20000)
+    const interval = window.setInterval(() => void refresh(), 10000)
     const onVisible = () => {
       if (document.visibilityState === 'visible') void refresh()
     }
@@ -1016,13 +1092,12 @@ function BranchAcceptedFeed({
   const requestTotal = requestOrders.length
   const operTotal = operHandleOrders.filter((order) => order.operHandleStatus).length
   const suspendTotal = suspendHistory.length
-  const visible = orders.filter((order) => orderDriverDisplay(order) && order.source !== 'driver_request').slice(0, 10)
-  const requestVisible = requestOrders.slice(0, 10)
-  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 10)
-  const suspendVisible = suspendHistory.slice(0, 10)
+  const visible = orders.filter((order) => orderDriverDisplay(order) && order.source !== 'driver_request').slice(0, 20)
+  const requestVisible = requestOrders.slice(0, 20)
+  const operVisible = operHandleOrders.filter((order) => order.operHandleStatus).slice(0, 20)
+  const suspendVisible = suspendHistory.slice(0, 20)
   const ladiesCount = visible.filter((order) => order.driverPreference === 'ladies').length
   const togglePanel = (panel: 'accepted' | 'request' | 'oper' | 'suspend') => setOpenPanel((current) => current === panel ? null : panel)
-  const totalVisible = visible.length + requestVisible.length + operVisible.length + suspendVisible.length
   const totalRows = acceptedTotal + requestTotal + operTotal + suspendTotal
 
   return (
@@ -1032,35 +1107,35 @@ function BranchAcceptedFeed({
           <span>Monitor area</span>
           <h2>Order diterima area</h2>
         </div>
-        <strong>{totalVisible}/{totalRows} data</strong>
+        <strong>{totalRows} data</strong>
       </div>
 
       <div className="branch-monitor-grid">
         <button className={`branch-monitor-card ${openPanel === 'accepted' ? 'active' : ''}`} type="button" onClick={() => togglePanel('accepted')}>
           <span>Order diterima</span>
-          <strong>{Math.min(acceptedTotal, 10)}/{acceptedTotal}</strong>
-          <small>{ladiesCount > 0 ? `${ladiesCount} Ladies` : 'Area cabang'}</small>
+          <strong>{acceptedTotal}</strong>
+          <small>{ladiesCount > 0 ? `${ladiesCount} Ladies` : '20 terbaru'}</small>
         </button>
         <button className={`branch-monitor-card request ${openPanel === 'request' ? 'active' : ''}`} type="button" onClick={() => togglePanel('request')}>
           <span>Request order</span>
-          <strong>{Math.min(requestTotal, 10)}/{requestTotal}</strong>
-          <small>Driver cabang</small>
+          <strong>{requestTotal}</strong>
+          <small>20 terbaru</small>
         </button>
         <button className={`branch-monitor-card oper ${openPanel === 'oper' ? 'active' : ''}`} type="button" onClick={() => togglePanel('oper')}>
           <span>Oper handle</span>
-          <strong>{Math.min(operTotal, 10)}/{operTotal}</strong>
-          <small>Area cabang</small>
+          <strong>{operTotal}</strong>
+          <small>20 terbaru</small>
         </button>
         <button className={`branch-monitor-card suspend ${openPanel === 'suspend' ? 'active' : ''}`} type="button" onClick={() => togglePanel('suspend')}>
           <span>History suspend</span>
-          <strong>{Math.min(suspendTotal, 10)}/{suspendTotal}</strong>
-          <small>Driver cabang</small>
+          <strong>{suspendTotal}</strong>
+          <small>20 terbaru</small>
         </button>
       </div>
 
       {openPanel === 'accepted' && (
         <div className="branch-detail-list">
-          {visible.length === 0 && <p className="note">Belum ada order area yang diterima driver.</p>}
+          {visible.length === 0 && <p className="note">Belum ada order diterima di area cabang ini.</p>}
           {visible.map((order) => (
             <article className="branch-accepted-card" key={order.id}>
               <div className="branch-accepted-icon">{driverInitial(orderDriverDisplay(order))}</div>
@@ -1281,9 +1356,21 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
   const canFinish = canMainRiderAction && (order.status === 'accepted' || order.status === 'on_delivery')
   const isOperHandlePending = order.operHandleStatus === 'pending'
   const acceptedAt = order.acceptedAt ? new Date(order.acceptedAt).getTime() : now
-  const finishAt = acceptedAt + 5 * 60_000
+  const actionSettings = {
+    complete_wait_minutes: 5,
+    adjustment_wait_minutes: 5,
+    adjustment_enabled: true,
+    adjustment_min_amount: 1000,
+    adjustment_max_amount: 500000,
+    adjustment_step_amount: 1000,
+    adjustment_default_amount: 2000,
+    ...(order.driverActionSettings ?? {}),
+  }
+  const finishAt = acceptedAt + actionSettings.complete_wait_minutes * 60_000
   const finishWait = Math.max(0, finishAt - now)
   const finishDisabled = finishWait > 0 || isOperHandlePending || isWaitingForCrew
+  const adjustmentAt = acceptedAt + actionSettings.adjustment_wait_minutes * 60_000
+  const adjustmentWait = Math.max(0, adjustmentAt - now)
   const directionMatch = order.eligibility?.direction_match ?? true
   const route = routeInfoFor(order)
   const runOrderAction = async (work: () => Promise<unknown>, success: string) => {
@@ -1297,10 +1384,10 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
   }
 
   useEffect(() => {
-    if (!canFinish || finishWait <= 0) return
+    if ((!canFinish || finishWait <= 0) && (!isAccepted || !actionSettings.adjustment_enabled || adjustmentWait <= 0)) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [canFinish, finishWait])
+  }, [actionSettings.adjustment_enabled, adjustmentWait, canFinish, finishWait, isAccepted])
 
   return (
     <section className="page detail-page">
@@ -1391,7 +1478,11 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         {isAccepted && canMainRiderAction && (
           <>
             <button className="secondary-button" onClick={() => setView('chat')}>Chat Customer</button>
-            <button className="secondary-button" onClick={() => setAdjustOpen(true)}>Tambah Service Charge</button>
+            {actionSettings.adjustment_enabled && (
+              <button className="secondary-button" disabled={adjustmentWait > 0} onClick={() => setAdjustOpen(true)}>
+                {adjustmentWait > 0 ? `Service Charge aktif dalam ${formatRemaining(adjustmentWait)}` : 'Tambah Service Charge'}
+              </button>
+            )}
             <button className="danger-button" disabled={isOperHandlePending} onClick={() => setOperOpen(true)}>Oper Handle</button>
             <button className="ghost-button" onClick={() => setCancelOpen(true)}>Request Cancel ke CS</button>
           </>
@@ -1399,26 +1490,33 @@ function OrderDetail({ order, api, onAction }: { order: Order; api: ApiClient; o
         {canFinish && (
           <button
             className="finish-button"
-            disabled={finishDisabled}
-            onClick={() => onAction(() => api(`/orders/${order.id}/complete`, { method: 'POST' }), 'Order selesai')}
+            disabled={submitting || finishDisabled}
+            onClick={() => runOrderAction(async () => {
+              await api(`/orders/${order.id}/complete`, { method: 'POST' })
+              setView('dashboard')
+            }, 'Order selesai')}
           >
-            {isWaitingForCrew ? 'Menunggu helper' : isOperHandlePending ? 'Menunggu approval oper handle' : finishWait > 0 ? `Selesai aktif dalam ${formatRemaining(finishWait)}` : 'Selesai'}
+            {submitting ? 'Memproses...' : isWaitingForCrew ? 'Menunggu helper' : isOperHandlePending ? 'Menunggu approval oper handle' : finishWait > 0 ? `Selesai aktif dalam ${formatRemaining(finishWait)}` : 'Selesai'}
           </button>
         )}
       </div>
 
-      {adjustOpen && <AdjustmentModal order={order} onClose={() => setAdjustOpen(false)} onSubmit={(amount, reason) => onAction(() => api(`/orders/${order.id}/adjustments`, { method: 'POST', body: JSON.stringify({ amount, reason }) }), 'Adjustment terkirim').then(() => setAdjustOpen(false))} />}
+      {adjustOpen && <AdjustmentModal order={order} settings={actionSettings} onClose={() => setAdjustOpen(false)} onSubmit={(amount, reason) => onAction(() => api(`/orders/${order.id}/adjustments`, { method: 'POST', body: JSON.stringify({ amount, reason }) }), 'Adjustment terkirim').then(() => setAdjustOpen(false))} />}
       {operOpen && <OperHandleModal order={order} onClose={() => setOperOpen(false)} onConfirm={(reason) => onAction(() => api(`/orders/${order.id}/oper-handle`, { method: 'POST', body: JSON.stringify({ reason }) }), 'Oper handle dikirim ke Operator/SPV').then(() => setOperOpen(false))} />}
       {cancelOpen && <CancelRequestModal onClose={() => setCancelOpen(false)} onConfirm={(reason) => onAction(() => api(`/orders/${order.id}/cancel-request`, { method: 'POST', body: JSON.stringify({ reason }) }), 'Request cancel dikirim ke Operator/SPV').then(() => setCancelOpen(false))} />}
     </section>
   )
 }
 
-function AdjustmentModal({ order, onClose, onSubmit }: { order: Order; onClose: () => void; onSubmit: (amount: number, reason: string) => void }) {
-  const [amount, setAmount] = useState('2000')
+function AdjustmentModal({ order, settings, onClose, onSubmit }: { order: Order; settings: DriverActionSettings; onClose: () => void; onSubmit: (amount: number, reason: string) => void }) {
+  const [amount, setAmount] = useState(String(settings.adjustment_default_amount))
   const [reason, setReason] = useState('')
   const numericAmount = Number(amount)
-  const canSubmit = Number.isFinite(numericAmount) && numericAmount >= 1000 && reason.trim().length >= 5
+  const canSubmit = Number.isFinite(numericAmount)
+    && numericAmount >= settings.adjustment_min_amount
+    && numericAmount <= settings.adjustment_max_amount
+    && numericAmount % settings.adjustment_step_amount === 0
+    && reason.trim().length >= 5
 
   return (
     <Modal title="Tambah Service Charge" onClose={onClose}>
@@ -1428,8 +1526,9 @@ function AdjustmentModal({ order, onClose, onSubmit }: { order: Order; onClose: 
         <input
           type="number"
           value={amount}
-          min={1000}
-          step={1000}
+          min={settings.adjustment_min_amount}
+          max={settings.adjustment_max_amount}
+          step={settings.adjustment_step_amount}
           inputMode="numeric"
           placeholder="Contoh 2000"
           onChange={(event) => setAmount(event.target.value.replace(/[^\d]/g, ''))}
@@ -1444,7 +1543,7 @@ function AdjustmentModal({ order, onClose, onSubmit }: { order: Order; onClose: 
           required
         />
       </label>
-      {amount === '' && <p className="modal-copy warning">Nominal belum diisi. Masukkan minimal Rp 1.000.</p>}
+      {!canSubmit && <p className="modal-copy warning">Nominal Rp {formatMoney(settings.adjustment_min_amount)} sampai Rp {formatMoney(settings.adjustment_max_amount)}, kelipatan Rp {formatMoney(settings.adjustment_step_amount)}. Alasan minimal 5 karakter.</p>}
       <button className="primary-button" disabled={!canSubmit} onClick={() => onSubmit(numericAmount, reason.trim())}>Kirim Adjustment</button>
     </Modal>
   )
@@ -1626,6 +1725,34 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
     }
   }
 
+  const shareLocation = async () => {
+    if (!conversation) return
+    if (!navigator.geolocation) {
+      toast('GPS tidak tersedia di perangkat ini.', 'warning')
+      return
+    }
+
+    setAttachmentOpen(false)
+    setSending(true)
+    try {
+      const position = await getBrowserLocation()
+      const lat = Number(position.coords.latitude.toFixed(7))
+      const lng = Number(position.coords.longitude.toFixed(7))
+      const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`
+      const response = await api<{ data: ChatMessage }>(`/chats/${conversation.id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ message: withReplyPrefix(`Lokasi driver:\n${mapsUrl}`, replyTarget) }),
+      })
+      setReplyTarget(null)
+      chatStickToBottomRef.current = true
+      setMessages((current) => current.some((message) => String(message.id) === String(response.data.id)) ? current : [...current, response.data])
+    } catch (err) {
+      toast(getErrorMessage(err, 'Gagal membagikan lokasi'), 'danger')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <section className="page chat-page">
       <button className="back-button" aria-label="Kembali" onClick={() => setView(mode === 'operator' ? 'profile' : order ? 'order-detail' : 'dashboard')}><ChevronLeft size={22} /></button>
@@ -1657,7 +1784,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
                   return (
                     <article key={message.id} className={`bubble ${mine ? 'mine' : ''}`}>
                       <strong className="bubble-sender">{mine ? `${driver?.name ?? 'Driver'} (Driver)` : chatSenderLabel(message)}</strong>
-                      <p>{redactMapText(message.message) || (message.image_url ? 'Foto terkirim' : 'Pesan media')}</p>
+                      <MessageText message={message.message} fallback={message.image_url ? 'Foto terkirim' : 'Pesan media'} mine={mine} />
                       {message.image_url && <button className="chat-image-button" type="button" onClick={() => setPreviewImage(assetUrl(message.image_url!))}><img className="chat-media" src={assetUrl(message.image_url)} alt="Lampiran chat" /></button>}
                       {message.audio_url && <audio controls src={assetUrl(message.audio_url)} />}
                       <button className="bubble-reply" type="button" onClick={() => setReplyTarget({ id: String(message.id), text: message.message || (message.image_url ? 'Foto' : 'Pesan') })}>Balas</button>
@@ -1671,6 +1798,7 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
                   <AttachmentPanel
                     onGallery={() => galleryInputRef.current?.click()}
                     onCamera={() => cameraInputRef.current?.click()}
+                    onLocation={() => void shareLocation()}
                     onContact={() => void shareContact()}
                   />
                 )}
@@ -1731,11 +1859,12 @@ function ChatScreen({ order, api, mode }: { order: Order | null; api: ApiClient;
   )
 }
 
-function AttachmentPanel({ onGallery, onCamera, onContact }: { onGallery: () => void; onCamera: () => void; onContact: () => void }) {
+function AttachmentPanel({ onGallery, onCamera, onLocation, onContact }: { onGallery: () => void; onCamera: () => void; onLocation: () => void; onContact: () => void }) {
   return (
     <div className="attachment-panel">
       <button type="button" onClick={onGallery}><span className="gallery"><ImageIcon size={26} /></span><b>Galeri</b></button>
       <button type="button" onClick={onCamera}><span className="camera"><Camera size={26} /></span><b>Kamera</b></button>
+      <button type="button" onClick={onLocation}><span className="location"><MapPin size={26} /></span><b>Lokasi</b></button>
       <button type="button" onClick={onContact}><span className="contact"><UserRound size={26} /></span><b>Kontak</b></button>
     </div>
   )
@@ -2482,6 +2611,7 @@ function mapOrder(order: ApiOrder): Order {
     acceptedAt: order.accepted_at ?? order.updated_at ?? null,
     expiredAt: order.expired_at ?? null,
     updatedAt: order.updated_at ?? null,
+    driverActionSettings: order.driver_action_settings,
     eligibility: order.eligibility,
     crewRole: order.crew_role ?? null,
     crewStatus: order.crew_status ?? null,
@@ -2517,6 +2647,7 @@ function mapOrderPatch(order: Partial<ApiOrder> & { id: number }): Partial<Order
     ...(order.oper_handle_updated_at !== undefined ? { operHandleUpdatedAt: order.oper_handle_updated_at } : {}),
     ...(order.adjustments !== undefined ? { adjustments: order.adjustments } : {}),
     ...(order.expired_at !== undefined ? { expiredAt: order.expired_at } : {}),
+    ...(order.driver_action_settings !== undefined ? { driverActionSettings: order.driver_action_settings } : {}),
     ...(order.crew_role !== undefined ? { crewRole: order.crew_role } : {}),
     ...(order.crew_status !== undefined ? { crewStatus: order.crew_status } : {}),
     ...(order.crew_decision !== undefined ? { crewDecision: order.crew_decision } : {}),
@@ -2697,8 +2828,8 @@ function parseRequestPrices(text: string) {
   const prices = [...text.matchAll(pricePattern)].map((match) => Math.round(Number(match[1].replace(',', '.')) * 1000))
 
   return {
-    acceptedPrice: prices[0] ?? null,
-    depositBase: prices.length > 0 ? prices[prices.length - 1] : null,
+    acceptedPrice: prices.length > 0 ? prices[prices.length - 1] : null,
+    depositBase: prices[0] ?? null,
   }
 }
 function orderDriverDisplay(order?: Pick<Order, 'driver' | 'driverUsername'> | null) {
@@ -3017,6 +3148,42 @@ function redactMapText(message?: string | null) {
   return message
     .replace(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com|maps\.app\.goo\.gl)\S*/giu, '[lokasi disembunyikan]')
     .replace(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/g, '[koordinat disembunyikan]')
+}
+
+function MessageText({ message, fallback, mine }: { message?: string | null; fallback: string; mine: boolean }) {
+  const location = parseSharedLocation(message)
+  if (location) {
+    return (
+      <div className="shared-location-card">
+        <span className="shared-location-icon"><MapPin size={22} /></span>
+        <div>
+          <strong>{mine ? 'Lokasi driver' : 'Lokasi customer'}</strong>
+          <p>Lokasi dibagikan lewat Google Maps.</p>
+          <a href={location.url} target="_blank" rel="noreferrer">Buka Maps</a>
+        </div>
+      </div>
+    )
+  }
+
+  return <p>{redactMapText(message) || fallback}</p>
+}
+
+function parseSharedLocation(message?: string | null): { url: string } | null {
+  const text = String(message ?? '')
+  const match = text.match(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com)\/[^\s]+|https?:\/\/maps\.app\.goo\.gl\/[^\s]+/iu)
+  if (!match) return null
+
+  return { url: match[0] }
+}
+
+function getBrowserLocation(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 30000,
+    })
+  })
 }
 
 function autoResizeTextarea(textarea: HTMLTextAreaElement) {

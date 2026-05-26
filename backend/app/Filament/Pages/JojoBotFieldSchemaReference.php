@@ -21,6 +21,11 @@ class JojoBotFieldSchemaReference extends Page
 
     protected static string $view = 'filament.pages.jojobot-field-schema-reference';
 
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->hasPermission('manage_ai_data') === true;
+    }
+
     public function getFieldGroups(): array
     {
         return [

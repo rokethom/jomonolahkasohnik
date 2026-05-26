@@ -26,7 +26,8 @@ class AiMonitoringPage extends Page
 
     public static function canAccess(): bool
     {
-        return in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true);
+        return in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV], true)
+            || auth()->user()?->hasPermission('manage_ai_data') === true;
     }
 
     protected function getViewData(): array

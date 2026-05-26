@@ -55,5 +55,17 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('driver-google-login', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());
         });
+
+        RateLimiter::for('auth-login', function (Request $request) {
+            return Limit::perMinute(10)->by(strtolower((string) $request->input('email')).'|'.$request->ip());
+        });
+
+        RateLimiter::for('auth-register', function (Request $request) {
+            return Limit::perMinute(5)->by($request->ip());
+        });
+
+        RateLimiter::for('auth-google-redirect', function (Request $request) {
+            return Limit::perMinute(20)->by($request->ip());
+        });
     }
 }

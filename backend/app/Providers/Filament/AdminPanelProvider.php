@@ -2,6 +2,23 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Widgets\Analytics\AreaAnalyticsTableWidget;
+use App\Filament\Widgets\Analytics\AreaStatsWidget;
+use App\Filament\Widgets\Analytics\DriverRankingTableWidget;
+use App\Filament\Widgets\Analytics\DriverStatsWidget;
+use App\Filament\Widgets\Analytics\OverviewStatsWidget;
+use App\Filament\Widgets\Analytics\PeakHourChartWidget;
+use App\Filament\Widgets\Analytics\PeakHourHeatmapWidget;
+use App\Filament\Widgets\Analytics\PeakHourStatsWidget;
+use App\Filament\Widgets\Analytics\RevenueComparisonChartWidget;
+use App\Filament\Widgets\Analytics\RevenueStatsWidget;
+use App\Filament\Widgets\Analytics\RevenueTrendChartWidget;
+use App\Filament\Widgets\Analytics\ServiceAnalyticsTableWidget;
+use App\Filament\Widgets\Analytics\ServiceGrowthChartWidget;
+use App\Filament\Widgets\Analytics\ServiceOrdersChartWidget;
+use App\Filament\Widgets\Analytics\ServicePopularityChartWidget;
+use App\Filament\Widgets\Analytics\ServiceRevenueChartWidget;
+use App\Filament\Widgets\Analytics\TopAreasChartWidget;
 use App\Filament\Widgets\ModernStatsOverview;
 use App\Filament\Widgets\RecentActivityWidget;
 use Filament\Http\Middleware\Authenticate;
@@ -13,13 +30,13 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Widgets;
-use Illuminate\Support\HtmlString;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -211,6 +228,25 @@ class AdminPanelProvider extends PanelProvider
                 ModernStatsOverview::class,
                 RecentActivityWidget::class,
                 Widgets\AccountWidget::class,
+            ])
+            ->livewireComponents([
+                AreaAnalyticsTableWidget::class,
+                AreaStatsWidget::class,
+                DriverRankingTableWidget::class,
+                DriverStatsWidget::class,
+                OverviewStatsWidget::class,
+                PeakHourChartWidget::class,
+                PeakHourHeatmapWidget::class,
+                PeakHourStatsWidget::class,
+                RevenueComparisonChartWidget::class,
+                RevenueStatsWidget::class,
+                RevenueTrendChartWidget::class,
+                ServiceAnalyticsTableWidget::class,
+                ServiceGrowthChartWidget::class,
+                ServiceOrdersChartWidget::class,
+                ServicePopularityChartWidget::class,
+                ServiceRevenueChartWidget::class,
+                TopAreasChartWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

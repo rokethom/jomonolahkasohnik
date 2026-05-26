@@ -146,13 +146,13 @@ class AuditLogResource extends Resource
 
         if ($record->action === 'assigned_driver_to_order') {
             $actor = (string) ($metadata['assigned_by_name'] ?? $record->user?->name ?? 'System');
-            $driver = (string) ($metadata['assigned_driver_name'] ?? $metadata['assigned_driver_username'] ?? $metadata['driver_id'] ?? 'driver');
+            $driver = (string) ($metadata['assigned_driver_username'] ?? $metadata['assigned_driver_name'] ?? $metadata['driver_id'] ?? 'driver');
             $username = (string) ($metadata['assigned_driver_username'] ?? '');
             $order = (string) ($metadata['order_code'] ?? $record->subject_label ?? ('#'.$record->subject_id));
             $area = (string) ($metadata['area_name'] ?? $metadata['branch_name'] ?? '');
             $reason = (string) ($metadata['reason'] ?? '');
 
-            return trim($actor.' menugaskan '.$driver.($username !== '' ? ' (@'.$username.')' : '').' ke '.$order.($area !== '' ? ' - '.$area : '').($reason !== '' ? '. Alasan: '.$reason : ''));
+            return trim($actor.' menugaskan '.$driver.($username !== '' && $username !== $driver ? ' (@'.$username.')' : '').' ke '.$order.($area !== '' ? ' - '.$area : '').($reason !== '' ? '. Alasan: '.$reason : ''));
         }
 
         if ($record->action === 'broadcast_pending_order_to_drivers') {

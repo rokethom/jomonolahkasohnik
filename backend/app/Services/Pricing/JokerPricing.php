@@ -67,12 +67,14 @@ class JokerPricing
     public function depositAmount(int $jasa, float $distance): int
     {
         $config = $this->config();
+        $ring1MaxJasa = (int) $config['deposit_ring1_max_jasa'];
+        $ring1Amount = (int) $config['deposit_ring1_amount'];
 
-        if ($jasa <= $config['deposit_ring1_max_jasa']) {
-            return $config['deposit_ring1_amount'];
+        if ($jasa <= $ring1MaxJasa) {
+            return $ring1Amount;
         }
 
-        return (int) floor($jasa * ($config['deposit_ring2_percent'] / 100));
+        return $ring1Amount + (int) floor(($jasa - $ring1MaxJasa) * ($config['deposit_ring2_percent'] / 100));
     }
 
     /**

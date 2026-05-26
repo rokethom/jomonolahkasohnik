@@ -16,16 +16,20 @@ class OperHandleRequest extends Model
         'requested_by',
         'operator_approved_by',
         'spv_approved_by',
+        'decided_by',
         'proof_path',
         'reason',
         'status',
         'operator_approved_at',
         'spv_approved_at',
+        'decided_at',
+        'decision_note',
     ];
 
     protected $casts = [
         'operator_approved_at' => 'datetime',
         'spv_approved_at' => 'datetime',
+        'decided_at' => 'datetime',
     ];
 
     public function order(): BelongsTo
@@ -41,5 +45,10 @@ class OperHandleRequest extends Model
     public function requester(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requested_by');
+    }
+
+    public function decider(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'decided_by');
     }
 }

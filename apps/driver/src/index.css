@@ -2176,9 +2176,9 @@ input:focus, textarea:focus, select:focus {
   inset: 0;
   z-index: 90;
   display: grid;
-  align-items: center;
+  align-items: start;
   justify-items: center;
-  padding: 24px 18px calc(104px + env(safe-area-inset-bottom));
+  padding: max(16px, env(safe-area-inset-top)) 18px calc(104px + env(safe-area-inset-bottom));
   background: rgba(1, 8, 18, 0.62);
   backdrop-filter: blur(14px);
 }
@@ -2186,7 +2186,7 @@ input:focus, textarea:focus, select:focus {
   display: grid;
   gap: 14px;
   width: min(100%, 390px);
-  max-height: min(calc(100dvh - 160px), 620px);
+  max-height: min(calc(100dvh - 128px - env(safe-area-inset-top)), 680px);
   overflow: auto;
   border: 1px solid rgba(191, 219, 254, 0.22);
   border-radius: 28px;
@@ -2196,7 +2196,6 @@ input:focus, textarea:focus, select:focus {
   padding: 18px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
   animation: modalIn 0.18s ease both;
-  transform: translateY(-12px);
 }
 .modal-card header {
   display: flex;

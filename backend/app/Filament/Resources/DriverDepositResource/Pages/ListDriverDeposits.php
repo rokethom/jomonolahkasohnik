@@ -74,7 +74,7 @@ class ListDriverDeposits extends ListRecords
                     foreach ($deposits as $deposit) {
                         /** @var DriverDeposit $deposit */
                         fputcsv($handle, [
-                            $deposit->driver?->user?->name ?? 'Driver #'.$deposit->driver_id,
+                            $deposit->driver?->user?->username ?: ($deposit->driver?->user?->name ?? 'Driver #'.$deposit->driver_id),
                             $deposit->month,
                             $deposit->year,
                             $deposit->handle_day_15,

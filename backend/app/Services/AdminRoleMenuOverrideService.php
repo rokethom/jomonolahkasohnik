@@ -25,7 +25,6 @@ class AdminRoleMenuOverrideService
                 'chats' => 'Chat Monitor',
                 'internal-chat' => 'Internal Chat',
                 'audit-logs' => 'Audit Logs',
-                'sticky-notes' => 'Sticky Notes',
                 'manual-order' => 'Manual Order',
                 'live-price-reviews' => 'Live Edit Harga',
             ],
@@ -43,8 +42,19 @@ class AdminRoleMenuOverrideService
                 'pricing-keyword-rules' => 'Pricing Keyword Rules',
             ],
             'JojoBot CMS' => [
-                'keyword-parsers' => 'Keyword Parsers',
                 'order-crew-rules' => 'Order Crew Rules',
+            ],
+            'AI' => [
+                'keyword-parsers' => 'Keyword & Form Builder',
+                'jojobot-field-schema-reference' => 'Field Schema Reference',
+                'jojobot-template-parser-lab' => 'Template Parser Lab',
+                'ai-parser-rules' => 'AI Parser Memory',
+                'ai-alias-maps' => 'AI Alias Map',
+                'ai-location-suggestions' => 'AI Location Learning',
+                'location-pois' => 'Master Location POI',
+                'ai-logs' => 'AI Logs',
+                'ai-monitoring' => 'AI Monitoring',
+                'ai-nlp-settings' => 'AI NLP OpenRouter',
             ],
             'Area' => [
                 'branches' => 'Branches',
@@ -76,8 +86,11 @@ class AdminRoleMenuOverrideService
     {
         $roleValue = $role instanceof UserRole ? $role->value : $role;
 
-        if (in_array($roleValue, [UserRole::Admin->value, UserRole::GM->value], true)) {
+        if ($roleValue === UserRole::Admin->value) {
             return $this->allViews();
+        }
+        if ($roleValue === UserRole::GM->value) {
+            return array_values(array_diff($this->allViews(), ['ai-nlp-settings']));
         }
 
         $views = $this->baseAllowedViewsForRole($roleValue, $permissions);
@@ -122,8 +135,19 @@ class AdminRoleMenuOverrideService
         }
 
         if (($permissions['can_edit_order_price'] ?? false) || ($permissions['can_manage_policy'] ?? false)) {
-            $views[] = 'keyword-parsers';
             $views[] = 'pricing-keyword-rules';
+        }
+
+        if ($permissions['can_manage_ai_data'] ?? false) {
+            $views[] = 'keyword-parsers';
+            $views[] = 'jojobot-field-schema-reference';
+            $views[] = 'jojobot-template-parser-lab';
+            $views[] = 'ai-parser-rules';
+            $views[] = 'ai-alias-maps';
+            $views[] = 'ai-location-suggestions';
+            $views[] = 'location-pois';
+            $views[] = 'ai-logs';
+            $views[] = 'ai-monitoring';
         }
 
         if ($permissions['can_view_report'] ?? false) {
@@ -137,10 +161,6 @@ class AdminRoleMenuOverrideService
         if ($permissions['can_use_internal_chat'] ?? false) {
             $views[] = 'internal-chat';
             $views[] = 'audit-logs';
-        }
-
-        if ($permissions['can_use_internal_notes'] ?? false) {
-            $views[] = 'sticky-notes';
         }
 
         if ($permissions['can_create_manual_order'] ?? false) {
@@ -211,7 +231,7 @@ class AdminRoleMenuOverrideService
 
     public function setViewVisible(string $role, string $view, bool $visible): void
     {
-        if ($view === 'dashboard' || ! in_array($view, $this->allViews(), true)) {
+        if (in_array($view, ['dashboard', 'ai-nlp-settings'], true) || ! in_array($view, $this->allViews(), true)) {
             return;
         }
 

@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Enums\UserRole;
 use App\Models\Role;
 use App\Services\AdminRoleMenuOverrideService;
+use App\Services\AiDataAccessSettingService;
 use App\Services\RolePermissionSettingService;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -68,6 +69,7 @@ class AdminRolePreviewPage extends Page implements HasForms
             'role' => $role,
             'label' => $this->roleOptions()[$role] ?? $role,
             'permissions' => $permissions,
+            'can_manage_ai_data' => app(AiDataAccessSettingService::class)->roleMayManageData($role),
             'visible_views' => $visibleViews,
             'menus' => $menus,
             'menu_groups' => $menuService->menuGroups(),
@@ -102,17 +104,20 @@ class AdminRolePreviewPage extends Page implements HasForms
         $permissions ??= match ($role) {
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
             'manager' => ['create_user', 'suspend_driver', 'view_report', 'export_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat'],
-            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'internal_chat'],
-            'operator' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat'],
-            'eksekutor' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat'],
+            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'internal_chat'],
+            'operator' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'manual_order', 'internal_chat'],
+            'eksekutor' => ['monitor_live_order', 'assign_driver', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'manual_order', 'internal_chat'],
             'web_admin', 'cms_editor' => ['manage_cms', 'internal_chat'],
             default => ['internal_chat'],
         };
 
-        $permissions = array_values(array_diff($permissions, ['edit_tarif']));
+        $permissions = array_values(array_diff($permissions, ['edit_tarif', 'manage_ai_data']));
 
         if (app(RolePermissionSettingService::class)->roleHasEditTarif($role)) {
             $permissions[] = 'edit_tarif';
+        }
+        if (app(AiDataAccessSettingService::class)->roleMayManageData($role)) {
+            $permissions[] = 'manage_ai_data';
         }
 
         return array_values(array_unique($permissions));
@@ -125,6 +130,14 @@ class AdminRolePreviewPage extends Page implements HasForms
         $visible = in_array($view, $menuService->allowedViewsForRole($role, $this->permissionFlags($role, $this->permissionsFor($role))), true);
 
         $menuService->setViewVisible($role, $view, ! $visible);
+    }
+
+    public function toggleAiDataAccess(): void
+    {
+        $role = $this->rolePreview ?: 'operator';
+        $access = app(AiDataAccessSettingService::class);
+
+        $access->setRoleAllowed($role, ! $access->roleMayManageData($role));
     }
 
     /**
@@ -155,11 +168,14 @@ class AdminRolePreviewPage extends Page implements HasForms
             'can_edit_order_price' => in_array('edit_tarif', $permissions, true),
             'can_create_manual_order' => in_array('manual_order', $permissions, true) || in_array($role, ['operator', 'eksekutor'], true),
             'can_assign_driver' => in_array('assign_driver', $permissions, true),
+            'can_approve_oper_handle' => in_array('approve_oper_handle', $permissions, true),
+            'can_reject_oper_handle' => in_array('reject_oper_handle', $permissions, true),
             'can_view_report' => in_array('view_report', $permissions, true),
             'can_monitor_live_order' => in_array('monitor_live_order', $permissions, true),
             'can_monitor_live_chat' => in_array('monitor_live_chat', $permissions, true),
             'can_use_internal_chat' => in_array('internal_chat', $permissions, true),
             'can_manage_cms' => in_array('manage_cms', $permissions, true),
+            'can_manage_ai_data' => in_array('manage_ai_data', $permissions, true),
             'can_manage_system_settings' => in_array('manage_system_settings', $permissions, true),
         ];
     }

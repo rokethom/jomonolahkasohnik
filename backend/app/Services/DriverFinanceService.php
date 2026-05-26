@@ -16,6 +16,7 @@ class DriverFinanceService
     public const UNPAID_SUSPEND_DAY = 11;
     public const UNPAID_SUSPEND_REASON = 'Setoran bulan sebelumnya masih unpaid per tanggal 11. Anda terkena suspend setoran, silakan bayar setoran agar akun bisa ON kembali.';
     public const BPJS_PREMI_AMOUNT = 20000;
+    public const BPJS_PREMI_FREE_MIN_BASE_DEPOSIT = 30000;
     public const BPJS_JHT_AMOUNT = 20000;
 
     private const BANSOS_BY_AREA = [
@@ -97,14 +98,27 @@ class DriverFinanceService
         $previousRemaining = max(0, (int) ($previousDeposit?->total ?? 0) - (int) ($previousDeposit?->paid_amount ?? 0));
         $previousBaseDeposit = (int) ($previousDeposit?->handle_day_15 ?? 0) + (int) ($previousDeposit?->handle_day_30 ?? 0);
         $cashback = $this->cashbackForPreviousDeposit($previousDeposit, $month, $previousBaseDeposit);
+        $manualOverride = (bool) data_get($existing?->breakdown, 'manual_override', false);
+        $manualBaseOverride = data_get($existing?->breakdown, 'manual_base_override');
+        $manualBaseOverride = $manualBaseOverride === null ? $manualOverride : (bool) $manualBaseOverride;
 
-        if ((bool) data_get($existing?->breakdown, 'manual_override', false)) {
-            $handleDay15 = (int) ($existing?->handle_day_15 ?? 0);
-            $handleDay30 = (int) ($existing?->handle_day_30 ?? 0);
-            $baseDeposit = $handleDay15 + $handleDay30;
+        if ($manualBaseOverride) {
+            $manualBase = (int) data_get(
+                $existing?->breakdown,
+                'manual_base_at_override',
+                (int) ($existing?->handle_day_15 ?? 0) + (int) ($existing?->handle_day_30 ?? 0),
+            );
+            $manualAnchor = data_get($existing?->breakdown, 'manual_base_anchor_at');
+            $newCompletedDeposit = filled($manualAnchor)
+                ? $this->handleTotalAfter($driver, Carbon::parse((string) $manualAnchor), $end)
+                : 0;
+
+            $baseDeposit = max(0, $manualBase + $newCompletedDeposit);
+            $handleDay15 = $baseDeposit;
+            $handleDay30 = 0;
         }
 
-        $bansos = (bool) data_get($existing?->breakdown, 'manual_override', false) ? (int) ($existing?->bansos ?? 0) : $this->bansos($driver);
+        $bansos = $manualOverride ? (int) ($existing?->bansos ?? 0) : $this->bansos($driver);
         $bpjs = $this->bpjsPremiumForBaseDeposit($baseDeposit);
         $bpjsJht = $this->bpjsJhtForDriver($driver);
         $billBeforeBansos = data_get($existing?->breakdown, 'manual_bill_before_bansos');
@@ -119,8 +133,6 @@ class DriverFinanceService
         $paidAt = $existing?->paid_at;
         $dueDate = $this->unpaidSuspendDate($month);
         $status = $this->depositStatus($total, $paidAmount, $dueDate, $existing?->status);
-        $manualOverride = (bool) data_get($existing?->breakdown, 'manual_override', false);
-
         $breakdown = $existing?->breakdown ?? [];
         $breakdown = array_merge($breakdown, [
             'handle_hari_15' => $handleDay15,
@@ -133,6 +145,7 @@ class DriverFinanceService
             'bpjs' => $bpjs,
             'bpjs_jht' => $bpjsJht,
             'manual_override' => $manualOverride,
+            'manual_base_override' => $manualBaseOverride,
         ]);
 
         return DriverDeposit::query()->updateOrCreate(
@@ -190,7 +203,7 @@ class DriverFinanceService
 
     public function bpjsPremiumForBaseDeposit(int $baseDeposit): int
     {
-        return self::BPJS_PREMI_AMOUNT;
+        return $baseDeposit >= self::BPJS_PREMI_FREE_MIN_BASE_DEPOSIT ? 0 : self::BPJS_PREMI_AMOUNT;
     }
 
     public function bpjsJhtForDriver(Driver $driver): int
@@ -296,6 +309,19 @@ class DriverFinanceService
             ->where('driver_id', $driver->id)
             ->where('status', 'COMPLETED')
             ->whereBetween($completedAtColumn, [$start, $end])
+            ->get(['source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown'])
+            ->sum(fn (Order $order): int => $this->depositAmount($order));
+    }
+
+    private function handleTotalAfter(Driver $driver, Carbon $after, Carbon $end): int
+    {
+        $completedAtColumn = Schema::hasColumn('orders', 'completed_at') ? 'completed_at' : 'updated_at';
+
+        return (int) Order::query()
+            ->where('driver_id', $driver->id)
+            ->where('status', OrderStatus::Completed->value)
+            ->where($completedAtColumn, '>', $after)
+            ->where($completedAtColumn, '<=', $end)
             ->get(['source', 'price', 'service_charge', 'total_price', 'service_type', 'service_code', 'distance_km', 'stops', 'pricing_breakdown'])
             ->sum(fn (Order $order): int => $this->depositAmount($order));
     }

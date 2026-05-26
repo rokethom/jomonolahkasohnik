@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Enums\UserRole;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Services\AiDataAccessSettingService;
 use App\Services\BranchAccessSettingService;
 use App\Services\RolePermissionCatalog;
 use App\Services\RolePermissionSettingService;
@@ -42,12 +43,12 @@ class RolePermissionsCmsPage extends Page implements HasForms
         return in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM], true);
     }
 
-    public function mount(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, BranchAccessSettingService $branchAccess): void
+    public function mount(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, AiDataAccessSettingService $aiAccess, BranchAccessSettingService $branchAccess): void
     {
         $state = [];
 
         foreach ($catalog->managedRoles() as $role => $label) {
-            $permissions = $this->permissionsForRole($role, $pricingRoles);
+            $permissions = $this->permissionsForRole($role, $pricingRoles, $aiAccess);
 
             foreach ($catalog->groups() as $group => $options) {
                 $state['roles'][$role][$this->groupKey($group)] = array_values(array_intersect(array_keys($options), $permissions));
@@ -94,13 +95,14 @@ class RolePermissionsCmsPage extends Page implements HasForms
             ->statePath('data');
     }
 
-    public function save(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, BranchAccessSettingService $branchAccess, SettingService $settings): void
+    public function save(RolePermissionCatalog $catalog, RolePermissionSettingService $pricingRoles, AiDataAccessSettingService $aiAccess, BranchAccessSettingService $branchAccess, SettingService $settings): void
     {
         $state = $this->form->getState();
         $permissionModels = collect($catalog->permissions())
             ->keys()
             ->mapWithKeys(fn (string $name): array => [$name => Permission::query()->firstOrCreate(['name' => $name])]);
         $editTarifRoles = [];
+        $aiDataRoles = [];
 
         foreach ($catalog->managedRoles() as $roleName => $label) {
             $selected = collect($state['roles'][$roleName] ?? [])
@@ -117,11 +119,21 @@ class RolePermissionsCmsPage extends Page implements HasForms
             if (in_array('edit_tarif', $selected, true)) {
                 $editTarifRoles[] = $roleName;
             }
+            if (in_array('manage_ai_data', $selected, true)) {
+                $aiDataRoles[] = $roleName;
+            }
         }
 
         $settings->set(
             RolePermissionSettingService::EDIT_TARIF_ALLOWED_ROLES_KEY,
             json_encode($pricingRoles->normalizeEditTarifRoles($editTarifRoles)),
+            true,
+            ['type' => 'json'],
+        );
+
+        $settings->set(
+            AiDataAccessSettingService::AI_DATA_ALLOWED_ROLES_KEY,
+            json_encode($aiAccess->normalizeRoles($aiDataRoles)),
             true,
             ['type' => 'json'],
         );
@@ -139,7 +151,7 @@ class RolePermissionsCmsPage extends Page implements HasForms
             ->success()
             ->send();
 
-        $this->mount($catalog, $pricingRoles, $branchAccess);
+        $this->mount($catalog, $pricingRoles, $aiAccess, $branchAccess);
     }
 
     /**
@@ -165,7 +177,7 @@ class RolePermissionsCmsPage extends Page implements HasForms
     /**
      * @return array<int, string>
      */
-    private function permissionsForRole(string $role, RolePermissionSettingService $pricingRoles): array
+    private function permissionsForRole(string $role, RolePermissionSettingService $pricingRoles, AiDataAccessSettingService $aiAccess): array
     {
         $permissions = Role::query()
             ->where('name', $role)
@@ -175,10 +187,13 @@ class RolePermissionsCmsPage extends Page implements HasForms
             ->pluck('name')
             ->all() ?? [];
 
-        $permissions = array_values(array_diff($permissions, ['edit_tarif']));
+        $permissions = array_values(array_diff($permissions, ['edit_tarif', 'manage_ai_data']));
 
         if ($pricingRoles->roleHasEditTarif($role)) {
             $permissions[] = 'edit_tarif';
+        }
+        if ($aiAccess->roleMayManageData($role)) {
+            $permissions[] = 'manage_ai_data';
         }
 
         return array_values(array_unique($permissions));

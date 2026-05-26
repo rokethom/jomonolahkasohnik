@@ -38,6 +38,7 @@ import {
   fetchOrders,
   fetchPublicSettings,
   fetchServices,
+  fetchActiveLivePriceReview,
   findDriver,
   fetchChatMessages,
   extendOrderWait,
@@ -57,6 +58,7 @@ import {
   type DynamicFormField,
   type DynamicFormSchema,
   type JojoBotPreview,
+  type LivePriceReview,
   type OrderPayload,
 } from './services/api'
 import { setupPushNotifications } from './services/push'
@@ -81,6 +83,8 @@ type LocalMessage = {
   senderLabel?: string
   text?: string
   imageUrl?: string
+  stickerUrl?: string
+  stickerName?: string
   time: string
   csLink?: boolean
   order?: Order
@@ -342,6 +346,27 @@ function orderSummaryText(payload?: OrderPayload | null, preview?: JojoBotPrevie
   return lines.filter((line) => line !== null).join('\n')
 }
 
+function livePriceReviewPreview(review: LivePriceReview, reply?: string): JojoBotPreview {
+  return {
+    intent: 'order_preview',
+    services: [],
+    selected_service: review.order_payload?.service_type ?? null,
+    service_type: review.order_payload?.service_type ?? null,
+    parsed: {
+      pickup_address: review.order_payload?.pickup_address,
+      destination_address: review.order_payload?.destination_address,
+      notes: review.correction_reason ?? undefined,
+    },
+    quote: review.quote ?? null,
+    order_payload: review.status === 'approved' && review.can_confirm ? review.order_payload ?? null : null,
+    live_price_review: review,
+    actions: ['preview_order'],
+    reply: reply ?? (review.status === 'approved'
+      ? 'Harga sudah dikonfirmasi operator. Tombol konfirmasi akan aktif sebentar lagi.'
+      : 'Harga sedang dicek operator. Mohon tunggu sebentar.'),
+  }
+}
+
 function helperFeeFromQuote(quote?: PriceQuote | null) {
   if (!quote) return 0
 
@@ -587,6 +612,7 @@ function App() {
   const [typing, setTyping] = useState(false)
   const [pendingOrder, setPendingOrder] = useState<OrderPayload | null>(null)
   const [activeLivePriceReviewToken, setActiveLivePriceReviewToken] = useState<string | null>(null)
+  const [livePriceReviewSyncTick, setLivePriceReviewSyncTick] = useState(0)
   const [activeOrder, setActiveOrder] = useState<Order | null>(null)
   const [showBelanjaForm, setShowBelanjaForm] = useState(false)
   const [showKurirForm, setShowKurirForm] = useState(false)
@@ -598,6 +624,8 @@ function App() {
   const [orderSubmitBlocked, setOrderSubmitBlocked] = useState(false)
   const [orderSubmitting, setOrderSubmitting] = useState(false)
   const orderSubmittingRef = useRef(false)
+  const livePriceReviewLocked = Boolean(activeLivePriceReviewToken)
+  const activeLiveReviewHydratedRef = useRef(false)
   const isBrowserBackRef = useRef(false)
   const updateInfo = useBuildUpdate('customer')
   const outsideAreaServices = useMemo(() => services.filter(isOutsideAreaService), [services])
@@ -1052,11 +1080,16 @@ function App() {
       pushMessage({ from: 'bot', text: message, order: orderWithFeedback })
       setScreen('driver-chat')
     })
+    channel.listen('.live-price-review.updated', (event: { token?: string }) => {
+      if (event.token && event.token === activeLivePriceReviewToken) {
+        setLivePriceReviewSyncTick((current) => current + 1)
+      }
+    })
 
     return () => {
       getEcho().leave(`user.${store.user?.id}`)
     }
-  }, [setOrders, store, store.user?.id, token])
+  }, [activeLivePriceReviewToken, setOrders, store, store.user?.id, token])
 
   const pushMessage = (message: Omit<LocalMessage, 'id' | 'time'>) => {
     setMessages((rows) => [...rows, { ...message, id: crypto.randomUUID(), time: nowTime() }])
@@ -1066,7 +1099,7 @@ function App() {
     if (!activeLivePriceReviewToken || !token) return
 
     let cancelled = false
-    const timer = window.setInterval(() => {
+    const syncLivePriceReview = () => {
       void fetchLivePriceReview(activeLivePriceReviewToken)
         .then((review) => {
           if (cancelled) return
@@ -1107,13 +1140,50 @@ function App() {
           }
         })
         .catch(() => undefined)
-    }, 2500)
+    }
+
+    syncLivePriceReview()
+    const timer = window.setInterval(syncLivePriceReview, 1500)
 
     return () => {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [activeLivePriceReviewToken, token])
+  }, [activeLivePriceReviewToken, livePriceReviewSyncTick, token])
+
+  useEffect(() => {
+    if (screen !== 'order-chat' || !token || activeLiveReviewHydratedRef.current) return
+    activeLiveReviewHydratedRef.current = true
+
+    void fetchActiveLivePriceReview()
+      .then((review) => {
+        if (!review || ['rejected', 'cancelled', 'consumed'].includes(String(review.status).toLowerCase())) return
+
+        closeManualForms()
+        if (review.status === 'approved' && review.can_confirm && review.order_payload) {
+          const preview = livePriceReviewPreview(review, 'Harga order sebelumnya sudah dikonfirmasi operator. Silakan cek summary final lalu kirim order.')
+          setPendingOrder(review.order_payload)
+          setOrderSubmitBlocked(false)
+          setActiveLivePriceReviewToken(null)
+          pushMessage({ from: 'bot', text: preview.reply, preview })
+          return
+        }
+
+        setPendingOrder(null)
+        setOrderSubmitBlocked(false)
+        setActiveLivePriceReviewToken(review.token)
+        pushMessage({
+          from: 'bot',
+          text: review.status === 'approved'
+            ? 'Harga order sebelumnya sudah dikonfirmasi. Tombol konfirmasi akan aktif sebentar lagi.'
+            : 'Order sebelumnya masih menunggu konfirmasi harga dari operator/eksekutor.',
+          preview: livePriceReviewPreview(review),
+        })
+      })
+      .catch(() => {
+        activeLiveReviewHydratedRef.current = false
+      })
+  }, [screen, token])
 
   const closeManualForms = () => {
     setShowBelanjaForm(false)
@@ -1124,6 +1194,11 @@ function App() {
   }
 
   const openManualServiceForm = (service: DynamicService, options: { pushUser?: boolean } = {}) => {
+    if (activeLivePriceReviewToken) {
+      pushMessage({ from: 'bot', text: 'Harga order pertama masih menunggu konfirmasi operator. Batalkan dulu jika ingin memilih layanan lain.' })
+      return
+    }
+
     const kind = manualFormKindForService(service)
     if (!kind) return
 
@@ -1211,6 +1286,16 @@ function App() {
       return
     }
 
+    if (activeLivePriceReviewToken) {
+      if (/^(?:batal|cancel|tidak)$/i.test(text)) {
+        await cancelPendingOrder()
+        return
+      }
+
+      pushMessage({ from: 'bot', text: 'Harga order pertama masih dicek operator/eksekutor. Selesaikan atau batalkan dulu sebelum memilih layanan lain agar tidak terjadi double order.' })
+      return
+    }
+
     const requestedService = findServiceByKeyword(text, services)
     if (requestedService) {
       closeManualForms()
@@ -1295,7 +1380,7 @@ function App() {
     setTyping(true)
     try {
       const preview = await previewJojoBot(text, await previewDeviceLocation(text, store.user) ?? undefined)
-      if (preview.live_price_review?.status === 'pending') {
+      if (preview.live_price_review && !preview.order_payload) {
         setActiveLivePriceReviewToken(preview.live_price_review.token)
         setPendingOrder(null)
       } else if (preview.order_payload) {
@@ -1354,7 +1439,7 @@ function App() {
         return null
       }
 
-      if (preview.live_price_review?.status === 'pending') {
+      if (preview.live_price_review && !preview.order_payload) {
         setActiveLivePriceReviewToken(preview.live_price_review.token)
         setPendingOrder(null)
       } else {
@@ -1401,6 +1486,11 @@ function App() {
   }
 
   const handleManualService = (service: DynamicService) => {
+    if (activeLivePriceReviewToken) {
+      pushMessage({ from: 'bot', text: 'Harga order pertama masih menunggu konfirmasi. Batalkan dulu jika ingin memilih layanan lain.' })
+      return
+    }
+
     if (mustUseGiftOrder(store.user) && !isOutsideAreaService(service)) {
       const outsideService = visibleServices[0]
       pushMessage({ from: 'bot', text: 'Area kamu berada di luar cabang/geofence aktif. Silakan gunakan layanan khusus luar area.' })
@@ -1490,6 +1580,7 @@ function App() {
           submitting={orderSubmitting}
           onEdit={editPendingOrder}
           onCancel={cancelPendingOrder}
+          livePriceReviewLocked={livePriceReviewLocked}
           onExtendWait={(order) => void extendTimeoutOrderWait(order)}
           onKeepCancelled={keepTimeoutOrderCancelled}
         />
@@ -1859,6 +1950,7 @@ function ChatOrderScreen({
   submitting,
   onEdit,
   onCancel,
+  livePriceReviewLocked,
   onExtendWait,
   onKeepCancelled,
 }: {
@@ -1888,6 +1980,7 @@ function ChatOrderScreen({
   submitting: boolean
   onEdit: () => void
   onCancel: () => void | Promise<void>
+  livePriceReviewLocked: boolean
   onExtendWait: (order: Order) => void
   onKeepCancelled: (order: Order) => void
 }) {
@@ -1916,7 +2009,7 @@ function ChatOrderScreen({
                 onKeepCancelled={onKeepCancelled}
               />
             )}
-            {message.from !== 'user' && !hasManualFormOpen && message.preview?.form_schema && (
+            {message.from !== 'user' && !livePriceReviewLocked && !hasManualFormOpen && message.preview?.form_schema && (
               <DynamicFormInline
                 schema={message.preview.form_schema}
                 serviceType={message.preview.selected_service ?? message.preview.service_type ?? ''}
@@ -1928,18 +2021,25 @@ function ChatOrderScreen({
           </div>
         ))}
         {typing && <TypingIndicator />}
-        {showBelanjaForm && <BelanjaOrderForm key={activeManualService?.code ?? 'belanja'} user={user} service={activeManualService} onSend={onBelanjaPreview} />}
-        {showKurirForm && <KurirOrderForm user={user} onSend={onKurirPreview} />}
-        {showOjekForm && <OjekOrderForm key={activeManualService?.code ?? 'ojek'} user={user} service={activeManualService} onSend={onOjekPreview} />}
-        {showGiftForm && <GiftOrderForm user={user} branches={branches} onSend={onGiftPreview} />}
-        {(messages.at(-1)?.preview?.intent === 'service_menu' || messages.length === 1) && (
+        {livePriceReviewLocked && (
+          <div className="chat-action-panel live-price-lock-panel">
+            <strong>Menunggu konfirmasi harga</strong>
+            <p>Mohon untuk menunggu harga akan segera di konfirmasi oleh Operator. Terimakasih.</p>
+            <button type="button" className="cancel-order-preview" onClick={() => { void onCancel() }}>Batalkan order ini</button>
+          </div>
+        )}
+        {!livePriceReviewLocked && showBelanjaForm && <BelanjaOrderForm key={activeManualService?.code ?? 'belanja'} user={user} service={activeManualService} onSend={onBelanjaPreview} />}
+        {!livePriceReviewLocked && showKurirForm && <KurirOrderForm user={user} onSend={onKurirPreview} />}
+        {!livePriceReviewLocked && showOjekForm && <OjekOrderForm key={activeManualService?.code ?? 'ojek'} user={user} service={activeManualService} onSend={onOjekPreview} />}
+        {!livePriceReviewLocked && showGiftForm && <GiftOrderForm user={user} branches={branches} onSend={onGiftPreview} />}
+        {!livePriceReviewLocked && (messages.at(-1)?.preview?.intent === 'service_menu' || messages.length === 1) && (
           <ManualServicePicker
             services={visibleServices}
             onService={onService}
             compact={hasManualFormOpen}
           />
         )}
-        {messages.at(-1)?.preview?.intent === 'fallback_form' && !isPendingLivePriceReview(messages.at(-1)?.preview) && <FallbackForm onSend={onSend} />}
+        {!livePriceReviewLocked && messages.at(-1)?.preview?.intent === 'fallback_form' && !isPendingLivePriceReview(messages.at(-1)?.preview) && <FallbackForm onSend={onSend} />}
         {messages.at(-1)?.preview?.intent === 'order_preview' && !hasManualFormOpen && (
           <ChatOrderActions
             preview={messages.at(-1)?.preview}
@@ -2120,6 +2220,7 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
   const [pickupAddress, setPickupAddress] = useState('')
   const [destination, setDestination] = useState('')
   const [passengers, setPassengers] = useState('1')
+  const [vehicleSeatRows, setVehicleSeatRows] = useState<2 | 3>(2)
   const [notes, setNotes] = useState('')
   const [driverPreference, setDriverPreference] = useState<'general' | 'ladies'>('general')
   const [points, setPoints] = useState<string[]>([])
@@ -2127,7 +2228,7 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
   const serviceLabel = serviceDisplayLabel(serviceType)
   const jokerMobil = isJokerMobilService(serviceType)
   const passengerCount = Number(String(passengers || '1').replace(/\D+/g, '')) || 1
-  const autoSeatRows = jokerMobil ? jokerMobilSeatRowsFromPassengers(passengerCount) : 2
+  const recommendedSeatRows = jokerMobil ? jokerMobilSeatRowsFromPassengers(passengerCount) : 2
   const pointText = points
     .map((point, index) => ({ label: `Titik ${index + 1}`, address: point.trim() }))
     .filter((point) => point.address)
@@ -2143,7 +2244,7 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
     '',
     `Alamat Antar: ${destination}`,
     `Jumlah penumpang: ${passengers}`,
-    jokerMobil ? `Seat / baris mobil: ${autoSeatRows} baris` : `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
+    jokerMobil ? `Seat / baris mobil: ${vehicleSeatRows} baris` : `Preferensi driver: ${driverPreference === 'ladies' ? 'Ladies' : 'Umum'}`,
     '',
     `Catatan: ${notes}`,
     pointText,
@@ -2178,9 +2279,13 @@ function OjekOrderForm({ user, service, onSend }: { user: ReturnType<typeof useC
           <div className="vehicle-seat-choice">
             <span>Tempat duduk Joker Mobil</span>
             <div>
-              <button type="button" className="active" disabled>
-                <b>{autoSeatRows} baris</b>
-                <small>{passengerCount >= 5 ? '5-6 penumpang otomatis 3 baris' : '1-4 penumpang otomatis 2 baris'}</small>
+              <button type="button" className={vehicleSeatRows === 2 ? 'active' : ''} onClick={() => setVehicleSeatRows(2)}>
+                <b>2 baris</b>
+                <small>1-4 penumpang</small>
+              </button>
+              <button type="button" className={vehicleSeatRows === 3 ? 'active' : ''} onClick={() => setVehicleSeatRows(3)}>
+                <b>3 baris</b>
+                <small>{recommendedSeatRows === 3 ? 'Disarankan untuk 5-6 penumpang' : 'MPV / keluarga'}</small>
               </button>
             </div>
           </div>
@@ -2470,7 +2575,7 @@ function ChatOrderActions({
   const showVehicleChoice = !isJokerMobilOrder && !isOjekOrder && !hidesVehicleChoiceForService(pendingOrder?.service_type)
   const showVehicleSummary = isJokerMobilOrder || isOjekOrder || showVehicleChoice
   const passengerCount = passengerCountFromPayload(pendingOrder)
-  const selectedSeatRows = isJokerMobilOrder ? jokerMobilSeatRowsFromPassengers(passengerCount) : (pendingOrder?.vehicle_seat_rows === 3 ? 3 : 2)
+  const selectedSeatRows = pendingOrder?.vehicle_seat_rows === 3 ? 3 : (isJokerMobilOrder ? jokerMobilSeatRowsFromPassengers(passengerCount) : 2)
   const doubleOrderConfirmed = pendingOrder?.service_payload?.confirm_double_order === true
   const selectedDriverPreference = pendingOrder?.driver_preference ?? 'general'
   const transferAccounts = publicSettings?.payment?.transfer_accounts?.length
@@ -2572,9 +2677,13 @@ function ChatOrderActions({
             <div className="vehicle-seat-choice">
               <span>Tempat duduk Joker Mobil</span>
               <div>
-                <button type="button" className="active" disabled>
-                  <b>{selectedSeatRows} baris</b>
-                  <small>{passengerCount >= 5 ? '5-6 penumpang otomatis 3 baris' : '1-4 penumpang otomatis 2 baris'}</small>
+                <button type="button" className={selectedSeatRows === 2 ? 'active' : ''} onClick={() => updateSeatRows(2)}>
+                  <b>2 baris</b>
+                  <small>Citycar / umum</small>
+                </button>
+                <button type="button" className={selectedSeatRows === 3 ? 'active' : ''} onClick={() => updateSeatRows(3)}>
+                  <b>3 baris</b>
+                  <small>MPV / keluarga</small>
                 </button>
               </div>
             </div>
@@ -2625,7 +2734,7 @@ function ChatOrderActions({
                 <small>{selectedVehicle === 'mobil' ? 'Order akan diberi catatan prioritas driver mobil.' : 'Default untuk ojek, delivery, kurir, dan belanja ringan.'}</small>
               </>
             )}
-            {selectedVehicle === 'mobil' && showVehicleChoice && (
+            {(isJokerMobilOrder || (selectedVehicle === 'mobil' && showVehicleChoice)) && (
               <div className="vehicle-seat-choice">
                 <span>Tempat duduk</span>
                 <div>
@@ -2747,14 +2856,15 @@ function MessageBubble({
   const total = message.preview?.quote?.total_price ?? message.preview?.quote?.final_price
   const displayText = replaceBotBrand(message.text, botName)
   const senderLabel = replaceBotBrand(message.senderLabel, botName)
-  const replyText = displayText || (message.imageUrl ? 'Foto' : 'Pesan')
+  const replyText = displayText || (message.imageUrl ? 'Foto' : message.stickerUrl ? 'Sticker' : 'Pesan')
   const canExtendWait = message.order ? canReopenDriverTimeoutOrder(message.order) : false
 
   return (
     <article className={`message-bubble ${side}`}>
       {senderLabel && side === 'in' && <strong className="message-sender-label">{senderLabel}</strong>}
+      {message.stickerUrl && <img className="chat-sticker-image" src={message.stickerUrl} alt={message.stickerName || 'Sticker chat'} />}
       {message.imageUrl && <button className="chat-image-button" type="button" onClick={() => onImageClick?.(message.imageUrl!)}><img src={message.imageUrl} alt="Lampiran customer" /></button>}
-      {displayText && <p>{redactMapText(displayText)}</p>}
+      {displayText && <SharedLocationMessage text={displayText} mine={side === 'out'} />}
       {message.csLink && <button className="bubble-link" onClick={onCs}>Hubungi Operator</button>}
       {message.order && <button className="bubble-link order-detail-link" onClick={() => onOrderDetail?.(message.order!)}>Detail {message.order.order_code ?? `#${message.order.id}`}</button>}
       {message.order && canExtendWait && (
@@ -2811,6 +2921,28 @@ function InputBar({ onSend, onImage, replyTarget, onClearReply }: { onSend: (tex
     }
   }
 
+  const sendLocation = async () => {
+    if (!('geolocation' in navigator)) {
+      store.showToast('error', 'GPS tidak tersedia di perangkat ini.')
+      return
+    }
+
+    setAttachmentOpen(false)
+    setSending(true)
+    try {
+      const position = await getBrowserLocation()
+      if (!position) throw new Error('Lokasi tidak tersedia')
+      const lat = Number(position.lat.toFixed(7))
+      const lng = Number(position.lng.toFixed(7))
+      await onSend(withReplyPrefix(`Lokasi customer:\nhttps://www.google.com/maps?q=${lat},${lng}`, replyTarget))
+      onClearReply?.()
+    } catch {
+      store.showToast('error', 'Gagal membagikan lokasi. Pastikan izin lokasi aktif.')
+    } finally {
+      setSending(false)
+    }
+  }
+
   const chooseDraftImage = (file?: File | null) => {
     if (!file) return
     const error = imageFileError(file)
@@ -2829,6 +2961,7 @@ function InputBar({ onSend, onImage, replyTarget, onClearReply }: { onSend: (tex
         <AttachmentPanel
           onGallery={() => galleryInputRef.current?.click()}
           onCamera={() => cameraInputRef.current?.click()}
+          onLocation={() => void sendLocation()}
           onContact={() => void sendContact()}
         />
       )}
@@ -2920,11 +3053,12 @@ function InputBar({ onSend, onImage, replyTarget, onClearReply }: { onSend: (tex
   )
 }
 
-function AttachmentPanel({ onGallery, onCamera, onContact }: { onGallery: () => void; onCamera: () => void; onContact: () => void }) {
+function AttachmentPanel({ onGallery, onCamera, onLocation, onContact }: { onGallery: () => void; onCamera: () => void; onLocation: () => void; onContact: () => void }) {
   return (
     <div className="attachment-panel">
       <button type="button" onClick={onGallery}><span className="gallery"><ImageIcon size={27} /></span><b>Galeri</b></button>
       <button type="button" onClick={onCamera}><span className="camera"><Camera size={27} /></span><b>Kamera</b></button>
+      <button type="button" onClick={onLocation}><span className="location"><MapPin size={27} /></span><b>Lokasi</b></button>
       <button type="button" onClick={onContact}><span className="contact"><UserRound size={27} /></span><b>Kontak</b></button>
     </div>
   )
@@ -3387,8 +3521,10 @@ function DriverChatScreen({ order, botName }: { order: Order | null; botName: st
                 id: String(message.id),
                 from,
                 senderLabel: from === 'user' ? undefined : chatParticipantLabel(message, driverName, botName),
-                text: message.message ?? message.text,
+                text: message.sticker && message.message === 'Mengirim sticker' ? undefined : message.message ?? message.text,
                 imageUrl: message.image_url ? assetUrl(message.image_url) : undefined,
+                stickerUrl: message.sticker?.image_url ? assetUrl(message.sticker.image_url) : undefined,
+                stickerName: message.sticker?.name,
                 time: formatMessageTime(message.created_at),
               }}
               onImageClick={setPreviewImage}
@@ -3625,8 +3761,10 @@ function CsChatScreen({ initialConversationId, initialOrderId, botName, onCancel
                 id: String(message.id),
                 from,
                 senderLabel: from === 'user' ? undefined : chatParticipantLabel(message, '', botName),
-                text: message.message ?? message.text,
+                text: message.sticker && message.message === 'Mengirim sticker' ? undefined : message.message ?? message.text,
                 imageUrl: message.image_url ? assetUrl(message.image_url) : undefined,
+                stickerUrl: message.sticker?.image_url ? assetUrl(message.sticker.image_url) : undefined,
+                stickerName: message.sticker?.name,
                 time: formatMessageTime(message.created_at),
               }}
               onImageClick={setPreviewImage}
@@ -4817,6 +4955,30 @@ function redactMapText(message?: string | null) {
   return message
     .replace(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com|maps\.app\.goo\.gl)\S*/giu, '[lokasi disembunyikan]')
     .replace(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/g, '[koordinat disembunyikan]')
+}
+
+function SharedLocationMessage({ text, mine }: { text: string; mine: boolean }) {
+  const location = parseSharedLocation(text)
+  if (!location) return <p>{redactMapText(text)}</p>
+
+  return (
+    <div className="shared-location-card">
+      <span className="shared-location-icon"><MapPin size={22} /></span>
+      <div>
+        <strong>{mine ? 'Lokasi customer' : 'Lokasi dibagikan'}</strong>
+        <p>Lokasi dibagikan lewat Google Maps.</p>
+        <a href={location.url} target="_blank" rel="noreferrer">Buka Maps</a>
+      </div>
+    </div>
+  )
+}
+
+function parseSharedLocation(message?: string | null): { url: string } | null {
+  const text = String(message ?? '')
+  const match = text.match(/https?:\/\/(?:www\.)?(?:google\.com\/maps|maps\.google\.com)\/[^\s]+|https?:\/\/maps\.app\.goo\.gl\/[^\s]+/iu)
+  if (!match) return null
+
+  return { url: match[0] }
 }
 
 declare global {

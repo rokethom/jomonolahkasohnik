@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\UserRole;
+use App\Services\AiDataAccessSettingService;
 use App\Services\RolePermissionSettingService;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -151,6 +152,17 @@ class User extends Authenticatable implements FilamentUser
             // Keep legacy permissions during early bootstrap/migration when settings are unavailable.
         }
 
+        try {
+            $aiRoles = app(AiDataAccessSettingService::class);
+            $permissions = array_values(array_diff($permissions, ['manage_ai_data']));
+
+            if ($aiRoles->roleMayManageData($this->role)) {
+                $permissions[] = 'manage_ai_data';
+            }
+        } catch (\Throwable) {
+            // Keep legacy permissions during early bootstrap/migration when settings are unavailable.
+        }
+
         return array_values(array_unique($permissions));
     }
 
@@ -169,13 +181,13 @@ class User extends Authenticatable implements FilamentUser
     private function legacyRolePermissions(): array
     {
         return match ($this->role?->value ?? (string) $this->role) {
-            'admin' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat', 'manage_system_settings', 'manage_manual_order', 'manage_cms'],
-            'gm' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'manual_order', 'internal_chat', 'manage_system_settings', 'manage_manual_order', 'manage_cms'],
+            'admin' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'manual_order', 'internal_chat', 'manage_system_settings', 'manage_manual_order', 'manage_cms'],
+            'gm' => ['create_user', 'suspend_driver', 'unsuspend_driver', 'view_report', 'export_report', 'edit_tarif', 'monitor_live_order', 'monitor_live_chat', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'manual_order', 'internal_chat', 'manage_system_settings', 'manage_manual_order', 'manage_cms'],
             'hrd' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat', 'edit_tarif', 'manage_system_settings', 'manage_manual_order'],
             'manager' => ['create_user', 'suspend_driver', 'view_report', 'monitor_live_order', 'monitor_live_chat', 'internal_chat', 'export_report', 'manage_system_settings', 'manage_manual_order'],
-            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'manage_system_settings', 'manage_manual_order'],
-            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'manual_order'],
-            'eksekutor' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'monitor_live_chat', 'internal_chat', 'manual_order'],
+            'spv' => ['suspend_driver', 'unsuspend_driver', 'monitor_live_order', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'monitor_live_chat', 'internal_chat', 'manage_system_settings', 'manage_manual_order'],
+            'operator' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'monitor_live_chat', 'internal_chat', 'manual_order'],
+            'eksekutor' => ['monitor_live_order', 'assign_driver', 'approve_cancel_order', 'reject_cancel_order', 'approve_oper_handle', 'reject_oper_handle', 'monitor_live_chat', 'internal_chat', 'manual_order'],
             'web_admin', 'cms_editor' => ['manage_cms'],
             default => [],
         };

@@ -46,8 +46,9 @@ class ServiceParserService
             throw new InvalidArgumentException('Kode layanan tidak valid atau tidak aktif.');
         }
 
-        $price = $this->pricingParser->parse($rawText);
-        if ($price === null) {
+        $depositJasa = $this->pricingParser->parse($rawText);
+        $acceptedPrice = $this->pricingParser->parseLast($rawText);
+        if ($acceptedPrice === null) {
             throw new InvalidArgumentException('Harga jasa tidak ditemukan. Gunakan format seperti 7k atau 15.5k.');
         }
 
@@ -55,8 +56,8 @@ class ServiceParserService
             'service' => $service,
             'service_code' => $service->code,
             'service_type' => $service->name,
-            'price' => $price,
-            'deposit_jasa' => $this->pricingParser->parseLast($rawText) ?? $price,
+            'price' => $acceptedPrice,
+            'deposit_jasa' => $depositJasa ?? $acceptedPrice,
             'pickup_address' => $lines->get(1, 'Driver request'),
             'destination_address' => $this->parseDestination($lines->all()),
             'notes' => $rawText,

@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use App\Actions\Order\AcceptOrder;
+use App\Actions\Order\CreateOrder;
 use App\Enums\OrderStatus;
 use App\Enums\UserRole;
-use App\Actions\Order\AcceptOrder;
 use App\Events\OrderPriceUpdated;
 use App\Events\OrderStatusUpdated;
-use App\Actions\Order\CreateOrder;
 use App\Exceptions\OrderLimitExceededException;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
@@ -31,9 +31,10 @@ use App\Models\User;
 use App\Models\ZonePricingRule;
 use App\Services\AdminDashboardMetricsService;
 use App\Services\AdminRoleMenuOverrideService;
+use App\Services\AiDataAccessSettingService;
 use App\Services\AiParserRuleService;
-use App\Services\BranchDetectionService;
 use App\Services\BranchAccessSettingService;
+use App\Services\BranchDetectionService;
 use App\Services\DriverDailyPriorityService;
 use App\Services\DriverFinanceService;
 use App\Services\DriverManagementCsvService;
@@ -44,13 +45,13 @@ use App\Services\KeywordParserService;
 use App\Services\LivePriceReviewService;
 use App\Services\MultiOrderService;
 use App\Services\NotificationService;
+use App\Services\OperationalAreaService;
 use App\Services\OrderFeedbackService;
 use App\Services\OrderOperationService;
 use App\Services\OrderService;
-use App\Services\OperationalAreaService;
-use App\Services\PricingService;
-use App\Services\PricingKeywordRuleService;
 use App\Services\Pricing\DistanceCalculator;
+use App\Services\PricingKeywordRuleService;
+use App\Services\PricingService;
 use App\Services\RatingService;
 use App\Services\RingPricingService;
 use App\Services\RolePermissionSettingService;
@@ -59,18 +60,19 @@ use App\Services\SLAService;
 use App\Services\ZonePricingService;
 use App\Support\ServiceTypeNormalizer;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\Enum;
-use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminController extends Controller
@@ -84,7 +86,10 @@ class AdminController extends Controller
 
         $user = $request->user()->load(['branch', 'branchScopes']);
         $view = $request->query('view');
+        $liteDashboard = $view === 'dashboard';
+        $includeOrderExtras = ! $liteDashboard && $view !== 'dashboard';
         $wants = static fn (array $views): bool => $view === null || in_array((string) $view, $views, true);
+        $canManageAiData = $user->hasPermission('manage_ai_data');
 
         $slaService->enforceUnansweredOperatorChats((clone $this->chatsQuery($user)));
         if ($wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews')) {
@@ -96,13 +101,15 @@ class AdminController extends Controller
             'permissions' => $this->permissionsFor($user),
             'system_settings' => $this->systemSettingsPayload($settings),
             'stats' => $this->stats($user),
-            'users' => $wants(['users', 'internal-chat', 'sticky-notes', 'reports']) ? $this->usersQuery($user)->limit(100)->get()->map(fn (User $item) => $this->userPayload($item)) : [],
-            'drivers' => ($wants(['drivers', 'reports']) || ($wants(['dashboard']) && $user->role !== UserRole::Eksekutor)) ? $this->driverRows($user) : [],
-            'operator_performance' => $wants(['dashboard']) ? $this->operatorPerformanceRows($user) : [],
-            'orders' => $wants(['dashboard', 'orders', 'request-orders', 'internal-chat', 'reports']) ? $this->ordersQuery($user)->latest()->limit(100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user)) : [],
-            'cancel_requests' => $wants(['dashboard', 'chats']) ? $this->cancelRequestsQuery($user)->latest()->limit(20)->get()->map(fn (CancelRequest $cancelRequest) => $this->cancelRequestPayload($cancelRequest)) : [],
-            'oper_handles' => $wants(['dashboard', 'orders', 'request-orders']) ? $this->operHandlesQuery($user)->latest('updated_at')->limit(50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)) : [],
-            'branches' => Branch::query()
+            'users' => $wants(['users', 'internal-chat', 'reports']) ? $this->usersQuery($user)->limit(100)->get()->map(fn (User $item) => $this->userPayload($item)) : [],
+            'drivers' => ($wants(['drivers', 'reports']) || ($wants(['dashboard']) && $user->role !== UserRole::Eksekutor))
+                ? ($liteDashboard ? $this->dashboardDriverRows($user) : $this->driverRows($user))
+                : [],
+            'operator_performance' => $wants(['dashboard']) && ! $liteDashboard ? $this->operatorPerformanceRows($user) : [],
+            'orders' => $wants(['dashboard', 'orders', 'request-orders', 'manual-order', 'internal-chat', 'reports']) ? $this->ordersQuery($user)->latest()->limit($liteDashboard ? 30 : 100)->get()->map(fn (Order $order) => $this->orderPayload($order, $user, includeSuggestedDrivers: $includeOrderExtras, includeCustomerPreferences: $includeOrderExtras)) : [],
+            'cancel_requests' => $wants(['dashboard', 'chats']) ? $this->cancelRequestsQuery($user)->latest()->limit($liteDashboard ? 10 : 20)->get()->map(fn (CancelRequest $cancelRequest) => $this->cancelRequestPayload($cancelRequest)) : [],
+            'oper_handles' => $wants(['dashboard', 'orders', 'request-orders', 'manual-order']) ? $this->operHandlesQuery($user)->latest('updated_at')->limit($liteDashboard ? 20 : 50)->get()->map(fn (OperHandleRequest $operHandle) => $this->operHandlePayload($operHandle)) : [],
+            'branches' => $liteDashboard ? [] : Branch::query()
                 ->with([
                     'parent:id,branch_code,name,area,parent_branch_id',
                     'children:id,parent_branch_id,branch_code,name,area,is_active',
@@ -114,18 +121,18 @@ class AdminController extends Controller
                 ->orderBy('parent_branch_id')
                 ->orderBy('area')
                 ->get(),
-            'services' => $this->servicesPayload(),
+            'services' => $liteDashboard ? [] : $this->servicesPayload(),
             'price_settings' => $wants(['master-pricing', 'pricing', 'price-settings']) ? PriceSetting::query()->with('branch')->latest()->get() : [],
-            'keyword_parsers' => $wants(['keyword-parsers']) ? $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)) : [],
+            'keyword_parsers' => $canManageAiData && $wants(['keyword-parsers']) ? $this->keywordParsersQuery()->get()->map(fn (KeywordParser $parser) => $this->keywordParserPayload($parser)) : [],
             'pricing_keyword_rules' => $wants(['pricing-keyword-rules']) ? $this->pricingKeywordRulesQuery()->get()->map(fn (PricingKeywordRule $rule) => $this->pricingKeywordRulePayload($rule)) : [],
             'ring_pricing_rules' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingRulesQuery($user)->get()->map(fn (RingPricingRule $rule) => $this->ringPricingRulePayload($rule)) : [],
             'ring_pricing_suggestions' => $wants(['master-pricing', 'pricing', 'ring-pricing']) ? $this->ringPricingSuggestionsQuery($user)->limit(30)->get()->map(fn (RingPricingSuggestion $suggestion) => $this->ringPricingSuggestionPayload($suggestion)) : [],
-            'live_price_reviews' => $this->safeAdminPayload('live_price_reviews', fn () => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit(80)->get()->map(fn (LivePriceReview $review) => $liveReviews->payload($review)) : []),
+            'live_price_reviews' => $this->safeAdminPayload('live_price_reviews', fn () => $wants(['dashboard', 'live-price-reviews']) && Schema::hasTable('live_price_reviews') ? $this->livePriceReviewsQuery($user)->limit($liteDashboard ? 20 : 60)->get()->map(fn (LivePriceReview $review) => $liveReviews->payload($review)) : []),
             'zone_pricing_rules' => $wants(['zone-pricing', 'zone-pricing-tester']) ? $this->zonePricingRulesQuery($user)->get()->map(fn (ZonePricingRule $rule) => $this->zonePricingRulePayload($rule)) : [],
             'geofences' => $wants(['geofence', 'zone-pricing', 'zone-pricing-tester']) ? GeofenceArea::query()->with('branch')->latest()->get() : [],
             'location_logs' => $wants(['locations', 'reports']) ? $this->locationLogsQuery($user)->limit(100)->get()->map(fn (LocationLog $log) => $this->locationLogPayload($log)) : [],
-            'chats' => $wants(['dashboard', 'chats']) ? $this->chatsQuery($user)->limit(100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)) : [],
-            'audit_logs' => $this->safeAdminPayload('audit_logs', fn () => $wants(['dashboard', 'orders', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit(50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : []),
+            'chats' => $wants(['dashboard', 'chats']) ? $this->chatsQuery($user)->limit($liteDashboard ? 20 : 100)->get()->map(fn (ChatConversation $chat) => $this->chatPayload($chat)) : [],
+            'audit_logs' => $this->safeAdminPayload('audit_logs', fn () => $wants(['dashboard', 'orders', 'manual-order', 'audit-logs']) && Schema::hasTable('audit_logs') ? $this->auditLogsQuery($user)->limit($liteDashboard ? 20 : 50)->get()->map(fn (AuditLog $log) => $this->auditLogPayload($log)) : []),
         ]);
     }
 
@@ -351,8 +358,12 @@ class AdminController extends Controller
         }
         unset($payload['driver_bansos_amount'], $payload['driver_bpjs_jht_enabled'], $payload['vehicle_types'], $payload['vehicle_seat_rows'], $payload['is_ladies_driver'], $payload['can_accept_all_areas'], $payload['allowed_service_types']);
 
+        $blocksAccount = (array_key_exists('is_active', $payload) && ! (bool) $payload['is_active'])
+            || (array_key_exists('is_suspended', $payload) && (bool) $payload['is_suspended'])
+            || (isset($payload['suspended_until']) && now()->lessThan($payload['suspended_until']));
+
         $user->update($newPassword ? [...$payload, 'password' => $newPassword] : $payload);
-        if ($newPassword) {
+        if ($newPassword || $blocksAccount) {
             $user->tokens()->delete();
             $user->deviceTokens()->update(['is_active' => false]);
         }
@@ -435,6 +446,52 @@ class AdminController extends Controller
         $this->recordAudit($request->user(), 'reset_user_token', $user);
 
         return response()->json(['message' => 'Token user berhasil direset. User perlu login ulang.']);
+    }
+
+    public function suspendCustomer(Request $request, User $user): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($this->canSuspendCustomer($actor, $user), 403);
+
+        $payload = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $reason = trim((string) ($payload['reason'] ?? 'Akun customer dikunci karena terindikasi order fiktif.'));
+
+        $user->forceFill([
+            'is_suspended' => true,
+            'suspension_reason' => $reason,
+            'suspended_until' => null,
+        ])->save();
+        $user->tokens()->delete();
+        $user->deviceTokens()->update(['is_active' => false]);
+
+        $this->recordAudit($actor, 'suspended_customer', $user, ['reason' => $reason]);
+
+        return response()->json([
+            'message' => 'Customer berhasil disuspend.',
+            'data' => $this->userPayload($user->fresh('branch', 'area', 'branchScopes', 'driver')),
+        ]);
+    }
+
+    public function releaseCustomer(Request $request, User $user): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($this->canSuspendCustomer($actor, $user), 403);
+
+        $user->forceFill([
+            'is_suspended' => false,
+            'suspension_reason' => null,
+            'suspended_until' => null,
+        ])->save();
+
+        $this->recordAudit($actor, 'released_customer_suspend', $user);
+
+        return response()->json([
+            'message' => 'Suspend customer berhasil dilepas.',
+            'data' => $this->userPayload($user->fresh('branch', 'area', 'branchScopes', 'driver')),
+        ]);
     }
 
     public function exportDriverManagementCsv(Request $request, DriverManagementCsvService $csv): StreamedResponse
@@ -548,7 +605,7 @@ class AdminController extends Controller
             'driver_id' => $driver->id,
             'assigned_driver_id' => $driver->id,
             'assigned_driver_user_id' => $driver->user?->id,
-            'assigned_driver_name' => $driver->user?->name,
+            'assigned_driver_name' => $this->driverUserLabel($driver->user),
             'assigned_driver_username' => $driver->user?->username,
             'assigned_driver_phone' => $driver->user?->phone,
             'assigned_driver_branch_id' => $driver->user?->branch_id,
@@ -1118,7 +1175,15 @@ class AdminController extends Controller
                 'order_payload.service_payload.vehicle_seat_rows' => ['nullable', 'integer', 'in:2,3'],
                 'price_override' => ['nullable', 'integer', 'min:0'],
                 'service_charge_override' => ['nullable', 'integer', 'min:0'],
+                'idempotency_key' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_-]+$/'],
             ]);
+
+            $idempotencyKey = $payload['idempotency_key'] ?? null;
+            if ($idempotencyKey && ($existing = $this->manualOrdersByRequestKey($idempotencyKey))->isNotEmpty()) {
+                $this->assertManualOrderCustomerScope($request->user(), $existing->first()->user);
+
+                return $this->manualOrderExistingResponse($existing);
+            }
 
             $customer = $this->manualOrderCustomer($request, $payload);
             $this->assertManualOrderCustomerScope($request->user(), $customer);
@@ -1128,10 +1193,13 @@ class AdminController extends Controller
             $orderPayloads = $this->manualOrderPayloads($orderPayload);
 
             try {
-                $orders = DB::transaction(function () use ($createOrder, $customer, $orderPayloads, $payload): array {
+                $orders = DB::transaction(function () use ($createOrder, $customer, $orderPayloads, $payload, $idempotencyKey): array {
                     $created = [];
 
-                    foreach ($orderPayloads as $manualPayload) {
+                    foreach ($orderPayloads as $index => $manualPayload) {
+                        $manualPayload['source'] = 'dashboard_manual';
+                        $manualPayload['manual_request_key'] = $idempotencyKey;
+                        $manualPayload['manual_request_sequence'] = $idempotencyKey ? $index : null;
                         $order = $createOrder->handle($customer, $manualPayload);
                         $order->forceFill(['source' => 'dashboard_manual'])->save();
 
@@ -1161,6 +1229,14 @@ class AdminController extends Controller
                     'message' => collect($exception->errors())->flatten()->first() ?? 'Order belum bisa dibuat.',
                     'errors' => $exception->errors(),
                 ], 422);
+            } catch (QueryException $exception) {
+                if ($idempotencyKey && ($existing = $this->manualOrdersByRequestKey($idempotencyKey))->isNotEmpty()) {
+                    $this->assertManualOrderCustomerScope($request->user(), $existing->first()->user);
+
+                    return $this->manualOrderExistingResponse($existing);
+                }
+
+                throw $exception;
             }
             $order = $orders[0];
 
@@ -1198,7 +1274,15 @@ class AdminController extends Controller
             'price' => ['required', 'integer', 'min:0'],
             'service_charge' => ['sometimes', 'integer', 'min:0'],
             'notes' => ['nullable', 'string'],
+            'idempotency_key' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_-]+$/'],
         ]);
+
+        $idempotencyKey = $payload['idempotency_key'] ?? null;
+        if ($idempotencyKey && ($existing = $this->manualOrdersByRequestKey($idempotencyKey))->isNotEmpty()) {
+            $this->assertManualOrderCustomerScope($request->user(), $existing->first()->user);
+
+            return $this->manualOrderExistingResponse($existing);
+        }
 
         $customer = $this->manualOrderCustomer($request, $payload);
         $this->assertManualOrderCustomerScope($request->user(), $customer);
@@ -1217,6 +1301,8 @@ class AdminController extends Controller
             'price' => $payload['price'],
             'notes' => $payload['notes'] ?? null,
             'source' => 'dashboard_manual',
+            'manual_request_key' => $idempotencyKey,
+            'manual_request_sequence' => $idempotencyKey ? 0 : null,
             'service_charge' => $serviceCharge,
             'direction_bearing' => $multiOrder->calculateBearing(
                 (float) $payload['pickup_lat'],
@@ -1236,6 +1322,46 @@ class AdminController extends Controller
         ], 201);
     }
 
+    public function manualOrderStatus(Request $request, string $idempotencyKey): JsonResponse
+    {
+        abort_unless(in_array($request->user()->role, [UserRole::Admin, UserRole::GM, UserRole::Manager, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true), 403);
+
+        validator(['idempotency_key' => $idempotencyKey], [
+            'idempotency_key' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9_-]+$/'],
+        ])->validate();
+
+        $orders = $this->manualOrdersByRequestKey($idempotencyKey);
+        if ($orders->isEmpty()) {
+            return response()->json(['message' => 'Order manual belum tersimpan.', 'data' => null], 404);
+        }
+
+        $this->assertManualOrderCustomerScope($request->user(), $orders->first()->user);
+
+        return $this->manualOrderExistingResponse($orders);
+    }
+
+    private function manualOrdersByRequestKey(string $idempotencyKey)
+    {
+        return Order::query()
+            ->with(['user.branch', 'driver.user.branch'])
+            ->where('source', 'dashboard_manual')
+            ->where('manual_request_key', $idempotencyKey)
+            ->orderBy('manual_request_sequence')
+            ->get();
+    }
+
+    private function manualOrderExistingResponse($orders): JsonResponse
+    {
+        $order = $orders->first();
+
+        return response()->json([
+            'message' => 'Order manual sudah tersimpan. Pengiriman ulang tidak membuat order duplikat.',
+            'data' => $this->orderPayload($order),
+            'orders' => $orders->map(fn (Order $createdOrder): array => $this->orderPayload($createdOrder))->values(),
+            'idempotent_replay' => true,
+        ]);
+    }
+
     public function livePriceReviews(Request $request, LivePriceReviewService $liveReviews): JsonResponse
     {
         abort_unless($this->canHandleLivePriceReview($request->user()), 403);
@@ -1248,7 +1374,7 @@ class AdminController extends Controller
 
         return response()->json([
             'data' => $this->livePriceReviewsQuery($request->user())
-                ->limit(100)
+                ->limit(60)
                 ->get()
                 ->map(fn (LivePriceReview $review): array => $liveReviews->payload($review)),
         ]);
@@ -1761,18 +1887,21 @@ class AdminController extends Controller
 
             if ($polygons === []) {
                 $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'bukan polygon');
+
                 continue;
             }
 
             $ring = $this->normalizeGeojsonRing($properties['ring'] ?? $properties['Ring'] ?? $properties['RING'] ?? null);
             if ($ring === null) {
                 $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'ring tidak ditemukan');
+
                 continue;
             }
 
             foreach ($polygons as $polygonIndex => $points) {
                 if (count($points) < 3) {
                     $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'polygon kurang dari 3 titik');
+
                     continue;
                 }
 
@@ -1781,6 +1910,7 @@ class AdminController extends Controller
 
                 if ($branchId === null) {
                     $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'cabang tidak ditemukan');
+
                     continue;
                 }
 
@@ -1788,6 +1918,7 @@ class AdminController extends Controller
                     $this->assertPricingBranchScope($actor, $branchId);
                 } catch (\Throwable) {
                     $skipped[] = $this->geojsonSkipLabel($properties, $featureIndex, 'di luar scope cabang user');
+
                     continue;
                 }
 
@@ -2291,10 +2422,14 @@ class AdminController extends Controller
         $deposit = $finance->monthlyDeposit($driver, $depositPeriod->copy());
         $breakdown = $deposit->breakdown ?? [];
         $breakdown['manual_override'] = true;
+        $breakdown['manual_base_override'] ??= false;
 
         if (array_key_exists('base_service_deposit', $payload)) {
             $deposit->handle_day_15 = (int) $payload['base_service_deposit'];
             $deposit->handle_day_30 = 0;
+            $breakdown['manual_base_override'] = true;
+            $breakdown['manual_base_at_override'] = (int) $payload['base_service_deposit'];
+            $breakdown['manual_base_anchor_at'] = now()->toIso8601String();
         }
 
         if (array_key_exists('orders_count', $payload)) {
@@ -2338,7 +2473,7 @@ class AdminController extends Controller
         if (array_key_exists('paid_amount', $payload)) {
             $deposit->paid_at = (int) $payload['paid_amount'] > 0 ? now() : null;
         } elseif (array_key_exists('paid_at', $payload)) {
-            $deposit->paid_at = filled($payload['paid_at'] ?? null) ? \Illuminate\Support\Carbon::parse((string) $payload['paid_at']) : null;
+            $deposit->paid_at = filled($payload['paid_at'] ?? null) ? Carbon::parse((string) $payload['paid_at']) : null;
         }
 
         $base = (int) $deposit->handle_day_15 + (int) $deposit->handle_day_30;
@@ -2562,6 +2697,8 @@ class AdminController extends Controller
             'assign_driver_allowed_roles.*' => ['string', Rule::in(['manager', 'spv', 'operator', 'eksekutor'])],
             'edit_tarif_allowed_roles' => ['sometimes', 'array'],
             'edit_tarif_allowed_roles.*' => ['string', Rule::in(RolePermissionSettingService::CONFIGURABLE_EDIT_TARIF_ROLES)],
+            'ai_data_allowed_roles' => ['sometimes', 'array'],
+            'ai_data_allowed_roles.*' => ['string', Rule::in(AiDataAccessSettingService::CONFIGURABLE_ROLES)],
             'bot_display_name' => ['sometimes', 'string', 'max:50'],
         ]);
 
@@ -2595,6 +2732,17 @@ class AdminController extends Controller
             $settings->set(
                 RolePermissionSettingService::EDIT_TARIF_ALLOWED_ROLES_KEY,
                 json_encode(app(RolePermissionSettingService::class)->normalizeEditTarifRoles($payload['edit_tarif_allowed_roles'])),
+                true,
+                ['type' => 'json'],
+            );
+        }
+        if (
+            array_key_exists('ai_data_allowed_roles', $payload)
+            && in_array($request->user()->role, [UserRole::Admin, UserRole::GM], true)
+        ) {
+            $settings->set(
+                AiDataAccessSettingService::AI_DATA_ALLOWED_ROLES_KEY,
+                json_encode(app(AiDataAccessSettingService::class)->normalizeRoles($payload['ai_data_allowed_roles'])),
                 true,
                 ['type' => 'json'],
             );
@@ -3170,7 +3318,7 @@ class AdminController extends Controller
         return [$month, $year];
     }
 
-    private function monthlyOrderReportQuery(User $actor, \Illuminate\Support\Carbon $period): Builder
+    private function monthlyOrderReportQuery(User $actor, Carbon $period): Builder
     {
         return $this->ordersQuery($actor)
             ->with(['branch', 'area', 'user', 'driver.user'])
@@ -3365,6 +3513,7 @@ class AdminController extends Controller
             'can_manage_users' => $isAdminOrGm
                 || $user->hasPermission('create_user')
                 || in_array($user->role, [UserRole::HRD, UserRole::Manager, UserRole::SPV], true),
+            'can_suspend_customers' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true),
             'can_suspend_drivers' => $isAdminOrGm || $user->hasPermission('suspend_driver'),
             'can_unsuspend_drivers' => $isAdminOrGm || $user->hasPermission('unsuspend_driver'),
             'can_manage_driver_deposit' => $canManageDriverOperations,
@@ -3374,6 +3523,8 @@ class AdminController extends Controller
             'can_manage_all_branches' => app(BranchAccessSettingService::class)->roleHasGlobalBranchAccess($user->role),
             'can_manage_system_settings' => $isAdminOrGm || $user->hasPermission('manage_system_settings'),
             'can_manage_cms' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::WebAdmin, UserRole::CmsEditor], true),
+            'can_manage_ai_data' => $isAdminOrGm || $user->hasPermission('manage_ai_data'),
+            'can_manage_ai_access' => $isAdminOrGm,
             'can_edit_order_price' => $isAdminOrGm || $user->hasPermission('edit_tarif'),
             'can_create_manual_order' => $isAdminOrGm || $user->hasPermission('manual_order'),
             'can_assign_driver' => $this->canAssignDriver($user),
@@ -3383,10 +3534,10 @@ class AdminController extends Controller
             'can_monitor_live_chat' => $isAdminOrGm || $user->hasPermission('monitor_live_chat'),
             'can_view_dispatch_repost_audit' => in_array($user->role, [UserRole::GM, UserRole::HRD, UserRole::Manager, UserRole::SPV], true),
             'can_use_internal_chat' => $isAdminOrGm || $user->hasPermission('internal_chat'),
-            'can_use_internal_notes' => $isAdminOrGm || $user->hasPermission('internal_chat'),
             'can_approve_cancel_order' => $isAdminOrGm || $user->hasPermission('approve_cancel_order'),
             'can_reject_cancel_order' => $isAdminOrGm || $user->hasPermission('reject_cancel_order'),
-            'can_approve_oper_handle' => in_array($user->role, [UserRole::Admin, UserRole::GM, UserRole::SPV, UserRole::Operator, UserRole::Eksekutor], true),
+            'can_approve_oper_handle' => $isAdminOrGm || $user->hasPermission('approve_oper_handle'),
+            'can_reject_oper_handle' => $isAdminOrGm || $user->hasPermission('reject_oper_handle'),
         ];
 
         return app(AdminRoleMenuOverrideService::class)->applyToPermissions($user, $permissions);
@@ -3418,6 +3569,19 @@ class AdminController extends Controller
         $branchIds = $this->staffBranchScopeIds($actor) ?? [];
 
         return $target->branch_id !== null && in_array((int) $target->branch_id, $branchIds, true);
+    }
+
+    private function canSuspendCustomer(User $actor, User $target): bool
+    {
+        if ($target->role !== UserRole::Customer) {
+            return false;
+        }
+
+        if (! in_array($actor->role, [UserRole::Admin, UserRole::GM, UserRole::HRD, UserRole::Manager], true)) {
+            return false;
+        }
+
+        return $this->canManageUser($actor, $target);
     }
 
     private function branchIdForUserWrite(User $actor, mixed $branchId, ?UserRole $targetRole = null): ?int
@@ -3728,7 +3892,7 @@ class AdminController extends Controller
         ];
     }
 
-    private function orderPayload(Order $order, ?User $actor = null): array
+    private function orderPayload(Order $order, ?User $actor = null, bool $includeSuggestedDrivers = true, bool $includeCustomerPreferences = true): array
     {
         $order->loadMissing(['area', 'user.branch', 'user.area', 'driver.user.branch', 'driver.user.area', 'lastRepostedBy', 'operHandleRequests.driver.user', 'crews.driver.user']);
         $operHandle = $order->operHandleRequests->sortByDesc('updated_at')->first();
@@ -3739,7 +3903,7 @@ class AdminController extends Controller
             'code' => $order->order_code,
             'customer' => $order->user?->name,
             'driver_user_id' => $order->driver?->user?->id,
-            'driver' => $order->driver?->user?->name,
+            'driver' => $this->driverUserLabel($order->driver?->user),
             'driver_username' => $order->driver?->user?->username,
             'service' => $order->service_type,
             'service_code' => $order->service_code,
@@ -3784,7 +3948,8 @@ class AdminController extends Controller
                 'role' => $crew->role,
                 'label' => $crew->label,
                 'status' => $crew->status,
-                'driver' => $crew->driver?->user?->name,
+                'driver' => $this->driverUserLabel($crew->driver?->user),
+                'driver_username' => $crew->driver?->user?->username,
                 'service_charge' => $crew->role === 'rider' ? (int) $order->price : $crew->service_charge,
                 'accepted_at' => $crew->accepted_at?->toDateTimeString(),
             ])->values(),
@@ -3794,14 +3959,23 @@ class AdminController extends Controller
             'updated_at' => $order->updated_at?->toDateTimeString(),
             'waiting_seconds' => $this->waitingSeconds($order),
             'sla_status' => $this->dispatchSlaStatus($order),
-            'suggested_drivers' => $actor ? $this->suggestedDriversForOrder($order, $actor) : [],
-            'customer_preferences' => $this->customerPreferencePayload($order),
+            'suggested_drivers' => $includeSuggestedDrivers && $actor ? $this->suggestedDriversForOrder($order, $actor) : [],
+            'customer_preferences' => $includeCustomerPreferences ? $this->customerPreferencePayload($order) : [
+                'favorite_driver' => null,
+                'blocked_drivers' => [],
+                'notes' => $order->notes ?: ($order->user?->address ?? null),
+            ],
         ];
+    }
+
+    private function driverUserLabel(?User $user): ?string
+    {
+        return $user?->username ?: $user?->name;
     }
 
     private function operHandlePayload(OperHandleRequest $operHandle): array
     {
-        $operHandle->loadMissing(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'driver.user.branch', 'requester']);
+        $operHandle->loadMissing(['order.branch', 'order.user.branch', 'order.driver.user.branch', 'driver.user.branch', 'requester', 'decider']);
         $order = $operHandle->order;
         $branch = $order?->branch ?? $order?->user?->branch ?? $operHandle->driver?->user?->branch;
 
@@ -3811,7 +3985,7 @@ class AdminController extends Controller
             'order_code' => $order?->order_code,
             'order_status' => $order?->status?->value,
             'customer' => $order?->user?->name,
-            'driver' => $operHandle->driver?->user?->name,
+            'driver' => $this->driverUserLabel($operHandle->driver?->user),
             'driver_phone' => $operHandle->driver?->user?->phone,
             'branch' => $branch?->name,
             'branch_code' => $branch?->branch_code,
@@ -3824,6 +3998,9 @@ class AdminController extends Controller
             'requested_by' => $operHandle->requester?->name,
             'operator_approved_at' => $operHandle->operator_approved_at?->toDateTimeString(),
             'spv_approved_at' => $operHandle->spv_approved_at?->toDateTimeString(),
+            'decided_by' => $operHandle->decider?->name,
+            'decided_at' => $operHandle->decided_at?->toDateTimeString(),
+            'decision_note' => $operHandle->decision_note,
             'created_at' => $operHandle->created_at?->toDateTimeString(),
             'updated_at' => $operHandle->updated_at?->toDateTimeString(),
         ];
@@ -3842,7 +4019,7 @@ class AdminController extends Controller
             'order_status' => $order?->status?->value,
             'chat_id' => $cancelRequest->chat_conversation_id,
             'customer' => $order?->customer_name ?? $order?->user?->name ?? $cancelRequest->requester?->name,
-            'driver' => $order?->driver?->user?->username ?: $order?->driver?->user?->name,
+            'driver' => $this->driverUserLabel($order?->driver?->user),
             'branch' => $branch?->name,
             'branch_code' => $branch?->branch_code,
             'branch_area' => $branch?->area,
@@ -3944,7 +4121,7 @@ class AdminController extends Controller
             ->limit(12)
             ->get()
             ->reject(function (Driver $driver) use ($blockedDriverIds, $order): bool {
-                $deposit = app(\App\Services\DriverFinanceService::class)->monthlyDeposit($driver, now()->subMonth());
+                $deposit = app(DriverFinanceService::class)->monthlyDeposit($driver, now()->subMonth());
                 if (($deposit->status ?? 'unpaid') !== 'paid' && $deposit->due_date?->endOfDay()->isPast()) {
                     if ($driver->is_available) {
                         $driver->forceFill(['is_available' => false])->save();
@@ -3953,7 +4130,7 @@ class AdminController extends Controller
                     return true;
                 }
 
-                if (! (bool) data_get(app(\App\Services\MultiOrderService::class)->canAcceptOrder($driver, $order), 'can_accept')) {
+                if (! (bool) data_get(app(MultiOrderService::class)->canAcceptOrder($driver, $order), 'can_accept')) {
                     return true;
                 }
 
@@ -3963,7 +4140,7 @@ class AdminController extends Controller
             ->values()
             ->map(fn (Driver $driver): array => [
                 'id' => $driver->id,
-                'name' => $driver->user?->name ?? 'Driver #'.$driver->id,
+                'name' => $this->driverUserLabel($driver->user) ?? 'Driver #'.$driver->id,
                 'username' => $driver->user?->username,
                 'phone' => $driver->user?->phone,
                 'vehicle_type' => $driver->vehicle_type ?? 'motor',
@@ -4034,6 +4211,8 @@ class AdminController extends Controller
         return DB::table('customer_driver_preferences')
             ->where('user_id', $order->user_id)
             ->where('type', 'blocked')
+            ->latest('updated_at')
+            ->limit(50)
             ->pluck('driver_id')
             ->map(fn ($id): int => (int) $id)
             ->all();
@@ -4124,7 +4303,7 @@ class AdminController extends Controller
         }
 
         return in_array($order->status, [OrderStatus::Created, OrderStatus::SearchingDriver], true)
-            && ($order->expired_at?->lte(now()) ?? false);
+            && (($order->expired_at?->lte(now()) ?? false) || $this->waitingSeconds($order) >= 600);
     }
 
     private function dispatchRepostWindowExpired(Order $order): bool
@@ -4222,61 +4401,106 @@ class AdminController extends Controller
                 $deposit = $user->driver ? app(DriverFinanceService::class)->monthlyDeposit($user->driver, now()->subMonth()) : null;
 
                 return [
-                ...$this->userPayload($user),
+                    ...$this->userPayload($user),
+                    'driver_id' => $user->driver?->id,
+                    'driver_status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
+                    'deposit_status' => $deposit?->status,
+                    'deposit_total' => (int) ($deposit?->total ?? 0),
+                    'deposit_paid_amount' => (int) ($deposit?->paid_amount ?? 0),
+                    'deposit_remaining' => max(0, (int) ($deposit?->total ?? 0) - (int) ($deposit?->paid_amount ?? 0)),
+                    'deposit_paid_at' => $deposit?->paid_at?->toDateTimeString(),
+                    'google_bound' => filled($user->driver?->google_id),
+                    'google_email' => Schema::hasColumn('drivers', 'email') ? ($user->driver?->email ?? $user->email) : $user->email,
+                    'last_login_at' => $user->driver?->last_login_at?->toDateTimeString(),
+                    'last_login_ip' => $user->driver?->last_login_ip,
+                    'last_login_device' => $user->driver?->last_login_device,
+                    'auth_failed_attempts' => $user->driver?->auth_failed_attempts ?? 0,
+                    'auth_locked_until' => $user->driver?->auth_locked_until?->toDateTimeString(),
+                    'auth_suspended_at' => $user->driver?->auth_suspended_at?->toDateTimeString(),
+                    'suspended_until' => $user->driver?->suspended_until?->toDateTimeString() ?? $user->suspended_until?->toDateTimeString(),
+                    'suspension_reason' => $user->suspension_reason,
+                    'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,
+                    'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
+                    'vehicle_types' => $user->driver?->vehicleTypes() ?? ['motor'],
+                    'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
+                    'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
+                    'can_accept_all_areas' => (bool) ($user->driver?->can_accept_all_areas ?? false),
+                    'allowed_service_types' => ServiceTypeNormalizer::codes($user->driver?->allowed_service_types ?? []),
+                    'performance' => [
+                        'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),
+                        'ratings_count' => (int) ($user->driver?->ratings_count ?? 0),
+                        'rating_score' => app(RatingService::class)->weightedScore((float) ($user->driver?->rating_average ?? 0), (int) ($user->driver?->ratings_count ?? 0)),
+                        'rating_confidence' => app(RatingService::class)->ratingConfidence((int) ($user->driver?->ratings_count ?? 0)),
+                        'completed_orders_count' => (int) ($user->driver?->completed_orders_count ?? 0),
+                        'today_completed_orders_count' => (int) ($user->driver?->today_completed_orders_count ?? 0),
+                        'month_completed_orders_count' => (int) ($user->driver?->month_completed_orders_count ?? 0),
+                        'cancelled_orders_count' => (int) ($user->driver?->cancelled_orders_count ?? 0),
+                        'today_cancelled_orders_count' => (int) ($user->driver?->today_cancelled_orders_count ?? 0),
+                        'month_cancelled_orders_count' => (int) ($user->driver?->month_cancelled_orders_count ?? 0),
+                        'suspensions_count' => (int) ($user->driver?->suspensions_count ?? 0),
+                        'oper_handle_requests_count' => (int) ($user->driver?->oper_handle_requests_count ?? 0),
+                        'unpaid_deposits_count' => (int) ($user->driver?->unpaid_deposits_count ?? 0),
+                        'completed_revenue' => (int) ($user->driver?->completed_revenue ?? 0),
+                        'today_revenue' => (int) ($user->driver?->today_revenue ?? 0),
+                        'month_revenue' => (int) ($user->driver?->month_revenue ?? 0),
+                        'last_completed_at' => $user->driver?->orders?->first()?->created_at?->toDateTimeString(),
+                        'online_score' => $user->driver?->is_available ? 1 : 0,
+                    ],
+                    'suspensions' => $user->driver?->suspensions->map(fn ($suspension): array => [
+                        'id' => $suspension->id,
+                        'reason' => $suspension->reason,
+                        'duration' => $suspension->duration,
+                        'start_at' => $suspension->start_at?->toDateTimeString(),
+                        'end_at' => $suspension->end_at?->toDateTimeString(),
+                        'status' => $suspension->status,
+                    ])->all() ?? [],
+                ];
+            })
+            ->all();
+    }
+
+    private function dashboardDriverRows(User $actor): array
+    {
+        $query = User::query()
+            ->select(['id', 'username', 'name', 'email', 'phone', 'role', 'branch_id', 'is_active', 'is_suspended', 'suspended_until', 'suspension_reason'])
+            ->with(['branch:id,branch_code,name,area,parent_branch_id', 'driver:id,user_id,status,is_available']);
+        $branchIds = $this->staffBranchScopeIds($actor);
+
+        $query = match ($actor->role) {
+            UserRole::Admin, UserRole::GM => $query,
+            UserRole::HRD, UserRole::Manager => $this->whereInStaffBranchScope($query, $branchIds, true),
+            UserRole::SPV, UserRole::Eksekutor => $this->whereInStaffBranchScope($query, $branchIds, true),
+            UserRole::Operator => $query,
+            default => $query->whereKey($actor->id),
+        };
+
+        return $query->where('role', UserRole::Driver->value)
+            ->orderBy('name')
+            ->orderBy('username')
+            ->get()
+            ->map(fn (User $user): array => [
+                'id' => $user->id,
+                'username' => $user->username,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'role' => $user->role->value,
+                'branch_id' => $user->branch_id,
+                'branch' => $user->branch?->name,
+                'branch_code' => $user->branch?->branch_code,
+                'branch_area' => $user->branch?->area,
+                'branch_display_name' => $user->branch?->display_name,
+                'is_active' => (bool) $user->is_active,
+                'is_suspended' => (bool) $user->is_suspended,
+                'driver_state' => $user->driver?->is_available ? 'online' : 'offline',
                 'driver_id' => $user->driver?->id,
                 'driver_status' => $user->driver?->status ?? ($user->is_suspended ? 'suspended' : 'active'),
-                'deposit_status' => $deposit?->status,
-                'deposit_total' => (int) ($deposit?->total ?? 0),
-                'deposit_paid_amount' => (int) ($deposit?->paid_amount ?? 0),
-                'deposit_remaining' => max(0, (int) ($deposit?->total ?? 0) - (int) ($deposit?->paid_amount ?? 0)),
-                'deposit_paid_at' => $deposit?->paid_at?->toDateTimeString(),
-                'google_bound' => filled($user->driver?->google_id),
-                'google_email' => Schema::hasColumn('drivers', 'email') ? ($user->driver?->email ?? $user->email) : $user->email,
-                'last_login_at' => $user->driver?->last_login_at?->toDateTimeString(),
-                'last_login_ip' => $user->driver?->last_login_ip,
-                'last_login_device' => $user->driver?->last_login_device,
-                'auth_failed_attempts' => $user->driver?->auth_failed_attempts ?? 0,
-                'auth_locked_until' => $user->driver?->auth_locked_until?->toDateTimeString(),
-                'auth_suspended_at' => $user->driver?->auth_suspended_at?->toDateTimeString(),
                 'suspended_until' => $user->driver?->suspended_until?->toDateTimeString() ?? $user->suspended_until?->toDateTimeString(),
                 'suspension_reason' => $user->suspension_reason,
-                'oper_handle_count' => $user->driver?->oper_handle_count ?? 0,
-                'vehicle_type' => $user->driver?->vehicle_type ?? 'motor',
-                'vehicle_types' => $user->driver?->vehicleTypes() ?? ['motor'],
-                'vehicle_seat_rows' => $user->driver?->vehicle_seat_rows,
-                'is_ladies_driver' => (bool) ($user->driver?->is_ladies_driver ?? false),
-                'can_accept_all_areas' => (bool) ($user->driver?->can_accept_all_areas ?? false),
-                'allowed_service_types' => ServiceTypeNormalizer::codes($user->driver?->allowed_service_types ?? []),
-                'performance' => [
-                    'rating_average' => round((float) ($user->driver?->rating_average ?? 0), 2),
-                    'ratings_count' => (int) ($user->driver?->ratings_count ?? 0),
-                    'rating_score' => app(RatingService::class)->weightedScore((float) ($user->driver?->rating_average ?? 0), (int) ($user->driver?->ratings_count ?? 0)),
-                    'rating_confidence' => app(RatingService::class)->ratingConfidence((int) ($user->driver?->ratings_count ?? 0)),
-                    'completed_orders_count' => (int) ($user->driver?->completed_orders_count ?? 0),
-                    'today_completed_orders_count' => (int) ($user->driver?->today_completed_orders_count ?? 0),
-                    'month_completed_orders_count' => (int) ($user->driver?->month_completed_orders_count ?? 0),
-                    'cancelled_orders_count' => (int) ($user->driver?->cancelled_orders_count ?? 0),
-                    'today_cancelled_orders_count' => (int) ($user->driver?->today_cancelled_orders_count ?? 0),
-                    'month_cancelled_orders_count' => (int) ($user->driver?->month_cancelled_orders_count ?? 0),
-                    'suspensions_count' => (int) ($user->driver?->suspensions_count ?? 0),
-                    'oper_handle_requests_count' => (int) ($user->driver?->oper_handle_requests_count ?? 0),
-                    'unpaid_deposits_count' => (int) ($user->driver?->unpaid_deposits_count ?? 0),
-                    'completed_revenue' => (int) ($user->driver?->completed_revenue ?? 0),
-                    'today_revenue' => (int) ($user->driver?->today_revenue ?? 0),
-                    'month_revenue' => (int) ($user->driver?->month_revenue ?? 0),
-                    'last_completed_at' => $user->driver?->orders?->first()?->created_at?->toDateTimeString(),
-                    'online_score' => $user->driver?->is_available ? 1 : 0,
-                ],
-                'suspensions' => $user->driver?->suspensions->map(fn ($suspension): array => [
-                    'id' => $suspension->id,
-                    'reason' => $suspension->reason,
-                    'duration' => $suspension->duration,
-                    'start_at' => $suspension->start_at?->toDateTimeString(),
-                    'end_at' => $suspension->end_at?->toDateTimeString(),
-                    'status' => $suspension->status,
-                ])->all() ?? [],
-            ];
-            })
+                'oper_handle_count' => 0,
+                'performance' => [],
+                'suspensions' => [],
+            ])
             ->all();
     }
 
@@ -4350,6 +4574,7 @@ class AdminController extends Controller
             'bot_display_name' => $settings->botDisplayName(),
             'assign_driver_allowed_roles' => $this->assignDriverAllowedRoles($settings),
             'edit_tarif_allowed_roles' => app(RolePermissionSettingService::class)->editTarifAllowedRoles(),
+            'ai_data_allowed_roles' => app(AiDataAccessSettingService::class)->allowedRoles(),
         ];
     }
 
@@ -4595,7 +4820,7 @@ class AdminController extends Controller
             'id' => $chat->id,
             'order_code' => $chat->order?->order_code,
             'customer' => $chat->customer?->name,
-            'driver' => $chat->driver?->name,
+            'driver' => $this->driverUserLabel($chat->driver),
             'operator' => $chat->operator?->name,
             'branch' => $chat->branch?->name,
             'type' => $chat->type,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Order\AcceptOrder;
 use App\Enums\OrderStatus;
 use App\Enums\UserRole;
+use App\Events\OperHandleDecisionUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\DriverDeposit;
@@ -26,6 +27,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
@@ -92,15 +94,17 @@ class DriverController extends Controller
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->whereNotNull('driver_id')
+                ->where(fn (Builder $query) => $query->whereNull('source')->orWhere('source', '!=', 'driver_request'))
                 ->whereIn('status', [
                     OrderStatus::DriverAccepted->value,
                     OrderStatus::DriverOnTheWay->value,
                     OrderStatus::ArrivedPickup->value,
                     OrderStatus::OnGoing->value,
                     OrderStatus::PendingCancel->value,
+                    OrderStatus::Completed->value,
                 ])
                 ->latest('updated_at')
-                ->limit(30)
+                ->limit(20)
                 ->get()
             : collect();
         $branchRequestOrders = $branchId
@@ -245,15 +249,17 @@ class DriverController extends Controller
                 ->with(['user', 'driver.user', 'operHandleRequests.driver.user', 'crews.driver.user'])
                 ->where(fn (Builder $query) => $this->applyOperationalOrderScope($query, $driver))
                 ->whereNotNull('driver_id')
+                ->where(fn (Builder $query) => $query->whereNull('source')->orWhere('source', '!=', 'driver_request'))
                 ->whereIn('status', [
                     OrderStatus::DriverAccepted->value,
                     OrderStatus::DriverOnTheWay->value,
                     OrderStatus::ArrivedPickup->value,
                     OrderStatus::OnGoing->value,
                     OrderStatus::PendingCancel->value,
+                    OrderStatus::Completed->value,
                 ])
                 ->latest('updated_at')
-                ->limit(30)
+                ->limit(20)
                 ->get()
             : collect();
         $branchRequestOrders = $branchId
@@ -481,7 +487,8 @@ class DriverController extends Controller
 
         return response()->json([
             'data' => [
-                'price' => $pricingParser->parse($data['raw_text']),
+                'price' => $pricingParser->parseLast($data['raw_text']),
+                'deposit_jasa' => $pricingParser->parse($data['raw_text']),
             ],
         ]);
     }
@@ -542,9 +549,17 @@ class DriverController extends Controller
             'proof_path' => $proofPath,
             'status' => 'pending',
         ]);
+        try {
+            OperHandleDecisionUpdated::dispatch($requestRow->load(['order', 'driver.user']));
+        } catch (\Throwable $exception) {
+            Log::warning('broadcast.oper_handle_requested_failed', [
+                'oper_handle_id' => $requestRow->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
 
         return response()->json([
-            'message' => 'Oper handle menunggu approval Operator dan SPV',
+            'message' => 'Oper handle menunggu keputusan petugas.',
             'data' => $requestRow,
         ]);
     }
@@ -568,7 +583,7 @@ class DriverController extends Controller
         $driver = $this->ensureDriver($request);
 
         $payload = $request->validate([
-            'amount' => ['required', 'integer', 'min:1000', 'max:500000'],
+            'amount' => ['required', 'integer', 'min:0', 'max:1000000'],
             'reason' => ['required', 'string', 'max:255'],
         ]);
 
@@ -917,6 +932,11 @@ class DriverController extends Controller
 
     private function orderPayload(Order $order, ?Driver $forDriver = null): array
     {
+        $settings = app(SettingService::class);
+        $adjustmentMinimum = max(0, $settings->int('driver_adjustment_min_amount', 1000));
+        $adjustmentMaximum = max($adjustmentMinimum, $settings->int('driver_adjustment_max_amount', 500000));
+        $adjustmentDefault = max($adjustmentMinimum, min($adjustmentMaximum, $settings->int('driver_adjustment_default_amount', 2000)));
+
         if ($order->relationLoaded('operHandleRequests')) {
             $operHandles = $order->operHandleRequests;
             if ($forDriver) {
@@ -973,8 +993,17 @@ class DriverController extends Controller
             'oper_handle_updated_at' => $operHandle?->updated_at?->toIso8601String(),
             'detail' => $order->raw_text,
             'accepted_at' => in_array($order->status->value, ['DRIVER_ACCEPTED', 'DRIVER_ON_THE_WAY', 'ARRIVED_PICKUP', 'ON_GOING'], true)
-                ? $order->updated_at?->toIso8601String()
+                ? (data_get($order->pricing_breakdown, 'accepted_at') ?: $order->updated_at?->toIso8601String())
                 : null,
+            'driver_action_settings' => [
+                'complete_wait_minutes' => max(0, min(180, $settings->int('driver_complete_wait_minutes', 5))),
+                'adjustment_wait_minutes' => max(0, min(180, $settings->int('driver_adjustment_wait_minutes', 5))),
+                'adjustment_enabled' => $settings->bool('driver_adjustment_enabled', true),
+                'adjustment_min_amount' => $adjustmentMinimum,
+                'adjustment_max_amount' => $adjustmentMaximum,
+                'adjustment_step_amount' => max(1, $settings->int('driver_adjustment_step_amount', 1000)),
+                'adjustment_default_amount' => $adjustmentDefault,
+            ],
             'expired_at' => $order->expired_at?->toIso8601String(),
             'updated_at' => $order->updated_at?->toIso8601String(),
             'adjustments' => $order->adjustments,

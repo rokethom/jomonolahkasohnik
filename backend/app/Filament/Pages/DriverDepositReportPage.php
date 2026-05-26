@@ -214,10 +214,14 @@ class DriverDepositReportPage extends Page implements HasForms, HasActions
             $deposit = $finance->monthlyDeposit($driver, $depositPeriod->copy());
             $breakdown = $deposit->breakdown ?? [];
             $breakdown['manual_override'] = true;
+            $breakdown['manual_base_override'] ??= false;
 
             if ($field === 'base_service_deposit') {
                 $deposit->handle_day_15 = $this->moneyToInt($value);
                 $deposit->handle_day_30 = 0;
+                $breakdown['manual_base_override'] = true;
+                $breakdown['manual_base_at_override'] = $this->moneyToInt($value);
+                $breakdown['manual_base_anchor_at'] = now()->toIso8601String();
             } elseif ($field === 'orders_count') {
                 $breakdown['manual_orders_count'] = $this->moneyToInt($value);
             } elseif ($field === 'base_service_omset') {

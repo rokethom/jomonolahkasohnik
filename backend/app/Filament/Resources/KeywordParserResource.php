@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\KeywordParserResource\Pages;
+use App\Filament\Support\RequiresAiDataAccess;
 use App\Models\KeywordParser;
 use App\Models\Service;
 use App\Services\KeywordParserService;
@@ -17,6 +18,8 @@ use Illuminate\Validation\Rule;
 
 class KeywordParserResource extends Resource
 {
+    use RequiresAiDataAccess;
+
     protected static ?string $model = KeywordParser::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-command-line';

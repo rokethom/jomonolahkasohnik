@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Events\LivePriceReviewUpdated;
 use App\Jobs\ProcessLivePriceReviewLearningJob;
 use App\Models\Branch;
 use App\Models\LivePriceReview;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -32,6 +34,11 @@ class LivePriceReviewService
     {
         if (! $this->enabled() || ! Schema::hasTable('live_price_reviews')) {
             return null;
+        }
+
+        $blockingReview = $this->activeReviewFor($user);
+        if ($blockingReview) {
+            return $blockingReview;
         }
 
         if ($this->shouldRejectRawText($rawText)) {
@@ -59,6 +66,21 @@ class LivePriceReviewService
             'system_total_price' => (int) ($quote['total_price'] ?? $quote['final_price'] ?? 0),
             'expires_at' => now()->addMinutes(15),
         ])->load(['customer.branch', 'branch', 'reviewer']);
+    }
+
+    public function activeReviewFor(User $user): ?LivePriceReview
+    {
+        return LivePriceReview::query()
+            ->with(['customer.branch', 'branch', 'reviewer'])
+            ->where('user_id', $user->id)
+            ->whereIn('status', [LivePriceReview::STATUS_PENDING, LivePriceReview::STATUS_APPROVED])
+            ->whereNull('consumed_at')
+            ->where(function ($query): void {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->latest()
+            ->first();
     }
 
     public function rejectTrivialPendingReviews(): int
@@ -127,8 +149,8 @@ class LivePriceReviewService
             return true;
         }
 
-        $hasOrderSignal = preg_match('/\b(?:nama|no\s*hp|hp|whatsapp|wa|alamat|jemput|antar|tujuan|beli|pesan|order|ojek|delivery|kurir|mobil|pembelian|penumpang|bayar|cash|transfer|qris)\b/u', $normalized) === 1;
-        $hasAddressLikeSignal = preg_match('/\b(?:jl|jalan|perum|desa|dusun|kec|kab|rt|rw|blok|no|smp|sma|sd|pasar|terminal|alun|rumah|depan|sebelah|dekat)\b/u', $normalized) === 1;
+        $hasOrderSignal = preg_match('/\b(?:nama|no\s*hp|hp|whatsapp|wa|alamat|jemput|antar|tujuan|beli|buy|pesan|order|pickup|deliver|delivery|send|ojek|kurir|mobil|pembelian|penumpang|bayar|cash|transfer|qris)\b/u', $normalized) === 1;
+        $hasAddressLikeSignal = preg_match('/\b(?:jl|jalan|perum|desa|dusun|kec|kab|rt|rw|blok|no|smp|sma|sd|pasar|terminal|alun|rumah|depan|sebelah|dekat|near)\b/u', $normalized) === 1;
 
         return ! $hasOrderSignal && ! $hasAddressLikeSignal;
     }
@@ -251,6 +273,7 @@ class LivePriceReviewService
         ])->save();
 
         ProcessLivePriceReviewLearningJob::dispatch($review->id, 'approved');
+        $this->broadcastUpdate($review);
 
         return $review->fresh(['customer.branch', 'branch', 'reviewer']);
     }
@@ -263,6 +286,8 @@ class LivePriceReviewService
             'correction_reason' => $reason ?: 'Harga/order perlu dicek ulang.',
             'reviewed_at' => now(),
         ])->save();
+
+        $this->broadcastUpdate($review);
 
         return $review->fresh(['customer.branch', 'branch', 'reviewer']);
     }
@@ -289,6 +314,8 @@ class LivePriceReviewService
             'reviewed_at' => now(),
             'confirmation_available_at' => null,
         ])->save();
+
+        $this->broadcastUpdate($review);
 
         return $review->fresh(['customer.branch', 'branch', 'reviewer']);
     }
@@ -402,6 +429,18 @@ class LivePriceReviewService
     private function pendingMessage(): string
     {
         return "Harga sedang dicek operator.\nMohon tunggu sebentar, tombol konfirmasi akan aktif setelah harga dikonfirmasi.";
+    }
+
+    private function broadcastUpdate(LivePriceReview $review): void
+    {
+        try {
+            LivePriceReviewUpdated::dispatch($review);
+        } catch (\Throwable $exception) {
+            Log::warning('broadcast.live_price_review_failed', [
+                'review_id' => $review->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function branch(User $user): ?Branch

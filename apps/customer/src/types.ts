@@ -175,6 +175,13 @@ export type ChatMessage = {
   image_url?: string | null
   audio_url?: string | null
   audio_duration?: number | null
+  message_type?: string | null
+  sticker?: {
+    id: number
+    name: string
+    category?: string | null
+    image_url: string
+  } | null
   is_read?: boolean
   created_at?: string
   time: string

@@ -239,6 +239,48 @@ jobs:
           ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
             "sudo mkdir -p '${BACKEND_PATH}' '${BACKEND_PUBLIC_PATH}' '${ADMIN_PUBLIC_PATH}' '${CUSTOMER_PUBLIC_PATH}' '${DRIVER_PUBLIC_PATH}'"
 
+      - name: Backup production before deploy
+        if: steps.scope.outputs.any == 'true'
+        shell: bash
+        run: |
+          ssh -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="/home/aplikasijoker.my.id/laravel"
+          BACKEND_PUBLIC="/home/aplikasijoker.my.id/public_html"
+          ADMIN="/home/admin.aplikasijoker.my.id/public_html"
+          CUSTOMER="/home/app.aplikasijoker.my.id/public_html"
+          DRIVER="/home/driver.aplikasijoker.my.id/public_html"
+          OUT="$HOME/jojo-deploy-backups/${{ github.sha }}"
+          DB_CONFIG="$OUT/.database.cnf"
+
+          mkdir -p "$OUT"
+          sudo tar -czf "$OUT/backend-before.tar.gz" -C "$APP" app database resources routes composer.json composer.lock
+          sudo tar -czf "$OUT/backend-public-before.tar.gz" -C "$BACKEND_PUBLIC" .
+          sudo tar -czf "$OUT/admin-before.tar.gz" -C "$ADMIN" .
+          sudo tar -czf "$OUT/customer-before.tar.gz" -C "$CUSTOMER" .
+          sudo tar -czf "$OUT/driver-before.tar.gz" -C "$DRIVER" .
+
+          cd "$APP"
+          DB_CONFIG="$DB_CONFIG" php -r '
+          require "vendor/autoload.php";
+          $app = require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db = config("database.connections.mysql");
+          $escape = static fn (string $value): string => str_replace(["\\", "\""], ["\\\\", "\\\""], $value);
+          $config = "[client]\n"
+              ."host=\"".$escape((string) ($db["host"] ?? "127.0.0.1"))."\"\n"
+              ."port=\"".$escape((string) ($db["port"] ?? "3306"))."\"\n"
+              ."user=\"".$escape((string) $db["username"])."\"\n"
+              ."password=\"".$escape((string) $db["password"])."\"\n";
+          file_put_contents(getenv("DB_CONFIG"), $config);
+          chmod(getenv("DB_CONFIG"), 0600);
+          '
+          DATABASE="$(php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo config("database.connections.mysql.database");')"
+          mysqldump --defaults-extra-file="$DB_CONFIG" --no-tablespaces --single-transaction --quick --routines --triggers "$DATABASE" | gzip -c > "$OUT/database-before.sql.gz"
+          rm -f "$DB_CONFIG"
+          echo "Backup production tersimpan di $OUT"
+          REMOTE
+
       - name: Upload backend source
         if: steps.scope.outputs.backend == 'true'
         shell: bash

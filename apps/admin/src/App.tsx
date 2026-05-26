@@ -26,10 +26,10 @@ declare global {
 }
 
 type Role = 'admin' | 'gm' | 'hrd' | 'manager' | 'spv' | 'operator' | 'eksekutor' | 'web_admin' | 'cms_editor' | 'driver' | 'customer'
-type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'audit-logs' | 'sticky-notes' | 'manual-order' | 'live-price-reviews' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements'
+type View = 'dashboard' | 'orders' | 'request-orders' | 'users' | 'drivers' | 'settings' | 'master-pricing' | 'pricing' | 'price-settings' | 'ring-pricing' | 'keyword-parsers' | 'pricing-keyword-rules' | 'zone-pricing' | 'zone-pricing-tester' | 'branches' | 'geofence' | 'locations' | 'reports' | 'chats' | 'internal-chat' | 'audit-logs' | 'manual-order' | 'live-price-reviews' | 'order-crew-rules' | 'banners' | 'home-sections' | 'home-items' | 'announcements' | 'jojobot-field-schema-reference' | 'jojobot-template-parser-lab' | 'ai-parser-rules' | 'ai-alias-maps' | 'ai-location-suggestions' | 'location-pois' | 'ai-logs' | 'ai-monitoring' | 'ai-nlp-settings'
 type DriverListMode = 'all' | 'online'
-const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'chats', 'internal-chat'])
-const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders'])
+const adminAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'manual-order', 'chats', 'internal-chat'])
+const adminBootstrapAutoRefreshViews = new Set<View>(['orders', 'request-orders', 'manual-order'])
 const dispatchQueueMaxWaitingSeconds = 12 * 60 * 60
 type AdminHistoryState = {
   jojoAdminView?: View
@@ -203,6 +203,9 @@ type OperHandle = {
   requested_by?: string | null
   operator_approved_at?: string | null
   spv_approved_at?: string | null
+  decided_by?: string | null
+  decided_at?: string | null
+  decision_note?: string | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -289,6 +292,12 @@ type Branch = {
 type ServiceRow = { id: number; name: string; code: string; outside_area_only?: boolean }
 type PriceSetting = { id: number; name: string; branch_id: number | null; min_km: string; max_km: string | null; price: number | null; is_formula: boolean; per_km_rate: number | null; subtract_value: number | null; is_active?: boolean; branch?: Branch | null }
 type KeywordParser = { id: number; keyword: string; service_type: string; response_template: string; form_schema?: { fields?: Array<{ label?: string; name?: string; type?: string; required?: boolean; options?: string[] }> } | null; parser_type: 'simple' | 'advanced' | string; is_active: boolean; priority: number; created_at?: string | null; updated_at?: string | null }
+type AiParserRule = { id: number; service_type: string; example_text: string; ai_data: Record<string, unknown>; provider?: string | null; model?: string | null; is_active: boolean; hit_count: number; updated_at?: string | null }
+type AiRelation = { id: number; name: string; branch_code?: string | null; area?: string | null; display_name?: string | null; code?: string | null }
+type AiDataOptions = { branches: AiRelation[]; areas: Array<AiRelation & { branch?: AiRelation | null }>; regions: Array<AiRelation & { branch?: AiRelation | null }> }
+type AiAliasMap = { id: number; canonical_name: string; aliases?: string[] | null; branch_id?: number | null; area_id?: number | null; geojson_region_id?: number | null; branch?: AiRelation | null; area?: AiRelation | null; geojson_region?: AiRelation | null; source: string; confidence: number; priority: number; hit_count: number; is_active: boolean }
+type AiLocationSuggestion = { id: number; location_text: string; aliases?: string[] | null; role: string; service_type?: string | null; branch_id?: number | null; area_id?: number | null; branch?: AiRelation | null; area?: AiRelation | null; latitude?: string | null; longitude?: string | null; confidence: number; occurrence_count: number; status: string; location_poi?: AiRelation | null }
+type LocationPoi = { id: number; name: string; aliases?: string[] | null; category?: string | null; branch_id?: number | null; area_id?: number | null; branch?: AiRelation | null; area?: AiRelation | null; latitude?: string | null; longitude?: string | null; source: string; confidence: number; priority: number; hit_count: number; is_active: boolean }
 type PricingKeywordRule = { id: number; name: string; keywords: string; amount: number; service_scopes?: string[] | null; is_active: boolean; priority: number; description?: string | null; created_at?: string | null; updated_at?: string | null }
 type RingPricingRule = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'branch_code' | 'name' | 'area' | 'display_name'> | null; service_type?: string | null; name: string; area_mode?: 'text' | 'polygon' | string; pickup_area: string; destination_area: string; pickup_aliases?: string[]; destination_aliases?: string[]; polygon_coordinates?: Array<{ lat: number; lng: number }>; polygon_match_point?: string | null; match_type?: 'point' | 'cross' | string; pickup_ring?: string | null; destination_ring?: string | null; ring: string; min_km?: string | number | null; max_km?: string | number | null; pricing_mode?: 'flat' | 'formula' | string; price: number; per_km_rate?: number | null; subtract_value?: number | null; service_fee?: number | null; priority?: number | null; is_bidirectional: boolean; source: string; is_active: boolean; created_at?: string | null; updated_at?: string | null }
 type RingPricingSuggestion = { id: number; branch_id: number | null; branch?: Pick<Branch, 'id' | 'name' | 'area'> | null; service_type?: string | null; pickup_area: string; destination_area: string; ring?: string | null; suggestion_type?: string | null; learning_source?: string | null; suggested_price: number; previous_price?: number | null; system_price?: number | null; price_delta?: number | null; confidence?: number | null; occurrence_count: number; sample_order_ids?: number[]; evidence?: Record<string, unknown> | null; last_order_code?: string | null; last_edited_by?: string | null; status: string; created_at?: string | null; updated_at?: string | null }
@@ -367,31 +376,6 @@ type InternalChatAttachment = { source?: string | null; name?: string | null; mi
 type InternalChatMetadata = { attachment?: InternalChatAttachment | null; sticker?: ChatSticker | null; message_type?: string | null; mentioned_user_ids?: number[]; order_ids?: number[]; order_codes?: string[] }
 type InternalChatMessage = { id: number; room_id: number; sender_id: number | null; sender_name: string; sender_role?: Role | string | null; message: string; metadata?: InternalChatMetadata | null; created_at?: string | null }
 type InternalChatDetail = { room: InternalChatRoom; messages: InternalChatMessage[] }
-type InternalNoteStatus = 'open' | 'in_progress' | 'done' | 'archived'
-type InternalNotePriority = 'low' | 'normal' | 'high' | 'urgent'
-type InternalNoteUser = { id: number; name: string; role: Role | string }
-type InternalNoteReply = { id: number; note_id: number; author: InternalNoteUser | null; body: string; created_at?: string | null }
-type InternalNote = {
-  id: number
-  title: string
-  body: string
-  category: string
-  priority: InternalNotePriority
-  status: InternalNoteStatus
-  author: InternalNoteUser | null
-  assigned_to: InternalNoteUser | null
-  branch: { id: number; name: string; area?: string | null } | null
-  replies_count: number
-  latest_reply?: InternalNoteReply | null
-  last_activity_at?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-}
-type InternalNotesResponse = {
-  data: InternalNote[]
-  summary: { open: number; in_progress: number; done: number; urgent: number; assigned_to_me: number }
-  options?: { statuses: InternalNoteStatus[]; priorities: InternalNotePriority[]; categories: string[] }
-}
 type AuditLog = { id: number; user: string; role: Role | null; action: string; subject_type: string; subject_id: number | null; subject_label: string | null; metadata?: Record<string, unknown> | null; created_at: string | null }
 type OperatorPerformance = { id: number; name: string; role: Role; branch: string | null; branch_area?: string | null; handled_chats_count: number; active_chats_count: number; rating_average: number; rating_score?: number; rating_confidence?: number; ratings_count: number; late_response_count: number }
 type Stats = { total_users: number; total_drivers: number; active_orders: number; suspended_drivers: number }
@@ -416,6 +400,7 @@ type SystemSettings = {
   live_price_review_delay_seconds?: number
   assign_driver_allowed_roles?: Role[]
   edit_tarif_allowed_roles?: Role[]
+  ai_data_allowed_roles?: Role[]
   feedback_templates?: {
     driver_accepted?: string
     order_auto_cancelled?: string
@@ -472,6 +457,7 @@ type Permissions = {
   can_manage_ring_pricing?: boolean
   can_manage_users: boolean
   can_manage_all_branches?: boolean
+  can_suspend_customers?: boolean
   can_suspend_drivers: boolean
   can_unsuspend_drivers?: boolean
   can_manage_driver_deposit?: boolean
@@ -479,6 +465,8 @@ type Permissions = {
   can_manage_driver_auth?: boolean
   can_manage_system_settings: boolean
   can_manage_cms?: boolean
+  can_manage_ai_data?: boolean
+  can_manage_ai_access?: boolean
   can_edit_order_price: boolean
   can_create_manual_order: boolean
   can_view_report?: boolean
@@ -487,10 +475,10 @@ type Permissions = {
   can_monitor_live_chat?: boolean
   can_view_dispatch_repost_audit?: boolean
   can_use_internal_chat?: boolean
-  can_use_internal_notes?: boolean
   can_approve_cancel_order?: boolean
   can_reject_cancel_order?: boolean
   can_approve_oper_handle?: boolean
+  can_reject_oper_handle?: boolean
   can_assign_driver?: boolean
   allowed_views?: View[]
 }
@@ -674,7 +662,6 @@ const menuGroups: MenuGroup[] = [
       { id: 'chats', label: 'Chat Monitor', icon: 'chat' },
       { id: 'internal-chat', label: 'Internal Chat', icon: 'chat' },
       { id: 'audit-logs', label: 'Audit Logs', icon: 'receipt' },
-      { id: 'sticky-notes', label: 'Sticky Notes', icon: 'note' },
       { id: 'manual-order', label: 'Manual Order', icon: 'plus' },
       { id: 'live-price-reviews', label: 'Live Edit Harga', icon: 'cash' },
     ],
@@ -712,8 +699,24 @@ const menuGroups: MenuGroup[] = [
     label: 'JojoBot',
     icon: 'note',
     items: [
-      { id: 'keyword-parsers', label: 'Keyword Parsers', icon: 'note' },
       { id: 'order-crew-rules', label: 'Order Crew Rules', icon: 'settings' },
+    ],
+  },
+  {
+    id: 'ai-cms',
+    label: 'AI',
+    icon: 'settings',
+    items: [
+      { id: 'keyword-parsers', label: 'Keyword & Form Builder', icon: 'note' },
+      { id: 'jojobot-field-schema-reference', label: 'Field Schema Reference', icon: 'note' },
+      { id: 'jojobot-template-parser-lab', label: 'Template Parser Lab', icon: 'settings' },
+      { id: 'ai-parser-rules', label: 'AI Parser Memory', icon: 'note' },
+      { id: 'ai-alias-maps', label: 'AI Alias Map', icon: 'map' },
+      { id: 'ai-location-suggestions', label: 'AI Location Learning', icon: 'pin' },
+      { id: 'location-pois', label: 'Master Location POI', icon: 'pin' },
+      { id: 'ai-logs', label: 'AI Logs', icon: 'receipt' },
+      { id: 'ai-monitoring', label: 'AI Monitoring', icon: 'chart' },
+      { id: 'ai-nlp-settings', label: 'AI NLP OpenRouter', icon: 'settings' },
     ],
   },
   {
@@ -746,7 +749,8 @@ function adminViewFromHistoryState(state: unknown) {
 }
 
 function allowedViewsFor(role: Role, permissions: Permissions): View[] {
-  if (role === 'admin' || role === 'gm') return allMenus.map((item) => item.id)
+  if (role === 'admin') return allMenus.map((item) => item.id)
+  if (role === 'gm') return allMenus.map((item) => item.id).filter((id) => id !== 'ai-nlp-settings')
 
   if (Array.isArray(permissions.allowed_views) && permissions.allowed_views.length > 0) {
     const allowed = allMenus.map((item) => item.id).filter((id) => permissions.allowed_views?.includes(id))
@@ -763,14 +767,23 @@ function allowedViewsFor(role: Role, permissions: Permissions): View[] {
   if (permissions.can_suspend_drivers || permissions.can_unsuspend_drivers || permissions.can_manage_driver_deposit || permissions.can_update_driver_config) views.add('drivers')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) views.add('pricing')
   if (permissions.can_edit_order_price || permissions.can_manage_policy) {
-    views.add('keyword-parsers')
     views.add('pricing-keyword-rules')
+  }
+  if (permissions.can_manage_ai_data) {
+    views.add('keyword-parsers')
+    views.add('jojobot-field-schema-reference')
+    views.add('jojobot-template-parser-lab')
+    views.add('ai-parser-rules')
+    views.add('ai-alias-maps')
+    views.add('ai-location-suggestions')
+    views.add('location-pois')
+    views.add('ai-logs')
+    views.add('ai-monitoring')
   }
   if (permissions.can_view_report) views.add('reports')
   if (permissions.can_monitor_live_chat) views.add('chats')
   if (permissions.can_use_internal_chat) views.add('internal-chat')
   if (permissions.can_use_internal_chat || permissions.can_view_report) views.add('audit-logs')
-  if (permissions.can_use_internal_notes) views.add('sticky-notes')
   if (permissions.can_create_manual_order) {
     views.add('manual-order')
     views.add('live-price-reviews')
@@ -814,6 +827,7 @@ function App() {
     management: true,
     'pricing-cms': true,
     'jojobot-cms': false,
+    'ai-cms': false,
     area: false,
     'system-cms': false,
   })
@@ -843,7 +857,10 @@ function App() {
     if (!silent) setLoading(true)
     setError('')
     try {
-      const payload = await api<Bootstrap>(`/admin/bootstrap?view=${encodeURIComponent(view)}`)
+      const params = new URLSearchParams({ view })
+      const shouldLoadLiteDashboard = view === 'dashboard'
+      if (shouldLoadLiteDashboard) params.set('lite', '1')
+      const payload = await api<Bootstrap>(`/admin/bootstrap?${params.toString()}`)
       const pendingOperHandles = (payload.oper_handles ?? []).filter((item) => item.status === 'pending').length
 
       if (silent && lastOperHandlePendingRef.current !== null && pendingOperHandles > lastOperHandlePendingRef.current) {
@@ -854,6 +871,7 @@ function App() {
       lastOperHandlePendingRef.current = pendingOperHandles
       setData(payload)
       setLastSyncedAt(new Date())
+
     } catch (error) {
       if (isAuthError(error)) return
       const message = error instanceof Error ? error.message : 'Failed to load admin data'
@@ -918,6 +936,7 @@ function App() {
     ordersChannel.listen('.order.created', () => void load(true))
     ordersChannel.listen('.order.status.updated', () => void load(true))
     ordersChannel.listen('.driver.accepted', () => void load(true))
+    ordersChannel.listen('.oper-handle.updated', () => void load(true))
 
     return () => {
       echo.leave('orders')
@@ -1204,8 +1223,13 @@ function App() {
         {safeView === 'users' && <UsersPanel users={filteredUsers} totalUsers={serverUsersTotal} isLoading={usersLoading} branches={data.branches} me={data.me} roleFilter={roleFilter} onRoleFilterChange={setRoleFilter} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'drivers' && <DriverManagementPanel drivers={data.drivers} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} initialListMode={driverListMode} />}
         {safeView === 'settings' && <SystemSettingsPanel settings={data.system_settings} permissions={data.permissions} api={api} onChanged={refresh} />}
-        {isBackendCmsView(safeView) && <BackendCmsLinkPanel view={safeView} />}
+        {isBackendCmsView(safeView) && !nativeAiEditorViews.has(safeView) && <BackendCmsLinkPanel view={safeView} />}
         {safeView === 'keyword-parsers' && <KeywordParsersPanel parsers={data.keyword_parsers ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
+        {safeView === 'jojobot-field-schema-reference' && <AiSchemaReferencePanel onNavigate={setView} />}
+        {safeView === 'ai-parser-rules' && <AiParserRulesPanel api={api} />}
+        {safeView === 'ai-alias-maps' && <AiAliasMapsPanel api={api} />}
+        {safeView === 'ai-location-suggestions' && <AiLocationLearningPanel api={api} />}
+        {safeView === 'location-pois' && <LocationPoisPanel api={api} />}
         {safeView === 'pricing-keyword-rules' && <PricingKeywordRulesPanel rules={data.pricing_keyword_rules ?? []} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'zone-pricing' && <ZonePricingPanel rules={data.zone_pricing_rules ?? []} branches={data.branches} geofences={data.geofences} services={data.services} permissions={data.permissions} api={api} onChanged={refresh} />}
         {safeView === 'zone-pricing-tester' && <ZonePricingTesterPanel branches={data.branches} geofences={data.geofences} services={data.services} api={api} />}
@@ -1213,8 +1237,7 @@ function App() {
         {safeView === 'chats' && <AdminChatPanel initialChats={data.chats} api={api} me={data.me} token={token} permissions={data.permissions} notificationSound={notificationSound} targetDriverUserId={chatDriverTargetId} onTargetDriverHandled={clearChatDriverTarget} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'internal-chat' && <InternalChatPanel api={api} me={data.me} branches={data.branches} users={data.users} orders={data.orders} onOpenOrder={(code) => { setQuery(code); setView('orders') }} />}
         {safeView === 'audit-logs' && <AuditLogsPanel initialLogs={data.audit_logs} api={api} />}
-        {safeView === 'sticky-notes' && <StickyNotesPanel api={api} me={data.me} users={data.users} branches={data.branches} />}
-        {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} api={api} onChanged={refresh} />}
+        {safeView === 'manual-order' && <ManualOrderPanel me={data.me} branches={data.branches} orders={data.orders} operHandles={data.oper_handles ?? []} auditLogs={data.audit_logs} permissions={data.permissions} api={api} onChanged={refresh} onOpenDriverChat={(driverUserId) => { setChatDriverTargetId(driverUserId); setView('chats') }} />}
         {safeView === 'live-price-reviews' && <LivePriceReviewPanel reviews={data.live_price_reviews ?? []} api={api} onChanged={refresh} />}
         {safeView === 'branches' && <BranchesPanel branches={data.branches} me={data.me} api={api} onChanged={refresh} />}
         {safeView === 'geofence' && <GeofencePanel geofences={data.geofences} />}
@@ -1442,7 +1465,7 @@ function Dashboard({ data, api, buildInfo, onChanged, onNavigate, onOpenDrivers,
       <DashboardLivePriceReview reviews={data.live_price_reviews ?? []} api={api} onChanged={onChanged} onNavigate={() => onNavigate('live-price-reviews')} />
       {showDeferredDashboard ? (
         <>
-          <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />
+          {data.drivers.some((driver) => driver.performance && Object.keys(driver.performance).length > 0) && <DriverPerformanceSnapshot drivers={data.drivers} onOpenDrivers={() => onOpenDrivers('all')} />}
           <OperatorPerformanceSnapshot operators={data.operator_performance ?? []} onOpenChats={() => onNavigate('chats')} />
           <RecentActivity orders={data.orders} onOpenOrder={onOpenOrder} />
           <PriceEditActivity auditLogs={data.audit_logs} />
@@ -1727,7 +1750,7 @@ function EksekutorDashboard({ data, api, onChanged, onNavigate, onOpenOrder }: {
       {dispatchMessage && <div className="dispatch-toast">{dispatchMessage}</div>}
 
       {assignOrder && <AssignDriverModal order={assignOrder} api={api} onClose={() => setAssignOrder(null)} onAssigned={async () => { await onChanged(); setAssignOrder(null) }} />}
-      <PriceEditActivity auditLogs={data.audit_logs} />
+      <PriceEditActivity auditLogs={data.audit_logs} title="History Live Edit Harga" emptyCopy="Riwayat live edit harga operator dan eksekutor akan tampil di sini." />
       {data.permissions.can_view_dispatch_repost_audit && <DispatchRepostActivity auditLogs={data.audit_logs} />}
     </div>
   )
@@ -1839,7 +1862,7 @@ function DashboardLivePriceReview({ reviews, api, onChanged, onNavigate }: { rev
   }, [api, isEditing, onChanged, rows, savingId])
 
   useEffect(() => {
-    const interval = window.setInterval(() => void syncReviews(), 7000)
+    const interval = window.setInterval(() => void syncReviews(), 3000)
     const onFocus = () => void syncReviews()
 
     window.addEventListener('focus', onFocus)
@@ -1954,14 +1977,14 @@ function RecentActivity({ orders, onOpenOrder }: { orders: Order[]; onOpenOrder:
   return <section className="panel activity-panel compact-activity"><PanelHeader title="Recent order activity" action="Ringkas" /><div className="activity-list">{orders.slice(0, 5).map((order) => <div className="activity-item order-activity-item compact" key={order.id}><div><button className="order-code-link inline" type="button" onClick={() => onOpenOrder(order.code)}>{order.code}</button><span>{order.customer || '-'} - {order.service}</span>{order.status === 'CANCELLED' && <em>{order.cancel_reason || 'Dibatalkan tanpa alasan tersimpan.'}</em>}</div><StatusBadge status={order.status} /></div>)}</div></section>
 }
 
-function PriceEditActivity({ auditLogs }: { auditLogs: AuditLog[] }) {
+function PriceEditActivity({ auditLogs, title = 'History edit harga', emptyCopy = 'Log operator dan eksekutor yang mengubah harga akan tampil di sini.' }: { auditLogs: AuditLog[]; title?: string; emptyCopy?: string }) {
   const logs = auditLogs.filter((log) => isPriceAuditLog(log)).slice(0, 6)
 
   return (
     <section className="panel activity-panel compact-activity">
-      <PanelHeader title="History edit harga" action={`${logs.length} log`} />
+      <PanelHeader title={title} action={`${logs.length} log`} />
       <div className="activity-list">
-        {logs.length === 0 && <EmptyPanel title="Belum ada edit harga" copy="Log operator dan eksekutor yang mengubah harga akan tampil di sini." />}
+        {logs.length === 0 && <EmptyPanel title="Belum ada edit harga" copy={emptyCopy} />}
         {logs.map((log) => (
           <div className="activity-item order-activity-item compact" key={log.id}>
             <div>
@@ -2221,6 +2244,7 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
   const roleOptions = useMemo(() => visibleUserRoleOptions(me.role, permissions), [me.role, permissions])
   const canEditUser = (user: User) => permissions.can_manage_users && user.id !== me.id && (['admin', 'gm'].includes(me.role) || !['admin', 'gm'].includes(user.role))
   const canAdministerUser = (user: User) => canEditUser(user) && (['admin', 'gm'].includes(me.role) || permissions.names.includes('create_user'))
+  const canSuspendCustomer = (user: User) => Boolean(permissions.can_suspend_customers) && canEditUser(user) && user.role === 'customer'
   const selectedUser = useMemo(() => users.find((user) => user.id === selectedUserId) ?? users[0] ?? null, [selectedUserId, users])
   useEffect(() => {
     if (users.length === 0) {
@@ -2245,6 +2269,20 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
   const destroy = async (user: User) => {
     if (!confirm(`Delete ${user.username}?`)) return
     await api(`/admin/users/${user.id}`, { method: 'DELETE' })
+    await onChanged()
+  }
+  const toggleCustomerSuspend = async (user: User) => {
+    const releasing = user.is_suspended
+    const reason = releasing
+      ? ''
+      : window.prompt(`Alasan suspend customer ${user.username}:`, 'Terindikasi order fiktif')?.trim()
+    if (!releasing && reason === undefined) return
+    if (!confirm(`${releasing ? 'Release suspend' : 'Suspend/lock'} customer ${user.username}?`)) return
+
+    await api(`/admin/users/${user.id}/${releasing ? 'release-customer' : 'suspend-customer'}`, {
+      method: 'POST',
+      body: JSON.stringify(releasing ? {} : { reason: reason || 'Terindikasi order fiktif' }),
+    })
     await onChanged()
   }
   return (
@@ -2315,6 +2353,11 @@ function UsersPanel({ users, totalUsers, isLoading, branches, me, roleFilter, on
                 <span>Aksi akun</span>
                 <div>
                   {canEditUser(selectedUser) && <button className="mini-button" type="button" onClick={() => setEditingUser(selectedUser)}>Edit</button>}
+                  {canSuspendCustomer(selectedUser) && (
+                    <button className={selectedUser.is_suspended ? 'mini-button approve' : 'mini-button reject'} type="button" onClick={() => void toggleCustomerSuspend(selectedUser)}>
+                      {selectedUser.is_suspended ? 'Release Customer' : 'Lock/Suspend'}
+                    </button>
+                  )}
                   {canAdministerUser(selectedUser) && <button className="mini-button" type="button" onClick={() => void resetPassword(selectedUser)}>Reset Pass</button>}
                   {canAdministerUser(selectedUser) && selectedUser.role === 'customer' && <button className="mini-button" type="button" onClick={() => void resetToken(selectedUser)}>Reset Token</button>}
                   {canAdministerUser(selectedUser) && <button className="mini-button reject" type="button" onClick={() => void destroy(selectedUser)}>Delete</button>}
@@ -2911,6 +2954,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
   const [livePriceReviewDelaySeconds, setLivePriceReviewDelaySeconds] = useState(settings.live_price_review_delay_seconds ?? 5)
   const [assignDriverAllowedRoles, setAssignDriverAllowedRoles] = useState<Role[]>(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
   const [editTarifAllowedRoles, setEditTarifAllowedRoles] = useState<Role[]>(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
+  const [aiDataAllowedRoles, setAiDataAllowedRoles] = useState<Role[]>(settings.ai_data_allowed_roles ?? defaultAiDataRoles())
   const [feedbackTemplates, setFeedbackTemplates] = useState({
     driver_accepted: settings.feedback_templates?.driver_accepted ?? '',
     order_auto_cancelled: settings.feedback_templates?.order_auto_cancelled ?? '',
@@ -2939,6 +2983,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
     setLivePriceReviewDelaySeconds(settings.live_price_review_delay_seconds ?? 5)
     setAssignDriverAllowedRoles(settings.assign_driver_allowed_roles ?? ['operator', 'eksekutor'])
     setEditTarifAllowedRoles(settings.edit_tarif_allowed_roles ?? defaultEditTarifRoles())
+    setAiDataAllowedRoles(settings.ai_data_allowed_roles ?? defaultAiDataRoles())
     setFeedbackTemplates({
       driver_accepted: settings.feedback_templates?.driver_accepted ?? '',
       order_auto_cancelled: settings.feedback_templates?.order_auto_cancelled ?? '',
@@ -2973,6 +3018,7 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
           live_price_review_delay_seconds: livePriceReviewDelaySeconds,
           assign_driver_allowed_roles: assignDriverAllowedRoles,
           edit_tarif_allowed_roles: editTarifAllowedRoles,
+          ...(permissions.can_manage_ai_access ? { ai_data_allowed_roles: aiDataAllowedRoles } : {}),
           feedback_templates: feedbackTemplates,
         }),
       })
@@ -3205,6 +3251,29 @@ function SystemSettingsPanel({ settings, permissions, api, onChanged }: { settin
       <div className="feedback-cms">
         <div className="section-head">
           <div>
+            <h2>AI Data Input</h2>
+            <p>Pilih role yang boleh mengisi dan mengoreksi AI Parser, Alias Map, Location Learning, Master POI, serta Keyword Builder. Admin dan GM selalu aktif.</p>
+          </div>
+          <span className="status info">AI</span>
+        </div>
+        <div className="service-check-grid assign-role-grid">
+          {aiDataRoleOptions.map((role) => (
+            <label className="toggle-row" key={role.value}>
+              <input
+                type="checkbox"
+                checked={aiDataAllowedRoles.includes(role.value)}
+                disabled={!permissions.can_manage_ai_access}
+                onChange={() => setAiDataAllowedRoles((current) => toggleRoleValue(current, role.value))}
+              />
+              {role.label}
+            </label>
+          ))}
+        </div>
+        <div className="notice">{permissions.can_manage_ai_access ? 'Perubahan berlaku pada menu FE Admin, endpoint input, dan halaman AI di Backend setelah disimpan.' : 'Hanya Admin atau GM yang dapat mengubah izin pengisian data AI.'}</div>
+      </div>
+      <div className="feedback-cms">
+        <div className="section-head">
+          <div>
             <h2>Feedback Customer</h2>
             <p>Template ucapan realtime untuk customer. Placeholder: {'{order_code}'}, {'{service}'}, {'{driver_name}'}, {'{customer_name}'}, {'{reason}'}.</p>
           </div>
@@ -3348,6 +3417,26 @@ function OperHandleQueue({ operHandles, api, permissions, onChanged, onSelectOrd
     }
   }
 
+  const reject = async (item: OperHandle) => {
+    const reason = window.prompt('Alasan menolak oper handle (opsional):', '')
+    if (reason === null) return
+    setSavingId(item.id)
+    setMessage('')
+    try {
+      const payload = await api<{ message?: string }>(`/admin/oper-handles/${item.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() || undefined }),
+      })
+      setMessage(payload.message ?? 'Oper handle ditolak.')
+      await onChanged()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Reject oper handle gagal.')
+    } finally {
+      setSavingId(null)
+      window.setTimeout(() => setMessage(''), 3600)
+    }
+  }
+
   if (operHandles.length === 0) return null
 
   return (
@@ -3369,13 +3458,14 @@ function OperHandleQueue({ operHandles, api, permissions, onChanged, onSelectOrd
               <p>{item.reason || 'Tidak ada alasan tertulis.'}</p>
             </div>
             <div className="oper-handle-approval-steps">
-              <span className={item.operator_approved_at ? 'status success' : 'status warning'}>Operator {item.operator_approved_at ? 'OK' : 'pending'}</span>
-              <span className={item.spv_approved_at ? 'status success' : 'status warning'}>SPV {item.spv_approved_at ? 'OK' : 'pending'}</span>
+              <span className={item.status === 'approved' ? 'status success' : item.status === 'rejected' ? 'status danger' : 'status warning'}>{item.status === 'pending' ? 'Menunggu keputusan' : item.status}</span>
+              {item.decided_by && <span>{item.decided_by}</span>}
             </div>
-            {permissions.can_approve_oper_handle && item.status === 'pending' && (
-              <button className="mini-button approve" type="button" disabled={savingId === item.id} onClick={() => void approve(item)}>
-                {savingId === item.id ? 'Menyimpan...' : 'Approve'}
-              </button>
+            {item.status === 'pending' && (
+              <div className="oper-handle-admin-actions">
+                {permissions.can_approve_oper_handle && <button className="mini-button approve" type="button" disabled={savingId === item.id} onClick={() => void approve(item)}>{savingId === item.id ? 'Menyimpan...' : 'Approve'}</button>}
+                {permissions.can_reject_oper_handle && <button className="mini-button reject" type="button" disabled={savingId === item.id} onClick={() => void reject(item)}>Reject</button>}
+              </div>
             )}
           </article>
         ))}
@@ -3827,6 +3917,51 @@ const backendCmsLinks: Partial<Record<View, { title: string; path: string; copy:
     path: '/admin/order-crew-rules',
     copy: 'Atur rule multi crew seperti rider/helper, keyword pemicu, timeout helper, dan harga helper dari backend CMS.',
   },
+  'ai-parser-rules': {
+    title: 'AI Parser Memory',
+    path: '/admin/ai-parser-rules',
+    copy: 'Kelola contoh teks dan hasil parsing yang menjadi memory koreksi JOJOBOT.',
+  },
+  'jojobot-field-schema-reference': {
+    title: 'Field Schema Reference',
+    path: '/admin/jojobot-field-schema-reference',
+    copy: 'Baca referensi field dan schema parser yang dipakai form serta data order.',
+  },
+  'jojobot-template-parser-lab': {
+    title: 'Template Parser Lab',
+    path: '/admin/jojobot-template-parser-lab',
+    copy: 'Uji teks order pada parser dan pricing dalam mode preview tanpa menyimpan perubahan.',
+  },
+  'ai-alias-maps': {
+    title: 'AI Alias Map',
+    path: '/admin/ai-alias-maps',
+    copy: 'Peta alias nama lokasi customer ke area dan region GeoJSON resmi.',
+  },
+  'ai-location-suggestions': {
+    title: 'AI Location Learning',
+    path: '/admin/ai-location-suggestions',
+    copy: 'Review suggestion lokasi hasil pembelajaran dan approve menjadi Master POI.',
+  },
+  'location-pois': {
+    title: 'Master Location POI',
+    path: '/admin/location-pois',
+    copy: 'Isi lokasi referensi dan alias yang dipakai parser untuk mengenali pickup atau tujuan.',
+  },
+  'ai-logs': {
+    title: 'AI Logs',
+    path: '/admin/ai-logs',
+    copy: 'Lihat proses, hasil, dan error AI untuk audit pembelajaran.',
+  },
+  'ai-monitoring': {
+    title: 'AI Monitoring',
+    path: '/admin/ai-monitoring',
+    copy: 'Pantau status provider, queue, dan keamanan proses AI.',
+  },
+  'ai-nlp-settings': {
+    title: 'AI NLP OpenRouter',
+    path: '/admin/ai-nlp-settings',
+    copy: 'Konfigurasi provider dan API key NLP. Menu sensitif ini hanya terbuka untuk Admin.',
+  },
   banners: {
     title: 'Banners',
     path: '/admin/banners',
@@ -3853,44 +3988,72 @@ function isBackendCmsView(view: View) {
   return Boolean(backendCmsLinks[view])
 }
 
+const homeCmsPreviewViews = new Set<View>(['banners', 'home-sections', 'home-items', 'announcements'])
+const nativeAiEditorViews = new Set<View>(['jojobot-field-schema-reference', 'ai-parser-rules', 'ai-alias-maps', 'ai-location-suggestions', 'location-pois'])
+
 function BackendCmsLinkPanel({ view }: { view: View }) {
   const link = backendCmsLinks[view]
+  if (!link) return null
+
+  if (!homeCmsPreviewViews.has(view)) {
+    return (
+      <section className="panel backend-cms-panel home-cms-preview-panel">
+        <div className="backend-cms-head">
+          <div>
+            <span className="eyebrow">Backend CMS</span>
+            <h2>{link.title}</h2>
+            <p>{link.copy}</p>
+          </div>
+          <a className="primary-link-button" href={`${APP_BASE}${link.path}`} target="_blank" rel="noreferrer">
+            Buka di Backend
+          </a>
+        </div>
+      </section>
+    )
+  }
+
+  return <HomeCmsLinkPanel view={view} link={link} />
+}
+
+function HomeCmsLinkPanel({ view, link }: { view: View; link: { title: string; path: string; copy: string } }) {
   const [cms, setCms] = useState<AdminHomeCmsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError('')
-    fetch(`${API_BASE}/home`, { headers: { Accept: 'application/json' } })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        return response.json()
-      })
-      .then((payload: AdminHomeCmsData) => {
-        if (!active) return
-        setCms({
-          banners: payload.banners ?? [],
-          sections: payload.sections ?? [],
-          items: payload.items ?? [],
-          announcements: payload.announcements ?? [],
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      setError('')
+      fetch(`${API_BASE}/home`, { headers: { Accept: 'application/json' } })
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          return response.json()
         })
-      })
-      .catch((fetchError) => {
-        if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat preview CMS')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+        .then((payload: AdminHomeCmsData) => {
+          if (!active) return
+          setCms({
+            banners: payload.banners ?? [],
+            sections: payload.sections ?? [],
+            items: payload.items ?? [],
+            announcements: payload.announcements ?? [],
+          })
+        })
+        .catch((fetchError) => {
+          if (!active) return
+          setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat preview CMS')
+        })
+        .finally(() => {
+          if (active) setLoading(false)
+        })
+    }, 0)
 
     return () => {
       active = false
+      window.clearTimeout(timer)
     }
   }, [])
 
-  if (!link) return null
   const stats = cms ? cmsStats(cms) : []
 
   return (
@@ -4004,7 +4167,7 @@ function cmsDateRange(start?: string | null, end?: string | null) {
 function KeywordParsersPanel({ parsers, services, permissions, api, onChanged }: { parsers: KeywordParser[]; services: ServiceRow[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void> }) {
   const [showForm, setShowForm] = useState(false)
   const [message, setMessage] = useState('')
-  const canManage = permissions.can_edit_order_price || permissions.can_manage_policy
+  const canManage = permissions.can_manage_ai_data === true
   const serviceOptions = services.map((service) => ({ label: `${service.name} (${service.code})`, value: service.code.toUpperCase() }))
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
@@ -4068,6 +4231,276 @@ function KeywordParsersPanel({ parsers, services, permissions, api, onChanged }:
         ))}
       </div>
       {parsers.length === 0 && <EmptyPanel title="Keyword parser kosong" copy="Tambahkan keyword agar JojoBot bisa memilih layanan dan schema form." />}
+    </section>
+  )
+}
+
+function AiSchemaReferencePanel({ onNavigate }: { onNavigate: (view: View) => void }) {
+  const groups = [
+    { title: 'Belanja / Delivery', fields: ['store_location - alamat pembelian', 'destination_address - alamat antar', 'items - daftar belanja'] },
+    { title: 'Ojek / Kurir', fields: ['pickup_address - titik jemput', 'destination_address - tujuan', 'notes - catatan order'] },
+    { title: 'Travel', fields: ['route - rute pilihan', 'date - tanggal perjalanan', 'seat - jumlah kursi'] },
+  ]
+
+  return (
+    <section className="panel keyword-cms-panel">
+      <div className="section-head">
+        <div><h2>Field Schema Reference</h2><p>Field yang dikenali JojoBot pada form customer.</p></div>
+        <button className="primary-button compact" type="button" onClick={() => onNavigate('keyword-parsers')}><Icon name="note" />Buka Keyword Builder</button>
+      </div>
+      <div className="master-pricing-grid">
+        {groups.map((group) => <article className="master-pricing-card" key={group.title}><span>{group.title}</span>{group.fields.map((field) => <small key={field}>{field}</small>)}</article>)}
+      </div>
+      <div className="notice">Input dan perubahan schema dilakukan dari menu Keyword & Form Builder; referensi ini tidak menyimpan data.</div>
+    </section>
+  )
+}
+
+function useAiDataList<T>(api: ApiClient, path: string) {
+  const [rows, setRows] = useState<T[]>([])
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    try {
+      const payload = await api<{ data: T[] }>(path)
+      setRows(payload.data ?? [])
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Data AI gagal dimuat.')
+    } finally {
+      setLoading(false)
+    }
+  }, [api, path])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void reload(), 0)
+    return () => window.clearTimeout(timer)
+  }, [reload])
+
+  return { rows, loading, message, setMessage, reload }
+}
+
+function useAiDataOptions(api: ApiClient) {
+  const [options, setOptions] = useState<AiDataOptions>({ branches: [], areas: [], regions: [] })
+
+  useEffect(() => {
+    let active = true
+    void api<AiDataOptions>('/admin/ai/options').then((payload) => {
+      if (active) setOptions(payload)
+    }).catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [api])
+
+  return options
+}
+
+function aliasesFromInput(value: FormDataEntryValue | null) {
+  return String(value ?? '').split(',').map((alias) => alias.trim()).filter(Boolean)
+}
+
+function optionalNumber(value: FormDataEntryValue | null) {
+  const text = String(value ?? '').trim()
+  return text === '' ? null : Number(text)
+}
+
+function AiParserRulesPanel({ api }: { api: ApiClient }) {
+  const { rows, loading, message, setMessage, reload } = useAiDataList<AiParserRule>(api, '/admin/ai/parser-rules')
+  const [showForm, setShowForm] = useState(false)
+
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const element = event.currentTarget
+    const form = new FormData(element)
+    const resultText = String(form.get('ai_data') ?? '').trim()
+    await api('/admin/ai/parser-rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        service_type: form.get('service_type'),
+        example_text: form.get('example_text'),
+        ai_data: JSON.parse(resultText),
+        provider: 'manual_cms',
+        model: 'cms',
+        is_active: form.get('is_active') === 'on',
+      }),
+    })
+    element.reset()
+    setShowForm(false)
+    setMessage('AI Parser Memory berhasil disimpan.')
+    await reload()
+  }
+
+  const destroy = async (row: AiParserRule) => {
+    if (!confirm(`Hapus memory parser untuk ${row.service_type}?`)) return
+    await api(`/admin/ai/parser-rules/${row.id}`, { method: 'DELETE' })
+    setMessage('AI Parser Memory berhasil dihapus.')
+    await reload()
+  }
+
+  return (
+    <section className="panel keyword-cms-panel">
+      <div className="section-head">
+        <div><h2>AI Parser Memory</h2><p>Contoh koreksi parsing aktif untuk JojoBot.</p></div>
+        <button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />{showForm ? 'Tutup' : 'Tambah Memory'}</button>
+      </div>
+      {message && <div className="notice success">{message}</div>}
+      {showForm && (
+        <form className="admin-inline-form keyword-create-form" onSubmit={(event) => void create(event).catch((error) => setMessage(error instanceof Error ? error.message : 'Gagal menyimpan memory.'))}>
+          <label>Service<input name="service_type" required placeholder="ojek" /></label>
+          <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
+          <label className="span-2">Contoh input user<textarea name="example_text" required placeholder="Jasa OJ dari..." /></label>
+          <label className="span-2">Parser result JSON<textarea name="ai_data" required defaultValue={'{\n  "service_type": "ojek",\n  "pickup_address": "",\n  "destination_address": ""\n}'} /></label>
+          <div className="ring-form-actions"><button className="secondary-button" type="button" onClick={() => setShowForm(false)}>Batal</button><button className="primary-button" type="submit">Simpan Memory</button></div>
+        </form>
+      )}
+      {loading && <div className="home-cms-empty">Memuat AI Parser Memory...</div>}
+      {!loading && <div className="keyword-rule-list">
+        {rows.map((row) => <article className="keyword-rule-card" key={row.id}><div><strong>{row.service_type}</strong><span>{row.example_text}</span><small>Dipakai {row.hit_count ?? 0} kali {row.updated_at ? ` | ${formatShortDateTime(row.updated_at)}` : ''}</small></div><span className={row.is_active ? 'status success' : 'status muted'}>{row.is_active ? 'Aktif' : 'Nonaktif'}</span><button className="mini-button reject" type="button" onClick={() => void destroy(row)}>Delete</button></article>)}
+      </div>}
+      {!loading && rows.length === 0 && <EmptyPanel title="Memory parser kosong" copy="Tambahkan koreksi pertama melalui form di atas." />}
+    </section>
+  )
+}
+
+function AiAliasMapsPanel({ api }: { api: ApiClient }) {
+  const { rows, loading, message, setMessage, reload } = useAiDataList<AiAliasMap>(api, '/admin/ai/alias-maps')
+  const options = useAiDataOptions(api)
+  const [showForm, setShowForm] = useState(false)
+
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const element = event.currentTarget
+    const form = new FormData(element)
+    await api('/admin/ai/alias-maps', {
+      method: 'POST',
+      body: JSON.stringify({
+        canonical_name: form.get('canonical_name'),
+        aliases: aliasesFromInput(form.get('aliases')),
+        branch_id: optionalNumber(form.get('branch_id')),
+        area_id: optionalNumber(form.get('area_id')),
+        geojson_region_id: Number(form.get('geojson_region_id')),
+        source: 'manual',
+        confidence: Number(form.get('confidence') || 80),
+        priority: Number(form.get('priority') || 0),
+        is_active: form.get('is_active') === 'on',
+      }),
+    })
+    element.reset()
+    setShowForm(false)
+    setMessage('AI Alias Map berhasil disimpan.')
+    await reload()
+  }
+
+  const destroy = async (row: AiAliasMap) => {
+    if (!confirm(`Hapus alias map ${row.canonical_name}?`)) return
+    await api(`/admin/ai/alias-maps/${row.id}`, { method: 'DELETE' })
+    setMessage('AI Alias Map berhasil dihapus.')
+    await reload()
+  }
+
+  return (
+    <section className="panel keyword-cms-panel">
+      <div className="section-head"><div><h2>AI Alias Map</h2><p>Pemetaan nama lokal ke wilayah GeoJSON.</p></div><button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />{showForm ? 'Tutup' : 'Tambah Alias'}</button></div>
+      {message && <div className="notice success">{message}</div>}
+      {showForm && <form className="admin-inline-form keyword-create-form" onSubmit={(event) => void create(event).catch((error) => setMessage(error instanceof Error ? error.message : 'Gagal menyimpan alias.'))}>
+        <label>Nama utama<input name="canonical_name" required /></label>
+        <label>Cabang<select name="branch_id"><option value="">-</option>{options.branches.map((item) => <option key={item.id} value={item.id}>{item.branch_code} - {item.name}</option>)}</select></label>
+        <label>Area<select name="area_id"><option value="">-</option>{options.areas.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)}</select></label>
+        <label>GeoJSON region<select name="geojson_region_id" required><option value="">Pilih region</option>{options.regions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="span-2">Alias, pisahkan koma<textarea name="aliases" placeholder="mimbaan barat, dekat panji" /></label>
+        <label>Confidence<input name="confidence" type="number" min="1" max="100" defaultValue="80" /></label>
+        <label>Priority<input name="priority" type="number" min="0" defaultValue="0" /></label>
+        <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" defaultChecked />Aktif</label>
+        <div className="ring-form-actions"><button className="primary-button" type="submit">Simpan Alias</button></div>
+      </form>}
+      {loading && <div className="home-cms-empty">Memuat AI Alias Map...</div>}
+      {!loading && <div className="keyword-rule-list">{rows.map((row) => <article className="keyword-rule-card" key={row.id}><div><strong>{row.canonical_name}</strong><span>{row.aliases?.join(', ') || '-'}</span><small>{row.geojson_region?.name ?? 'Region'} | confidence {row.confidence}%</small></div><span className={row.is_active ? 'status success' : 'status muted'}>{row.is_active ? 'Aktif' : 'Nonaktif'}</span><button className="mini-button reject" type="button" onClick={() => void destroy(row)}>Delete</button></article>)}</div>}
+      {!loading && rows.length === 0 && <EmptyPanel title="Alias map kosong" copy="Tambahkan alias lokasi melalui form di atas." />}
+    </section>
+  )
+}
+
+function AiLocationLearningPanel({ api }: { api: ApiClient }) {
+  const { rows, loading, message, setMessage, reload } = useAiDataList<AiLocationSuggestion>(api, '/admin/ai/location-suggestions')
+
+  const decide = async (row: AiLocationSuggestion, action: 'approve' | 'reject') => {
+    if (!confirm(`${action === 'approve' ? 'Approve' : 'Reject'} lokasi ${row.location_text}?`)) return
+    await api(`/admin/ai/location-suggestions/${row.id}/${action}`, { method: 'POST', body: JSON.stringify({}) })
+    setMessage(action === 'approve' ? 'Suggestion berhasil menjadi Master POI.' : 'Suggestion ditolak.')
+    await reload()
+  }
+
+  return (
+    <section className="panel keyword-cms-panel">
+      <div className="section-head"><div><h2>AI Location Learning</h2><p>Review lokasi hasil pembelajaran sebelum menjadi POI.</p></div></div>
+      {message && <div className="notice success">{message}</div>}
+      {loading && <div className="home-cms-empty">Memuat Location Learning...</div>}
+      {!loading && <div className="keyword-rule-list">{rows.map((row) => <article className="keyword-rule-card" key={row.id}><div><strong>{row.location_text}</strong><span>{row.role} | {row.aliases?.join(', ') || 'tanpa alias'}</span><small>Confidence {row.confidence}% | ditemukan {row.occurrence_count} kali</small></div><span className={row.status === 'approved' ? 'status success' : row.status === 'rejected' ? 'status muted' : 'status warning'}>{row.status}</span>{row.status === 'pending' && <><button className="mini-button approve" type="button" onClick={() => void decide(row, 'approve')}>Approve</button><button className="mini-button reject" type="button" onClick={() => void decide(row, 'reject')}>Reject</button></>}</article>)}</div>}
+      {!loading && rows.length === 0 && <EmptyPanel title="Belum ada suggestion" copy="Suggestion lokasi baru akan tampil saat AI menemukan lokasi dari order." />}
+    </section>
+  )
+}
+
+function LocationPoisPanel({ api }: { api: ApiClient }) {
+  const { rows, loading, message, setMessage, reload } = useAiDataList<LocationPoi>(api, '/admin/ai/location-pois')
+  const options = useAiDataOptions(api)
+  const [showForm, setShowForm] = useState(false)
+
+  const create = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const element = event.currentTarget
+    const form = new FormData(element)
+    await api('/admin/ai/location-pois', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: form.get('name'),
+        category: form.get('category') || null,
+        branch_id: optionalNumber(form.get('branch_id')),
+        area_id: optionalNumber(form.get('area_id')),
+        latitude: optionalNumber(form.get('latitude')),
+        longitude: optionalNumber(form.get('longitude')),
+        aliases: aliasesFromInput(form.get('aliases')),
+        source: 'manual',
+        confidence: Number(form.get('confidence') || 80),
+        priority: Number(form.get('priority') || 0),
+        is_active: form.get('is_active') === 'on',
+      }),
+    })
+    element.reset()
+    setShowForm(false)
+    setMessage('Master Location POI berhasil disimpan.')
+    await reload()
+  }
+
+  const destroy = async (row: LocationPoi) => {
+    if (!confirm(`Hapus POI ${row.name}?`)) return
+    await api(`/admin/ai/location-pois/${row.id}`, { method: 'DELETE' })
+    setMessage('Master Location POI berhasil dihapus.')
+    await reload()
+  }
+
+  return (
+    <section className="panel keyword-cms-panel">
+      <div className="section-head"><div><h2>Master Location POI</h2><p>Lokasi referensi aktif untuk parser dan pricing.</p></div><button className="primary-button compact" type="button" onClick={() => setShowForm((value) => !value)}><Icon name="plus" />{showForm ? 'Tutup' : 'Tambah POI'}</button></div>
+      {message && <div className="notice success">{message}</div>}
+      {showForm && <form className="admin-inline-form keyword-create-form" onSubmit={(event) => void create(event).catch((error) => setMessage(error instanceof Error ? error.message : 'Gagal menyimpan POI.'))}>
+        <label>Nama lokasi<input name="name" required /></label>
+        <label>Kategori<select name="category"><option value="destination">Tujuan</option><option value="pickup">Pickup</option><option value="store">Toko</option><option value="market">Pasar</option><option value="other">Lainnya</option></select></label>
+        <label>Cabang<select name="branch_id"><option value="">-</option>{options.branches.map((item) => <option key={item.id} value={item.id}>{item.branch_code} - {item.name}</option>)}</select></label>
+        <label>Area<select name="area_id"><option value="">-</option>{options.areas.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)}</select></label>
+        <label>Latitude<input name="latitude" type="number" step="any" /></label>
+        <label>Longitude<input name="longitude" type="number" step="any" /></label>
+        <label className="span-2">Alias, pisahkan koma<textarea name="aliases" /></label>
+        <label>Confidence<input name="confidence" type="number" min="1" max="100" defaultValue="80" /></label>
+        <label>Priority<input name="priority" type="number" min="0" defaultValue="0" /></label>
+        <label className="toggle-row inline-toggle"><input name="is_active" type="checkbox" />Aktif</label>
+        <div className="ring-form-actions"><button className="primary-button" type="submit">Simpan POI</button></div>
+      </form>}
+      {loading && <div className="home-cms-empty">Memuat Master POI...</div>}
+      {!loading && <div className="keyword-rule-list">{rows.map((row) => <article className="keyword-rule-card" key={row.id}><div><strong>{row.name}</strong><span>{row.aliases?.join(', ') || '-'} | {row.category || '-'}</span><small>{row.latitude && row.longitude ? `${row.latitude}, ${row.longitude}` : 'Koordinat belum diisi'} | Used {row.hit_count}</small></div><span className={row.is_active ? 'status success' : 'status muted'}>{row.is_active ? 'Aktif' : 'Nonaktif'}</span><button className="mini-button reject" type="button" onClick={() => void destroy(row)}>Delete</button></article>)}</div>}
+      {!loading && rows.length === 0 && <EmptyPanel title="Master POI kosong" copy="Tambahkan lokasi referensi melalui form di atas." />}
     </section>
   )
 }
@@ -5285,12 +5718,12 @@ function auditLogSummary(log: AuditLog) {
 
   if (log.action === 'assigned_driver_to_order') {
     const actor = value('assigned_by_name') || log.user
-    const driver = value('assigned_driver_name') || value('assigned_driver_username') || value('driver_id') || 'driver'
+    const driver = value('assigned_driver_username') || value('assigned_driver_name') || value('driver_id') || 'driver'
     const username = value('assigned_driver_username')
     const order = value('order_code') || log.subject_label || (log.subject_id ? `#${log.subject_id}` : 'order')
     const area = value('area_name') || value('branch_name')
     const reason = value('reason')
-    return `${actor} menugaskan ${driver}${username ? ` (@${username})` : ''} ke ${order}${area ? ` - ${area}` : ''}${reason ? `. Alasan: ${reason}` : ''}`
+    return `${actor} menugaskan ${driver}${username && username !== driver ? ` (@${username})` : ''} ke ${order}${area ? ` - ${area}` : ''}${reason ? `. Alasan: ${reason}` : ''}`
   }
 
   if (log.action === 'broadcast_pending_order_to_drivers') {
@@ -5763,228 +6196,6 @@ function mentionedOrderCodes(text: string, orders: Order[]) {
     .map((order) => order.code)
 }
 
-function StickyNotesPanel({ api, me, users, branches }: { api: ApiClient; me: User; users: User[]; branches: Branch[] }) {
-  const [notes, setNotes] = useState<InternalNote[]>([])
-  const [summary, setSummary] = useState<InternalNotesResponse['summary']>({ open: 0, in_progress: 0, done: 0, urgent: 0, assigned_to_me: 0 })
-  const [activeId, setActiveId] = useState<number | null>(null)
-  const [statusFilter, setStatusFilter] = useState<InternalNoteStatus | 'all'>('all')
-  const [query, setQuery] = useState('')
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [priority, setPriority] = useState<InternalNotePriority>('normal')
-  const [category, setCategory] = useState('operasional')
-  const [assignedToId, setAssignedToId] = useState('')
-  const [branchId, setBranchId] = useState(() => String(me.branch_id ?? ''))
-  const [reply, setReply] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const staffUsers = users.filter((user) => !['driver', 'customer'].includes(user.role))
-  const activeNote = notes.find((note) => note.id === activeId) ?? notes[0] ?? null
-  const filteredNotes = notes.filter((note) => {
-    const matchesStatus = statusFilter === 'all' || note.status === statusFilter
-    const haystack = `${note.title} ${note.body} ${note.author?.name ?? ''} ${note.assigned_to?.name ?? ''} ${note.branch?.name ?? ''} ${note.branch?.area ?? ''}`.toLowerCase()
-    return matchesStatus && haystack.includes(query.toLowerCase())
-  })
-  const boardStatuses: InternalNoteStatus[] = ['open', 'in_progress', 'done']
-
-  const loadNotes = useCallback(async () => {
-    try {
-      const params = new URLSearchParams()
-      if (statusFilter !== 'all') params.set('status', statusFilter)
-      if (query.trim()) params.set('q', query.trim())
-      const payload = await api<InternalNotesResponse>(`/admin/internal-notes${params.toString() ? `?${params}` : ''}`)
-      setNotes(payload.data)
-      setSummary(payload.summary)
-      setActiveId((current) => current ?? payload.data[0]?.id ?? null)
-      setError('')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Gagal memuat sticky notes')
-    }
-  }, [api, query, statusFilter])
-
-  useEffect(() => {
-    void loadNotes()
-    const timer = window.setInterval(() => void loadNotes(), 10000)
-    return () => window.clearInterval(timer)
-  }, [loadNotes])
-
-  const createNote = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!title.trim() || !body.trim() || loading) return
-    setLoading(true)
-    try {
-      const payload = await api<{ data: InternalNote }>('/admin/internal-notes', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: title.trim(),
-          body: body.trim(),
-          priority,
-          category,
-          assigned_to_id: assignedToId ? Number(assignedToId) : null,
-          branch_id: branchId ? Number(branchId) : null,
-        }),
-      })
-      setNotes((rows) => [payload.data, ...rows])
-      setActiveId(payload.data.id)
-      setTitle('')
-      setBody('')
-      setPriority('normal')
-      setCategory('operasional')
-      setAssignedToId('')
-      setError('')
-      void loadNotes()
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Sticky note gagal dibuat')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const updateNote = async (note: InternalNote, updates: Partial<Pick<InternalNote, 'status' | 'priority' | 'category'>>) => {
-    try {
-      const payload = await api<{ data: InternalNote }>(`/admin/internal-notes/${note.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-      })
-      setNotes((rows) => rows.map((item) => item.id === note.id ? payload.data : item))
-      setError('')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Update sticky note gagal')
-    }
-  }
-
-  const sendReply = async () => {
-    if (!activeNote || !reply.trim()) return
-    try {
-      const payload = await api<{ data: InternalNoteReply }>(`/admin/internal-notes/${activeNote.id}/replies`, {
-        method: 'POST',
-        body: JSON.stringify({ body: reply.trim() }),
-      })
-      setNotes((rows) => rows.map((note) => note.id === activeNote.id ? { ...note, latest_reply: payload.data, replies_count: note.replies_count + 1, last_activity_at: payload.data.created_at } : note))
-      setReply('')
-      setError('')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Balasan note gagal dikirim')
-    }
-  }
-
-  return (
-    <section className="sticky-notes-shell">
-      <aside className="panel sticky-note-compose">
-        <PanelHeader title="Sticky Notes" action={`${notes.length} note`} />
-        <div className="sticky-note-summary">
-          <span><b>{summary.open}</b> Open</span>
-          <span><b>{summary.in_progress}</b> Progress</span>
-          <span><b>{summary.urgent}</b> Urgent</span>
-          <span><b>{summary.assigned_to_me}</b> Untuk saya</span>
-        </div>
-        <form onSubmit={createNote}>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul singkat, contoh: Follow up QRIS" />
-          <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Tulis masukan, bug, todo, atau hal yang perlu ditindaklanjuti..." />
-          <div className="sticky-form-grid">
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="operasional">Operasional</option>
-              <option value="bug">Bug</option>
-              <option value="ide">Ide</option>
-              <option value="follow_up">Follow up</option>
-              <option value="customer">Customer</option>
-              <option value="driver">Driver</option>
-            </select>
-            <select value={priority} onChange={(event) => setPriority(event.target.value as InternalNotePriority)}>
-              <option value="low">Low</option>
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-              <option value="urgent">Urgent</option>
-            </select>
-            <select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}>
-              <option value="">Assign nanti</option>
-              {staffUsers.map((user) => <option key={user.id} value={user.id}>{user.name} - {roleLabels[user.role] ?? user.role}</option>)}
-            </select>
-            <select value={branchId} onChange={(event) => setBranchId(event.target.value)}>
-              <option value="">Global</option>
-              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}
-            </select>
-          </div>
-          <button className="primary-button" type="submit" disabled={loading || !title.trim() || !body.trim()}>{loading ? 'Menyimpan...' : '+ Tambah Note'}</button>
-        </form>
-        {error && <p className="error-text">{error}</p>}
-      </aside>
-
-      <main className="sticky-board">
-        <div className="panel sticky-toolbar">
-          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari note, user, area..." /></div>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as InternalNoteStatus | 'all')}>
-            <option value="all">Semua status</option>
-            <option value="open">Open</option>
-            <option value="in_progress">In progress</option>
-            <option value="done">Done</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
-        <div className="sticky-columns">
-          {boardStatuses.map((status) => (
-            <section className="panel sticky-column" key={status}>
-              <PanelHeader title={internalNoteStatusLabel(status)} action={`${filteredNotes.filter((note) => note.status === status).length}`} />
-              <div className="sticky-card-list">
-                {filteredNotes.filter((note) => note.status === status).map((note) => (
-                  <button key={note.id} className={activeNote?.id === note.id ? `sticky-card active ${note.priority}` : `sticky-card ${note.priority}`} onClick={() => setActiveId(note.id)}>
-                    <span className={`note-priority ${note.priority}`}>{internalNotePriorityLabel(note.priority)}</span>
-                    <strong>{note.title}</strong>
-                    <p>{note.body}</p>
-                    <footer>
-                      <small>{note.author?.name ?? 'System'}</small>
-                      <small>{note.branch ? `${note.branch.name}${note.branch.area ? ` - ${note.branch.area}` : ''}` : 'Global'}</small>
-                    </footer>
-                    {note.latest_reply && <em>{note.latest_reply.author?.name ?? 'Tim'}: {note.latest_reply.body}</em>}
-                  </button>
-                ))}
-                {filteredNotes.filter((note) => note.status === status).length === 0 && <EmptyPanel title="Kosong" copy="Tidak ada note di kolom ini." />}
-              </div>
-            </section>
-          ))}
-        </div>
-      </main>
-
-      <aside className="panel sticky-detail">
-        {!activeNote && <EmptyPanel title="Pilih note" copy="Detail, reply, dan aksi status tampil di sini." />}
-        {activeNote && (
-          <>
-            <div className="sticky-detail-head">
-              <span className={`note-priority ${activeNote.priority}`}>{internalNotePriorityLabel(activeNote.priority)}</span>
-              <h2>{activeNote.title}</h2>
-              <p>{activeNote.author?.name ?? 'System'} · {formatShortDateTime(activeNote.created_at)}</p>
-            </div>
-            <p className="sticky-detail-body">{activeNote.body}</p>
-            <div className="sticky-meta-grid">
-              <span><small>Status</small><b>{internalNoteStatusLabel(activeNote.status)}</b></span>
-              <span><small>Assign</small><b>{activeNote.assigned_to?.name ?? '-'}</b></span>
-              <span><small>Area</small><b>{activeNote.branch ? `${activeNote.branch.name}${activeNote.branch.area ? ` - ${activeNote.branch.area}` : ''}` : 'Global'}</b></span>
-              <span><small>Reply</small><b>{activeNote.replies_count}</b></span>
-            </div>
-            <div className="sticky-actions">
-              <button className="mini-button" onClick={() => void updateNote(activeNote, { status: 'open' })}>Open</button>
-              <button className="mini-button approve" onClick={() => void updateNote(activeNote, { status: 'in_progress' })}>Progress</button>
-              <button className="mini-button reject" onClick={() => void updateNote(activeNote, { status: 'done' })}>Done</button>
-            </div>
-            {activeNote.latest_reply && (
-              <div className="sticky-latest-reply">
-                <small>Balasan terakhir</small>
-                <p>{activeNote.latest_reply.body}</p>
-                <span>{activeNote.latest_reply.author?.name ?? 'Tim'} · {formatShortDateTime(activeNote.latest_reply.created_at)}</span>
-              </div>
-            )}
-            <form className="sticky-reply-form" onSubmit={(event) => { event.preventDefault(); void sendReply() }}>
-              <textarea value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Balas note atau tambahkan update progress..." />
-              <button className="primary-button" type="submit" disabled={!reply.trim()}>Kirim Reply</button>
-            </form>
-          </>
-        )}
-      </aside>
-    </section>
-  )
-}
-
 function renderOrderCodeLinks(text: string, onOpenOrder: (code: string) => void) {
   const pattern = /\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b/g
   const parts: ReactNode[] = []
@@ -6006,7 +6217,15 @@ function EmptyPanel({ title, copy }: { title: string; copy: string }) {
   return <div className="empty-panel"><h2>{title}</h2><p>{copy}</p></div>
 }
 
-function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches: Branch[]; api: ApiClient; onChanged: () => Promise<void> }) {
+function manualOrderSubmissionKey() {
+  const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+  return `manual_${randomPart.replace(/[^A-Za-z0-9_-]/g, '')}`
+}
+
+function ManualOrderPanel({ me, branches, orders, operHandles, auditLogs, permissions, api, onChanged, onOpenDriverChat }: { me: User; branches: Branch[]; orders: Order[]; operHandles: OperHandle[]; auditLogs: AuditLog[]; permissions: Permissions; api: ApiClient; onChanged: () => Promise<void>; onOpenDriverChat: (driverUserId: number) => void }) {
   const canPickAnyBranch = ['admin', 'gm', 'operator'].includes(me.role)
   const branchOptions = useMemo(() => {
     const scoped = visibleBranchesForUser(branches, me, canPickAnyBranch).filter(isOperationalBranch)
@@ -6025,9 +6244,18 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
   const [serviceFeeOverride, setServiceFeeOverride] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [submissionKey, setSubmissionKey] = useState(() => manualOrderSubmissionKey())
   const canSubmitPreview = Boolean(preview?.order_payload)
 
   const parsedCustomer = previewCustomer(preview)
+  const renewSubmission = () => setSubmissionKey(manualOrderSubmissionKey())
+  const clearSubmittedDraft = () => {
+    setRawText('')
+    setPreview(null)
+    setPriceOverride('')
+    setServiceFeeOverride('')
+    renewSubmission()
+  }
 
   useEffect(() => {
     if (branchTouched || !me.branch_id) return
@@ -6079,16 +6307,26 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
           branch_id: Number(branchId) || null,
           price_override: priceOverride !== '' ? Number(priceOverride) : undefined,
           service_charge_override: serviceFeeOverride !== '' ? Number(serviceFeeOverride) : undefined,
+          idempotency_key: submissionKey,
         }),
       })
-      setRawText('')
-      setPreview(null)
-      setPriceOverride('')
-      setServiceFeeOverride('')
+      clearSubmittedDraft()
       await onChanged()
       window.alert('Order manual berhasil dibuat.')
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Order gagal dibuat')
+      try {
+        const existing = await api<{ data: unknown }>(`/admin/orders/manual-status/${encodeURIComponent(submissionKey)}`)
+        if (existing.data) {
+          clearSubmittedDraft()
+          await onChanged()
+          window.alert('Order manual sudah tersimpan. Sistem mencegah pengiriman duplikat.')
+          return
+        }
+      } catch {
+        // Belum ada order dengan kunci ini; tampilkan error submit awal.
+      }
+
+      setError(error instanceof Error ? `${error.message}. Silakan klik kirim ulang; order yang sama tidak akan terduplikasi.` : 'Order gagal dibuat. Silakan coba ulang.')
     } finally {
       setLoading(false)
     }
@@ -6115,6 +6353,7 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
   }
 
   return (
+    <>
     <section className="panel manual-order-panel">
       <div className="section-head">
         <div>
@@ -6132,14 +6371,14 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
           </div>
           <label className="manual-branch-selector">
             Cabang / Area
-            <select value={branchId} onChange={(event) => { setBranchTouched(true); setBranchId(event.target.value); setPreview(null) }}>
+            <select value={branchId} onChange={(event) => { setBranchTouched(true); setBranchId(event.target.value); setPreview(null); renewSubmission() }}>
               <option value="">Pilih cabang</option>
               {branchOptions.map((branch) => <option key={branch.id} value={branch.id}>{branchLabel(branch)}</option>)}
             </select>
           </label>
           <label className="manual-textarea-label">
             Teks order dari customer
-            <textarea value={rawText} onChange={(event) => { setRawText(event.target.value); setPreview(null) }} placeholder={"Contoh:\nNama: Pak Budi\nNo HP: 08123456789\nOjek dari Perum ASB ke STB Kota, pembayaran cash.\nCatatan: minta driver A jika ada."} />
+            <textarea value={rawText} onChange={(event) => { setRawText(event.target.value); setPreview(null); renewSubmission() }} placeholder={"Contoh:\nNama: Pak Budi\nNo HP: 08123456789\nOjek dari Perum ASB ke STB Kota, pembayaran cash.\nCatatan: minta driver A jika ada."} />
           </label>
           {error && <div className="manual-order-error">{error}</div>}
           <div className="manual-ai-actions">
@@ -6157,19 +6396,31 @@ function ManualOrderPanel({ me, branches, api, onChanged }: { me: User; branches
           serviceFeeOverride={serviceFeeOverride}
           loading={loading}
           canSubmit={canSubmitPreview}
-          onPaymentChange={setPaymentMethod}
-          onPriceChange={setPriceOverride}
-          onServiceFeeChange={setServiceFeeOverride}
-          onAddPoint={addPoint}
-          onPointChange={updatePoint}
+          onPaymentChange={(value) => { setPaymentMethod(value); renewSubmission() }}
+          onPriceChange={(value) => { setPriceOverride(value); renewSubmission() }}
+          onServiceFeeChange={(value) => { setServiceFeeOverride(value); renewSubmission() }}
+          onAddPoint={() => { addPoint(); renewSubmission() }}
+          onPointChange={(index, address) => { updatePoint(index, address); renewSubmission() }}
           onDestinationChange={(address) => {
             if (!preview?.order_payload) return
             setPreview({ ...preview, order_payload: { ...preview.order_payload, destination_address: address } })
+            renewSubmission()
           }}
           onSubmit={() => void submitParsedOrder()}
         />
       </div>
     </section>
+    <OrdersTable
+      orders={orders}
+      operHandles={operHandles}
+      auditLogs={auditLogs}
+      searchQuery=""
+      permissions={permissions}
+      api={api}
+      onChanged={onChanged}
+      onOpenDriverChat={onOpenDriverChat}
+    />
+    </>
   )
 }
 
@@ -6377,7 +6628,7 @@ function LivePriceReviewPanel({ reviews, api, onChanged }: { reviews: LivePriceR
   }, [api, isEditing, onChanged, rows, savingId])
 
   useEffect(() => {
-    const interval = window.setInterval(() => void refreshReviews(), 7000)
+    const interval = window.setInterval(() => void refreshReviews(), 3000)
     const onFocus = () => void refreshReviews()
 
     window.addEventListener('focus', onFocus)
@@ -7251,6 +7502,20 @@ function defaultEditTarifRoles(): Role[] {
   return ['hrd', 'manager', 'spv', 'operator', 'eksekutor']
 }
 
+const aiDataRoleOptions: Array<{ value: Role; label: string }> = [
+  { value: 'hrd', label: 'HRD' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'spv', label: 'SPV' },
+  { value: 'operator', label: 'Operator' },
+  { value: 'eksekutor', label: 'Eksekutor' },
+  { value: 'web_admin', label: 'Web Admin' },
+  { value: 'cms_editor', label: 'CMS Editor' },
+]
+
+function defaultAiDataRoles(): Role[] {
+  return aiDataRoleOptions.map((role) => role.value)
+}
+
 function defaultNightTariffRules(): NightTariffRule[] {
   return [
     { area: 'bws', start: '21:30', end: '00:00', percent: 30 },
@@ -7401,15 +7666,7 @@ function subtitleFor(data: Bootstrap) {
 }
 
 function titleFor(view: View) {
-  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword Parsers', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'audit-logs': 'Audit Logs', 'sticky-notes': 'Sticky Notes', 'manual-order': 'Manual Order', 'live-price-reviews': 'Live Edit Harga', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements' }[view]
-}
-
-function internalNoteStatusLabel(status: InternalNoteStatus) {
-  return status === 'open' ? 'Open' : status === 'in_progress' ? 'In progress' : status === 'done' ? 'Done' : 'Archived'
-}
-
-function internalNotePriorityLabel(priority: InternalNotePriority) {
-  return priority === 'urgent' ? 'Urgent' : priority === 'high' ? 'High' : priority === 'low' ? 'Low' : 'Normal'
+  return { dashboard: 'Admin Dashboard', orders: 'Order Operations', 'request-orders': 'Request Order', users: 'User Management', drivers: 'Driver Management', settings: 'System Settings', 'master-pricing': 'Master Pricing', pricing: 'Pricing & Policy', 'price-settings': 'Price Settings', 'ring-pricing': 'Master Ring', 'keyword-parsers': 'Keyword & Form Builder', 'pricing-keyword-rules': 'Pricing Keyword Rules', 'zone-pricing': 'Zone Pricing Rules', 'zone-pricing-tester': 'Zone Pricing Tester', branches: 'Branch Management', geofence: 'Geofence Areas', locations: 'Location Logs', reports: 'Reports', chats: 'Chat Monitor', 'internal-chat': 'Internal Chat', 'audit-logs': 'Audit Logs', 'manual-order': 'Manual Order', 'live-price-reviews': 'Live Edit Harga', 'order-crew-rules': 'Order Crew Rules', banners: 'Banners', 'home-sections': 'Home Sections', 'home-items': 'Home Items', announcements: 'Announcements', 'jojobot-field-schema-reference': 'Field Schema Reference', 'jojobot-template-parser-lab': 'Template Parser Lab', 'ai-parser-rules': 'AI Parser Memory', 'ai-alias-maps': 'AI Alias Map', 'ai-location-suggestions': 'AI Location Learning', 'location-pois': 'Master Location POI', 'ai-logs': 'AI Logs', 'ai-monitoring': 'AI Monitoring', 'ai-nlp-settings': 'AI NLP OpenRouter' }[view]
 }
 
 function senderLabel(sender: string) {

@@ -138,6 +138,9 @@ class CreateOrder
                 'device_location_log_id' => $payload['device_location_log_id'] ?? null,
                 'expired_at' => now()->addMinutes(10),
                 'status' => OrderStatus::Created,
+                'source' => $payload['source'] ?? 'customer',
+                'manual_request_key' => $payload['manual_request_key'] ?? null,
+                'manual_request_sequence' => $payload['manual_request_sequence'] ?? null,
             ]);
 
             foreach (array_slice($payload['points'] ?? [], 0, $this->orders->maxTextPoints()) as $index => $point) {

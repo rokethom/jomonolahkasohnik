@@ -21,13 +21,22 @@ class RatingResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('order.order_code')->label('Order')->searchable(),
                 Tables\Columns\TextColumn::make('customer.name')->label('Customer')->searchable(),
-                Tables\Columns\TextColumn::make('driver.user.name')->label('Driver')->searchable(),
+                Tables\Columns\TextColumn::make('driver.user.username')->label('Driver')->searchable(),
                 Tables\Columns\TextColumn::make('rating')->badge()->sortable(),
                 Tables\Columns\TextColumn::make('comment')->limit(50),
                 Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
             ])
-            ->actions([])
-            ->bulkActions([]);
+            ->actions([
+                Tables\Actions\DeleteAction::make()
+                    ->label('Delete')
+                    ->requiresConfirmation(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Delete selected'),
+                ]),
+            ]);
     }
 
     public static function getPages(): array

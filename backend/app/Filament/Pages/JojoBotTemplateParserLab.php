@@ -33,6 +33,11 @@ class JojoBotTemplateParserLab extends Page implements HasForms
 
     public ?array $data = [];
 
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->hasPermission('manage_ai_data') === true;
+    }
+
     public function mount(): void
     {
         $this->form->fill([
@@ -139,6 +144,7 @@ class JojoBotTemplateParserLab extends Page implements HasForms
 
             if (! str_contains($line, ':')) {
                 $section = $line;
+
                 continue;
             }
 

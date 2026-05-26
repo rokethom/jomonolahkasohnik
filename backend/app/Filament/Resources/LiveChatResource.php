@@ -46,7 +46,7 @@ class LiveChatResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('type')->badge(),
                 Tables\Columns\TextColumn::make('customer.name')->searchable(),
-                Tables\Columns\TextColumn::make('driver.name')->searchable(),
+                Tables\Columns\TextColumn::make('driver.username')->label('Driver')->searchable(),
                 Tables\Columns\TextColumn::make('latestMessage.message')->limit(50),
                 Tables\Columns\BadgeColumn::make('sla_status')
                     ->colors(['warning' => 'waiting', 'success' => 'on_time', 'danger' => 'late']),

@@ -84,6 +84,13 @@ class SystemSettingsPage extends Page implements HasForms
             'multi_crew_auto_cancel_enabled' => $settings->bool('multi_crew_auto_cancel_enabled', true),
             'multi_crew_auto_cancel_minutes' => $settings->int('multi_crew_auto_cancel_minutes', 7),
             'multi_crew_auto_cancel_message' => $settings->get('multi_crew_auto_cancel_message', 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.') ?: 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.',
+            'driver_complete_wait_minutes' => $settings->int('driver_complete_wait_minutes', 5),
+            'driver_adjustment_wait_minutes' => $settings->int('driver_adjustment_wait_minutes', 5),
+            'driver_adjustment_enabled' => $settings->bool('driver_adjustment_enabled', true),
+            'driver_adjustment_min_amount' => $settings->int('driver_adjustment_min_amount', 1000),
+            'driver_adjustment_max_amount' => $settings->int('driver_adjustment_max_amount', 500000),
+            'driver_adjustment_step_amount' => $settings->int('driver_adjustment_step_amount', 1000),
+            'driver_adjustment_default_amount' => $settings->int('driver_adjustment_default_amount', 2000),
             'driver_daily_priority_enabled' => $settings->bool('driver_daily_priority_enabled', true),
             'driver_daily_priority_hold_minutes' => $settings->int('driver_daily_priority_hold_minutes', 3),
             'driver_daily_priority_windows' => $this->dailyPriorityWindows($settings),
@@ -461,6 +468,56 @@ class SystemSettingsPage extends Page implements HasForms
                                             ->helperText('Gunakan {order_code}, {minutes}, {helper_label}, {driver_name}.')
                                             ->columnSpanFull(),
                                     ]),
+                                Forms\Components\Section::make('Aksi Driver pada Order Aktif')
+                                    ->description('Atur kapan driver dapat menyelesaikan order dan batas nominal Tambah Service Charge. Validasi berlaku di server dan aplikasi driver.')
+                                    ->visible(fn (): bool => in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM], true))
+                                    ->columns(2)
+                                    ->schema([
+                                        Forms\Components\TextInput::make('driver_complete_wait_minutes')
+                                            ->label('Tombol Selesai aktif setelah')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->maxValue(180)
+                                            ->suffix('menit')
+                                            ->required()
+                                            ->helperText('Default 5 menit sejak driver menerima order. Isi 0 untuk langsung aktif.'),
+                                        Forms\Components\TextInput::make('driver_adjustment_wait_minutes')
+                                            ->label('Tambah Service Charge aktif setelah')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->maxValue(180)
+                                            ->suffix('menit')
+                                            ->required()
+                                            ->helperText('Dihitung sejak driver menerima order. Isi 0 untuk langsung aktif.'),
+                                        Forms\Components\Toggle::make('driver_adjustment_enabled')
+                                            ->label('Aktifkan Tambah Service Charge')
+                                            ->helperText('Jika mati, driver tidak dapat menambahkan biaya dari aplikasi.'),
+                                        Forms\Components\TextInput::make('driver_adjustment_min_amount')
+                                            ->label('Nominal minimum')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->prefix('Rp')
+                                            ->required(),
+                                        Forms\Components\TextInput::make('driver_adjustment_max_amount')
+                                            ->label('Nominal maksimum')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->prefix('Rp')
+                                            ->required(),
+                                        Forms\Components\TextInput::make('driver_adjustment_step_amount')
+                                            ->label('Kelipatan input')
+                                            ->numeric()
+                                            ->minValue(1)
+                                            ->prefix('Rp')
+                                            ->required()
+                                            ->helperText('Contoh 1.000 berarti nominal dikirim dalam kelipatan Rp 1.000.'),
+                                        Forms\Components\TextInput::make('driver_adjustment_default_amount')
+                                            ->label('Nominal awal form')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->prefix('Rp')
+                                            ->required(),
+                                    ]),
                                 Forms\Components\Section::make('Driver Daily Priority')
                                     ->description('Driver yang pertama kali OFFLINE ke ONLINE pada hari berjalan masuk queue prioritas 1 order jika tetap memenuhi syarat area, layanan, setoran, dan suspend. Prioritas hanya 1 kali per hari Asia/Jakarta.')
                                     ->columns(2)
@@ -665,6 +722,17 @@ class SystemSettingsPage extends Page implements HasForms
         $settings->set('multi_crew_auto_cancel_enabled', (bool) ($data['multi_crew_auto_cancel_enabled'] ?? true));
         $settings->set('multi_crew_auto_cancel_minutes', max(1, min(180, (int) ($data['multi_crew_auto_cancel_minutes'] ?? 7))));
         $settings->set('multi_crew_auto_cancel_message', $data['multi_crew_auto_cancel_message'] ?? 'Maaf, order {order_code} dibatalkan otomatis karena helper belum menerima dalam {minutes} menit.');
+        if (in_array(auth()->user()?->role, [UserRole::Admin, UserRole::GM], true)) {
+            $settings->set('driver_complete_wait_minutes', max(0, min(180, (int) ($data['driver_complete_wait_minutes'] ?? 5))));
+            $settings->set('driver_adjustment_wait_minutes', max(0, min(180, (int) ($data['driver_adjustment_wait_minutes'] ?? 5))));
+            $minimumAdjustment = max(0, (int) ($data['driver_adjustment_min_amount'] ?? 1000));
+            $maximumAdjustment = max($minimumAdjustment, min(1000000, (int) ($data['driver_adjustment_max_amount'] ?? 500000)));
+            $settings->set('driver_adjustment_enabled', (bool) ($data['driver_adjustment_enabled'] ?? true));
+            $settings->set('driver_adjustment_min_amount', $minimumAdjustment);
+            $settings->set('driver_adjustment_max_amount', $maximumAdjustment);
+            $settings->set('driver_adjustment_step_amount', max(1, min($maximumAdjustment ?: 1, (int) ($data['driver_adjustment_step_amount'] ?? 1000))));
+            $settings->set('driver_adjustment_default_amount', max($minimumAdjustment, min($maximumAdjustment, (int) ($data['driver_adjustment_default_amount'] ?? 2000))));
+        }
         $settings->set('driver_daily_priority_enabled', (bool) ($data['driver_daily_priority_enabled'] ?? true));
         $settings->set('driver_daily_priority_hold_minutes', max(1, min(60, (int) ($data['driver_daily_priority_hold_minutes'] ?? 3))));
         $settings->set('driver_daily_priority_windows', json_encode($this->normalizeDailyPriorityWindows($data['driver_daily_priority_windows'] ?? [])));

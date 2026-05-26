@@ -24,9 +24,19 @@ class AiLogResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->hasPermission('edit_tarif') === true
+        return auth()->user()?->hasPermission('manage_ai_data') === true
             || auth()->user()?->hasPermission('manage_cms') === true
             || auth()->user()?->hasPermission('manage_system_settings') === true;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return static::shouldRegisterNavigation();
+    }
+
+    public static function canView($record): bool
+    {
+        return static::shouldRegisterNavigation();
     }
 
     public static function form(Forms\Form $form): Forms\Form

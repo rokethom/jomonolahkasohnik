@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OrderStatus;
 use App\Events\MessageSent;
 use App\Events\OrderPriceUpdated;
 use App\Models\ChatConversation;
@@ -10,16 +11,46 @@ use App\Models\Order;
 use App\Models\OrderAdjustment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 
 class OrderAdjustmentService
 {
-    public function __construct(private readonly NotificationService $notifications)
+    public function __construct(
+        private readonly NotificationService $notifications,
+        private readonly SettingService $settings,
+    )
     {
     }
 
     public function create(Order $order, Driver $driver, int $amount, string $reason): OrderAdjustment
     {
+        if (! $this->settings->bool('driver_adjustment_enabled', true)) {
+            throw new RuntimeException('Tambah service charge sedang dinonaktifkan oleh admin.');
+        }
+
+        $waitMinutes = max(0, min(180, $this->settings->int('driver_adjustment_wait_minutes', 5)));
+        $acceptedAtValue = data_get($order->pricing_breakdown, 'accepted_at');
+        $acceptedAt = filled($acceptedAtValue) ? Carbon::parse($acceptedAtValue) : $order->updated_at;
+
+        if ($waitMinutes > 0
+            && in_array($order->status, [OrderStatus::DriverAccepted, OrderStatus::DriverOnTheWay, OrderStatus::ArrivedPickup, OrderStatus::OnGoing], true)
+            && $acceptedAt?->greaterThan(now()->subMinutes($waitMinutes))) {
+            throw new RuntimeException("Tambah service charge baru aktif {$waitMinutes} menit setelah order diterima driver.");
+        }
+
+        $minimum = max(0, $this->settings->int('driver_adjustment_min_amount', 1000));
+        $maximum = max($minimum, $this->settings->int('driver_adjustment_max_amount', 500000));
+        $step = max(1, $this->settings->int('driver_adjustment_step_amount', 1000));
+
+        if ($amount < $minimum || $amount > $maximum) {
+            throw new RuntimeException('Nominal tambahan harus antara Rp '.number_format($minimum, 0, ',', '.').' sampai Rp '.number_format($maximum, 0, ',', '.').'.');
+        }
+
+        if ($amount % $step !== 0) {
+            throw new RuntimeException('Nominal tambahan harus kelipatan Rp '.number_format($step, 0, ',', '.').'.');
+        }
+
         if ((int) $order->driver_id !== (int) $driver->id) {
             throw new RuntimeException('Driver tidak terhubung dengan order ini.');
         }

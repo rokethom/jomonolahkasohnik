@@ -56,6 +56,16 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
+        if ($blocked = $this->blockedAccountMessage($user)) {
+            Auth::logout();
+
+            return response()->json([
+                'success' => false,
+                'message' => $blocked,
+                'code' => 'account_blocked',
+            ], 403);
+        }
+
         $role = $user->role instanceof UserRole ? $user->role : UserRole::tryFrom((string) $user->role);
         if ($role === UserRole::Driver) {
             Auth::logout();
@@ -128,6 +138,10 @@ class AuthController extends Controller
             return $this->redirectGoogleLoginError($frontendUrl, 'Email ini terdaftar sebagai akun staff. Gunakan email customer lain.');
         }
 
+        if ($user && $blocked = $this->blockedAccountMessage($user)) {
+            return $this->redirectGoogleLoginError($frontendUrl, $blocked);
+        }
+
         if ($user) {
             $user->forceFill([
                 'name' => $user->name ?: ($googleUser->getName() ?: $googleUser->getNickname() ?: 'Customer Jojo'),
@@ -171,6 +185,15 @@ class AuthController extends Controller
     private function tokenName(Request $request): string
     {
         return 'api-token:'.substr(hash('sha256', (string) $request->userAgent()), 0, 12);
+    }
+
+    private function blockedAccountMessage(User $user): ?string
+    {
+        if (! $user->is_active || $user->is_suspended || ($user->suspended_until !== null && $user->suspended_until->isFuture())) {
+            return $user->suspension_reason ?: 'Akun Anda sedang diblokir. Silakan hubungi admin.';
+        }
+
+        return null;
     }
 
     private function uniqueGoogleUsername(string $email, ?string $nickname): string

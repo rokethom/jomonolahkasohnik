@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\LocationPoiResource\Pages;
+use App\Filament\Support\RequiresAiDataAccess;
 use App\Models\Area;
 use App\Models\Branch;
 use App\Models\GeojsonRegion;
@@ -11,8 +12,8 @@ use App\Models\LocationPoi;
 use App\Models\Order;
 use App\Services\LocationPoiService;
 use Filament\Forms;
-use Filament\Notifications\Notification;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\Cache;
 
 class LocationPoiResource extends Resource
 {
+    use RequiresAiDataAccess;
+
     protected static ?string $model = LocationPoi::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-map-pin';
@@ -30,11 +33,6 @@ class LocationPoiResource extends Resource
     protected static ?string $navigationLabel = 'Master Location POI';
 
     protected static ?int $navigationSort = 3;
-
-    public static function shouldRegisterNavigation(): bool
-    {
-        return auth()->user()?->hasPermission('edit_tarif') === true || auth()->user()?->hasPermission('manage_cms') === true;
-    }
 
     public static function form(Form $form): Form
     {
@@ -193,6 +191,7 @@ class LocationPoiResource extends Resource
                 foreach ($regions as $region) {
                     if (! is_numeric($region->centroid_lat) || ! is_numeric($region->centroid_lng)) {
                         $skipped++;
+
                         continue;
                     }
 
@@ -348,6 +347,7 @@ class LocationPoiResource extends Resource
 
         if ($name === '' || ! is_numeric($lat) || ! is_numeric($lng) || self::isIgnoredPoiName($name)) {
             $skipped++;
+
             return;
         }
 
@@ -355,6 +355,7 @@ class LocationPoiResource extends Resource
         $lng = (float) $lng;
         if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 || ($lat === 0.0 && $lng === 0.0)) {
             $skipped++;
+
             return;
         }
 

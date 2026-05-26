@@ -840,6 +840,13 @@
   margin-bottom: 7px;
 }
 
+.message-bubble .chat-sticker-image {
+  width: min(176px, 46vw);
+  height: auto;
+  object-fit: contain;
+  background: transparent;
+}
+
 .chat-image-button {
   display: block;
   padding: 0;
@@ -3547,6 +3554,25 @@
 .live-price-loading p {
   margin: 0;
   color: #64748b;
+}
+
+.live-price-lock-panel {
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  text-align: center;
+}
+
+.live-price-lock-panel p {
+  margin: 0;
+  color: #64748b;
+}
+
+.live-price-lock-panel .cancel-order-preview {
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-weight: 900;
 }
 
 .live-price-spinner {

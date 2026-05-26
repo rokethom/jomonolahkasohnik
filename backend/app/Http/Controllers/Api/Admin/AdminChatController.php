@@ -222,7 +222,7 @@ class AdminChatController extends Controller
             'order_code' => $chat->order?->order_code,
             'type' => $chat->type,
             'customer' => $chat->customer?->name,
-            'driver' => $chat->driver?->name,
+            'driver' => $this->driverLabel($chat->driver),
             'operator' => $chat->operator?->name,
             'operator_rating' => $chat->operator_rating,
             'rating_requested_at' => $chat->rating_requested_at?->toISOString(),
@@ -247,7 +247,7 @@ class AdminChatController extends Controller
             'chat_id' => $message->chat_conversation_id,
             'sender_id' => $message->sender_id,
             'sender_type' => $message->sender_type,
-            'sender_name' => $message->sender?->name,
+            'sender_name' => $this->senderLabel($message),
             'message' => $message->message,
             'image_url' => $message->image_url,
             'audio_url' => $message->audio_url,
@@ -266,6 +266,20 @@ class AdminChatController extends Controller
             'is_read' => $message->is_read,
             'created_at' => $message->created_at?->toISOString(),
         ];
+    }
+
+    private function driverLabel(?User $driver): ?string
+    {
+        return $driver?->username ?: $driver?->name;
+    }
+
+    private function senderLabel(ChatMessage $message): ?string
+    {
+        if ($message->sender_type === UserRole::Driver->value) {
+            return $this->driverLabel($message->sender);
+        }
+
+        return $message->sender?->name;
     }
 
     private function roleLabel(UserRole $role): string

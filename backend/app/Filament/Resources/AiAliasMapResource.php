@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\AiAliasMapResource\Pages;
+use App\Filament\Support\RequiresAiDataAccess;
 use App\Jobs\GenerateAiAliasMapsJob;
 use App\Models\AiAliasMap;
 use App\Models\Area;
@@ -15,11 +16,12 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 
 class AiAliasMapResource extends Resource
 {
+    use RequiresAiDataAccess;
+
     protected static ?string $model = AiAliasMap::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-map';
@@ -29,11 +31,6 @@ class AiAliasMapResource extends Resource
     protected static ?string $navigationLabel = 'AI Alias Map';
 
     protected static ?int $navigationSort = 2;
-
-    public static function shouldRegisterNavigation(): bool
-    {
-        return Auth::user()?->hasPermission('edit_tarif') === true || Auth::user()?->hasPermission('manage_cms') === true;
-    }
 
     public static function form(Form $form): Form
     {

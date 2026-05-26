@@ -39,7 +39,7 @@ class DriverRequestOrderResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('order_code')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('driver.user.name')->label('Driver')->searchable(),
+                Tables\Columns\TextColumn::make('driver.user.username')->label('Driver')->searchable(),
                 Tables\Columns\TextColumn::make('service_code')->badge(),
                 Tables\Columns\TextColumn::make('pickup_address')->limit(30)->searchable(),
                 Tables\Columns\TextColumn::make('destination_address')->limit(30)->searchable(),
@@ -78,7 +78,7 @@ class DriverRequestOrderResource extends Resource
                         Infolists\Components\TextEntry::make('created_at')
                             ->label('Dibuat')
                             ->dateTime(),
-                        Infolists\Components\TextEntry::make('driver.user.name')
+                        Infolists\Components\TextEntry::make('driver.user.username')
                             ->label('Driver')
                             ->placeholder('-'),
                         Infolists\Components\TextEntry::make('driver.user.phone')

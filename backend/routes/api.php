@@ -1,35 +1,34 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\Admin\AdminController;
+use App\Http\Controllers\Api\Admin\AdminAiDataController;
 use App\Http\Controllers\Api\Admin\AdminChatController;
+use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\Admin\ChatStickerController;
 use App\Http\Controllers\Api\Admin\InternalChatController;
-use App\Http\Controllers\Api\Admin\InternalNoteController;
 use App\Http\Controllers\Api\Admin\OperHandleApprovalController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CancelRequestController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\DriverAuthController;
 use App\Http\Controllers\Api\DriverController;
-use App\Http\Controllers\Api\GeofenceController;
 use App\Http\Controllers\Api\GeocodingController;
+use App\Http\Controllers\Api\GeofenceController;
 use App\Http\Controllers\Api\HomeController;
 use App\Http\Controllers\Api\JojoBotController;
 use App\Http\Controllers\Api\KeywordParserController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MapProviderController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PricingController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\PublicMediaController;
 use App\Http\Controllers\Api\PushDeviceTokenController;
-use App\Http\Controllers\Api\PricingController;
 use App\Http\Controllers\Api\RatingController;
-use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\ServiceController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\UserLocationController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -42,17 +41,17 @@ use App\Http\Controllers\Api\UserLocationController;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', [ProfileController::class, 'show']);
-Route::middleware('auth:sanctum')->get('/me', [ProfileController::class, 'show']);
+Route::middleware(['auth:sanctum', 'account.active'])->get('/user', [ProfileController::class, 'show']);
+Route::middleware(['auth:sanctum', 'account.active'])->get('/me', [ProfileController::class, 'show']);
 
-Route::post('/auth/register', [AuthController::class, 'register']);
-Route::post('/register', [AuthController::class, 'register']);
+Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth-register');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:auth-register');
 Route::get('/auth/login', fn () => response()->json([
     'message' => 'Use POST /api/auth/login with email and password.',
     'method' => 'POST',
 ], 200));
-Route::post('/auth/login', [AuthController::class, 'login']);
-Route::get('/auth/google/redirect', [AuthController::class, 'redirectToGoogle']);
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
+Route::get('/auth/google/redirect', [AuthController::class, 'redirectToGoogle'])->middleware('throttle:auth-google-redirect');
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
 Route::post('/driver/auth/google', [DriverAuthController::class, 'google'])->middleware('throttle:driver-google-login');
 Route::get('/home', HomeController::class);
@@ -63,7 +62,7 @@ Route::get('/media/{path}', PublicMediaController::class)->where('path', '.*');
 Route::get('/services', [ServiceController::class, 'index']);
 Route::get('/keyword-parsers', [KeywordParserController::class, 'index']);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::put('/user/profile', [ProfileController::class, 'update']);
     Route::post('/user/profile', [ProfileController::class, 'update']);
@@ -81,14 +80,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/users/{user}', [AdminController::class, 'destroyUser'])->middleware('permission:create_user');
         Route::post('/users/{user}/reset-password', [AdminController::class, 'resetPassword'])->middleware('permission:create_user');
         Route::post('/users/{user}/reset-token', [AdminController::class, 'resetUserToken'])->middleware('permission:create_user');
+        Route::post('/users/{user}/suspend-customer', [AdminController::class, 'suspendCustomer']);
+        Route::post('/users/{user}/release-customer', [AdminController::class, 'releaseCustomer']);
         Route::get('/drivers/import-template', [AdminController::class, 'exportDriverManagementCsv'])->middleware('permission:create_user');
         Route::post('/drivers/import', [AdminController::class, 'importDriverManagementCsv'])->middleware('permission:create_user');
         Route::get('/orders', [AdminController::class, 'orders'])->middleware('permission:monitor_live_order');
         Route::post('/orders/{order}/assign-driver', [AdminController::class, 'assignDriver'])->middleware('permission:monitor_live_order');
         Route::post('/orders/{order}/broadcast-drivers', [AdminController::class, 'broadcastDrivers'])->middleware('permission:monitor_live_order');
-        Route::post('/orders/{order}/repost-dispatch', [AdminController::class, 'repostDispatchOrder'])->middleware('permission:monitor_live_order');
+        Route::post('/orders/{order}/repost-dispatch', [AdminController::class, 'repostDispatchOrder']);
         Route::post('/orders/manual/preview', [AdminController::class, 'previewManualOrder'])->middleware('permission:manual_order');
         Route::post('/orders/manual', [AdminController::class, 'manualOrder'])->middleware('permission:manual_order');
+        Route::get('/orders/manual-status/{idempotencyKey}', [AdminController::class, 'manualOrderStatus'])->middleware('permission:manual_order');
         Route::get('/live-price-reviews', [AdminController::class, 'livePriceReviews'])->middleware('permission:manual_order');
         Route::get('/live-price-review-audits', [AdminController::class, 'livePriceReviewAudits'])->middleware('permission:manual_order');
         Route::post('/live-price-reviews/{review}/approve', [AdminController::class, 'approveLivePriceReview'])->middleware('permission:manual_order');
@@ -108,9 +110,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/price-settings', [AdminController::class, 'storePriceSetting'])->middleware('permission:edit_tarif');
         Route::put('/price-settings/{priceSetting}', [AdminController::class, 'updatePriceSetting'])->middleware('permission:edit_tarif');
         Route::delete('/price-settings/{priceSetting}', [AdminController::class, 'destroyPriceSetting'])->middleware('permission:edit_tarif');
-        Route::get('/keyword-parsers', [AdminController::class, 'adminKeywordParsers'])->middleware('permission:edit_tarif');
-        Route::post('/keyword-parsers', [AdminController::class, 'storeKeywordParser'])->middleware('permission:edit_tarif');
-        Route::delete('/keyword-parsers/{keywordParser}', [AdminController::class, 'destroyKeywordParser'])->middleware('permission:edit_tarif');
+        Route::get('/keyword-parsers', [AdminController::class, 'adminKeywordParsers'])->middleware('permission:manage_ai_data');
+        Route::post('/keyword-parsers', [AdminController::class, 'storeKeywordParser'])->middleware('permission:manage_ai_data');
+        Route::delete('/keyword-parsers/{keywordParser}', [AdminController::class, 'destroyKeywordParser'])->middleware('permission:manage_ai_data');
+        Route::middleware('permission:manage_ai_data')->prefix('ai')->group(function () {
+            Route::get('/options', [AdminAiDataController::class, 'options']);
+            Route::get('/parser-rules', [AdminAiDataController::class, 'parserRules']);
+            Route::post('/parser-rules', [AdminAiDataController::class, 'storeParserRule']);
+            Route::delete('/parser-rules/{aiParserRule}', [AdminAiDataController::class, 'destroyParserRule']);
+            Route::get('/alias-maps', [AdminAiDataController::class, 'aliasMaps']);
+            Route::post('/alias-maps', [AdminAiDataController::class, 'storeAliasMap']);
+            Route::put('/alias-maps/{aiAliasMap}', [AdminAiDataController::class, 'updateAliasMap']);
+            Route::delete('/alias-maps/{aiAliasMap}', [AdminAiDataController::class, 'destroyAliasMap']);
+            Route::get('/location-suggestions', [AdminAiDataController::class, 'locationSuggestions']);
+            Route::put('/location-suggestions/{aiLocationSuggestion}', [AdminAiDataController::class, 'updateLocationSuggestion']);
+            Route::post('/location-suggestions/{aiLocationSuggestion}/approve', [AdminAiDataController::class, 'approveLocationSuggestion']);
+            Route::post('/location-suggestions/{aiLocationSuggestion}/reject', [AdminAiDataController::class, 'rejectLocationSuggestion']);
+            Route::get('/location-pois', [AdminAiDataController::class, 'locationPois']);
+            Route::post('/location-pois', [AdminAiDataController::class, 'storeLocationPoi']);
+            Route::put('/location-pois/{locationPoi}', [AdminAiDataController::class, 'updateLocationPoi']);
+            Route::delete('/location-pois/{locationPoi}', [AdminAiDataController::class, 'destroyLocationPoi']);
+        });
         Route::get('/pricing-keyword-rules', [AdminController::class, 'pricingKeywordRules'])->middleware('permission:edit_tarif');
         Route::post('/pricing-keyword-rules', [AdminController::class, 'storePricingKeywordRule'])->middleware('permission:edit_tarif');
         Route::delete('/pricing-keyword-rules/{pricingKeywordRule}', [AdminController::class, 'destroyPricingKeywordRule'])->middleware('permission:edit_tarif');
@@ -144,12 +164,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'messages'])->middleware('permission:internal_chat');
         Route::post('/internal-chat/rooms/{room}/messages', [InternalChatController::class, 'sendMessage'])->middleware('permission:internal_chat');
         Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
-        Route::get('/internal-notes', [InternalNoteController::class, 'index'])->middleware('permission:internal_chat');
-        Route::post('/internal-notes', [InternalNoteController::class, 'store'])->middleware('permission:internal_chat');
-        Route::patch('/internal-notes/{internalNote}', [InternalNoteController::class, 'update'])->middleware('permission:internal_chat');
-        Route::post('/internal-notes/{internalNote}/replies', [InternalNoteController::class, 'reply'])->middleware('permission:internal_chat');
-        Route::delete('/internal-notes/{internalNote}', [InternalNoteController::class, 'destroy'])->middleware('permission:internal_chat');
-        Route::post('/oper-handles/{operHandle}/approve', [OperHandleApprovalController::class, 'approve']);
+        Route::post('/oper-handles/{operHandle}/approve', [OperHandleApprovalController::class, 'approve'])->middleware('permission:approve_oper_handle');
+        Route::post('/oper-handles/{operHandle}/reject', [OperHandleApprovalController::class, 'reject'])->middleware('permission:reject_oper_handle');
         Route::get('/reports', [AdminController::class, 'reports'])->middleware('permission:view_report');
         Route::get('/reports/monthly-orders', [AdminController::class, 'monthlyOrderReport'])->middleware('permission:view_report');
         Route::get('/reports/monthly-orders/export', [AdminController::class, 'exportMonthlyOrderReport'])->middleware('permission:export_report');
@@ -164,6 +180,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/location/validate', [LocationController::class, 'validateLocation']);
     Route::post('/pricing/calculate', [PricingController::class, 'calculate'])->middleware('profile.complete');
     Route::post('/jojobot/preview', [JojoBotController::class, 'preview'])->middleware('profile.complete');
+    Route::get('/jojobot/live-price-reviews/active', [JojoBotController::class, 'activeLivePriceReview'])->middleware('profile.complete');
     Route::get('/jojobot/live-price-reviews/{token}', [JojoBotController::class, 'livePriceReviewStatus'])->middleware('profile.complete');
     Route::post('/jojobot/live-price-reviews/{token}/cancel', [JojoBotController::class, 'cancelLivePriceReview'])->middleware('profile.complete');
 
